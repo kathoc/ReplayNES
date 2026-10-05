@@ -1,0 +1,126 @@
+# XcodeGen spec for the ReplayNES macOS frontend.
+#   cd apps/macos && xcodegen generate   (scripts/build-macos.sh does this for you)
+# The engine is NOT compiled here: the "Engine" aggregate target runs CMake on the same
+# source list as every other platform (single source of truth) and the app links the
+# resulting static libraries.
+name: ReplayNES
+options:
+  bundleIdPrefix: io.github.replaynes
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    RN_ENGINE_BUILD_DIR: "$(SRCROOT)/../../build/xcode-engine"
+    HEADER_SEARCH_PATHS:
+      - "$(SRCROOT)/../../engine/include/replaynes"
+      - "$(SRCROOT)/Sources/Core/C"
+    SWIFT_OBJC_BRIDGING_HEADER: "Sources/Core/C/Bridging.h"
+    LIBRARY_SEARCH_PATHS:
+      - "$(RN_ENGINE_BUILD_DIR)"
+      - "$(RN_ENGINE_BUILD_DIR)/engine"
+    OTHER_LDFLAGS: ["-lreplaynes_engine", "-lnestopia_core", "-lc++"]
+    GCC_C_LANGUAGE_STANDARD: c11
+
+aggregateTargets:
+  Engine:
+    buildScripts:
+      - name: Build ReplayNES engine (CMake)
+        script: '"$SRCROOT/Scripts/build-engine.sh"'
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - "$(RN_ENGINE_BUILD_DIR)/engine/libreplaynes_engine.a"
+          - "$(RN_ENGINE_BUILD_DIR)/libnestopia_core.a"
+
+targets:
+  ReplayNES:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Core
+      - path: Sources/App
+    dependencies:
+      - target: Engine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.replaynes.ReplayNES
+        PRODUCT_NAME: ReplayNES
+        PRODUCT_MODULE_NAME: ReplayNESApp
+        ENABLE_HARDENED_RUNTIME: NO
+        COMBINE_HIDPI_IMAGES: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.games
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: ReplayNES
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDevelopmentRegion: ja
+        CFBundleLocalizations: [ja, en]
+        LSApplicationCategoryType: public.app-category.games
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "ReplayNES - GPL-2.0-or-later. Includes Nestopia UE (GPL-2.0-or-later)."
+        NSSupportsAutomaticGraphicsSwitching: true
+        GCSupportsControllerUserInteraction: true
+        GCSupportedGameControllers:
+          - ProfileName: ExtendedGamepad
+          - ProfileName: MicroGamepad
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.replaynes.nesrec
+            UTTypeDescription: ReplayNES Project
+            UTTypeConformsTo: [com.apple.package, public.composite-content]
+            UTTypeTagSpecification:
+              public.filename-extension: [nesrec]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.replaynes.nes-rom
+            UTTypeDescription: NES ROM
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [nes, NES]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: ReplayNES Project
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSTypeIsPackage: true
+            LSItemContentTypes: [io.github.replaynes.nesrec]
+          - CFBundleTypeName: NES ROM
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [io.github.replaynes.nes-rom]
+
+  ReplayNESTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Sources/Core
+      - path: Tests
+    dependencies:
+      - target: Engine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.replaynes.ReplayNESTests
+        PRODUCT_MODULE_NAME: ReplayNESTests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  ReplayNES:
+    build:
+      targets:
+        ReplayNES: all
+        ReplayNESTests: [test]
+    test:
+      targets: [ReplayNESTests]
+    run:
+      config: Debug
+    archive:
+      config: Release
