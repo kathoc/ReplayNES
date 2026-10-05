@@ -50,7 +50,7 @@ final class EmulationController {
 
     // ---- emulation-thread state (never touched from other threads) ----
     private(set) var session: EngineSession?
-    var paused = true { didSet { if paused != oldValue { statusDirty = true } } }
+    var paused = true { didSet { if paused != oldValue { statusDirty = true; if !paused { pauseHintShown = false } } } }
     var slow: SlowRate = .normal { didSet { statusDirty = true } }
     var advanceRemaining = 0
     var uiRewindHeld = false
@@ -68,6 +68,8 @@ final class EmulationController {
     private var endOfTake = false
     private var cachedTakeCount = 0
     private var lastAutosave: UInt64 = 0
+    private var lastPressSeq: UInt64 = 0
+    private var pauseHintShown = false
     private var autosaveFailed = false
     private var nextDeadline: UInt64 = 0
     private let period: UInt64 = HostClock.ticks(seconds: Double(RN_FPS_DEN) / Double(RN_FPS_NUM))
@@ -119,12 +121,20 @@ final class EmulationController {
 
     func install(_ s: EngineSession?) {
         session = s
-        paused = true
+        // A fresh recording (empty take, frame 0) has nothing to review: run immediately so the
+        // game boots. Opened projects with recorded input stay paused at their cursor.
+        if let s, s.takeLength == 0, s.frame == 0, s.mode == RN_MODE_RECORD {
+            paused = false
+        } else {
+            paused = true
+        }
         slow = .normal
         advanceRemaining = 0
         scrubTarget = nil
         pendingEvents = 0
         endOfTake = false
+        lastPressSeq = input.pressSequence
+        pauseHintShown = false
         audio.setMuted(true)
         lastAutosave = HostClock.now()
         autosaveFailed = false
@@ -191,9 +201,21 @@ final class EmulationController {
             return
         }
 
+        // Read the press counter before polling hotkeys so a hotkey press is never mistaken
+        // for a game-button press below.
+        let pressSeq = input.pressSequence
         var edges: UInt32 = 0, held: UInt32 = 0
         rn_input_poll_hotkeys(input.handle, &edges, &held)
+        let wasPaused = paused
         if edges != 0 { handleHotkeys(edges, s) }
+        if pressSeq != lastPressSeq {
+            lastPressSeq = pressSeq
+            // Game input is not emulated while paused; say so once instead of silently ignoring it.
+            if wasPaused && paused && edges == 0 && held == 0 && advanceRemaining == 0 && !pauseHintShown && !uiRewindHeld {
+                pauseHintShown = true
+                notice("一時停止中です。Space キー（または ▶︎ ボタン）で再開します")
+            }
+        }
 
         let wantRewind = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
         let wantFF = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
@@ -231,7 +253,8 @@ final class EmulationController {
         var steps = 0
         var audible = false
         if paused {
-            if advanceRemaining > 0 { steps = 1; advanceRemaining -= 1; statusDirty = true }
+            // Frame-advance users press buttons while paused on purpose: no hint for them.
+            if advanceRemaining > 0 { steps = 1; advanceRemaining -= 1; statusDirty = true; pauseHintShown = true }
         } else if fastForward {
             steps = 4
         } else {

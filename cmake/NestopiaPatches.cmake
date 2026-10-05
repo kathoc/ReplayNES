@@ -4,9 +4,9 @@
 # exact-text replacement that MUST match exactly once, otherwise configuration fails, so a core
 # bump can never silently drop a fix. Bump REPLAYNES_NESTOPIA_PATCHLEVEL whenever this list
 # changes: it is part of the core compatibility ID (docs/COMPATIBILITY.md).
-set(REPLAYNES_NESTOPIA_PATCHLEVEL 1)
+set(REPLAYNES_NESTOPIA_PATCHLEVEL 2)
 set(_rn_patch_dir ${CMAKE_BINARY_DIR}/nestopia-patched)
-set(_rn_patches 1 2 3 4)
+set(_rn_patches 1 2 3 4 5)
 
 # --- Patch 1 (NstApu.cpp, LoadState) ---------------------------------------------------------
 # LoadState dropped the scheduled frame-sequencer clock whenever the frame IRQ was inhibited
@@ -111,6 +111,74 @@ set(_rn_p4_old [=[		Apu::Triangle::Triangle()
 		: outputVolume(0) {}]=])
 set(_rn_p4_new [=[		Apu::Triangle::Triangle()
 		: outputVolume(0) { linearCtrl = 0; /* ReplayNES patch 4: no uninitialised power-on state */ }]=])
+
+# --- Patch 5 (board/NstBoardKonamiVrc4.cpp, VRC4 IRQ state) -----------------------------------
+# Timer::M2::count (the CPU cycle of the next IRQ-counter clock, kept relative to the frame) was
+# not part of the state. After a load it restarted from the fresh instance's value, shifting the
+# VRC IRQ counter's clock phase: Gradius II (VRC4, mapper 25) diverged from the uninterrupted
+# run a few dozen frames after loading. Save it in the IRQ chunk. Vrc4::Irq is shared by the
+# VRC4/VRC6/VRC7, World Hero and Waixing SGZ boards, so all of them are fixed.
+set(_rn_p5_file core/board/NstBoardKonamiVrc4.cpp)
+set(_rn_p5_old [=[				void Vrc4::Irq::LoadState(State::Loader& state)
+				{
+					State::Loader::Data<5> data( state );
+
+					unit.ctrl = data[0] & (BaseIrq::ENABLE_1|BaseIrq::NO_PPU_SYNC);
+					Connect( data[0] & BaseIrq::ENABLE_0 );
+					unit.latch = data[1];
+					unit.count[0] = NST_MIN(340,data[2] | data[3] << 8);
+					unit.count[1] = data[4];
+				}
+
+				void Vrc4::Irq::SaveState(State::Saver& state,const dword chunk) const
+				{
+					const byte data[5] =
+					{
+						static_cast<byte>(unit.ctrl | (Connected() ? BaseIrq::ENABLE_0 : 0)),
+						static_cast<byte>(unit.latch),
+						static_cast<byte>(unit.count[0] & 0xFF),
+						static_cast<byte>(unit.count[0] >> 8),
+						static_cast<byte>(unit.count[1])
+					};
+
+					state.Begin( chunk ).Write( data ).End();
+				}]=])
+set(_rn_p5_new [=[				/* ReplayNES patch 5: read/write Timer::M2<BaseIrq>::count without patching NstTimer.hpp
+				 * (explicit instantiation may name private members). */
+				template<typename T> struct RnM2CountTag { typedef T type; friend T rnGet(RnM2CountTag); };
+				template<typename Tag,typename Tag::type Member> struct RnM2Rob { friend typename Tag::type rnGet(Tag) { return Member; } };
+				template struct RnM2Rob<RnM2CountTag<Cycle Timer::M2<Vrc4::BaseIrq>::*>,&Timer::M2<Vrc4::BaseIrq>::count>;
+
+				void Vrc4::Irq::LoadState(State::Loader& state)
+				{
+					State::Loader::Data<5> data( state );
+
+					unit.ctrl = data[0] & (BaseIrq::ENABLE_1|BaseIrq::NO_PPU_SYNC);
+					Connect( data[0] & BaseIrq::ENABLE_0 );
+					unit.latch = data[1];
+					unit.count[0] = NST_MIN(340,data[2] | data[3] << 8);
+					unit.count[1] = data[4];
+
+					/* ReplayNES patch 5: restore the M2 timer phase (see SaveState) */
+					this->*rnGet(RnM2CountTag<Cycle Timer::M2<BaseIrq>::*>()) = state.Read32();
+				}
+
+				void Vrc4::Irq::SaveState(State::Saver& state,const dword chunk) const
+				{
+					const byte data[5] =
+					{
+						static_cast<byte>(unit.ctrl | (Connected() ? BaseIrq::ENABLE_0 : 0)),
+						static_cast<byte>(unit.latch),
+						static_cast<byte>(unit.count[0] & 0xFF),
+						static_cast<byte>(unit.count[0] >> 8),
+						static_cast<byte>(unit.count[1])
+					};
+
+					/* ReplayNES patch 5: the M2 timer's next-clock cycle ("count", relative to the
+					 * frame) was not saved, so a loaded machine clocked the IRQ counter at another
+					 * CPU cycle phase than the uninterrupted run (IRQ timing / state divergence). */
+					state.Begin( chunk ).Write( data ).Write32( this->*rnGet(RnM2CountTag<Cycle Timer::M2<BaseIrq>::*>()) ).End();
+				}]=])
 
 # --- apply ------------------------------------------------------------------------------------
 set(REPLAYNES_NESTOPIA_PATCHED_FILES "")

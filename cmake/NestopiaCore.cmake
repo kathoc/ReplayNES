@@ -20,6 +20,8 @@ add_library(nestopia_core STATIC ${NST_CORE_SOURCES})
 target_include_directories(nestopia_core PUBLIC ${NST_ROOT})
 # Patched copies live in the build tree; their relative includes resolve against the originals.
 target_include_directories(nestopia_core PRIVATE ${NST_ROOT}/core)
+# Patched board files include "../NstTimer.hpp" etc.; core/ and core/board/ share no header names.
+target_include_directories(nestopia_core PRIVATE ${NST_ROOT}/core/board)
 target_compile_definitions(nestopia_core PUBLIC
   NST_NO_ZLIB NST_NO_HQ2X NST_NO_SCALEX NST_NO_2XSAI NST_NO_XBR)
 set_target_properties(nestopia_core PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON

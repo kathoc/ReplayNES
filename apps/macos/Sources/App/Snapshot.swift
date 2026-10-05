@@ -68,7 +68,7 @@ extension AppModel {
         }
 
         let s = emu.latency.snapshot(audio: emu.audio)
-        let info: [String: Any] = [
+        var info: [String: Any] = [
             "frame": frameIndex, "statusFrame": status.frame, "takeLength": status.takeLength,
             "recording": status.recording, "paused": status.paused,
             "presentedFPS": s.presentedFPS, "emulatedToPresentMs": s.emulatedToPresentMs,
@@ -76,6 +76,7 @@ extension AppModel {
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,
             "lateTicks": s.lateTicks,
         ]
+        info.merge(keyboardDiagnostics) { a, _ in a }
         if let data = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: url.deletingPathExtension().appendingPathExtension("json"))
         }

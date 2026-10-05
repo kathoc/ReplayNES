@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --project <path>    open a .nesrec project
         //   --autoplay          with --rom: start running in record mode immediately
         //   --snapshot <png> [--snapshot-delay s] [--quit-after-snapshot]  capture window + stats
+        //   --inject-keys "<sec>:<keyCode>:<d|u>,..."  synthetic key events (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
         func arg(_ name: String) -> String? {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self.model.checkCrashRecovery() }
         }
         pendingOpen = []
+        if let keys = arg("--inject-keys") { model.scheduleInjectedKeys(keys) }
         if let snap = arg("--snapshot") {
             let delay = Double(arg("--snapshot-delay") ?? "3") ?? 3
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {

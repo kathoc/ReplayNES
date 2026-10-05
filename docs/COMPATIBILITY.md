@@ -7,7 +7,7 @@ the core and refuses — never silently converts — projects made with a differ
 
 ```
 nestopia-ue@<first 12 hex of the pinned commit>+p<patch level>+adapter<adapter version>+ntsc
-e.g. nestopia-ue@7b5c87d8dc3c+p1+adapter1+ntsc
+e.g. nestopia-ue@7b5c87d8dc3c+p2+adapter1+ntsc
 ```
 
 | Part | Source | Changes when |
@@ -30,11 +30,13 @@ controllers: standard pads on ports 1/2, simultaneous opposite directions allowe
 upstream and recorded); soft reset = `Machine::Reset(false)`, power cycle = `Machine::Reset(true)`;
 each ROM load uses a new `Emulator` instance.
 
-### Build-time core patches (patch level 1)
+### Build-time core patches (patch level 2)
 
 See `cmake/NestopiaPatches.cmake` (rationale per patch) and ARCHITECTURE_DECISION.md §5:
 1 frame-IRQ clock kept across `LoadState`; 2/3 APU output stage saved/restored (`RNA` chunk);
-4 `Triangle::linearCtrl` initialised. These belong upstream (jgemu/nestopia); once merged, the pin
+4 `Triangle::linearCtrl` initialised; 5 (patch level 2) the VRC IRQ timer phase (`Timer::M2::count`)
+saved in the `Vrc4::Irq` chunk (VRC4/VRC6/VRC7 and two boards reusing it; found with Gradius II,
+mapper 25). Projects recorded with `+p1` are refused by `+p2` builds (core mismatch). These belong upstream (jgemu/nestopia); once merged, the pin
 moves to the upstream commit and the patch level resets — which is a new compat ID.
 
 ## Other version numbers

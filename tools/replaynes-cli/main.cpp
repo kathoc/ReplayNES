@@ -7,6 +7,10 @@
 //   determinism <rom> [--frames N] [--runs R] [--mid F] [--seed S] [--reset-every K] [--mock]
 //   record-random <rom> <project.nesrec> [--frames N] [--seed S] [--mock]
 //   render-hash <project.nesrec> [--rom PATH]   run the export renderer, print hash + timing
+//   screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..] [--p2]
+//                                           run from power-on, write PREFIX_<frame>.png after the
+//                                           given frames; btn = a b select start up down left right,
+//                                           held for D frames (default 6) starting at frame F
 //   version
 #include <algorithm>
 #include <chrono>
@@ -63,6 +67,7 @@ int usage() {
                "  determinism <rom> [--frames N] [--runs R] [--mid F] [--seed S] [--reset-every K] [--mock]\n"
                "  record-random <rom> <project.nesrec> [--frames N] [--seed S] [--mock]\n"
                "  render-hash <project.nesrec> [--rom PATH]\n"
+               "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..]\n"
                "  version\n");
   return 1;
 }
@@ -203,6 +208,118 @@ int cmdRenderHash(const Args& a) {
   return 0;
 }
 
+std::vector<std::string> splitList(const std::string& s) {
+  std::vector<std::string> out;
+  size_t p = 0;
+  while (p <= s.size()) {
+    size_t q = s.find(',', p);
+    if (q == std::string::npos) q = s.size();
+    if (q > p) out.push_back(s.substr(p, q - p));
+    p = q + 1;
+  }
+  return out;
+}
+
+void put32be(std::vector<uint8_t>& v, uint32_t x) {
+  for (int i = 3; i >= 0; --i) v.push_back(uint8_t(x >> (8 * i)));
+}
+
+// Minimal RGB PNG writer (stored deflate blocks, no compression library needed).
+Status writePng(const std::string& path, const uint32_t* bgra, int w, int h) {
+  std::vector<uint8_t> raw;
+  raw.reserve(size_t(h) * (1 + 3 * w));
+  for (int y = 0; y < h; ++y) {
+    raw.push_back(0);
+    for (int x = 0; x < w; ++x) {
+      uint32_t px = bgra[size_t(y) * w + x];
+      raw.push_back(uint8_t(px >> 16));
+      raw.push_back(uint8_t(px >> 8));
+      raw.push_back(uint8_t(px));
+    }
+  }
+  std::vector<uint8_t> z = {0x78, 0x01};
+  for (size_t off = 0; off < raw.size() || off == 0;) {
+    size_t n = std::min<size_t>(65535, raw.size() - off);
+    bool last = off + n >= raw.size();
+    z.push_back(last ? 1 : 0);
+    z.push_back(uint8_t(n));
+    z.push_back(uint8_t(n >> 8));
+    z.push_back(uint8_t(~n));
+    z.push_back(uint8_t(~n >> 8));
+    z.insert(z.end(), raw.begin() + long(off), raw.begin() + long(off + n));
+    off += n;
+    if (last) break;
+  }
+  uint32_t a = 1, b = 0;
+  for (uint8_t c : raw) { a = (a + c) % 65521; b = (b + a) % 65521; }
+  put32be(z, (b << 16) | a);
+  std::vector<uint8_t> png = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+  auto chunk = [&](const char* type, const std::vector<uint8_t>& data) {
+    put32be(png, uint32_t(data.size()));
+    std::vector<uint8_t> td(type, type + 4);
+    td.insert(td.end(), data.begin(), data.end());
+    png.insert(png.end(), td.begin(), td.end());
+    put32be(png, crc32(td.data(), td.size()));
+  };
+  std::vector<uint8_t> ihdr;
+  put32be(ihdr, uint32_t(w));
+  put32be(ihdr, uint32_t(h));
+  ihdr.insert(ihdr.end(), {8, 2, 0, 0, 0});
+  chunk("IHDR", ihdr);
+  chunk("IDAT", z);
+  chunk("IEND", {});
+  return fs::writeFileAtomic(path, png.data(), png.size());
+}
+
+int cmdScreenshot(const Args& a) {
+  std::vector<uint8_t> rom;
+  Status st = fs::readFile(a.pos[1], rom);
+  if (!st.ok()) return fail(st);
+  const std::string prefix = a.get("--out");
+  if (prefix.empty()) return usage();
+  std::vector<uint64_t> at;
+  for (auto& f : splitList(a.get("--at", "300"))) at.push_back(std::strtoull(f.c_str(), nullptr, 10));
+  struct Press { uint8_t mask; uint64_t from, to; };
+  std::vector<Press> presses;
+  static const char* kNames[] = {"a", "b", "select", "start", "up", "down", "left", "right"};
+  for (auto& p : splitList(a.get("--press"))) {
+    size_t atPos = p.find('@');
+    if (atPos == std::string::npos) return usage();
+    std::string name = p.substr(0, atPos);
+    uint8_t mask = 0;
+    for (int i = 0; i < 8; ++i) if (name == kNames[i]) mask = uint8_t(1u << i);
+    if (!mask) { std::fprintf(stderr, "unknown button %s\n", name.c_str()); return 1; }
+    std::string rest = p.substr(atPos + 1);
+    size_t plus = rest.find('+');
+    uint64_t from = std::strtoull(rest.c_str(), nullptr, 10);
+    uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
+    presses.push_back({mask, from, from + dur});
+  }
+  auto core = createCore(a.has("--mock") ? CoreKind::Mock : CoreKind::Nestopia);
+  st = core->loadROM(rom.data(), rom.size());
+  if (!st.ok()) return fail(st);
+  uint64_t last = at.empty() ? 0 : *std::max_element(at.begin(), at.end());
+  for (uint64_t f = 0; f < last; ++f) {
+    uint8_t p1 = 0;
+    for (auto& p : presses) if (f >= p.from && f < p.to) p1 |= p.mask;
+    st = core->stepFrame(p1, 0, true);
+    if (!st.ok()) return fail(st);
+    if (std::find(at.begin(), at.end(), f + 1) != at.end()) {
+      std::string path = prefix + "_" + std::to_string(f + 1) + ".png";
+      st = writePng(path, core->video(), kVideoWidth, kVideoHeight);
+      if (!st.ok()) return fail(st);
+      // crude content summary so a blank frame is obvious without looking at it
+      const uint32_t* v = core->video();
+      std::vector<uint32_t> colors;
+      for (int i = 0; i < kVideoWidth * kVideoHeight && colors.size() < 64; ++i)
+        if (std::find(colors.begin(), colors.end(), v[i]) == colors.end()) colors.push_back(v[i]);
+      std::printf("frame %llu -> %s (%zu%s distinct colors, video hash %016llx)\n", (unsigned long long)(f + 1),
+                  path.c_str(), colors.size(), colors.size() >= 64 ? "+" : "", (unsigned long long)core->videoHash());
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -244,5 +361,6 @@ int main(int argc, char** argv) {
   if (cmd == "determinism") return cmdDeterminism(a);
   if (cmd == "record-random") return cmdRecordRandom(a);
   if (cmd == "render-hash") return cmdRenderHash(a);
+  if (cmd == "screenshot") return cmdScreenshot(a);
   return usage();
 }

@@ -125,8 +125,15 @@ final class InputManager {
         return eventTime
     }
 
+    private var pressSeq: UInt64 = 0 // guarded by eventLock
+
+    /// Count of physical key/button presses so far (any thread). Lets the emulation thread
+    /// notice "a button was pressed while paused" without sampling (sampling consumes latches).
+    var pressSequence: UInt64 { eventLock.lock(); defer { eventLock.unlock() }; return pressSeq }
+
     private func setPressed(_ id: String, _ down: Bool) {
         rn_input_set_pressed(handle, id, down ? 1 : 0)
+        if down { eventLock.lock(); pressSeq &+= 1; eventLock.unlock() }
         noteEvent()
     }
 

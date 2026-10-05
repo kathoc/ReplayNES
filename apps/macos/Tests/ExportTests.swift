@@ -176,4 +176,30 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(cfg?.turboPeriod, 4)
         XCTAssertEqual(Set(cfg?.inputs(for: "p1.a") ?? []), ["gc0:buttonB", "kb:7"])
     }
+
+    /// The documented default play keys/buttons reach P1 (Return/Menu = START etc.).
+    func testDefaultBindingsDrivePlayer1() throws {
+        let inp = rn_input_new()!
+        defer { rn_input_free(inp) }
+        try rnCheck(rn_input_load_json(inp, InputCatalog.defaultConfigJSON()))
+        let cases: [(String, Int32)] = [
+            ("kb:36", RN_BTN_START), ("kb:126", RN_BTN_UP), ("kb:125", RN_BTN_DOWN), ("kb:123", RN_BTN_LEFT),
+            ("kb:124", RN_BTN_RIGHT), ("kb:7", RN_BTN_A), ("kb:6", RN_BTN_B), ("kb:60", RN_BTN_SELECT),
+            ("gc0:menu", RN_BTN_START), ("gc0:options", RN_BTN_SELECT), ("gc0:buttonB", RN_BTN_A), ("gc0:buttonA", RN_BTN_B),
+            ("gc0:dpad.up", RN_BTN_UP), ("gc0:dpad.right", RN_BTN_RIGHT),
+        ]
+        for (i, (id, bit)) in cases.enumerated() {
+            rn_input_set_pressed(inp, id, 1)
+            var p1: UInt8 = 0, p2: UInt8 = 0
+            rn_input_sample_game(inp, UInt64(i * 2), &p1, &p2)
+            XCTAssertEqual(p1, UInt8(bit), id)
+            XCTAssertEqual(p2, 0, id)
+            rn_input_set_pressed(inp, id, 0)
+            rn_input_sample_game(inp, UInt64(i * 2 + 1), &p1, &p2)
+        }
+        rn_input_set_axis(inp, "gc0:lstick", 0, 1)
+        var p1: UInt8 = 0, p2: UInt8 = 0
+        rn_input_sample_game(inp, 100, &p1, &p2)
+        XCTAssertEqual(p1, UInt8(RN_BTN_UP), "left stick up")
+    }
 }

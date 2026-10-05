@@ -20,3 +20,6 @@ rn_add_test(test_persist)
 rn_add_test(test_input)
 rn_add_test(test_render)
 rn_add_test(test_longrun)
+# Uses the developer's own ROMs in <repo>/roms when present (gitignored); skipped otherwise.
+rn_add_test(test_local_roms)
+target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")

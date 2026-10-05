@@ -11,7 +11,7 @@ https://github.com/kathoc/ReplayNES (tag `v<version>`, submodule `third_party/ne
 - License: GNU General Public License v2 or later
 - Copyright (C) 2003-2008 Martin Freij; Nestopia UE contributors (see the project repository)
 - Modifications: ReplayNES applies small determinism fixes at build time (savestate completeness for the
-  APU frame IRQ / audio output stage, initialisation of `Triangle::linearCtrl`). They are documented in
+  APU frame IRQ / audio output stage and the Konami VRC IRQ timer phase, initialisation of `Triangle::linearCtrl`). They are documented in
   `cmake/NestopiaPatches.cmake` and `docs/COMPATIBILITY.md`. The submodule itself is unmodified.
 - Built with `NST_NO_ZLIB`; the bundled zlib, NTSC filter and palette files from the Nestopia repository
   are not compiled into ReplayNES.

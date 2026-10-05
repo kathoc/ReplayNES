@@ -87,6 +87,9 @@ Rules: only `core/` knows Nestopia; only `util/Fs.cpp` has OS calls; only `capi/
      PCM after a load was shifted by ~1 sample and channel timer state diverged. Persisted in an
      extra `RNA` chunk.
   4. `Triangle::linearCtrl` uninitialised at construction → power-on state depended on heap garbage.
+  5. `Timer::M2::count` (next IRQ-counter clock cycle) not saved for the Konami VRC IRQ → after a
+     load the VRC4/6/7 IRQ counter ran at another cycle phase (Gradius II diverged ~40 frames after
+     loading). Saved in the `Vrc4::Irq` chunk; accessed without patching the header.
   Also: reloading a ROM in a used `Emulator` keeps some APU registers, so `loadROM` always creates
   a new `Emulator`; the optional float output filter is disabled (its state is not in states).
 * Result: machine state, video and PCM are bit-identical between power-on runs and runs resumed
