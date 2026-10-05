@@ -1,0 +1,6 @@
+// Clang module for Swift (add engine/include/replaynes to SWIFT_INCLUDE_PATHS / Import Paths,
+// then `import ReplayNES`). Other languages just include replaynes.h.
+module ReplayNES {
+  header "replaynes.h"
+  export *
+}

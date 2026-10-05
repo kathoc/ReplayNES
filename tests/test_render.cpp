@@ -1,0 +1,179 @@
+// Offline renderer (export path) and an end-to-end C API flow.
+#include <thread>
+
+#include "render/OfflineRenderer.h"
+#include "replaynes/replaynes.h"
+#include "support/TestUtil.h"
+#include "support/rn_test.h"
+
+using namespace rn;
+using namespace rntest;
+
+TEST_CASE("render: hashes equal a normal replay; session/timeline unchanged by rendering") {
+  auto s = newSession(CoreKind::Nestopia);
+  auto script = DeterminismHarness::randomScript(1500, 41, 600, 4);
+  REQUIRE(recordScript(*s, script).ok());
+  REQUIRE(s->rewind(700).ok());
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(400, 42)).ok());  // final take has a branch
+  // Normal replay from frame 0 in the session.
+  uint64_t take = s->activeTake(), len = s->takeLength();
+  REQUIRE(s->seek(0).ok());
+  s->setMode(Mode::Replay);
+  std::vector<uint64_t> vh, ah;
+  Hasher64 combined;
+  for (uint64_t f = 0; f < len; ++f) {
+    REQUIRE(s->step(0, 0, 0).ok());
+    vh.push_back(s->videoHash());
+    ah.push_back(s->audioHash());
+    combined.u64(vh.back());
+    combined.u64(ah.back());
+  }
+  auto logBefore = s->timeline().flattenActive();
+  size_t takesBefore = s->takes().size();
+  uint64_t frameBefore = s->frame(), stateBefore = s->stateHash();
+
+  std::unique_ptr<OfflineRenderer> r;
+  REQUIRE(OfflineRenderer::create(*s, 0, 0, r).ok());
+  CHECK_EQ(r->totalFrames(), len);
+  bool same = true;
+  uint64_t idx = 0, samples = 0;
+  const uint32_t* v;
+  const int16_t* a;
+  size_t n;
+  uint64_t fi;
+  while (true) {
+    Status st = r->next(&v, &a, &n, &fi);
+    if (st.code == Err::EndOfTake) break;
+    REQUIRE(st.ok());
+    CHECK_EQ(fi, idx);
+    same = same && Hasher64::of(v, 256 * 240 * 4) == vh[idx] && Session::audioHashOf(a, n) == ah[idx];
+    CHECK_EQ(samples, audioSamplesBefore(idx));  // audio timeline derived from frame count only
+    samples += n;
+    ++idx;
+  }
+  CHECK(same);
+  CHECK_EQ(idx, len);
+  CHECK_EQ(r->hash(), combined.digest());
+  CHECK_EQ(r->framesDone(), len);
+  // Session untouched.
+  CHECK(s->timeline().flattenActive() == logBefore);
+  CHECK_EQ(s->takes().size(), takesBefore);
+  CHECK_EQ(s->activeTake(), take);
+  CHECK_EQ(s->frame(), frameBefore);
+  CHECK_EQ(s->stateHash(), stateBefore);
+
+  // Sub-range render matches the same frames of the full render.
+  std::unique_ptr<OfflineRenderer> part;
+  REQUIRE(OfflineRenderer::create(*s, 500, 900, part).ok());
+  CHECK_EQ(part->totalFrames(), 400u);
+  bool partSame = true;
+  for (uint64_t f = 500; f < 900; ++f) {
+    REQUIRE(part->next(&v, &a, &n, &fi).ok());
+    partSame = partSame && fi == f && Hasher64::of(v, 256 * 240 * 4) == vh[f] && Session::audioHashOf(a, n) == ah[f];
+  }
+  CHECK(partSame);
+  CHECK_EQ(int(part->next(&v, &a, &n, &fi).code), int(Err::EndOfTake));
+  CHECK_EQ(int(OfflineRenderer::create(*s, 10, len + 1, part).code), int(Err::OutOfRange));
+}
+
+TEST_CASE("render: runs on another thread while the session keeps recording") {
+  auto s = newSession(CoreKind::Nestopia);
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1200, 7, 500)).ok());
+  auto snapshot = s->timeline().flattenActive();
+  Replay ref = straightReplay(CoreKind::Nestopia, snapshot);
+  std::unique_ptr<OfflineRenderer> r;
+  REQUIRE(OfflineRenderer::create(*s, 0, 0, r).ok());
+  bool same = true;
+  std::thread th([&] {
+    const uint32_t* v;
+    const int16_t* a;
+    size_t n;
+    uint64_t f;
+    while (r->next(&v, &a, &n, &f).ok())
+      same = same && Hasher64::of(v, 256 * 240 * 4) == ref.video[f] && Session::audioHashOf(a, n) == ref.audio[f];
+  });
+  // Meanwhile: rewind and branch, keep playing (the renderer copied the take).
+  REQUIRE(s->rewind(600).ok());
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(900, 8)).ok());
+  th.join();
+  CHECK(same);
+  CHECK_EQ(r->framesDone(), 1200u);
+}
+
+TEST_CASE("C API: end-to-end flow (new, record, bookmark, branch, undo, render, save, reopen)") {
+  std::string root = tempDir("capi");
+  std::string rom = root + "/game.nes";
+  REQUIRE_EQ(rn_write_test_rom(rom.c_str()), RN_OK);
+  char sha[65];
+  REQUIRE_EQ(rn_sha256_file(rom.c_str(), sha), RN_OK);
+  CHECK_EQ(std::string(sha).size(), size_t(64));
+  std::string proj = root + "/play.nesrec";
+  rn_session* s = nullptr;
+  REQUIRE_EQ(rn_session_new(rom.c_str(), proj.c_str(), nullptr, &s), RN_OK);
+  CHECK_EQ(std::string(rn_session_rom_sha256(s)), std::string(sha));
+  CHECK_EQ(std::string(rn_session_project_dir(s)), proj);
+  rn_input* in = rn_input_new();
+  REQUIRE_EQ(rn_input_bind(in, "kb:x", "p1.a"), RN_OK);
+  REQUIRE_EQ(rn_input_bind(in, "kb:t", "p1.turbo_b"), RN_OK);
+  REQUIRE_EQ(rn_input_bind(in, "kb:b", "hk.bookmark"), RN_OK);
+  for (int f = 0; f < 600; ++f) {
+    rn_input_set_pressed(in, "kb:x", (f / 20) % 2);
+    rn_input_set_pressed(in, "kb:t", (f / 45) % 2);
+    rn_input_set_pressed(in, "kb:b", f == 300);
+    uint32_t edges = 0, held = 0;
+    rn_input_poll_hotkeys(in, &edges, &held);
+    if (edges & RN_HK_BOOKMARK) REQUIRE_EQ(rn_bookmark_add(s, "boss", nullptr), RN_OK);
+    uint8_t p1, p2;
+    rn_input_sample_game(in, rn_frame(s), &p1, &p2);
+    REQUIRE_EQ(rn_step(s, p1, p2, f == 450 ? RN_EV_SOFT_RESET : 0, nullptr), RN_OK);
+  }
+  const uint32_t* px = rn_video(s);
+  REQUIRE(px != nullptr);
+  CHECK_EQ(rn_bookmark_count(s), size_t(1));
+  rn_bookmark_info bi;
+  REQUIRE_EQ(rn_bookmark_get(s, 0, &bi), RN_OK);
+  CHECK_EQ(bi.frame, 300u);
+  CHECK_EQ(std::string(bi.name), std::string("boss"));
+  CHECK(bi.on_active_take);
+  REQUIRE_EQ(rn_rewind(s, 100), RN_OK);
+  rn_step_info info;
+  REQUIRE_EQ(rn_step(s, RN_BTN_START, 0, 0, &info), RN_OK);
+  CHECK(info.branched);
+  CHECK_EQ(rn_take_count(s), size_t(2));
+  rn_take_info ti;
+  REQUIRE_EQ(rn_take_get(s, 1, &ti), RN_OK);
+  CHECK(ti.is_active);
+  CHECK_EQ(ti.branch_frame, 500u);
+  CHECK_EQ(ti.length, 501u);
+  REQUIRE_EQ(rn_undo_take_switch(s), RN_OK);
+  CHECK_EQ(rn_take_length(s), 600u);
+  CHECK_EQ(rn_seek(s, 9999), RN_ERR_OUT_OF_RANGE);
+  CHECK(std::string(rn_last_error()).find("out_of_range") != std::string::npos);
+  rn_renderer* r = nullptr;
+  REQUIRE_EQ(rn_renderer_new(s, 0, 0, &r), RN_OK);
+  CHECK_EQ(rn_renderer_total_frames(r), 600u);
+  const uint32_t* v;
+  const int16_t* a;
+  size_t n;
+  uint64_t fi;
+  rn_status st;
+  while ((st = rn_renderer_next(r, &v, &a, &n, &fi)) == RN_OK) {}
+  CHECK_EQ(st, RN_ERR_END_OF_TAKE);
+  rn_renderer_free(r);
+  REQUIRE_EQ(rn_seek(s, 600), RN_OK);
+  uint64_t h = rn_state_hash(s);
+  REQUIRE_EQ(rn_session_save(s), RN_OK);
+  rn_session_close(s);
+  rn_input_free(in);
+
+  char* manifest = nullptr;
+  REQUIRE_EQ(rn_project_manifest_json(proj.c_str(), &manifest), RN_OK);
+  CHECK(std::string(manifest).find(rn_core_compat_id()) != std::string::npos);
+  rn_string_free(manifest);
+  REQUIRE_EQ(rn_session_open(proj.c_str(), nullptr, nullptr, &s), RN_OK);
+  CHECK_EQ(rn_frame(s), 600u);
+  CHECK_EQ(rn_state_hash(s), h);
+  CHECK_EQ(rn_session_recovered(s), 0);
+  rn_session_close(s);
+  CHECK_EQ(rn_session_open((root + "/missing.nesrec").c_str(), nullptr, nullptr, &s), RN_ERR_NOT_FOUND);
+}
