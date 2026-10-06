@@ -351,6 +351,12 @@ final class InputManager {
         }
     }
 
+    private static func faceSymbols(_ c: GCController) -> [String: String?] {
+        guard let g = c.extendedGamepad else { return [:] }
+        return ["buttonA": g.buttonA.sfSymbolsName, "buttonB": g.buttonB.sfSymbolsName,
+                "buttonX": g.buttonX.sfSymbolsName, "buttonY": g.buttonY.sfSymbolsName]
+    }
+
     private func attach(_ c: GCController) {
         if slots.contains(where: { $0 === c }) { return }
         guard let slot = slots.firstIndex(where: { $0 == nil }) else { return }
@@ -361,7 +367,8 @@ final class InputManager {
         let category = c.productCategory
         let family = ControllerFamily.from(productCategory: category, vendorName: c.vendorName)
         let positions = c.extendedGamepad != nil
-            ? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName) : GCFaceMapping.micro
+            ? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName, symbols: Self.faceSymbols(c))
+            : GCFaceMapping.micro
         let face = FaceNames(positions)
         var labels: [String: String] = [:]
         if let g = c.extendedGamepad {

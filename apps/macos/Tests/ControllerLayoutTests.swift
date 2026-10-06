@@ -248,4 +248,26 @@ final class ControllerLayoutTests: XCTestCase {
             try png.write(to: dir.appendingPathComponent("controller-\(name).png"))
         }
     }
+
+    // MARK: glyph-based positions (8BitDo Pro 3 in Switch mode reports positionally)
+
+    func testNintendoPositionsFollowReportedGlyphs() {
+        // Genuine Switch Pro Controller: buttonA carries the "A" glyph.
+        let genuine = GCFaceMapping.positions(productCategory: "Switch Pro Controller", symbols: [
+            "buttonA": "a.circle", "buttonB": "b.circle", "buttonX": "x.circle", "buttonY": "y.circle"])
+        XCTAssertEqual(genuine["buttonA"], .east)
+        XCTAssertEqual(genuine["buttonB"], .south)
+        XCTAssertEqual(genuine["buttonX"], .north)
+        XCTAssertEqual(genuine["buttonY"], .west)
+        // 8BitDo Pro 3 (same category): buttonA is the bottom "B" button.
+        let eightBitDo = GCFaceMapping.positions(productCategory: "Switch Pro Controller", symbols: [
+            "buttonA": "b.circle", "buttonB": "a.circle", "buttonX": "y.circle", "buttonY": "x.circle"])
+        XCTAssertEqual(eightBitDo["buttonA"], .south)
+        XCTAssertEqual(eightBitDo["buttonB"], .east)
+        XCTAssertEqual(eightBitDo["buttonX"], .west)
+        XCTAssertEqual(eightBitDo["buttonY"], .north)
+        // Missing or ambiguous glyphs fall back to the label assumption.
+        let partial = GCFaceMapping.positions(productCategory: "Switch Pro Controller", symbols: ["buttonA": "b.circle"])
+        XCTAssertEqual(partial["buttonA"], .east)
+    }
 }

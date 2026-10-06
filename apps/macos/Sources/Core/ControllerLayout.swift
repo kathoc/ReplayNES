@@ -95,14 +95,27 @@ enum ControllerFamily: String, CaseIterable, Identifiable {
 
 /// Where GameController.framework's buttonA/B/X/Y physically are.
 enum GCFaceMapping {
-    static func positions(productCategory: String, vendorName: String? = nil) -> [String: FacePosition] {
+    /// `symbols`: GCControllerElement.sfSymbolsName per GameController button ("buttonA" ...).
+    /// Nintendo-layout pads are not reported consistently: a genuine Switch Pro Controller names
+    /// buttonA after its "A" label (east), while e.g. an 8BitDo Pro 3 in Switch mode reports the
+    /// same category but positionally (buttonA = south, glyph "b.circle"). The printed glyph is the
+    /// reliable part, and on a Nintendo layout the glyph fixes the position (A east, B south,
+    /// X north, Y west), so it wins whenever the device reports all four.
+    static func positions(productCategory: String, vendorName: String? = nil,
+                          symbols: [String: String?] = [:]) -> [String: FacePosition] {
         let cat = productCategory.lowercased()
         // A single Joy-Con held sideways (SDL_mfijoystick.m: A = south, B = west, X = east, Y = north).
         if cat.contains("joy-con") && (cat.hasSuffix("(l)") || cat.hasSuffix("(r)")) {
             return ["buttonA": .south, "buttonB": .west, "buttonX": .east, "buttonY": .north]
         }
         if ControllerFamily.from(productCategory: productCategory, vendorName: vendorName) == .nintendo {
-            // Named by label: A is the right (east) button, B the bottom one.
+            let byLabel: [String: FacePosition] = ["A": .east, "B": .south, "X": .north, "Y": .west]
+            var fromGlyphs: [String: FacePosition] = [:]
+            for button in ["buttonA", "buttonB", "buttonX", "buttonY"] {
+                if let l = label(fromSymbol: symbols[button] ?? nil), let pos = byLabel[l] { fromGlyphs[button] = pos }
+            }
+            if fromGlyphs.count == 4, Set(fromGlyphs.values).count == 4 { return fromGlyphs }
+            // No glyphs: assume named by label (A is the right (east) button, B the bottom one).
             return ["buttonA": .east, "buttonB": .south, "buttonX": .north, "buttonY": .west]
         }
         // Apple's documented diamond (GCExtendedGamepad.h): A bottom, B right, X left, Y top.
