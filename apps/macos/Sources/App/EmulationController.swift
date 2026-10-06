@@ -43,6 +43,8 @@ final class EmulationController {
     let frames = FrameBuffer()
     let audio = AudioOutput()
     let latency = LatencyMeter()
+    /// Filmstrip thumbnails of the active take (see Filmstrip.swift / TimelineActions.swift).
+    let thumbnails = ThumbnailCache()
     let input: InputManager
 
     // Callbacks, always invoked on the main thread.
@@ -187,6 +189,7 @@ final class EmulationController {
         practiceLength = 0
         practiceLoop.reset()
         history.release()
+        thumbnails.reset(take: s?.activeTake ?? 0)
         if let s, s.mode == RN_MODE_PRACTICE { try? s.setMode(RN_MODE_RECORD) } // never persisted; defensive
         if let s, let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
         publishStatus(force: true)
@@ -247,6 +250,7 @@ final class EmulationController {
         paused = true
         audio.setMuted(true)
         publishVideo()
+        captureThumbnail(s, frame: s.frame)
     }
 
     // MARK: thread loop
@@ -556,6 +560,7 @@ final class EmulationController {
         } catch let e as RNError {
             switch e.status {
             case RN_ERR_DISCONTINUITY:
+                if practiceSetBFromTake(slot) { return } // A is on this take: B from take frames
                 notice("B地点はA地点から続けてプレイした位置で設定してください（Aの後に巻き戻し・移動・テイク切替をした場合は、Aからやり直すかAを設定し直します）")
             case RN_ERR_NOT_FOUND:
                 notice("先に区間 \(slot + 1) のAを設定してください")
@@ -674,6 +679,7 @@ final class EmulationController {
             }
         }
         if audible { audio.push(s.audio()) }
+        if mode != RN_MODE_PRACTICE { captureThumbnail(s, frame: info.frame) }
         latency.recordStep(sampleToEmulated: tEmu - tSample)
         statusDirty = true
         return true
@@ -811,6 +817,7 @@ final class EmulationController {
         if let s = session {
             // Take lengths / new takes change while recording: refresh the lists ~1/s.
             if s.activeTake != lastPublishedTake || tickCount % 60 == 0 { structureDirty = true }
+            syncThumbnailTake(s)
             lastPublishedTake = s.activeTake
         }
         var st = EmuStatus()

@@ -1,4 +1,4 @@
-// Transport controls + timeline scrubber (essentials only; the rest lives in menus / "…").
+// Transport controls + filmstrip timeline (FilmstripTimeline.swift) (essentials only; the rest lives in menus / "…").
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -70,71 +70,6 @@ struct RecordToggleButton: View {
     }
 }
 
-struct TimelineScrubber: View {
-    @EnvironmentObject var model: AppModel
-    @State private var dragFrame: UInt64?
-
-    var body: some View {
-        let st = model.status
-        if st.practicing {
-            practiceBar(st)
-        } else {
-            takeBar(st)
-        }
-    }
-
-    /// While practicing the take is frozen: show progress inside the A->B section instead.
-    private func practiceBar(_ st: EmuStatus) -> some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let len = max(st.practiceLength, 1)
-            let p = st.practiceLength == 0 ? 0 : min(1, Double(st.practiceFrame) / Double(len))
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.2)).frame(height: 6)
-                RoundedRectangle(cornerRadius: 3).fill(Color.orange.opacity(0.8)).frame(width: w * p, height: 6)
-            }
-            .frame(height: 18)
-        }
-        .frame(height: 18)
-        .help("練習中: A→B の進み具合（テイクは変更されません）")
-    }
-
-    private func takeBar(_ st: EmuStatus) -> some View {
-        let length = max(st.takeLength, 1)
-        return GeometryReader { geo in
-            let w = geo.size.width
-            let cur = Double(dragFrame ?? st.frame) / Double(length)
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.secondary.opacity(0.25)).frame(height: 6)
-                RoundedRectangle(cornerRadius: 3).fill(st.recording ? Color.red.opacity(0.7) : Color.green.opacity(0.7))
-                    .frame(width: max(0, min(w, w * cur)), height: 6)
-                ForEach(model.bookmarks.filter { $0.onActiveTake }) { b in
-                    Rectangle().fill(Color.yellow)
-                        .frame(width: 2, height: 14)
-                        .offset(x: w * Double(b.frame) / Double(length) - 1)
-                        .help(b.name)
-                }
-                Circle().fill(Color.white).shadow(radius: 1)
-                    .frame(width: 14, height: 14)
-                    .offset(x: max(0, min(w, w * cur)) - 7)
-            }
-            .frame(height: 18)
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { v in
-                    let f = UInt64(max(0, min(1, v.location.x / max(w, 1))) * Double(st.takeLength))
-                    if f != dragFrame { dragFrame = f; model.scrub(to: f) }
-                }
-                .onEnded { _ in
-                    // Keep showing the drag position until the emulation thread catches up.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { dragFrame = nil }
-                })
-        }
-        .frame(height: 18)
-        .help("タイムライン: ドラッグで移動（無音・一時停止）")
-    }
-}
-
 struct TransportBar: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
@@ -144,8 +79,9 @@ struct TransportBar: View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
                 Text(leftTime(st)).font(.system(.callout, design: .monospaced))
-                TimelineScrubber()
+                FilmstripTimeline()
                 Text(rightTime(st)).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                TimelineSlotPicker()
             }
             HStack(spacing: 6) {
                 RecordToggleButton()
