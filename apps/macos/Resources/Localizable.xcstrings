@@ -2021,22 +2021,22 @@
         }
       }
     },
-    "Hide overscan (8 px top and bottom)": {
+    "Hide overscan (8 px on each side)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "オーバースキャンを隠す（上下 8px）"
+            "value": "オーバースキャンを隠す（上下左右 8px）"
           }
         }
       }
     },
-    "Hide overscan (crop 8 px top and bottom)": {
+    "Hide overscan (crop 8 px on each side)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "オーバースキャンを隠す（上下 8px をクロップ）"
+            "value": "オーバースキャンを隠す（上下左右 8px をクロップ）"
           }
         }
       }

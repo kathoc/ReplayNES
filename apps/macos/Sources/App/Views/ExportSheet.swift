@@ -37,6 +37,8 @@ struct ExportSheet: View {
         var s = settings
         s.cropTop = cropOverscan ? 8 : 0
         s.cropBottom = cropOverscan ? 8 : 0
+        s.cropLeft = cropOverscan ? 8 : 0
+        s.cropRight = cropOverscan ? 8 : 0
         return ExportGeometry(s)
     }
 
@@ -48,7 +50,7 @@ struct ExportSheet: View {
             Picker("Size", selection: $settings.preset) {
                 ForEach(ExportSettings.SizePreset.all) { Text($0.label).tag($0) }
             }
-            Toggle("Hide overscan (crop 8 px top and bottom)", isOn: $cropOverscan)
+            Toggle("Hide overscan (crop 8 px on each side)", isOn: $cropOverscan)
             Picker("Pixel Aspect Ratio", selection: $settings.pixelAspect87) {
                 Text("1:1 (square pixels)").tag(false)
                 Text("8:7 (as on a CRT TV)").tag(true)
@@ -104,6 +106,8 @@ struct ExportSheet: View {
         s.crt = applyCRT ? CRTSettingsModel.shared.settings : nil
         s.cropTop = cropOverscan ? 8 : 0
         s.cropBottom = cropOverscan ? 8 : 0
+        s.cropLeft = cropOverscan ? 8 : 0
+        s.cropRight = cropOverscan ? 8 : 0
         if wholeTake {
             s.startFrame = 0; s.endFrame = 0
         } else {

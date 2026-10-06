@@ -80,10 +80,11 @@ final class GameRenderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
-    /// Destination rectangle (pixels, origin bottom-left) and overscan crop for a drawable size.
+    /// Destination rectangle (pixels, origin bottom-left) and overscan crop (pixels hidden on every
+    /// side) for a drawable size.
     static func viewport(drawableSize size: CGSize, options: DisplayOptions) -> (CGRect, Int) {
         let crop = options.hideOverscan ? 8 : 0
-        let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop), srcW = Double(RN_VIDEO_WIDTH)
+        let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop), srcW = Double(Int(RN_VIDEO_WIDTH) - 2 * crop)
         let par = options.pixelAspect87 ? 8.0 / 7.0 : 1.0
         var scale = min(size.width / (srcW * par), size.height / srcH)
         if options.integerScale && scale >= 1 { scale = floor(scale) }
@@ -133,10 +134,11 @@ final class GameRenderer: NSObject, MTKViewDelegate {
         if !crtShown {
             guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
             let (r, crop) = Self.viewport(drawableSize: size, options: options)
-            let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop)
+            let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop), srcW = Double(Int(RN_VIDEO_WIDTH) - 2 * crop)
             var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float(r.minY / size.height * 2 - 1),
                                     Float(r.width / size.width * 2), Float(r.height / size.height * 2))
-            var uvr = SIMD4<Float>(0, Float(Double(crop) / Double(RN_VIDEO_HEIGHT)), 1, Float(srcH / Double(RN_VIDEO_HEIGHT)))
+            var uvr = SIMD4<Float>(Float(Double(crop) / Double(RN_VIDEO_WIDTH)), Float(Double(crop) / Double(RN_VIDEO_HEIGHT)),
+                                   Float(srcW / Double(RN_VIDEO_WIDTH)), Float(srcH / Double(RN_VIDEO_HEIGHT)))
             enc.setRenderPipelineState(pipeline)
             enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)

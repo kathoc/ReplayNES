@@ -209,7 +209,7 @@ struct DisplayTab: View {
                     Text("FILL (fill the window, aspect ratio kept)").tag(false)
                 }
                 Toggle("8:7 pixel aspect ratio (as on a CRT TV)", isOn: $model.displayPAR87)
-                Toggle("Hide overscan (8 px top and bottom)", isOn: $model.hideOverscan)
+                Toggle("Hide overscan (8 px on each side)", isOn: $model.hideOverscan)
                 Toggle("Show latency measurement", isOn: $model.showLatency)
             }
             Section("Flash Reduction (Photosensitivity)") {
