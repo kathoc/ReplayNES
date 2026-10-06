@@ -200,7 +200,10 @@ TEST_CASE("flash filter exact: static luts and per-pixel metrics") {
   for (int lvl = 0; lvl <= 3; ++lvl) {
     rn::FlashParams a = rn::FlashFilter::params(rn::FlashLevel(lvl));
     rnref::FlashParams b = rnref::FlashFilter::params(rnref::FlashLevel(lvl));
-    CHECK(std::memcmp(&a, &b, sizeof(a)) == 0);
+    CHECK(a.lumThreshold == b.lumThreshold && a.lumRequireDark == b.lumRequireDark && a.redThreshold == b.redThreshold &&
+          a.redRequireSaturation == b.redRequireSaturation && a.budget == b.budget && a.areaPermille == b.areaPermille &&
+          a.lumHold == b.lumHold && a.redHold == b.redHold && a.lumRate == b.lumRate && a.redRate == b.redRate &&
+          a.stickyFrames == b.stickyFrames);
   }
 }
 

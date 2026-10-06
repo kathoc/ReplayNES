@@ -23,6 +23,13 @@
 //     blocks stay rate-limited ("sticky") for a few frames so the residual flicker stays tiny.
 //   * Blocks that are not suppressed are copied bit-exactly, so normal content is untouched.
 // All arithmetic is integer (16-bit linear light) for bit-identical results on every platform.
+//
+// Implementation: the per-pixel metrics of the input, the shown frame and the references are cached
+// (block-major arrays), blocks equal to the last input are not measured again, pixel metrics are
+// memoised per pair of adjacent pixels, and the hold/smooth bisection works on the distinct
+// (previous, new) pixel values of a block instead of on every pixel. All of it computes exactly the
+// same integers as the straightforward per-pixel formulation (tests/test_flash_filter_exact.cpp
+// compares against a frozen copy of it).
 #pragma once
 #include <array>
 #include <cstdint>
@@ -95,24 +102,70 @@ class FlashFilter {
     int64_t stickyUntil = -1;
   };
 
+  static constexpr int kBlockPx = kBlock * kBlock;
+
   int classify(const Tracker& t, int v, bool sat, bool isRed) const;  // +1/-1 transition, 0 none
   bool update(Tracker& t, int v, bool sat, bool isRed) const;          // true if a transition
   int opposingDistance(const Tracker& t, int v) const;
   int transitionsInWindow(const Block& b) const;
-  static Stats blockStats(const uint32_t* frame, int bx, int by);
-  // Pixels of the block whose luminance / red metric changes by at least the thresholds.
-  int changedPixels(const uint32_t* in, const uint32_t* ref, int bx, int by) const;
-  void copyBlock(const uint32_t* src, uint32_t* dst, int bx, int by) const;
-  // Writes the blend of prev_ and in (weight a/256 of in) for one block into out; returns stats.
-  Stats blendBlock(const uint32_t* in, uint32_t* out, int bx, int by, int a) const;
+  // Stats of one block of `in` (inS_) plus its per-pixel luminance / red metric (inM_). A block
+  // equal to the previous input reuses what was measured then.
+  void measureBlock(const uint32_t* in, int bx, int by);
+  // Metrics of two horizontally adjacent pixels (a pure function of their values), memoised in a
+  // direct-mapped cache. The all-zero entry is exact for two pixels 0, so the cache starts valid.
+  struct PairEntry {
+    uint64_t key = 0;     // the two pixels as stored in memory
+    uint32_t lr[2] = {};  // per pixel: luminance | red metric << 16
+    uint64_t s0 = 0;      // sum of luminance | sum of red metric << 32
+    uint64_t s1 = 0;      // sum of linear R | sum of linear R+G+B << 32 (block saturation test)
+  };
+  static constexpr int kPairCacheBits = 11;
+  static PairEntry measurePair(const uint32_t* px, uint64_t key);
+  // Pixels of block i whose luminance / red metric changes by at least the thresholds, against the
+  // previous output (first) and the block's reference (second). Uses the per-pixel caches.
+  void changedPixels(size_t i, int& vsPrev, int& vsRef) const;
+  // Blend of prev_ and in (weight a/256 of in) for one block, in linear light, quantised to sRGB.
+  // prepareBlend() reduces the block to its distinct (prev, in) pixel value pairs ("units");
+  // blendStats(a) gives the stats of the quantised blend; writeBlend(a) writes it to out and the
+  // block's per-pixel metrics to prevM_, and returns its stats.
+  void prepareBlend(const uint32_t* in, int bx, int by);
+  Stats blendStats(int a) const;
+  Stats writeBlend(uint32_t* out, int bx, int by, int a);
 
   FlashLevel level_;
   FlashParams p_;
   bool primed_ = false;
   int64_t frame_ = 0;
   std::vector<uint32_t> prev_;  // last displayed frame
-  std::vector<uint32_t> ref_;   // per block: displayed pixels when its luminance extremum was set
   std::array<Block, kBlocks> blocks_;
+
+  // Per-pixel luminance | red metric << 16, block-major (block i = [i*kBlockPx, (i+1)*kBlockPx)),
+  // of the current input, the last displayed frame (prev_) and, per block, the reference: the
+  // displayed block when its luminance extremum was set.
+  std::vector<uint32_t> inM_, prevM_, refM_;
+  // Speed-only caches (pure functions of pixel content; they never change the output).
+  std::array<Stats, kBlocks> inS_{};       // stats of the input block that inM_ describes
+  std::array<char, kBlocks> prevIsLastIn_{};  // prev_ block == input block inS_/inM_ describe
+  int directBlocks_ = 0;                   // blocks left to measure without the pair cache
+  int identityBlocks_ = 0;                 // blocks left to blend without deduplication
+  std::vector<PairEntry> pairCache_;
+  // Blend scratch of one block (see prepareBlend).
+  struct BlendScratch {
+    int units = 0, pairs = 0;
+    // Per unit (distinct (prev, in) pixel value pair) and channel: lin(prev) * 256 + 128 and
+    // lin(in) - lin(prev), so that the blend (lin(prev) * (256 - a) + lin(in) * a + 128) >> 8 is
+    // (base + diff * a) >> 8; and its pixel count.
+    int32_t base[3][kBlockPx], diff[3][kBlockPx], count[kBlockPx];
+    uint16_t pairUnit[kBlockPx / 2][2];  // per pixel-pair unit: the units of its two pixels
+    uint16_t pairOf[kBlockPx / 2];       // per pixel pair of the block (row-major): its pair unit
+    // Hash tables (tag = generation << 9 | index): units (512 slots), pair units (256 slots).
+    uint64_t key[2 * kBlockPx];
+    uint32_t tag[2 * kBlockPx] = {};
+    uint64_t pkey[kBlockPx][2];
+    uint32_t ptag[kBlockPx] = {};
+    uint32_t gen = 0;
+  };
+  std::vector<BlendScratch> blend_;  // one element (heap: keeps the object small and movable)
 };
 
 }  // namespace rn

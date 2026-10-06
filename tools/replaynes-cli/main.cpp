@@ -11,11 +11,12 @@
 //                                           run from power-on, write PREFIX_<frame>.png after the
 //                                           given frames; btn = a b select start up down left right,
 //                                           held for D frames (default 6) starting at frame F
-//   bench-flash <rom> [frames=600] [level=2] [--reps R]
+//   bench-flash <rom> [frames=600] [level=2] [--reps R] [--warmup W]
 //                                           emulate `frames` frames from power-on (no input) into
 //                                           memory, then time only rn_flash_filter_process per frame
-//                                           (R passes, filter reset before each); prints mean/p50/p99
-//                                           ms per frame and a hash of all outputs + infos
+//                                           (W untimed passes, then R timed passes; filter reset
+//                                           before each); prints mean/p50/p99 ms per frame and a
+//                                           hash of all outputs + infos
 //   version
 #include <algorithm>
 #include <chrono>
@@ -73,7 +74,7 @@ int usage() {
                "  record-random <rom> <project.nesrec> [--frames N] [--seed S] [--mock]\n"
                "  render-hash <project.nesrec> [--rom PATH]\n"
                "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..]\n"
-               "  bench-flash <rom> [frames=600] [level=0..3, default 2] [--reps R]\n"
+               "  bench-flash <rom> [frames=600] [level=0..3, default 2] [--reps R] [--warmup W]\n"
                "  version\n");
   return 1;
 }
@@ -330,6 +331,7 @@ int cmdBenchFlash(const Args& a) {
   const int frames = a.pos.size() > 2 ? std::atoi(a.pos[2].c_str()) : 600;
   const int level = a.pos.size() > 3 ? std::atoi(a.pos[3].c_str()) : 2;
   const int reps = std::max(1, int(a.num("--reps", 1)));
+  const int warmup = int(a.num("--warmup", 0));
   if (frames <= 0) return usage();
   rn_session_options opt;
   rn_session_options_init(&opt);
@@ -353,6 +355,10 @@ int cmdBenchFlash(const Args& a) {
   if (!ff) {
     std::fprintf(stderr, "%s\n", rn_last_error());
     return 2;
+  }
+  for (int r = 0; r < warmup; ++r) {  // untimed: lets the CPU clock ramp up (powersave governors)
+    rn_flash_filter_reset(ff);
+    for (int f = 0; f < frames; ++f) rn_flash_filter_process(ff, in.data() + npx * size_t(f), out.data(), nullptr);
   }
   std::vector<double> ms;
   ms.reserve(size_t(frames) * size_t(reps));
@@ -385,8 +391,8 @@ int cmdBenchFlash(const Args& a) {
   std::vector<double> sorted = ms;
   std::sort(sorted.begin(), sorted.end());
   auto pct = [&](double p) { return sorted[std::min(sorted.size() - 1, size_t(p * double(sorted.size())))]; };
-  std::printf("flash level %d, %d frames x %d pass(es): mean %.4f ms  p50 %.4f ms  p99 %.4f ms  max %.4f ms\n", level,
-              frames, reps, sum / double(ms.size()), pct(0.50), pct(0.99), sorted.back());
+  std::printf("flash level %d, %d frames x %d pass(es) (+%d warm-up): mean %.4f ms  p50 %.4f ms  p99 %.4f ms  max %.4f ms\n", level,
+              frames, reps, warmup, sum / double(ms.size()), pct(0.50), pct(0.99), sorted.back());
   std::printf("altered frames %d, large-area frames %d, output hash %016llx\n", altered, large,
               (unsigned long long)hash);
   return 0;
