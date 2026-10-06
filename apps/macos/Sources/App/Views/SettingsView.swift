@@ -29,8 +29,10 @@ struct BindingsTab: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
             } else {
-                Text("ホットキーはゲーム入力とは別に処理され、記録されません。一時停止中も有効です。")
+                Text("ホットキーはゲーム入力とは別に処理され、記録されません。一時停止中も有効です。コントローラーは ReplayNES が前面にないとき（OBS 操作中など）も使えます。")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("一時停止中はコントローラーの十字キー ←/→ でコマ戻し / コマ送り（押し続けると連続）", isOn: $model.dpadStepWhenPaused)
+                    .font(.caption)
             }
             List {
                 ForEach(InputCatalog.allActions.filter { $0.group == g }) { action in
@@ -118,7 +120,10 @@ struct DisplayTab: View {
     var body: some View {
         Form {
             Section("表示") {
-                Toggle("整数倍で拡大（にじみ・ムラなし）", isOn: $model.integerScale)
+                Picker("表示サイズ", selection: $model.integerScale) {
+                    Text("等倍（収まる最大の整数倍・くっきり）").tag(true)
+                    Text("FILL（縦横比を保ってウインドウいっぱい）").tag(false)
+                }
                 Toggle("ピクセル比 8:7（ブラウン管の見た目）", isOn: $model.displayPAR87)
                 Toggle("オーバースキャンを隠す（上下 8px）", isOn: $model.hideOverscan)
                 Toggle("レイテンシ計測を表示", isOn: $model.showLatency)
@@ -138,10 +143,10 @@ struct DisplayTab: View {
             StreamOutputSection()
             Section("音声") {
                 Slider(value: $model.volume, in: 0...1) { Text("音量") }
-                Text("一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。").font(.caption).foregroundStyle(.secondary)
+                Text("一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。ReplayNES が前面になくても音は止まりません。").font(.caption).foregroundStyle(.secondary)
             }
             Section("操作") {
-                Toggle("巻き戻しを離したら一時停止する", isOn: $model.pauseAfterRewind)
+                Toggle("巻き戻し・早送りを離したら一時停止する", isOn: $model.pauseAfterRewind)
                 Picker("自動保存の間隔", selection: $model.autosaveInterval) {
                     Text("3 秒").tag(3.0)
                     Text("5 秒").tag(5.0)

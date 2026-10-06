@@ -24,6 +24,16 @@ final class InputManager {
 
     /// Whether keyboard events should reach the game (false while a text field has focus, etc).
     var keyboardEnabled: () -> Bool = { true }
+    /// gcQueue: paused D-pad frame stepping (direction -1/+1, pressed). Wired to the emulation thread.
+    var onPausedStep: ((Int, Bool) -> Void)?
+
+    // Paused stepping: while the emulation is paused, controller D-pad ←/→ step frames and are
+    // NOT sent to the game (so a frame advance never records them).
+    private let stepLock = NSLock()
+    private var stepModeOn = false              // stepLock
+    private var stepEnabled = true              // stepLock (setting)
+    private var stepDirs: [String: Int] = [:]   // stepLock
+    private var routedSteps: Set<String> = []   // gcQueue only
 
     private var monitor: Any?
     private var slots: [GCController?] = [nil, nil, nil, nil]
@@ -51,11 +61,78 @@ final class InputManager {
     // MARK: configuration (persisted as the engine's own JSON in Application Support)
 
     private func loadConfig() {
+        defer { refreshStepDirections() }
         if let text = try? String(contentsOf: Self.configURL, encoding: .utf8),
            rn_input_load_json(handle, text) == RN_OK {
+            migrateControllerLayout()
             return
         }
         _ = rn_input_load_json(handle, InputCatalog.defaultConfigJSON())
+        UserDefaults.standard.set(InputCatalog.controllerLayoutVersion, forKey: "controllerLayoutVersion")
+    }
+
+    /// Saved bindings from 0.1.x still carry the old controller hotkeys (L1 rewind, R1 FF,
+    /// L2/R2 step): move them once to the 0.2.0 layout unless the user customised them.
+    private func migrateControllerLayout() {
+        let d = UserDefaults.standard
+        guard d.integer(forKey: "controllerLayoutVersion") < InputCatalog.controllerLayoutVersion else { return }
+        d.set(InputCatalog.controllerLayoutVersion, forKey: "controllerLayoutVersion")
+        let m = InputCatalog.controllerLayoutMigration(config)
+        guard !m.bind.isEmpty else { return }
+        for (i, a) in m.unbind { _ = rn_input_unbind(handle, i, a) }
+        for (i, a) in m.bind { _ = rn_input_bind(handle, i, a) }
+        if let p = rn_input_save_json(handle) {
+            try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
+            rn_string_free(p)
+        }
+    }
+
+    private func refreshStepDirections() {
+        let dirs = InputCatalog.pausedStepDirections(config)
+        stepLock.lock(); stepDirs = dirs; stepLock.unlock()
+    }
+
+    /// Setting 「一時停止中は十字キー←→でコマ送り」.
+    func setPausedStepEnabled(_ on: Bool) {
+        stepLock.lock(); stepEnabled = on; stepLock.unlock()
+    }
+
+    /// Emulation thread: paused state changed. Entering pause releases D-pad ←/→ held for the
+    /// game so a following frame advance does not record them.
+    func setPausedStepMode(_ on: Bool) {
+        stepLock.lock()
+        let changed = stepModeOn != on
+        stepModeOn = on
+        let ids = Array(stepDirs.keys)
+        stepLock.unlock()
+        guard changed, on else { return }
+        gcQueue.async { [weak self] in
+            guard let self else { return }
+            for id in ids where self.lastState[id] == true && !self.routedSteps.contains(id) {
+                rn_input_set_pressed(self.handle, id, 0)
+                self.routedSteps.insert(id) // its release is then swallowed too
+            }
+        }
+    }
+
+    /// gcQueue: returns true if the change was consumed by paused stepping.
+    private func routePausedStep(_ id: String, _ down: Bool) -> Bool {
+        stepLock.lock()
+        let dir = stepDirs[id]
+        let active = stepModeOn && stepEnabled
+        stepLock.unlock()
+        guard let dir else { return false }
+        if down {
+            guard active else { return false }
+            routedSteps.insert(id)
+            onPausedStep?(dir, true)
+            return true
+        }
+        if routedSteps.remove(id) != nil {
+            onPausedStep?(dir, false)
+            return true
+        }
+        return false
     }
 
     var config: InputCatalog.Config {
@@ -74,6 +151,7 @@ final class InputManager {
                 NSLog("ReplayNES: failed to save bindings: \(error)")
             }
         }
+        refreshStepDirections()
         onConfigChanged?(config)
     }
 
@@ -198,6 +276,9 @@ final class InputManager {
     // MARK: game controllers
 
     func startControllers() {
+        // Controller input keeps working while another app (e.g. OBS) is frontmost. The keyboard
+        // stays foreground-only (local event monitor).
+        GCController.shouldMonitorBackgroundEvents = true
         let nc = NotificationCenter.default
         nc.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] n in
             if let c = n.object as? GCController { self?.attach(c) }
@@ -230,7 +311,15 @@ final class InputManager {
         slots[slot] = nil
         let prefix = "gc\(slot):"
         rn_input_release_prefix(handle, prefix)
-        gcQueue.async { [weak self] in self?.lastState = self?.lastState.filter { !$0.key.hasPrefix(prefix) } ?? [:] }
+        gcQueue.async { [weak self] in
+            guard let self else { return }
+            self.lastState = self.lastState.filter { !$0.key.hasPrefix(prefix) }
+            for id in self.routedSteps where id.hasPrefix(prefix) {
+                self.routedSteps.remove(id)
+                self.stepLock.lock(); let d = self.stepDirs[id]; self.stepLock.unlock()
+                if let d { self.onPausedStep?(d, false) }
+            }
+        }
         publishControllers()
         onDisconnect?(c.vendorName ?? "コントローラー")
     }
@@ -253,7 +342,14 @@ final class InputManager {
             }
             return
         }
+        if routePausedStep(id, down) { return }
         setPressed(id, down)
+    }
+
+    /// Test hook (--inject-pad): a controller element change on slot 0, through the same path
+    /// as a real controller (hotkeys, paused stepping, game input).
+    func injectController(_ element: String, _ down: Bool) {
+        gcQueue.async { [weak self] in self?.set("gc0:", element, down) }
     }
 
     private func stick(_ prefix: String, _ name: String, _ x: Float, _ y: Float) {

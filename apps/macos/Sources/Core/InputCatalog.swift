@@ -36,18 +36,18 @@ enum InputCatalog {
     }()
 
     static let hotkeyActions: [InputAction] = [
+        InputAction(id: "hk.rewind", label: "巻き戻し（押している間）", group: .hotkey),
+        InputAction(id: "hk.fast_forward", label: "早送り（押している間・録画済みの範囲だけ）", group: .hotkey),
         InputAction(id: "hk.pause", label: "一時停止 / 再開", group: .hotkey),
+        InputAction(id: "hk.slow", label: "スロー切替（等速 ⇔ 1/2）", group: .hotkey),
         InputAction(id: "hk.frame_advance", label: "コマ送り", group: .hotkey),
         InputAction(id: "hk.step_back", label: "1コマ戻る", group: .hotkey),
-        InputAction(id: "hk.rewind", label: "巻き戻し (押している間)", group: .hotkey),
-        InputAction(id: "hk.fast_forward", label: "早送り (押している間)", group: .hotkey),
-        InputAction(id: "hk.slow", label: "スロー切替 (等速→1/2→1/4)", group: .hotkey),
+        InputAction(id: "hk.toggle_mode", label: "録画 / 再生 切替（練習中は練習をやめる）", group: .hotkey),
         InputAction(id: "hk.bookmark", label: "ブックマーク追加", group: .hotkey),
+        InputAction(id: "hk.undo_take", label: "前の試行へ戻す", group: .hotkey),
+        InputAction(id: "hk.save", label: "保存", group: .hotkey),
         InputAction(id: "hk.soft_reset", label: "ソフトリセット", group: .hotkey),
         InputAction(id: "hk.power_cycle", label: "電源再投入", group: .hotkey),
-        InputAction(id: "hk.toggle_mode", label: "録画 / 再生モード切替", group: .hotkey),
-        InputAction(id: "hk.save", label: "保存", group: .hotkey),
-        InputAction(id: "hk.undo_take", label: "前の試行へ戻す", group: .hotkey),
     ]
 
     static var allActions: [InputAction] { gameActions + hotkeyActions }
@@ -71,13 +71,49 @@ enum InputCatalog {
         ("gc0:lstick.up", "p1.up"), ("gc0:lstick.down", "p1.down"), ("gc0:lstick.left", "p1.left"), ("gc0:lstick.right", "p1.right"),
         ("gc0:buttonB", "p1.a"), ("gc0:buttonA", "p1.b"), ("gc0:buttonY", "p1.turbo_a"), ("gc0:buttonX", "p1.turbo_b"),
         ("gc0:menu", "p1.start"), ("gc0:options", "p1.select"),
-        ("gc0:leftShoulder", "hk.rewind"), ("gc0:rightShoulder", "hk.fast_forward"),
-        ("gc0:leftTrigger", "hk.step_back"), ("gc0:rightTrigger", "hk.frame_advance"),
+        // In-game controls (hotkeys, never recorded): R2 hold = rewind, L2 hold = fast-forward,
+        // L = slow 1/2 toggle, R = pause/play. While paused the D-pad ←/→ steps frames
+        // (frontend rule, see InputManager.pausedStepDirection).
+        ("gc0:rightTrigger", "hk.rewind"), ("gc0:leftTrigger", "hk.fast_forward"),
+        ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
         ("gc1:dpad.up", "p2.up"), ("gc1:dpad.down", "p2.down"), ("gc1:dpad.left", "p2.left"), ("gc1:dpad.right", "p2.right"),
         ("gc1:lstick.up", "p2.up"), ("gc1:lstick.down", "p2.down"), ("gc1:lstick.left", "p2.left"), ("gc1:lstick.right", "p2.right"),
         ("gc1:buttonB", "p2.a"), ("gc1:buttonA", "p2.b"), ("gc1:buttonY", "p2.turbo_a"), ("gc1:buttonX", "p2.turbo_b"),
         ("gc1:menu", "p2.start"), ("gc1:options", "p2.select"),
     ]
+
+    /// Controller hotkeys of layout 1 (ReplayNES <= 0.1.x defaults).
+    static let legacyControllerHotkeys: [(String, String)] = [
+        ("gc0:leftShoulder", "hk.rewind"), ("gc0:rightShoulder", "hk.fast_forward"),
+        ("gc0:leftTrigger", "hk.step_back"), ("gc0:rightTrigger", "hk.frame_advance"),
+    ]
+    /// Controller hotkeys of layout 2 (0.2.0+).
+    static let controllerHotkeys: [(String, String)] = [
+        ("gc0:rightTrigger", "hk.rewind"), ("gc0:leftTrigger", "hk.fast_forward"),
+        ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
+    ]
+    static let controllerLayoutVersion = 2
+
+    /// One-time upgrade of saved bindings to the 0.2.0 controller layout. Only applies when the
+    /// user still has the untouched old controller hotkeys (customised layouts are kept).
+    /// Returns (unbind, bind) pairs, empty if nothing to do.
+    static func controllerLayoutMigration(_ c: Config) -> (unbind: [(String, String)], bind: [(String, String)]) {
+        func has(_ p: (String, String)) -> Bool { c.bindings.contains { $0.input == p.0 && $0.action == p.1 } }
+        let hotkeyOnGC0 = c.bindings.filter { $0.input.hasPrefix("gc0:") && $0.action.hasPrefix("hk.") }
+        guard legacyControllerHotkeys.allSatisfy(has), hotkeyOnGC0.count == legacyControllerHotkeys.count else { return ([], []) }
+        return (legacyControllerHotkeys, controllerHotkeys)
+    }
+
+    /// Frame-step direction for a physical id while paused: controller ids bound to a D-pad
+    /// left/right game action (-1 = back, +1 = forward). Sticks are excluded (they drift).
+    static func pausedStepDirections(_ c: Config) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for b in c.bindings where b.input.hasPrefix("gc") && !b.input.contains("stick") {
+            if b.action == "p1.left" || b.action == "p2.left" { out[b.input] = -1 }
+            if b.action == "p1.right" || b.action == "p2.right" { out[b.input] = 1 }
+        }
+        return out
+    }
 
     static func defaultConfigJSON() -> String {
         let b = defaultBindings.map { ["input": $0.0, "action": $0.1] }
@@ -143,7 +179,7 @@ enum InputCatalog {
                 "dpad.up": "十字↑", "dpad.down": "十字↓", "dpad.left": "十字←", "dpad.right": "十字→",
                 "lstick.up": "左スティック↑", "lstick.down": "左スティック↓", "lstick.left": "左スティック←", "lstick.right": "左スティック→",
                 "rstick.up": "右スティック↑", "rstick.down": "右スティック↓", "rstick.left": "右スティック←", "rstick.right": "右スティック→",
-                "leftShoulder": "L1", "rightShoulder": "R1", "leftTrigger": "L2", "rightTrigger": "R2",
+                "leftShoulder": "L(L1)", "rightShoulder": "R(R1)", "leftTrigger": "L2", "rightTrigger": "R2",
                 "menu": "Menu", "options": "Options", "home": "Home", "leftThumb": "L3", "rightThumb": "R3",
             ]
             return "パッド\(slot + 1) " + (pretty[name] ?? name)

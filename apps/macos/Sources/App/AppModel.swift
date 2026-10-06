@@ -40,16 +40,25 @@ final class AppModel: ObservableObject {
     @Published var showExport = false
     @Published var exportJob: ExportJob?
     @Published var capturingAction: String?
+    @Published var practiceSlots: [PracticeSlotInfo] = (0..<EngineSession.practiceSlotCount).map { PracticeSlotInfo(index: $0) }
+    /// Practice OSD (A/B slots) over the viewport. Always shown while practicing.
+    @Published var showPracticePanel = false
+    /// Set while --snapshot captures the window: the current frame drawn by SwiftUI under the overlays.
+    @Published var snapshotFrame: CGImage?
 
     // Preferences
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
     @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs() } }
     @AppStorage("autosaveInterval") var autosaveInterval = 5.0 { didSet { pushPrefs() } }
+    /// 等倍 (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume) } }
-    @AppStorage("showSidebar") var showSidebar = true { didSet { objectWillChange.send() } }
+    /// Hidden by default since 0.2.0 (new key so earlier "shown" settings do not carry over).
+    @AppStorage("sidebarVisible") var showSidebar = false { didSet { objectWillChange.send() } }
+    /// While paused, controller D-pad ←/→ step one frame back/forward (not sent to the game).
+    @AppStorage("dpadStepWhenPaused") var dpadStepWhenPaused = true { didSet { input.setPausedStepEnabled(dpadStepWhenPaused) } }
     /// Photosensitive flash reduction level (FlashLevel raw value). Default 標準 (on): safety first.
     @AppStorage("flashReduction") var flashReduction = FlashLevel.standard.rawValue { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("showFlashIndicator") var showFlashIndicator = true { didSet { objectWillChange.send() } }
@@ -65,6 +74,7 @@ final class AppModel: ObservableObject {
 
     weak var mainWindow: NSWindow?
     private var statsTimer: Timer?
+    private var activity: NSObjectProtocol?
     private var noticeWork: DispatchWorkItem?
 
     private init() {
@@ -74,7 +84,12 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             if self.status != st { self.status = st }
         }
-        emu.onStructure = { [weak self] b, t in self?.bookmarks = b; self?.takes = t }
+        emu.onStructure = { [weak self] st in
+            guard let self else { return }
+            if self.bookmarks != st.bookmarks { self.bookmarks = st.bookmarks }
+            if self.takes != st.takes { self.takes = st.takes }
+            if !st.practiceSlots.isEmpty, self.practiceSlots != st.practiceSlots { self.practiceSlots = st.practiceSlots }
+        }
         emu.onError = { [weak self] title, msg in self?.showError(title, msg) }
         emu.onNotice = { [weak self] text in self?.flash(text) }
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
@@ -84,6 +99,7 @@ final class AppModel: ObservableObject {
             self.emu.perform { emu in emu.paused = true }
             self.flash("\(name) が切断されたため一時停止しました")
         }
+        input.onPausedStep = { [weak emu] dir, down in emu?.perform { e in e.pausedStep(dir, down: down) } }
         input.keyboardEnabled = { [weak self] in
             guard let w = NSApp.keyWindow, w === self?.mainWindow else { return false }
             return !(w.firstResponder is NSText)
@@ -91,6 +107,12 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        // Keep emulation timing and controller input precise while another app (OBS) is in front:
+        // no App Nap throttling. The display may still sleep normally.
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                        reason: "NES emulation")
+        input.setPausedStepEnabled(dpadStepWhenPaused)
+        input.setPausedStepMode(true)
         emu.audio.volume = Float(volume)
         pushPrefs()
         emu.start()
@@ -127,19 +149,52 @@ final class AppModel: ObservableObject {
 
     // MARK: transport (all forwarded to the emulation thread)
 
-    func togglePause() { emu.perform { e in e.paused.toggle(); e.advanceRemaining = 0 } }
+    func togglePause() { emu.perform { e in e.togglePause() } }
     func setPaused(_ p: Bool) { emu.perform { e in e.paused = p } }
     func frameAdvance(_ n: Int = 1) { emu.perform { e in e.paused = true; e.advanceRemaining += max(0, n) } }
     func stepBack(_ n: UInt64 = 1) {
         emu.perform { e in
             guard let s = e.session else { return }
-            e.seekCommand(s.frame >= n ? s.frame - n : 0)
+            e.stepBack(s, n)
         }
     }
     func setSlow(_ r: SlowRate) { emu.perform { e in e.slow = r } }
+    func toggleSlow() { emu.perform { e in e.slow = e.slow.toggled } }
+    func toggleRecord() { emu.perform { e in e.toggleRecord() } }
+    /// Seconds forward/back on the take (seek = replay only, never records).
+    func jump(seconds: Double) {
+        let n = UInt64(abs(seconds) * 60)
+        emu.perform { e in
+            guard let s = e.session else { return }
+            if seconds < 0 { e.stepBack(s, n) } else { e.seekCommand(min(s.takeLength, s.frame + n)) }
+        }
+    }
+
+    // MARK: practice (A/B repeat)
+
+    func practiceSetA(_ slot: Int) { emu.perform { e in e.practiceSetA(slot) } }
+    func practiceSetB(_ slot: Int) { emu.perform { e in e.practiceSetB(slot) } }
+    func practiceStart(_ slot: Int) { showPracticePanel = true; emu.perform { e in e.startPractice(slot) } }
+    func practiceStop() { emu.perform { e in e.stopPractice() } }
+    func practiceRename(_ slot: Int, _ name: String) { emu.perform { e in e.practiceRename(slot, name) } }
+    func practiceClear(_ slot: Int) { emu.perform { e in e.practiceClear(slot) } }
+    /// Practice button / menu: shows or hides the OSD; while practicing it leaves practice.
+    func togglePracticePanel() {
+        if status.practicing { practiceStop(); return }
+        showPracticePanel.toggle()
+    }
+
+    /// Take navigation is not available while practicing (the engine refuses it).
+    private func blockedInPractice() -> Bool {
+        if status.practicing { flash(EmulationController.practiceBlockedText); return true }
+        return false
+    }
     func setRewindHeld(_ h: Bool) { emu.perform { e in e.uiRewindHeld = h } }
     func setFastForwardHeld(_ h: Bool) { emu.perform { e in e.uiFastForwardHeld = h } }
-    func scrub(to f: UInt64) { emu.perform { e in e.paused = true; e.scrubTarget = f } }
+    func scrub(to f: UInt64) {
+        if status.practicing { return }
+        emu.perform { e in e.paused = true; e.scrubTarget = f }
+    }
     func seek(to f: UInt64) { emu.perform { e in e.seekCommand(f) } }
     func softReset() { emu.perform { e in e.requestEvent(UInt8(RN_EV_SOFT_RESET)) } }
     func powerCycle() { emu.perform { e in e.requestEvent(UInt8(RN_EV_POWER_CYCLE)) } }
@@ -149,6 +204,7 @@ final class AppModel: ObservableObject {
     func addBookmark() { emu.perform { e in e.addBookmark(name: nil) } }
 
     func gotoBookmark(_ id: UInt64) {
+        if blockedInPractice() { return }
         emu.perform { e in
             guard let s = e.session else { return }
             do {
@@ -170,6 +226,7 @@ final class AppModel: ObservableObject {
         }
     }
     func activateTake(_ id: UInt64) {
+        if blockedInPractice() { return }
         emu.perform { e in
             guard let s = e.session else { return }
             do {
@@ -300,20 +357,36 @@ final class AppModel: ObservableObject {
         openProject(url)
     }
 
-    func openProject(_ url: URL, romOverride: URL? = nil, dropCorrupt: Bool = false) {
+    func openProject(_ url: URL, romOverride: URL? = nil, dropCorrupt: Bool = false, dropCorruptPractice: Bool = false) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let s = try EngineSession.open(projectDir: url, romOverride: romOverride, dropCorruptStates: dropCorrupt)
-                DispatchQueue.main.async { self.install(s, recovered: s.recovered) }
+                let s = try EngineSession.open(projectDir: url, romOverride: romOverride, dropCorruptStates: dropCorrupt,
+                                               dropCorruptPractice: dropCorruptPractice)
+                let dropped = s.droppedPracticeSlots
+                DispatchQueue.main.async {
+                    self.install(s, recovered: s.recovered)
+                    if dropped != 0 { self.reportDroppedPracticeSlots(dropped) }
+                }
             } catch let e as RNError {
-                DispatchQueue.main.async { self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt) }
+                DispatchQueue.main.async {
+                    self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice)
+                }
             } catch {
                 DispatchQueue.main.async { self.showError("プロジェクトを開けませんでした", "\(error)") }
             }
         }
     }
 
-    private func handleOpenError(_ e: RNError, url: URL, romOverride: URL?, dropCorrupt: Bool) {
+    private func reportDroppedPracticeSlots(_ mask: UInt32) {
+        let names = (0..<EngineSession.practiceSlotCount).filter { mask & (1 << UInt32($0)) != 0 }.map { "区間 \($0 + 1)" }
+        showError("壊れていた練習区間を破棄しました",
+                  "次の練習区間（A/B）は読み込めなかったため削除されました: \(names.joined(separator: "、"))\n\nテイク（録画）は影響を受けていません。必要ならAとBを設定し直してください。")
+    }
+
+    /// RN_ERR_CORRUPT caused by an A/B practice slot ("practice slot N" in the engine message).
+    static func isPracticeCorruption(_ message: String) -> Bool { message.lowercased().contains("practice") }
+
+    private func handleOpenError(_ e: RNError, url: URL, romOverride: URL?, dropCorrupt: Bool, dropCorruptPractice: Bool = false) {
         let manifest = (try? Engine.manifestJSON(projectDir: url)) ?? [:]
         let rom = manifest["rom"] as? [String: Any] ?? [:]
         let romName = rom["name"] as? String ?? "?"
@@ -337,12 +410,20 @@ final class AppModel: ObservableObject {
             open.title = "「\(romName)」の場所を指定"
             open.allowedContentTypes = [.nesROM, .data]
             guard open.runModal() == .OK, let newRom = open.url else { return }
-            openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt)
+            openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice)
         case RN_ERR_CORE_MISMATCH:
             let projCore = manifest["coreCompatID"] as? String ?? "?"
             a.messageText = "別のエミュレーションコアで記録されたプロジェクトです"
             a.informativeText = "再現性を守るため、このバージョンでは開けません（自動変換は行いません）。\nプロジェクトのコア: \(projCore)\nこのアプリのコア: \(Engine.coreCompatID)\n\n記録したときのバージョンの ReplayNES で開いてください。詳細は docs/COMPATIBILITY.md を参照。"
             a.runModal()
+        case RN_ERR_CORRUPT where Self.isPracticeCorruption(e.message) && !dropCorruptPractice:
+            a.messageText = "練習区間（A/B）のデータが破損しています"
+            a.informativeText = e.message + "\n\n壊れた練習区間だけを破棄して開けます（その区間のA/Bは失われます）。テイク（録画）は変更されません。"
+            a.addButton(withTitle: "壊れた練習区間を破棄して開く")
+            a.addButton(withTitle: "キャンセル")
+            if a.runModal() == .alertFirstButtonReturn {
+                openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true)
+            }
         case RN_ERR_CORRUPT:
             a.messageText = "プロジェクトのファイルが破損しています"
             a.informativeText = e.message
@@ -350,7 +431,9 @@ final class AppModel: ObservableObject {
                 a.informativeText += "\n\nチェックポイント（高速化用のステート）の破損であれば、それらを破棄して開けます。入力履歴（正本）は変更されません。"
                 a.addButton(withTitle: "壊れたチェックポイントを破棄して開く")
                 a.addButton(withTitle: "キャンセル")
-                if a.runModal() == .alertFirstButtonReturn { openProject(url, romOverride: romOverride, dropCorrupt: true) }
+                if a.runModal() == .alertFirstButtonReturn {
+                    openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice)
+                }
             } else {
                 a.runModal()
             }
@@ -367,6 +450,7 @@ final class AppModel: ObservableObject {
 
     private func install(_ s: EngineSession, recovered: Bool) {
         let dir = s.projectDir
+        showPracticePanel = false
         emu.perform { e in e.install(s) }
         openProjectPath = dir
         if !dir.isEmpty { NSDocumentController.shared.noteNewRecentDocumentURL(URL(fileURLWithPath: dir)) }

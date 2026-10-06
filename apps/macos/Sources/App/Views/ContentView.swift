@@ -31,7 +31,7 @@ struct ContentView: View {
                 TransportBar()
             }
         }
-        .frame(minWidth: 1060, minHeight: 640)
+        .frame(minWidth: 820, minHeight: 560)
         .background(WindowAccessor { w in
             model.mainWindow = w
             w.title = windowTitle
@@ -41,8 +41,6 @@ struct ContentView: View {
         .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button { model.newProject() } label: { Label("新規", systemImage: "doc.badge.plus") }.help("新規プロジェクト (⌘N)")
-                Button { model.openProjectPanel() } label: { Label("開く", systemImage: "folder") }.help("プロジェクトを開く (⌘O)")
                 LibraryToolbarButton()
                 Button { model.saveSync() } label: { Label("保存", systemImage: "square.and.arrow.down") }
                     .disabled(!model.status.hasSession).help("保存 (⌘S)")
@@ -50,9 +48,8 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { model.showExport = true } label: { Label("MP4書き出し", systemImage: "film") }
                     .disabled(!model.status.hasSession || model.status.takeLength == 0).help("MP4に書き出す (⌘E)")
-                Button { model.showLatency.toggle() } label: { Label("レイテンシ", systemImage: "gauge.with.dots.needle.33percent") }
-                    .help("レイテンシ表示 (⌘L)")
                 Button { model.showSidebar.toggle() } label: { Label("サイドバー", systemImage: "sidebar.right") }
+                    .help("サイドバー（テイク・ブックマーク・コントローラー）(⌥⌘S)")
             }
         }
     }
@@ -68,9 +65,14 @@ struct ContentView: View {
             Color.black
             if model.status.hasSession {
                 MetalGameView(emu: model.emu, options: model.displayOptions)
+                if let img = model.snapshotFrame { SnapshotFrameView(image: img, options: model.displayOptions) }
                 StatusBadges().padding(10)
                 if model.showLatency {
                     VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(10)
+                }
+                if model.showPracticePanel || model.status.practicing {
+                    VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
+                        .padding(.leading, 12).padding(.bottom, 12)
                 }
             } else {
                 WelcomeView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -98,12 +100,13 @@ struct StatusBadges: View {
     var body: some View {
         let st = model.status
         HStack(spacing: 6) {
-            badge(st.recording ? "● 録画" : "▶︎ 再生", st.recording ? .red : .green)
+            if st.practicing { badge("練習中（録画しない）", .orange) }
+            else { badge(st.recording ? "● 録画" : "▶︎ 再生", st.recording ? .red : .green) }
             if st.rewinding { badge("◀◀ 巻き戻し中", .orange) }
             else if st.paused { badge("❚❚ 一時停止", .gray) }
             else if st.fastForward { badge("▶▶ 早送り", .blue) }
             else if st.slow != .normal { badge("スロー \(st.slow.label)", .purple) }
-            if st.endOfTake { badge("テイク終端", .yellow) }
+            if st.endOfTake && !st.practicing { badge("テイク終端", .yellow) }
             if st.flashActive && model.showFlashIndicator { badge("フラッシュ低減中", .teal) }
             StreamOutputBadge()
         }
@@ -174,5 +177,27 @@ struct LatencyOverlay: View {
     }
     private func row(_ k: String, _ v: String) -> some View {
         HStack { Text(k); Spacer(minLength: 12); Text(v) }.frame(width: 300)
+    }
+}
+
+/// --snapshot only: the current frame drawn by SwiftUI (Metal content is not captured by
+/// cacheDisplay), placed exactly like GameRenderer.viewport so overlays stay on top of it.
+struct SnapshotFrameView: View {
+    let image: CGImage
+    let options: DisplayOptions
+    var body: some View {
+        GeometryReader { geo in
+            let scale = NSScreen.main?.backingScaleFactor ?? 2
+            let px = CGSize(width: geo.size.width * scale, height: geo.size.height * scale)
+            let (r, crop) = GameRenderer.viewport(drawableSize: px, options: options)
+            let cropped = image.cropping(to: CGRect(x: 0, y: crop, width: image.width, height: image.height - 2 * crop)) ?? image
+            Image(decorative: cropped, scale: 1)
+                .interpolation(.none)
+                .resizable()
+                .frame(width: r.width / scale, height: r.height / scale)
+                // viewport() is bottom-left based; SwiftUI is top-left.
+                .position(x: (r.minX + r.width / 2) / scale, y: geo.size.height - (r.minY + r.height / 2) / scale)
+        }
+        .allowsHitTesting(false)
     }
 }

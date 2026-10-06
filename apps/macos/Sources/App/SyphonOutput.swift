@@ -221,15 +221,6 @@ final class StreamOutputModel: ObservableObject {
 
 // MARK: UI hooks
 
-struct StreamOutputCommands: Commands {
-    @ObservedObject var stream: StreamOutputModel
-    var body: some Commands {
-        CommandGroup(after: .sidebar) {
-            Button(stream.isOn ? "配信出力 (Syphon) を停止" : "配信出力 (Syphon) を開始") { stream.toggle() }
-        }
-    }
-}
-
 /// Settings section (表示・音声 tab).
 struct StreamOutputSection: View {
     @ObservedObject var stream = StreamOutputModel.shared

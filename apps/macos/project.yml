@@ -18,8 +18,8 @@ packages:
     exactVersion: 2.10.0
 settings:
   base:
-    MARKETING_VERSION: "0.1.2"
-    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "4"
     SWIFT_VERSION: "5.0"
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO

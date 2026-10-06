@@ -6,13 +6,11 @@ import AppKit
 import MetalKit
 
 extension AppModel {
-    func writeSnapshot(to url: URL) {
-        guard let window = mainWindow, let content = window.contentView else { return }
-        let scale = window.backingScaleFactor
-        guard let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return }
-        content.cacheDisplay(in: content.bounds, to: rep)
-
-        // Current emulated frame as CGImage.
+    /// Captures the window. The current emulated frame is first handed to SwiftUI
+    /// (SnapshotFrameView, under the badges / OSD) because layer-backed Metal content is not
+    /// captured by cacheDisplay; the capture happens after that view has been laid out.
+    func writeSnapshot(to url: URL, completion: (() -> Void)? = nil) {
+        guard mainWindow != nil else { completion?(); return }
         var frameImage: CGImage?
         var frameIndex: UInt64 = 0
         _ = emu.frames.readIfNewer(than: .max) { px, meta in
@@ -25,21 +23,22 @@ extension AppModel {
                                      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
             }
         }
-        if let img = frameImage, let mtk = Self.findMTKView(content), let ctx = NSGraphicsContext(bitmapImageRep: rep) {
-            var viewRect = mtk.convert(mtk.bounds, to: content)
-            if content.isFlipped { viewRect.origin.y = content.bounds.height - viewRect.maxY } // bitmap context is bottom-left
-            let px = CGSize(width: viewRect.width * scale, height: viewRect.height * scale)
-            let (r, crop) = GameRenderer.viewport(drawableSize: px, options: displayOptions)
-            let cropped = img.cropping(to: CGRect(x: 0, y: crop, width: Int(RN_VIDEO_WIDTH), height: Int(RN_VIDEO_HEIGHT) - 2 * crop)) ?? img
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = ctx
-            ctx.imageInterpolation = .none
-            let dst = CGRect(x: viewRect.minX + r.minX / scale, y: viewRect.minY + r.minY / scale, width: r.width / scale, height: r.height / scale)
-            ctx.cgContext.interpolationQuality = .none
-            ctx.cgContext.draw(cropped, in: dst)
-            NSGraphicsContext.restoreGraphicsState()
+        snapshotFrame = frameImage
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { completion?(); return }
+            self.captureWindow(to: url, frameIndex: frameIndex)
+            self.snapshotFrame = nil
+            completion?()
         }
-        if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: url) }
+    }
+
+    private func captureWindow(to url: URL, frameIndex: UInt64) {
+        guard let window = mainWindow, let content = window.contentView else { return }
+        let scale = window.backingScaleFactor
+        if let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) {
+            content.cacheDisplay(in: content.bounds, to: rep)
+            if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: url) }
+        }
         // Second capture through the layer tree of the whole window frame (includes toolbar).
         if let frameView = content.superview, let layer = frameView.layer {
             let size = frameView.bounds.size
@@ -48,18 +47,6 @@ extension AppModel {
                 ctx.scaleBy(x: scale, y: scale)
                 if frameView.isFlipped { ctx.translateBy(x: 0, y: size.height); ctx.scaleBy(x: 1, y: -1) }
                 layer.render(in: ctx)
-                if let img = frameImage, let mtk = Self.findMTKView(content) {
-                    // Layer rendering skips Metal content: draw the current frame where it is shown.
-                    var vr = mtk.convert(mtk.bounds, to: frameView)
-                    if frameView.isFlipped { vr.origin.y = size.height - vr.maxY }
-                    let (r, crop) = GameRenderer.viewport(drawableSize: CGSize(width: vr.width * scale, height: vr.height * scale), options: displayOptions)
-                    let cropped = img.cropping(to: CGRect(x: 0, y: crop, width: Int(RN_VIDEO_WIDTH), height: Int(RN_VIDEO_HEIGHT) - 2 * crop)) ?? img
-                    ctx.saveGState()
-                    if frameView.isFlipped { ctx.scaleBy(x: 1, y: -1); ctx.translateBy(x: 0, y: -size.height) } // back to bottom-left
-                    ctx.interpolationQuality = .none
-                    ctx.draw(cropped, in: CGRect(x: vr.minX + r.minX / scale, y: vr.minY + r.minY / scale, width: r.width / scale, height: r.height / scale))
-                    ctx.restoreGState()
-                }
                 if let img = ctx.makeImage() {
                     let r = NSBitmapImageRep(cgImage: img)
                     try? r.representation(using: .png, properties: [:])?.write(to: url.deletingPathExtension().appendingPathExtension("layers.png"))
@@ -77,6 +64,14 @@ extension AppModel {
             "lateTicks": s.lateTicks,
             "flashReduction": flashLevel.label, "flashActive": status.flashActive,
             "libraryROMs": library.roms.count, "libraryRoot": library.paths.root.path,
+            "practicing": status.practicing, "practiceSlot": status.practiceSlot,
+            "practiceFrame": status.practiceFrame, "practiceLength": status.practiceLength,
+            "practiceLooping": status.practiceLooping, "practiceLoops": status.practiceLoops,
+            "practiceSlots": practiceSlots.filter { $0.hasA }.map { ["slot": $0.index, "hasB": $0.hasB, "length": $0.length, "name": $0.name] },
+            "takeCount": status.takeCount, "activeTake": status.activeTake, "unsaved": status.unsaved,
+            "fastForward": status.fastForward, "slow": status.slow.label, "endOfTake": status.endOfTake,
+            "integerScale": integerScale, "showPracticePanel": showPracticePanel,
+            "controllerHotkeys": InputCatalog.controllerHotkeys.map { "\($0.0)=\($0.1)" },
         ]
         info.merge(keyboardDiagnostics) { a, _ in a }
         if let data = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]) {
@@ -84,9 +79,4 @@ extension AppModel {
         }
     }
 
-    private static func findMTKView(_ v: NSView) -> MTKView? {
-        if let m = v as? MTKView { return m }
-        for s in v.subviews { if let m = findMTKView(s) { return m } }
-        return nil
-    }
 }

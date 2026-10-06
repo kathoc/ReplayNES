@@ -6,6 +6,12 @@
 //                                                key-window / first-responder gating is exercised.
 //   --library-play "<ROM name>"                 start a new library project for that ROM (as if
 //                                                chosen in the library) once the scan has found it.
+//   --inject-pad "<sec>:<element>:<d|u>,..."     controller slot-0 element changes (e.g. rightTrigger,
+//                                                leftShoulder, dpad.left) through the real controller
+//                                                path (hotkeys, paused D-pad stepping, game input).
+//   --test-actions "<sec>:<action>[:<n>],..."    UI actions: setA/setB/practice:<slot 0-7>, stopPractice,
+//                                                toggleRecord, togglePause, panel, fill, integer.
+//   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 
@@ -54,6 +60,48 @@ extension AppModel {
             NSApp.postEvent(ev, atStart: false)
         }
         injectQueue.removeAll()
+    }
+
+    func scheduleInjectedPad(_ spec: String) {
+        for item in spec.split(separator: ",") {
+            let parts = item.split(separator: ":")
+            guard parts.count == 3, let t = Double(parts[0]) else { NSLog("ReplayNES: bad --inject-pad item \(item)"); continue }
+            let element = String(parts[1]), down = parts[2] == "d"
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.input.injectController(element, down) }
+        }
+    }
+
+    func scheduleTestActions(_ spec: String) {
+        for item in spec.split(separator: ",") {
+            let parts = item.split(separator: ":").map(String.init)
+            guard parts.count >= 2, let t = Double(parts[0]) else { NSLog("ReplayNES: bad --test-actions item \(item)"); continue }
+            let n = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                guard let self else { return }
+                switch parts[1] {
+                case "setA": self.practiceSetA(n)
+                case "setB": self.practiceSetB(n)
+                case "practice": self.practiceStart(n)
+                case "stopPractice": self.practiceStop()
+                case "toggleRecord": self.toggleRecord()
+                case "togglePause": self.togglePause()
+                case "panel": self.showPracticePanel.toggle()
+                case "fill": self.integerScale = false
+                case "integer": self.integerScale = true
+                default: NSLog("ReplayNES: unknown test action \(parts[1])")
+                }
+            }
+        }
+    }
+
+    func scheduleSnapshots(_ spec: String) {
+        for item in spec.split(separator: ",") {
+            guard let colon = item.firstIndex(of: ":"), let t = Double(item[..<colon]) else { continue }
+            let path = String(item[item.index(after: colon)...])
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                self?.writeSnapshot(to: URL(fileURLWithPath: path))
+            }
+        }
     }
 
     func scheduleLibraryPlay(_ name: String, attempts: Int = 50) {

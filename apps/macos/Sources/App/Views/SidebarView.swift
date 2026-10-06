@@ -17,7 +17,6 @@ struct SidebarView: View {
                     Text("長さ \(Engine.timecode(forFrame: st.takeLength))（\(st.takeLength) フレーム）・全\(st.takeCount)テイク")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button { model.rerecordHere() } label: { Label("ここから録り直す", systemImage: "record.circle") }
                 Button { model.undoTake() } label: { Label("前の試行へ戻す", systemImage: "arrow.uturn.backward") }
                     .disabled(st.undoDepth == 0)
                 Button { openWindow(id: "takes") } label: { Label("テイク一覧（詳細）…", systemImage: "list.bullet.indent") }

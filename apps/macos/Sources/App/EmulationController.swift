@@ -4,13 +4,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
-enum SlowRate: Int, CaseIterable, Identifiable {
-    case normal = 1, half = 2, quarter = 4
-    var id: Int { rawValue }
-    var label: String { self == .normal ? "等速" : self == .half ? "1/2" : "1/4" }
-    var next: SlowRate { self == .normal ? .half : self == .half ? .quarter : .normal }
-}
-
 /// UI-facing snapshot of the emulation state (published ~20 Hz).
 struct EmuStatus: Equatable {
     var hasSession = false
@@ -30,6 +23,20 @@ struct EmuStatus: Equatable {
     var romPath = ""
     var advancePending = 0
     var flashActive = false   // the flash reduction filter changed the picture recently
+    // Practice (A/B repeat). frame/takeLength above stay the take's (frozen while practicing).
+    var practicing = false
+    var practiceSlot = -1            // slot being looped (-1 = none / free practice)
+    var practiceFrame: UInt64 = 0    // frames since A
+    var practiceLength: UInt64 = 0   // slot length A->B (0 = no B: no loop)
+    var practiceLooping = false      // hold / rewind animation in progress
+    var practiceLoops = 0            // completed A->B loops since entering
+}
+
+/// Bookmarks, takes and practice slots (published when they change).
+struct SessionStructure: Equatable {
+    var bookmarks: [BookmarkInfo] = []
+    var takes: [TakeInfo] = []
+    var practiceSlots: [PracticeSlotInfo] = []
 }
 
 final class EmulationController {
@@ -40,7 +47,7 @@ final class EmulationController {
 
     // Callbacks, always invoked on the main thread.
     var onStatus: ((EmuStatus) -> Void)?
-    var onStructure: (([BookmarkInfo], [TakeInfo]) -> Void)?
+    var onStructure: ((SessionStructure) -> Void)?
     var onError: ((String, String) -> Void)?   // title, message
     var onNotice: ((String) -> Void)?
 
@@ -51,7 +58,12 @@ final class EmulationController {
 
     // ---- emulation-thread state (never touched from other threads) ----
     private(set) var session: EngineSession?
-    var paused = true { didSet { if paused != oldValue { statusDirty = true; if !paused { pauseHintShown = false } } } }
+    var paused = true {
+        didSet {
+            if paused != oldValue { statusDirty = true; if !paused { pauseHintShown = false; stepRepeater.reset() } }
+            input.setPausedStepMode(paused)
+        }
+    }
     var slow: SlowRate = .normal { didSet { statusDirty = true } }
     var advanceRemaining = 0
     var uiRewindHeld = false
@@ -73,6 +85,20 @@ final class EmulationController {
     private var pauseHintShown = false
     private var autosaveFailed = false
     private var nextDeadline: UInt64 = 0
+    // Fast-forward (replays the recorded take only; never records).
+    private var ff = FastForwardSession()
+    private var ffBlocked = false           // hold started where nothing is recorded ahead
+    private var pausedBeforeFF = true
+    // Paused D-pad stepping.
+    private var stepRepeater = StepRepeater()
+    // Practice.
+    private var practiceSlot: Int?          // slot being looped
+    private var practiceLength: UInt64 = 0  // its A->B length (0 = no B)
+    private var practiceLoop = PracticeLoop()
+    private var practiceSeq: UInt64 = 1 << 40 // input sampling clock while practicing (turbo phase)
+    private var modeBeforePractice = RN_MODE_RECORD
+    private let history = FrameHistory(capacity: 60)
+    private var practiceRewindStarted = false
     // Photosensitive flash reduction (display only: filters the copy that is shown).
     private let flashFilter = FlashFilter(level: .standard)
     private var displayFrame = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
@@ -154,6 +180,14 @@ final class EmulationController {
         structureDirty = true
         statusDirty = true
         resetFlashFilter()
+        ff = FastForwardSession()
+        ffBlocked = false
+        stepRepeater.reset()
+        practiceSlot = nil
+        practiceLength = 0
+        practiceLoop.reset()
+        history.release()
+        if let s, s.mode == RN_MODE_PRACTICE { try? s.setMode(RN_MODE_RECORD) } // never persisted; defensive
         if let s, let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
         publishStatus(force: true)
     }
@@ -200,6 +234,12 @@ final class EmulationController {
     /// Seek helper used by commands: pauses, mutes, refreshes the picture.
     func seekCommand(_ f: UInt64) {
         guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE {
+            // The take cursor is frozen while practicing: 「先頭へ」 means back to A.
+            if f == 0, let slot = practiceSlot { startPractice(slot) } else { notice(Self.practiceBlockedText) }
+            return
+        }
+        if ff.active { endFastForward(s) }
         do {
             try s.seek(min(f, s.takeLength))
             endOfTake = false
@@ -258,22 +298,27 @@ final class EmulationController {
             // Game input is not emulated while paused; say so once instead of silently ignoring it.
             if wasPaused && paused && edges == 0 && held == 0 && advanceRemaining == 0 && !pauseHintShown && !uiRewindHeld {
                 pauseHintShown = true
-                notice("一時停止中です。Space キー（または ▶︎ ボタン）で再開します")
+                notice("一時停止中です。Space キー / コントローラーの R（または ▶︎ ボタン）で再開します")
             }
         }
 
+        let practicing = s.mode == RN_MODE_PRACTICE
         let wantRewind = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
-        let wantFF = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
+        let wantFF = !wantRewind && !practicing && (uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0)
         if wantRewind != rewinding || wantFF != fastForward { statusDirty = true }
+        if wantFF && !fastForward { beginFastForward(s) }
+        if !wantFF && fastForward { endFastForward(s) }
         fastForward = wantFF
 
         if wantRewind {
             if !rewinding { resetFlashFilter() } // rewind start: a new continuous (backwards) sequence
             rewinding = true
+            if practicing { practiceLoop.interrupt() }
             audio.setMuted(true)
             rewindTicks += 1
             let n: UInt64 = rewindTicks > 240 ? 4 : rewindTicks > 90 ? 2 : 1
-            if s.frame > 0 {
+            // Practice: rewinds the practice run only (the engine stops at A); take: clamps at 0.
+            if practicing ? s.practiceStatus.rewindAvailable > 0 : s.frame > 0 {
                 do {
                     try s.rewind(n)
                     endOfTake = false
@@ -291,35 +336,41 @@ final class EmulationController {
 
         if let t = scrubTarget {
             scrubTarget = nil
-            seekCommand(t)
+            if !practicing { seekCommand(t) }
             finishTick(s)
             return
         }
 
-        var steps = 0
-        var audible = false
         if paused {
-            // Frame-advance users press buttons while paused on purpose: no hint for them.
-            if advanceRemaining > 0 { steps = 1; advanceRemaining -= 1; statusDirty = true; pauseHintShown = true }
-        } else if fastForward {
-            steps = 4
+            let d = stepRepeater.tick()
+            if d != 0 { stepFrame(d, s) }
+        }
+
+        if fastForward {
+            tickFastForward(s)
+        } else if practicing && !paused {
+            tickPractice(s)
         } else {
-            if tickCount % UInt64(slow.rawValue) == 0 { steps = 1 }
-            audible = slow == .normal
+            var steps = 0
+            var audible = false
+            if paused {
+                // Frame-advance users press buttons while paused on purpose: no hint for them.
+                if advanceRemaining > 0 { steps = 1; advanceRemaining -= 1; statusDirty = true; pauseHintShown = true }
+            } else {
+                if tickCount % UInt64(slow.rawValue) == 0 { steps = 1 }
+                audible = slow == .normal
+            }
+            audio.setMuted(!audible)
+            var stepped = 0
+            for _ in 0..<steps {
+                if !stepOnce(s, audible: audible) { break }
+                stepped += 1
+            }
+            // A frame held back by the flash filter while nothing new is emulated (pause, slow
+            // motion) is re-filtered every tick, so the picture settles on the real frame within the
+            // filter's 1-second budget instead of staying blended.
+            if stepped == 0 && flashAltered && !rewinding { publishVideo(continuous: true) }
         }
-        audio.setMuted(!audible)
-        // Fast-forward emulates several frames per tick but only the last one is visible: only
-        // that one goes through the flash filter, so its 1-second window stays wall-clock based.
-        var stepped = 0
-        for _ in 0..<steps {
-            if !stepOnce(s, audible: audible, publish: steps == 1) { break }
-            stepped += 1
-        }
-        if steps > 1 && stepped > 0 { publishVideo(continuous: true) }
-        // A frame held back by the flash filter while nothing new is emulated (pause, slow
-        // motion) is re-filtered every tick, so the picture settles on the real frame within the
-        // filter's 1-second budget instead of staying blended.
-        if stepped == 0 && flashAltered && !rewinding { publishVideo(continuous: true) }
         let active = flashFilter.level != .off && tickCount &- lastFlashTick < 45 && lastFlashTick != 0
         if active != flashActiveShown { flashActiveShown = active; statusDirty = true }
         maybeAutosave(s)
@@ -330,15 +381,267 @@ final class EmulationController {
         if tickCount % 3 == 0 || structureDirty { publishStatus(force: false) }
     }
 
+    // MARK: fast-forward (emulation thread)
+
+    private func beginFastForward(_ s: EngineSession) {
+        pausedBeforeFF = paused
+        ffBlocked = s.frame >= s.takeLength
+        if ffBlocked {
+            notice(s.takeLength == 0 ? "まだ録画されていないため早送りできません" : "録画済みの終端です（早送りはここまで）")
+            return
+        }
+        do { try ff.begin(s) } catch { reportError("早送りできませんでした", error); ffBlocked = true }
+        endOfTake = false
+    }
+
+    func endFastForward(_ s: EngineSession) {
+        let wasActive = ff.active
+        do { try ff.end(s) } catch { reportError("録画モードに戻せませんでした", error) }
+        fastForward = false
+        statusDirty = true
+        if wasActive {
+            // Like rewind: optionally stop where the user let go, so recording never resumes by surprise.
+            paused = pauseAfterRewind ? true : (pausedBeforeFF || s.frame >= s.takeLength)
+        }
+        ffBlocked = false
+    }
+
+    /// Fast-forward replays recorded frames 4x (silent) and stops at the take end, paused there.
+    private func tickFastForward(_ s: EngineSession) {
+        audio.setMuted(true)
+        guard ff.active, !ffBlocked else { return }
+        do {
+            let (n, atEnd) = try ff.step(s, frames: 4)
+            if n > 0 { publishVideo(continuous: true) }
+            if atEnd {
+                ffBlocked = true
+                paused = true
+                notice("録画済みの終端に着きました（ここで一時停止）")
+            }
+        } catch {
+            ffBlocked = true
+            paused = true
+            reportError("早送りできませんでした", error)
+        }
+    }
+
+    // MARK: practice (emulation thread)
+
+    static let practiceBlockedText = "練習中は使えません。「練習をやめる」でテイクに戻ってから操作してください"
+
+    var isPracticing: Bool { session?.mode == RN_MODE_PRACTICE }
+
+    /// Practice loop: play A->B, hold the last frame 0.5 s (audio dies away), show the recent
+    /// frames backwards for 0.5 s, then goto A and play again.
+    private func tickPractice(_ s: EngineSession) {
+        let now = HostClock.seconds(HostClock.now())
+        let action = practiceLoop.tick(now: now, counter: s.practiceFrame,
+                                       length: practiceSlot != nil && practiceLength > 0 ? practiceLength : nil)
+        switch action {
+        case .step:
+            practiceRewindStarted = false
+            let audible = slow == .normal
+            audio.setMuted(!audible)
+            if tickCount % UInt64(slow.rawValue) == 0 { stepOnce(s, audible: audible) }
+            if flashAltered && tickCount % UInt64(slow.rawValue) != 0 { publishVideo(continuous: true) }
+        case .beginHold:
+            // Picture stays; a short decaying tail lets the sound end naturally (no click, no black).
+            let tail = AudioFade.tail(from: s.audio())
+            tail.withUnsafeBufferPointer { audio.push($0) }
+            statusDirty = true
+        case .hold:
+            break
+        case .rewindFrame(let back):
+            if !practiceRewindStarted {
+                practiceRewindStarted = true
+                audio.setMuted(true)
+                resetFlashFilter()
+                statusDirty = true
+            }
+            let idx = PracticeLoop.historyIndex(back: back, count: history.count)
+            _ = history.withFrame(back: idx) { show($0, meta: FrameMeta(frame: s.frame, emulatedTime: HostClock.now())) }
+        case .restart:
+            practiceRewindStarted = false
+            guard let slot = practiceSlot else { return }
+            do {
+                try s.practiceGotoA(slot)
+                history.clear()
+                // No publish here: rn_video still holds the last practice frame; the next step
+                // (this tick's successor) shows the frame after A, continuing the rewind motion.
+                resetFlashFilter()
+                statusDirty = true
+            } catch {
+                practiceSlot = nil
+                practiceLength = 0
+                structureDirty = true
+                notice("区間 \(slot + 1) のAが見つからないため、繰り返しを止めました")
+            }
+        }
+    }
+
+    /// 「この区間を練習」: enters practice at the slot's A and autoplays (never records).
+    func startPractice(_ slot: Int) {
+        guard let s = session else { return }
+        if fastForward { endFastForward(s); uiFastForwardHeld = false }
+        let wasMode = s.mode
+        do { try s.practiceGotoA(slot) } catch {
+            if let e = error as? RNError, e.status == RN_ERR_NOT_FOUND {
+                notice("区間 \(slot + 1) にはまだAが設定されていません")
+            } else {
+                reportError("練習を始められませんでした", error)
+            }
+            return
+        }
+        if wasMode != RN_MODE_PRACTICE { modeBeforePractice = wasMode }
+        let info = s.practiceSlot(slot)
+        practiceSlot = slot
+        practiceLength = info.hasB ? info.length : 0
+        practiceLoop.reset()
+        practiceRewindStarted = false
+        history.clear()
+        stepRepeater.reset()
+        advanceRemaining = 0
+        endOfTake = false
+        paused = false
+        resetFlashFilter()
+        publishVideo()
+        structureDirty = true
+        notice(info.hasB ? "練習: \(info.displayName)（Bに着くとAへ戻って繰り返します。録画はされません）"
+                         : "練習: \(info.displayName)（Bが未設定のため繰り返しません。録画はされません）")
+    }
+
+    /// 「練習をやめる」: back to the take exactly where practice was entered (paused).
+    func stopPractice() {
+        guard let s = session, s.mode == RN_MODE_PRACTICE else { return }
+        do { try s.setMode(modeBeforePractice) } catch { reportError("練習を終了できませんでした", error); return }
+        practiceSlot = nil
+        practiceLength = 0
+        practiceLoop.reset()
+        practiceRewindStarted = false
+        history.release()
+        paused = true
+        advanceRemaining = 0
+        audio.setMuted(true)
+        publishVideo()
+        structureDirty = true
+        notice("練習をやめました（テイクは練習前のままです）")
+    }
+
+    private func refreshPracticeLength(_ s: EngineSession, _ slot: Int) {
+        guard slot == practiceSlot else { return }
+        let info = s.practiceSlot(slot)
+        practiceLength = info.hasA && info.hasB ? info.length : 0
+        if !info.hasA { practiceSlot = nil }
+    }
+
+    func practiceSetA(_ slot: Int) {
+        guard let s = session else { return }
+        do {
+            try s.practiceSetA(slot)
+            if s.mode == RN_MODE_PRACTICE { practiceSlot = slot; practiceLoop.interrupt() }
+            refreshPracticeLength(s, slot)
+            structureDirty = true
+            notice("区間 \(slot + 1) のAを設定しました。続けてプレイして、終わりの位置でBを設定してください")
+        } catch { reportError("Aを設定できませんでした", error) }
+    }
+
+    func practiceSetB(_ slot: Int) {
+        guard let s = session else { return }
+        do {
+            try s.practiceSetB(slot)
+            refreshPracticeLength(s, slot)
+            structureDirty = true
+            let len = s.practiceSlot(slot).length
+            notice("区間 \(slot + 1) のBを設定しました（長さ \(Engine.timecode(forFrame: len))）。「練習」で繰り返し練習できます")
+        } catch let e as RNError {
+            switch e.status {
+            case RN_ERR_DISCONTINUITY:
+                notice("B地点はA地点から続けてプレイした位置で設定してください（Aの後に巻き戻し・移動・テイク切替をした場合は、Aからやり直すかAを設定し直します）")
+            case RN_ERR_NOT_FOUND:
+                notice("先に区間 \(slot + 1) のAを設定してください")
+            case RN_ERR_INVALID_ARG:
+                notice("AとBが同じ位置です。少し進めてからBを設定してください")
+            default:
+                reportError("Bを設定できませんでした", e)
+            }
+        } catch { reportError("Bを設定できませんでした", error) }
+    }
+
+    func practiceRename(_ slot: Int, _ name: String) {
+        guard let s = session else { return }
+        do { try s.practiceRename(slot, name: name); structureDirty = true } catch { reportError("名前を変更できませんでした", error) }
+    }
+
+    func practiceClear(_ slot: Int) {
+        guard let s = session else { return }
+        do {
+            try s.practiceClear(slot)
+            refreshPracticeLength(s, slot)
+            structureDirty = true
+        } catch { reportError("区間を消去できませんでした", error) }
+    }
+
+    // MARK: stepping / pause (emulation thread)
+
+    /// Paused D-pad (InputManager, routed away from the game): step now, repeat while held.
+    func pausedStep(_ dir: Int, down: Bool) {
+        guard let s = session else { return }
+        if down {
+            guard paused else { return }
+            stepFrame(stepRepeater.press(dir), s)
+        } else {
+            stepRepeater.release(dir)
+        }
+    }
+
+    /// One frame forward (+1) or back (-1), pausing first.
+    func stepFrame(_ dir: Int, _ s: EngineSession) {
+        paused = true
+        if s.mode == RN_MODE_PRACTICE { practiceLoop.interrupt() }
+        if dir > 0 { advanceRemaining += 1; return }
+        stepBack(s, 1)
+    }
+
+    func stepBack(_ s: EngineSession, _ n: UInt64) {
+        paused = true
+        advanceRemaining = 0
+        if s.mode == RN_MODE_PRACTICE {
+            practiceLoop.interrupt()
+            do {
+                try s.rewind(n)
+                audio.setMuted(true)
+                publishVideo()
+            } catch { reportError("戻れませんでした", error) }
+            return
+        }
+        seekCommand(s.frame >= n ? s.frame - n : 0)
+    }
+
+    func togglePause() {
+        advanceRemaining = 0
+        guard let s = session else { paused.toggle(); return }
+        if paused, RecordToggle.shouldRestartOnPlay(recording: s.mode == RN_MODE_RECORD, practicing: s.mode == RN_MODE_PRACTICE,
+                                                     frame: s.frame, takeLength: s.takeLength) {
+            seekCommand(0) // replay at the take end: play from the beginning
+        }
+        paused.toggle()
+    }
+
     /// Emulates exactly one frame. Returns false if nothing was emulated (end of take / error).
     @discardableResult
     func stepOnce(_ s: EngineSession, audible: Bool, publish: Bool = true) -> Bool {
-        let recording = s.mode == RN_MODE_RECORD
+        let mode = s.mode
+        let live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE
         let tSample = HostClock.now()
         var p1: UInt8 = 0, p2: UInt8 = 0
-        if recording { rn_input_sample_game(input.handle, s.frame, &p1, &p2) }
+        if live {
+            // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
+            let clock = mode == RN_MODE_PRACTICE ? practiceSeq : s.frame
+            if mode == RN_MODE_PRACTICE { practiceSeq &+= 1 }
+            rn_input_sample_game(input.handle, clock, &p1, &p2)
+        }
         let eventTime = input.consumeEventTime()
-        let ev = recording ? pendingEvents : 0
+        let ev = live ? pendingEvents : 0
         pendingEvents = 0
         let before = s.frame
         let info: rn_step_info
@@ -350,8 +653,8 @@ final class EmulationController {
             reportError("フレームを進められませんでした", error)
             return false
         }
-        if info.end_of_take != 0 && info.frame == before {
-            if !endOfTake { notice("テイクの終端です。続きを録るには「ここから録り直す」") }
+        if mode != RN_MODE_PRACTICE && info.end_of_take != 0 && info.frame == before {
+            if !endOfTake { notice("テイクの終端です（「録画」ボタンで、ここから続きを録画できます）") }
             endOfTake = true
             paused = true
             advanceRemaining = 0
@@ -364,8 +667,11 @@ final class EmulationController {
             notice("新しいテイクを作成しました。以前の続きは「前の試行へ戻す」で戻せます")
         }
         let tEmu = HostClock.now()
-        if publish, let v = s.video {
-            show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
+        if let v = s.video {
+            if mode == RN_MODE_PRACTICE { history.append(v) }
+            if publish {
+                show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
+            }
         }
         if audible { audio.push(s.audio()) }
         latency.recordStep(sampleToEmulated: tEmu - tSample)
@@ -375,17 +681,14 @@ final class EmulationController {
 
     private func handleHotkeys(_ e: UInt32, _ s: EngineSession) {
         func on(_ bit: UInt32) -> Bool { e & bit != 0 }
-        if on(RN_HK_PAUSE) { paused.toggle(); advanceRemaining = 0 }
-        if on(RN_HK_FRAME_ADVANCE) { paused = true; advanceRemaining += 1 }
-        if on(RN_HK_STEP_BACK) {
-            paused = true
-            if s.frame > 0 { seekCommand(s.frame - 1) }
-        }
-        if on(RN_HK_SLOW) { slow = slow.next }
+        if on(RN_HK_PAUSE) { togglePause() }
+        if on(RN_HK_FRAME_ADVANCE) { stepFrame(1, s) }
+        if on(RN_HK_STEP_BACK) { stepFrame(-1, s) }
+        if on(RN_HK_SLOW) { slow = slow.toggled; notice(slow == .normal ? "等速" : "スロー 1/2") }
         if on(RN_HK_BOOKMARK) { addBookmark(name: nil) }
         if on(RN_HK_SOFT_RESET) { requestEvent(UInt8(RN_EV_SOFT_RESET)) }
         if on(RN_HK_POWER_CYCLE) { requestEvent(UInt8(RN_EV_POWER_CYCLE)) }
-        if on(RN_HK_TOGGLE_MODE) { setRecording(s.mode != RN_MODE_RECORD) }
+        if on(RN_HK_TOGGLE_MODE) { toggleRecord() }
         if on(RN_HK_SAVE) { save(nil) }
         if on(RN_HK_UNDO_TAKE) { undoTake() }
     }
@@ -394,17 +697,20 @@ final class EmulationController {
 
     func requestEvent(_ ev: UInt8) {
         guard let s = session else { return }
-        if s.mode != RN_MODE_RECORD {
-            notice("リセットは録画モードでのみ記録できます")
+        if s.mode == RN_MODE_REPLAY {
+            notice("リセットは録画モード（または練習中）でのみ使えます")
             return
         }
         pendingEvents |= ev
         if paused { advanceRemaining += 1 } // apply immediately so the user sees it
-        notice(ev == UInt8(RN_EV_POWER_CYCLE) ? "電源再投入を記録します" : "ソフトリセットを記録します")
+        let what = ev == UInt8(RN_EV_POWER_CYCLE) ? "電源再投入" : "ソフトリセット"
+        notice(s.mode == RN_MODE_PRACTICE ? "\(what)（練習中: 記録されません）" : "\(what)を記録します")
     }
 
     func setRecording(_ rec: Bool) {
         guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { stopPractice() }
+        if fastForward { endFastForward(s) }
         do {
             try s.setMode(rec ? RN_MODE_RECORD : RN_MODE_REPLAY)
             endOfTake = false
@@ -412,21 +718,39 @@ final class EmulationController {
         statusDirty = true
     }
 
+    /// The 「録画」 toggle button (see RecordToggle). In practice it leaves practice first.
+    func toggleRecord() {
+        guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { stopPractice(); return }
+        if fastForward { endFastForward(s) }
+        let plan = RecordToggle.plan(recording: s.mode == RN_MODE_RECORD, frame: s.frame, takeLength: s.takeLength)
+        if !plan.record && s.takeLength == 0 { notice("まだ何も録画されていません"); return }
+        setRecording(plan.record)
+        if let f = plan.seek { seekCommand(f) }
+        advanceRemaining = 0
+        paused = !plan.play
+        if plan.play { audio.setMuted(true) } // unmuted by the next audible step
+        notice(plan.record ? "録画モード：次の入力から、この位置の続きを録画します" : "再生モード：録画したテイクを再生します（録画はされません）")
+    }
+
     /// 「ここから録り直す」: record from the current frame (branches if before the take end).
     func rerecordHere() {
         guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { stopPractice() }
         setRecording(true)
         if s.mode == RN_MODE_RECORD { paused = false; slow = .normal }
     }
 
     func addBookmark(name: String?) {
         guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
         let n = name ?? "ブックマーク \(s.bookmarks().count + 1) (\(Engine.timecode(forFrame: s.frame)))"
         do { try s.addBookmark(name: n); structureDirty = true } catch { reportError("ブックマークを追加できませんでした", error) }
     }
 
     func undoTake() {
         guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
         if s.undoDepth == 0 { notice("戻せる試行はありません"); return }
         do {
             try s.undoTakeSwitch()
@@ -494,11 +818,11 @@ final class EmulationController {
             st.hasSession = true
             st.frame = s.frame
             st.takeLength = s.takeLength
-            st.recording = s.mode == RN_MODE_RECORD
+            st.recording = ff.showsRecording(s)
             st.paused = paused
             st.slow = slow
             st.rewinding = rewinding
-            st.fastForward = fastForward && !paused
+            st.fastForward = fastForward && ff.active && !ffBlocked
             st.endOfTake = endOfTake
             st.activeTake = s.activeTake
             st.undoDepth = s.undoDepth
@@ -507,18 +831,27 @@ final class EmulationController {
             st.romPath = s.romPath
             st.advancePending = advanceRemaining
             st.flashActive = flashActiveShown
+            if s.mode == RN_MODE_PRACTICE {
+                st.practicing = true
+                st.practiceSlot = practiceSlot ?? -1
+                st.practiceFrame = s.practiceFrame
+                st.practiceLength = practiceSlot != nil ? practiceLength : 0
+                st.practiceLooping = practiceLoop.isLooping
+                st.practiceLoops = practiceLoop.loops
+            }
         }
         statusDirty = false
-        var structure: ([BookmarkInfo], [TakeInfo])?
+        var structure: SessionStructure?
         if structureDirty {
             structureDirty = false
-            structure = session.map { ($0.bookmarks(), $0.takes()) } ?? ([], [])
+            structure = session.map { SessionStructure(bookmarks: $0.bookmarks(), takes: $0.takes(), practiceSlots: $0.practiceSlots()) }
+                ?? SessionStructure()
         }
-        if let structure { cachedTakeCount = structure.1.count }
+        if let structure { cachedTakeCount = structure.takes.count }
         st.takeCount = session == nil ? 0 : cachedTakeCount
         onMain { [weak self] in
             guard let self else { return }
-            if let structure { self.onStructure?(structure.0, structure.1) }
+            if let structure { self.onStructure?(structure) }
             self.onStatus?(st)
         }
     }
