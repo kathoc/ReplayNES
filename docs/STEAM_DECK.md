@@ -143,6 +143,29 @@ Or from a Steam shortcut in Gaming Mode (launch options), then read the JSON lin
 --rom "/home/deck/Documents/ReplayNES/ROM/<game>.nes" --perf-seconds 60 --stats-log /home/deck/Documents/ReplayNES/perf.jsonl
 ```
 
+## Export (MP4)
+
+The exporter (`apps/linux/src/export/`, the Linux port of the macOS `MP4Exporter`) renders the
+active take on a fresh core (`rn_renderer`, the same frames and renderer hash as the macOS export)
+and encodes H.264 High (GOP 120, BT.709 limited range, bit rate `rnf_export_video_bitrate`) + AAC
+192 kbit/s 48 kHz mono into MP4 with FFmpeg from the runtime. Timestamps are exact: track timescale
+39375000, frame f at `(f - start) * 655171`, so ffprobe reports `avg_frame_rate=39375000/655171`.
+Encoder: `libx264` (from `org.freedesktop.Platform.codecs-extra`), else `h264_vaapi` (works on the
+Deck, needs `--device=dri`), else `libopenh264`. Flash reduction and an optional CRT post-process
+apply to the exported picture only. Headless tool (also in the Flatpak):
+
+```sh
+flatpak run --command=replaynes-export io.github.replaynes.ReplayNES \
+    --project ~/Documents/ReplayNES/Projects/<name>.nesrec --out ~/Documents/ReplayNES/<name>.mp4 \
+    [--start N --end N] [--preset 0-6] [--flash 0-3] [--par87] [--no-crop] [--verify-hash]
+flatpak run --command=replaynes-export io.github.replaynes.ReplayNES --self-test /tmp/rn-export-test
+```
+
+Measured on the Deck OLED (2026-10-07, Platform 25.08 / FFmpeg 7.1, 1280x960): a 30 s (1800-frame)
+Super Mario Bros. take exports in 8.2 s with libx264 (219 fps, 3.6x real time) and 9.8 s with
+h264_vaapi; the self-test ROM's full-screen noise (worst case for the encoder) runs at 58 fps.
+Renderer hashes are identical on the Deck and on macOS.
+
 ## Open issues
 
 1. Display rates below 60 Hz (Gaming Mode's 40-59 Hz settings, nested compositors) slow emulation
