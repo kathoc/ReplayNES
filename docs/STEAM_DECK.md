@@ -2,8 +2,11 @@
 
 Status 2026-10-07: **skeleton** (plan `docs/plans/2026-10-07-steam-deck-plan.md`, Step 2). It records,
 replays, rewinds, fast-forwards, pauses and steps with the same controller hotkeys as the macOS
-app, with display-locked low-latency pacing. Library, timeline, practice, takes, settings, CRT,
-export and Japanese UI follow in Step 3 (on the shared frontend core in `frontend/`).
+app, with display-locked low-latency pacing. The CRT display (Vulkan port of the nesterm model),
+MP4 export, the faster flash filter and full-speed emulation on displays slower than 60 Hz are in;
+their menu UI (and library, timeline, practice, takes, settings, Japanese UI) follows in Step 3 on
+the shared frontend core in `frontend/`. Until then: `--crt` / F4 toggles the CRT display, F6
+exports the take to `~/Documents/ReplayNES/export-<time>.mp4` (F6 again cancels).
 
 ## Install
 
@@ -94,6 +97,19 @@ macOS app in `apps/linux/src/interim/` (to be replaced by the shared core in Ste
   every ~3 s (lizard-mode reports), which must not land on the input sample.
 * Without `VK_KHR_present_wait` the loop falls back to the host clock at the NES rate (FIFO only,
   no just-in-time sampling).
+* **Displays slower than 60.0988 Hz** (Gaming Mode's 40-59 Hz settings, nested gamescope, 30 Hz):
+  every refresh shows a new picture and up to two frames are emulated for it, so emulation keeps
+  the NES rate (shared core `rnf_frame_budget`: the emulated time follows the displayed time,
+  45 Hz -> 1,2,1,1,2,1...; a stall is dropped, not caught up). The extra frame is emulated in the
+  slack right after the previous present (its own, earlier time slot); the shown frame keeps its
+  just-in-time input sample. The audio level keeps one more frame. Below 30.05 Hz emulation slows
+  down (two frames per present at most).
+* **CRT display**: the CRT passes are recorded before the show pass of the same present and their
+  GPU time (timestamp queries) is added to the input lead's work, so the picture still makes its
+  vblank. When the GPU p90 no longer fits what the maximum lead leaves (`rnf_build_ahead`, the
+  macOS BuildAhead rule), pictures are built after their present and shown one frame later; when
+  it exceeds 80 % of a frame period the tube resolution steps down (adaptive, x0.85, >= 512 wide;
+  back up below 55 %).
 
 ## Measurements (Steam Deck OLED, SteamOS 3 / kernel 6.18, Mesa 26.2 RADV in the Flatpak GL extension, 90 Hz panel, 2026-10-07)
 
@@ -118,8 +134,26 @@ shown, yet its presents still "complete").
 Emulated 59.97-60.00 fps in every run above, DRC ratio ~1.0016 (emulation at 60.000 Hz instead of
 60.0988 Hz), audio level 26-40 ms. The intended 3:2 pattern itself is not counted as judder.
 
+After the CRT / flash / sub-60 Hz work (same Deck, Gaming Mode, SMB unless noted, `BIN=dev`):
+
+| Run | sample -> on screen p50 / p99 (ms) | emulated fps | judder/min | underruns | notes |
+|---|---|---|---|---|---|
+| CRT off, 90 Hz 3:2 | 6.35 / 6.76 | 60.00 | 4 | 0 | the latency target run |
+| CRT on, integer scale (tube 960x720) | 16.04 / 16.62 | 59.99 | 8 | 0 | GPU p50 9.3 / p90 9.5 ms |
+| CRT on, fill (tube 1144x858) | 17.41 / 17.94 | 60.00 | 4 | 0 | GPU p50 11.7 / p90 11.8 ms |
+| CRT on, fill, build-ahead forced | 27.68 / 34.21 | 59.98 | 22 | 1 | `REPLAYNES_CRT_BUILD_AHEAD=1`; not chosen at this GPU time |
+| test ROM (flash filter heaviest path) | 6.45 / 6.63 | 60.00 | 4 | 0 | emulate+filter 1.8 ms (was 6.4) |
+| nested gamescope `-r 45`, CRT off | 8.35 / 9.03 | 60.03 | 8 | 0 | 45.0 Hz presents, 1131 of 2698 with 2 frames (60 s) |
+| nested gamescope `-r 45`, CRT on (fill) | 17.02 / 18.02 | 60.04 | 4 | 0 | GPU p90 11.8 ms |
+
+Nested gamescope only offers divisors of the 90 Hz panel (`-r 40` also ran at 45 Hz); Gaming
+Mode's own 40-59 Hz settings need a Steam-launched game and were not measured. Earlier 45 Hz runs
+(before the audio level fix, and one 45 s run after it) had 2-7 underruns around nested-compositor
+stalls (45 ms present gaps).
+
 Notes:
-* The flash filter's heaviest path costs ~4.5 ms on the Deck's CPU (powersave governor, bursty
+* The flash filter's heaviest path cost ~4.5 ms on the Deck's CPU before the 2026-10-07 rewrite
+  (now 0.29 ms mean / 0.46 ms p99 in `replaynes-cli bench-flash`, bit-exact; docs/FLASH_REDUCTION.md) (powersave governor, bursty
   load keeps the clock low); the lead grows to cover it, so such pictures arrive ~12.5 ms after the
   sample instead of ~6 ms, still without judder or underruns.
 * Before the controller thread, the HIDAPI stall caused a missed vblank every ~3.4 s; before the
@@ -161,6 +195,12 @@ flatpak run --command=replaynes-export io.github.replaynes.ReplayNES \
 flatpak run --command=replaynes-export io.github.replaynes.ReplayNES --self-test /tmp/rn-export-test
 ```
 
+`--crt` (also F6 in the app while the CRT display is on) applies the CRT model offline on a
+window-less Vulkan device (`apps/linux/src/render/crt_export.cpp`, the macOS CRTExportRenderer):
+same pipeline as the display, synchronous tube plan, frames strictly in order, so two exports are
+identical (decoded `framemd5` equal) and the renderer hash is unchanged. On the Deck a 30 s SMB CRT
+export at 1280x960 takes ~83 s (22 fps; GPU-bound).
+
 Measured on the Deck OLED (2026-10-07, Platform 25.08 / FFmpeg 7.1, 1280x960): a 30 s (1800-frame)
 Super Mario Bros. take exports in 8.2 s with libx264 (219 fps, 3.6x real time) and 9.8 s with
 h264_vaapi; the self-test ROM's full-screen noise (worst case for the encoder) runs at 58 fps.
@@ -168,9 +208,14 @@ Renderer hashes are identical on the Deck and on macOS.
 
 ## Open issues
 
-1. Display rates below 60 Hz (Gaming Mode's 40-59 Hz settings, nested compositors) slow emulation
-   down to the display rate: frames are never emulated two per present yet.
+1. 40-59 Hz were verified in a nested gamescope at 45 Hz only (see Measurements); below 30.05 Hz
+   emulation still slows down.
 2. 90 Hz shows the 3:2 pattern; 60 Hz (QAM) is recommended until a measured comparison exists.
 3. Gamepad navigation of the menu was verified with keyboard events (Space/arrows) over ssh; the
    built-in controls themselves need a hands-on check (Steam Input template, R3 menu).
-4. Feature parity (library, timeline, practice, takes, settings + remap, CRT, export, ja) is Step 3.
+4. Feature parity (library, timeline, practice, takes, settings + remap, ja) and the CRT / export
+   menus are Step 3 (the hooks: `VkRenderer::setPostProcess` / `postProcessStatus`,
+   `render/post_process.h`; `exportProject` / `ExportJob`, `export/mp4_export.h`;
+   `crtExportProcessorFactory`, `render/crt_export.h`).
+5. CRT at full screen costs ~11.8 ms of GPU per frame on the Deck (RADV, 1600 MHz): 60 fps holds,
+   but sample -> screen grows to ~17.4 ms. See docs/CRT_PORT.md, "Vulkan port".

@@ -203,14 +203,15 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## nesterm physical CRT model (CRT Display, macOS app)
+## nesterm physical CRT model (CRT Display, macOS and Linux apps)
 
 - Project: nesterm by kathoc (Web version, `web/physical-*.mjs` and `vendor/crt/`). Its `vendor/crt/` modules
   were exported from the same author's research project **crt-physical-model**
   (`vendor/crt/EXPORT-MANIFEST.json`: commit `919c156329dae4f2a832460fb3726a5f09c20213`, working tree dirty).
   crt-physical-model has no separate license file; the code is distributed inside nesterm under nesterm's MIT license.
 - What ReplayNES contains: a Metal/Swift port (no JavaScript is shipped) in `apps/macos/Sources/Core/CRT/`
-  (setup math, MSL ports of the WebGL2 shaders), the settings UI in `apps/macos/Sources/App/CRTSettings.swift`,
+  (setup math, MSL ports of the WebGL2 shaders), its C++ / GLSL (Vulkan compute) port for Linux in
+  `apps/linux/src/render/` and `apps/linux/shaders/crt/`, the settings UI in `apps/macos/Sources/App/CRTSettings.swift`,
   and `tools/crt-reference/generate-fixtures.mjs`, which imports nesterm's reference modules from a local nesterm
   checkout at test-fixture generation time (they are not copied into this repository). Mapping and deviations:
   `docs/CRT_PORT.md`.
