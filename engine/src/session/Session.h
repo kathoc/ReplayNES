@@ -118,6 +118,11 @@ class Session {
   // --- practice / A-B slots
   Status practiceSetA(int slot);
   Status practiceSetB(int slot);
+  // Defines slot = [a, b) directly from take frames (cursor positions on the active take):
+  // A = take state at frame a, length = b - a. The cursor, machine state, video buffer and
+  // emulation continuity are restored exactly afterwards (rn_audio reports 0 samples, like a
+  // seek). WrongMode in practice; InvalidArg unless a < b; OutOfRange if b > take length.
+  Status practiceSetRange(int slot, uint64_t a, uint64_t b);
   Status practiceGotoA(int slot);
   Status practiceRename(int slot, const std::string& name);
   Status practiceClear(int slot);
@@ -163,6 +168,9 @@ class Session {
   Status captureState(std::vector<uint8_t>& out) { return core_->saveState(out); }
   // Take state at the cursor (the saved return state while practicing).
   Status cursorState(std::vector<uint8_t>& out);
+  // Take state at frame f (not in practice); moves the core and frame_, renders no video and
+  // does not touch emuEpoch_ (the caller restores the cursor).
+  Status takeStateAt(uint64_t f, std::vector<uint8_t>& out);
   Mode takeMode() const { return mode_ == Mode::Practice ? returnMode_ : mode_; }
   Status enterPractice();
   Status leavePractice(Mode to);

@@ -1,6 +1,7 @@
 #include "session/Session.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include "persist/ProjectStore.h"
 #include "util/Hash.h"
@@ -417,6 +418,90 @@ Status Session::practiceSetB(int slot) {
   p.hasB = true;
   p.length = len;
   p.updatedSeq = ++practiceSeq_;
+  touch();
+  return Status::Ok();
+}
+
+Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
+  const Checkpoint* cp = target > 0 ? cps_.best(target - 1, tl_) : nullptr;
+  bool continueCurrent = target >= frame_ && (!cp || cp->frame <= frame_);
+  if (!continueCurrent) {
+    if (cp && cp->frame > 0) {
+      Status st = core_->loadState(cp->data.data(), cp->data.size());
+      if (!st.ok()) return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
+      frame_ = cp->frame;
+    } else {
+      RN_TRY(core_->loadROM(rom_.data(), rom_.size()));  // fresh power-on (video buffer untouched below)
+      frame_ = 0;
+    }
+  }
+  while (frame_ < target) {
+    const InputRecord* r = tl_.recordAt(frame_);
+    if (!r) return Error(Err::Internal, "missing record while locating A");
+    RN_TRY(core_->stepRecord(r->p1, r->p2, r->events, false));
+    ++frame_;
+    maybeCheckpoint();
+  }
+  return captureState(out);
+}
+
+Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  if (mode_ == Mode::Practice)
+    return Error(Err::WrongMode, "cannot define a range on the take while practicing (leave practice first)");
+  if (a >= b) return Error(Err::InvalidArg, "A must be before B");
+  if (b > tl_.length()) return Error(Err::OutOfRange, "B is beyond the take end");
+  std::vector<uint8_t> stA;
+  if (a == frame_) {
+    RN_TRY(captureState(stA));
+  } else {
+    // Walk to A on the take, then put the cursor state back exactly (state, frame, video,
+    // continuity epoch). Only the audio of the last frame is lost (reported as 0 samples).
+    std::vector<uint8_t> saved;
+    std::vector<uint32_t> savedVideo(core_->video(), core_->video() + size_t(kVideoWidth) * kVideoHeight);
+    RN_TRY(captureState(saved));
+    const uint64_t savedFrame = frame_, savedEpoch = emuEpoch_;
+    Status walk = takeStateAt(a, stA);
+    // Frame 0 is restored like everywhere else: a fresh power-on (bit-identical to a new instance).
+    Status back = savedFrame == 0 ? powerOnFresh() : core_->loadState(saved.data(), saved.size());
+    frame_ = savedFrame;
+    audioValid_ = false;
+    bool rebuild = !back.ok() ||  // never leave the session on a wrong state
+                   std::memcmp(core_->video(), savedVideo.data(), savedVideo.size() * 4) != 0;  // picture cleared
+    if (rebuild) {
+      // Rebuild the cursor (state + picture) from the input log. The machine state equals the
+      // one before the call, so emulation continuity (A/B anchors) is kept.
+      Status rs = resync(savedFrame, true);
+      if (!rs.ok()) return rs;
+      audioValid_ = false;
+    }
+    emuEpoch_ = savedEpoch;
+    if (!walk.ok()) return walk;
+  }
+  PracticeSlot& p = slots_[size_t(slot)];
+  if (!p.used) {
+    p = PracticeSlot();
+    p.used = true;
+    p.createdSeq = ++practiceSeq_;
+    p.updatedSeq = p.createdSeq;
+  } else {
+    p.updatedSeq = ++practiceSeq_;
+  }
+  p.stateSeq = p.updatedSeq;
+  p.crc = crc32(stA.data(), stA.size());
+  p.state = std::move(stA);
+  p.compat = core_->compatId();
+  p.stateFormatVersion = core_->stateFormatVersion();
+  p.hasB = true;
+  p.length = b - a;
+  p.hasTakeFrame = true;
+  p.takeFrame = a;
+  p.takeId = tl_.head();
+  p.anchorEpoch = 0;  // defined from the take, not by continuous play: B is already set
+  p.anchorCount = 0;
+  p.stateJournaled = p.stateFiled = false;
+  if (curAnchorSlot_ == slot) curAnchorSlot_ = -1;
   touch();
   return Status::Ok();
 }

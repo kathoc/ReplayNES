@@ -238,6 +238,14 @@ rn_status rn_practice_set_a(rn_session* s, uint32_t slot);
  * RN_ERR_DISCONTINUITY: seek/load/take switch since the anchor (also after reopening: goto A
  * first); RN_ERR_INVALID_ARG: 0 frames. */
 rn_status rn_practice_set_b(rn_session* s, uint32_t slot);
+/* Defines slot = [a_frame, b_frame) from take frames (cursor positions on the active take, e.g.
+ * picked on a timeline) without playing it: A = take state at a_frame (as if rn_seek(a_frame) then
+ * rn_practice_set_a), length = b_frame - a_frame, has_take_frame = 1, take_id = active take.
+ * Keeps the slot's name. The cursor, machine state, video buffer and the continuity of other
+ * slots' anchors are restored exactly afterwards; rn_audio reports 0 samples (like a seek).
+ * Costs a seek (checkpoint + replay). RN_ERR_WRONG_MODE in PRACTICE; RN_ERR_INVALID_ARG unless
+ * a_frame < b_frame; RN_ERR_OUT_OF_RANGE if b_frame > take length or slot >= RN_PRACTICE_SLOTS. */
+rn_status rn_practice_set_range(rn_session* s, uint32_t slot, uint64_t a_frame, uint64_t b_frame);
 /* Enters PRACTICE if needed (remembering the take position), loads A, counter = 0. A loop:
  * step until rn_practice_frame() == length_frames, then goto_a again. RN_ERR_NOT_FOUND: no A. */
 rn_status rn_practice_goto_a(rn_session* s, uint32_t slot);

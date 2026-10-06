@@ -293,6 +293,11 @@ rn_status rn_practice_set_a(rn_session* s, uint32_t slot) {
 rn_status rn_practice_set_b(rn_session* s, uint32_t slot) {
   return guard([&] { return s ? ret(s->s->practiceSetB(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
 }
+rn_status rn_practice_set_range(rn_session* s, uint32_t slot, uint64_t a_frame, uint64_t b_frame) {
+  return guard([&] {
+    return s ? ret(s->s->practiceSetRange(slot < 1024 ? int(slot) : -1, a_frame, b_frame)) : invalid("null session");
+  });
+}
 rn_status rn_practice_goto_a(rn_session* s, uint32_t slot) {
   return guard([&] { return s ? ret(s->s->practiceGotoA(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
 }
