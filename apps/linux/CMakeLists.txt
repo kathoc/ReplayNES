@@ -138,5 +138,5 @@ endif()
 set(APP_ID io.github.replaynes.ReplayNES)
 install(FILES flatpak/${APP_ID}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES flatpak/${APP_ID}.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
-install(FILES ${REPLAYNES_ROOT}/apps/macos/Resources/IconSource/replaynes.svg
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps RENAME ${APP_ID}.svg)
+# App icons (hicolor 64-512 + scalable), Steam artwork, Add to Steam module + test.
+include(steam/steam.cmake)

@@ -47,6 +47,7 @@
 #include "replaynes/replaynes.h"
 #include "script.h"
 #include "settings.h"
+#include "steam_shortcut.h"
 #include "thumbnails.h"
 #include "ui.h"
 #include "vk_renderer.h"
@@ -638,6 +639,7 @@ int App::run(const Options& opt) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (int rc = 0; steam::runCli(argc, argv, &rc)) return rc;  // --add-to-steam [--dry-run] (no window)
   Options opt;
   if (!parseArgs(argc, argv, &opt)) return 2;
   App app;

@@ -23,6 +23,12 @@ finish-args:
   # "Reset Project" backups and projects replaced by Save As go to the user's Trash
   # (freedesktop Trash spec: ~/.local/share/Trash/{files,info}).
   - --filesystem=xdg-data/Trash:create
+  # "Add to Steam" (--add-to-steam, Settings): the non-Steam shortcut (config/shortcuts.vdf) and
+  # its library artwork (config/grid) of each local Steam account - nothing else of Steam's.
+  - --filesystem=~/.local/share/Steam/userdata
+  # Read-only: the Steam client holds flock() locks on its log files while it runs - the only
+  # running-Steam check that works from inside the sandbox (no host /proc, no D-Bus name).
+  - --filesystem=~/.local/share/Steam/logs:ro
 modules:
   - name: replaynes
     buildsystem: cmake-ninja
