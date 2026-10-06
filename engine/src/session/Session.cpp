@@ -584,6 +584,74 @@ Status Session::save() {
   return Status::Ok();
 }
 
+Status Session::reset(bool keepPracticeSlots) {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot reset the project while practicing (leave practice first)");
+  // The previous content, restored if the reset cannot be committed.
+  Timeline oldTl = std::move(tl_);
+  CheckpointStore oldCps = std::move(cps_);
+  std::vector<Bookmark> oldBookmarks = std::move(bookmarks_);
+  std::array<PracticeSlot, kPracticeSlots> oldSlots = slots_;
+  const Mode oldMode = mode_;
+  const uint64_t oldFrame = frame_;
+  const int oldAnchor = curAnchorSlot_;
+  const uint64_t oldChangeSeq = changeSeq_;
+
+  // Fresh timeline / checkpoint store that continue the id counters: files named by segment and
+  // checkpoint id (and practice states by sequence number) are never overwritten, so the
+  // committed generation stays readable until the new index replaces it.
+  tl_ = Timeline();
+  tl_.setCounters(oldTl.nextId(), oldTl.seq());
+  cps_ = CheckpointStore(opt_.checkpoints);
+  cps_.setNextId(oldCps.nextId());
+  bookmarks_.clear();
+  for (auto& p : slots_) {
+    if (!keepPracticeSlots) {
+      p = PracticeSlot();
+      continue;
+    }
+    // The A state stays valid; the take it was set on is gone.
+    p.hasTakeFrame = false;
+    p.takeFrame = 0;
+    p.takeId = 0;
+    p.anchorEpoch = p.anchorCount = 0;
+  }
+  curAnchorSlot_ = -1;
+  mode_ = Mode::Record;
+  ++emuEpoch_;  // continuity broken (A/B anchors)
+  Status st = powerOnFresh();
+  touch();
+
+  auto rollback = [&]() {
+    tl_ = std::move(oldTl);
+    cps_ = std::move(oldCps);
+    bookmarks_ = std::move(oldBookmarks);
+    slots_ = oldSlots;
+    mode_ = oldMode;
+    curAnchorSlot_ = oldAnchor;
+    changeSeq_ = oldChangeSeq;
+    frame_ = 0;
+    Status rs = powerOnFresh();
+    if (rs.ok()) rs = resync(oldFrame, true);
+    return rs;
+  };
+  if (!st.ok()) {
+    rollback();
+    return st;
+  }
+  if (store_) {
+    const uint64_t gen = store_->generation();
+    st = store_->fullSave(*this);
+    if (!st.ok()) {
+      // Before the index commit nothing on disk changed (only unreferenced new files): keep the
+      // old project. After it the reset is committed; the next save finishes the remaining steps.
+      if (store_->generation() == gen) rollback();
+      return st;
+    }
+    savedSeq_ = changeSeq_;
+  }
+  return Status::Ok();
+}
+
 Status Session::autosave() {
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
   return store_->autosave(*this);

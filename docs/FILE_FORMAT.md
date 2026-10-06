@@ -144,7 +144,13 @@ truncated back to its previous size so later appends stay parseable.
 3. write `metadata/bookmarks.json` and `metadata/practice.json` mirrors, then `manifest.json` with
    generation g+1;
 4. reset the journal (header base g+1); 5. delete unreferenced state files (incl. replaced
-   practice A states).
+   practice A states) and unreferenced `<id>.seg` segment files.
+
+**Reset Project** (`rn_session_reset`): the session gets an empty timeline / checkpoint store
+that continue the segment and checkpoint id counters (and the practice sequence), so no file of
+generation g is overwritten; then a full save. A crash before step 2 leaves generation g intact
+(the new files are unreferenced and collected by a later save); from step 2 on the reset project
+is committed. A save error before step 2 restores the previous session content.
 
 While practicing, the `head` checkpoint is the take state saved when practice was entered, never
 the practice machine state.

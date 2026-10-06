@@ -146,6 +146,7 @@ final class EmulationController {
     private var nextDeadline: UInt64 = 0
     // Fast-forward (replays the recorded take only; never records).
     private var ff = FastForwardSession()
+    var fastForwardActive: Bool { ff.active }
     private var ffBlocked = false           // hold started where nothing is recorded ahead
     private var pausedBeforeFF = true
     // Paused D-pad stepping.

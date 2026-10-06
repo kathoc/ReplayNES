@@ -14,7 +14,9 @@
 //                                                quit (the ⌘Q path: persist + resume record),
 //                                                fullscreen, crtOn, crtOff, export (sheet), sidebar, latency,
 //                                                open:<library|takes|guide|settings>,
-//                                                settingsTab:<0-5> (selects a Settings tab).
+//                                                settingsTab:<0-5> (selects a Settings tab),
+//                                                seek:<frame>, bookmark, undoTake,
+//                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>.
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
@@ -105,6 +107,15 @@ extension AppModel {
                 case "latency": self.showLatency.toggle()
                 case "open" where parts.count > 2:
                     NotificationCenter.default.post(name: Self.testOpenWindow, object: parts[2])
+                case "seek": self.seek(to: UInt64(max(0, n)))
+                case "bookmark": self.addBookmark()
+                case "undoTake": self.undoTake()
+                case "resetProject":  // n = 1: keep the A/B sections; a saved project is backed up (resetBackupFolder)
+                    let saved = self.current.map { !$0.isTemp && !$0.projectPath.isEmpty } ?? false
+                    self.performProjectReset(keepPracticeSlots: n != 0, backup: saved)
+                case "resetPrompt": self.resetProjectPrompt()
+                case "windowWidth":
+                    if let w = self.mainWindow { var f = w.frame; f.size.width = CGFloat(n); w.setFrame(f, display: true) }
                 case "settingsTab":
                     let tabs = ["controller", "game", "hotkey", "turbo", "display", "updates"]
                     UserDefaults.standard.set(tabs[max(0, min(n, tabs.count - 1))], forKey: SettingsView.tabKey)

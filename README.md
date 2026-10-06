@@ -52,7 +52,7 @@ You can export it as-is to an MP4 with audio.
 
 - The bottom bar is a simple layout of just the "Record" button, go to start, rewind (while held), pause / resume, fast-forward (while held), slow, the timeline, "Practice", and the display size. While paused, step back / frame advance buttons appear. Bookmarks, the takes list, advance by N frames, reset, and so on are in the "…" menu and the menu bar.
 - **Display Size**: "Integer" is the largest integer scale that fits on the screen, and the pixels line up crisply. "FILL" expands to fill the window while keeping the aspect ratio (4:3, or pixel aspect 8:7). You can choose it at the right end of the bottom bar or from the "View" menu (⌘F toggles), and the setting is saved.
-- **Timeline (filmstrip)**: Like video editing software, screenshots of the whole take are lined up. Dragging moves to that position (silent, paused). The playhead (red while recording, white while playing, orange while practicing), bookmarks (yellow), and A/B sections (numbered colored bands) are overlaid. Thumbnails are generated on a separate core from the game processing, so operation stays light even with a one-hour take (for long takes, thumbnails are replaced with the correct pictures from left to right, and until then a nearby thumbnail is shown). Each thumbnail is pinned to its time within the take, so as the take grows while recording, the whole strip shrinks smoothly, and the rightmost thumbnail gradually appears from partway into view.
+- **Timeline (filmstrip)**: Like video editing software, one screenshot per 5 seconds of play is lined up at its natural size. While recording, the bar grows to the right and the playhead advances one dot at a time; the newest screenshot appears cut off and is revealed as recording continues (fully shown after 5 s, then the next one starts). When the bar reaches the right end, the scale changes to one screenshot per 10 s (then 20 s, 40 s …) and the bar becomes half as long. Dragging moves to that position (silent, paused). The playhead (red while recording, white while playing, orange while practicing), bookmarks (yellow), and A/B sections (numbered colored bands) are overlaid. Thumbnails are made apart from the game processing (in parallel, from the take's saved checkpoints), so when you reopen a project they all appear at once shortly after, even for a one-hour take.
 - The sidebar (takes, bookmarks, controllers) is hidden by default. You can show it with the button at the right end of the toolbar or with ⌥⌘S.
 - "Help → Controls Guide" (⌘?) has a list of controller and keyboard controls.
 
@@ -126,6 +126,8 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 4. In playback mode (the gray "Record" button), the recorded take is played. If you want to make changes, press the "Record" button to return to record mode.
 
 If you add a bookmark (B / ⌘D), you can jump straight to that position.
+
+**Reset Project…** (File menu, sidebar, or the Takes window) starts the current project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay the same. "Keep A/B repeat sections" (on by default) keeps your practice sections. For a saved project, a backup copy is moved to the Trash first, so you can still recover the old recording from there.
 
 ### Production Aids
 

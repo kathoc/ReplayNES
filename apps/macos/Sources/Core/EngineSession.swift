@@ -135,6 +135,8 @@ final class EngineSession {
     func save() throws { try rnCheck(rn_session_save(handle)) }
     func autosave() throws { try rnCheck(rn_session_autosave(handle)) }
     func saveAs(_ dir: URL) throws { try rnCheck(rn_session_save_as(handle, dir.path)) }
+    /// "Reset Project": back to power-on with an empty timeline (rn_session_reset); saved at once.
+    func reset(keepPracticeSlots: Bool) throws { try rnCheck(rn_session_reset(handle, keepPracticeSlots ? 1 : 0)) }
     var recovered: Bool { rn_session_recovered(handle) != 0 }
     var hasUnsavedChanges: Bool { rn_session_has_unsaved_changes(handle) != 0 }
     var romSHA256: String { String(cString: rn_session_rom_sha256(handle)) }

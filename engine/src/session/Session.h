@@ -144,6 +144,14 @@ class Session {
   Status save();
   Status autosave();
   Status saveAs(const std::string& dir);
+  // "Reset Project": the project starts over from power-on (frame 0, record mode, empty
+  // timeline: every take, bookmark, checkpoint and the take undo history are dropped). Same ROM
+  // and project directory. keepPracticeSlots keeps the A/B slots (their A states stay valid; their
+  // take position is cleared). A project is fully saved right away; segment / state ids are never
+  // reused, so a crash at any point leaves either the old or the new project on disk. If the save
+  // fails before its commit point the session is restored to its previous state. WrongMode in
+  // practice.
+  Status reset(bool keepPracticeSlots);
   bool hasProject() const { return store_ != nullptr; }
   bool recovered() const { return recovered_; }
   bool unsavedChanges() const { return changeSeq_ != savedSeq_; }

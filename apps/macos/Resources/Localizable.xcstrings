@@ -81,6 +81,16 @@
         }
       }
     },
+    "%@ (Before Reset %@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（リセット前 %2$@）"
+          }
+        }
+      }
+    },
     "%@ (picture %@, vertical ×%lld, nearest neighbor)": {
       "localizations": {
         "ja": {
@@ -317,6 +327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "AとBが同じ位置です。少し進めてからBを設定してください"
+          }
+        }
+      }
+    },
+    "A backup copy of the project is moved to the Trash first, so you can still recover it from there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にプロジェクトのバックアップコピーをゴミ箱に移すので、そこから元に戻せます。"
           }
         }
       }
@@ -1161,6 +1181,16 @@
         }
       }
     },
+    "Couldn’t make a backup copy, so the project was not reset.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップコピーを作成できなかったため、プロジェクトはリセットしていません。"
+          }
+        }
+      }
+    },
     "Couldn’t move": {
       "localizations": {
         "ja": {
@@ -1217,6 +1247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "既存のプロジェクトを置き換えられません"
+          }
+        }
+      }
+    },
+    "Couldn’t reset the project": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトをリセットできませんでした"
           }
         }
       }
@@ -2157,6 +2197,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "かな"
+          }
+        }
+      }
+    },
+    "Keep A/B repeat sections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/Bリピート区間を残す"
           }
         }
       }
@@ -3461,6 +3511,26 @@
         }
       }
     },
+    "Project reset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトをリセットしました"
+          }
+        }
+      }
+    },
+    "Project reset (a backup is in the Trash)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトをリセットしました（バックアップはゴミ箱にあります）"
+          }
+        }
+      }
+    },
     "Projects Folder": {
       "localizations": {
         "ja": {
@@ -3841,12 +3911,32 @@
         }
       }
     },
+    "Reset Project…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトをリセット…"
+          }
+        }
+      }
+    },
     "Reset is only available in record mode (or while practicing)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "リセットは録画モード（または練習中）でのみ使えます"
+          }
+        }
+      }
+    },
+    "Reset this project?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトをリセットしますか？"
           }
         }
       }
@@ -4581,6 +4671,16 @@
         }
       }
     },
+    "Start this project over from power-on (every take and bookmark is deleted, after a confirmation)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトを電源投入からやり直します（確認のあと、すべてのテイクとブックマークが削除されます）"
+          }
+        }
+      }
+    },
     "Started a new take. Use “Back to Previous Take” to return to the old continuation": {
       "localizations": {
         "ja": {
@@ -4851,6 +4951,16 @@
         }
       }
     },
+    "The recording starts over from power-on: every take, bookmark and the take history are deleted. The ROM and the project location stay the same.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電源投入から記録をやり直します。すべてのテイク、ブックマーク、テイクの履歴が削除されます。ROM とプロジェクトの保存場所は変わりません。"
+          }
+        }
+      }
+    },
     "The selected ROM differs from the one this project was recorded with.\nRequired ROM: %@\nSHA-256: %@\n\nDetails: %@": {
       "localizations": {
         "ja": {
@@ -4967,6 +5077,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "このセッションはまだプロジェクトとして保存されていません（一時保存中）。保存しない場合、一時保存されたデータは破棄されます。"
+          }
+        }
+      }
+    },
+    "This session isn’t saved as a project, so no backup is made.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションはプロジェクトとして保存されていないため、バックアップは作成されません。"
           }
         }
       }

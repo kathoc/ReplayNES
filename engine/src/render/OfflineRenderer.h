@@ -14,6 +14,10 @@ namespace rn {
 class OfflineRenderer {
  public:
   // end == 0 means the take length. Frames before `start` are emulated (pre-roll) but not output.
+  // The pre-roll starts at power-on or at the session's latest checkpoint valid for the active
+  // take at or before `start` (bit-identical machine state, as for seeking), so creating a
+  // renderer late in a long take is cheap. create() only copies (the input records it needs, the
+  // ROM and that state); the core is made by the first next(), on the thread that renders.
   static Status create(const Session& s, uint64_t start, uint64_t end, std::unique_ptr<OfflineRenderer>& out);
   uint64_t totalFrames() const { return end_ - start_; }
   uint64_t framesDone() const { return pos_ > start_ ? pos_ - start_ : 0; }
@@ -27,8 +31,12 @@ class OfflineRenderer {
 
  private:
   OfflineRenderer() = default;
-  std::vector<InputRecord> recs_;
+  Status init();
+  std::vector<InputRecord> recs_;  // records [recBase_, end_)
+  uint64_t recBase_ = 0;
   std::vector<uint8_t> rom_;
+  std::vector<uint8_t> seed_;      // machine state after recBase_ frames (empty: power-on)
+  CoreKind kind_ = CoreKind::Nestopia;
   std::unique_ptr<ICore> core_;
   uint64_t start_ = 0, end_ = 0, pos_ = 0;
   bool started_ = false;

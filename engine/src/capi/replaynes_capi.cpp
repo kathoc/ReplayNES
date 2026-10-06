@@ -197,6 +197,9 @@ rn_status rn_session_save(rn_session* s) {
 rn_status rn_session_autosave(rn_session* s) {
   return guard([&] { return s ? ret(s->s->autosave()) : invalid("null session"); });
 }
+rn_status rn_session_reset(rn_session* s, int keep_practice_slots) {
+  return guard([&] { return s ? ret(s->s->reset(keep_practice_slots != 0)) : invalid("null session"); });
+}
 rn_status rn_session_save_as(rn_session* s, const char* dir) {
   return guard([&] {
     if (!s || !dir) return invalid("null argument");

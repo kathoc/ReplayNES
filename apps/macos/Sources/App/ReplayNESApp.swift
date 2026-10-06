@@ -199,6 +199,7 @@ struct AppCommands: Commands {
             Button("Export MP4…") { model.showExport = true }.keyboardShortcut("e")
                 .disabled(!menu.v.hasSession || menu.v.takeEmpty)
             Divider()
+            Button("Reset Project…") { model.resetProjectPrompt() }.disabled(!menu.v.hasSession)
             Button("Close Project") { model.closeProject() }.disabled(!menu.v.hasSession)
         }
         CommandGroup(replacing: .printItem) {}

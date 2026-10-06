@@ -105,7 +105,7 @@ it. Layer: opaque, `framebufferOnly`, `displaySyncEnabled`, `presentsWithTransac
 locked queue drained before the JIT wait, status is posted asynchronously, the thumbnail capture
 and autosave run after the commit. Keyboard events still arrive through the main thread (their
 own timestamps are used for the measurement); controllers use their own queue. The filmstrip
-now keeps one thumbnail per 5 s of game time (then 10, 20, 40 s ... as the take grows):
+now keeps one thumbnail per 5 s of game time (then 10, 20, 40 s ... as the timeline scale doubles):
 live capture at most once per 5 s, a fraction of the background generation. Thumbnails on vs
 off (`-filmstripThumbnails NO`) made no measurable difference to latency, judder or CPU in the
 long take, so they stay.

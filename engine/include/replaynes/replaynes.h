@@ -133,6 +133,14 @@ void rn_session_close(rn_session* s);
 rn_status rn_session_save(rn_session* s);      /* full atomic save; resets the journal */
 rn_status rn_session_autosave(rn_session* s);  /* cheap journal append + fsync (call every few s) */
 rn_status rn_session_save_as(rn_session* s, const char* project_dir); /* in-memory -> project */
+/* "Reset Project": starts the project over from power-on (frame 0, RECORD, empty timeline: all
+ * takes, bookmarks, checkpoints and the take undo history are dropped); same ROM and project
+ * directory. keep_practice_slots != 0 keeps the A/B slots (A states stay valid; their take
+ * position is cleared), otherwise they are cleared too. A project is fully saved right away
+ * (journal reset); a crash at any point leaves either the old or the reset project on disk. On a
+ * save error before the commit the session keeps its previous content (and the error is
+ * returned). RN_ERR_WRONG_MODE in PRACTICE. */
+rn_status rn_session_reset(rn_session* s, int keep_practice_slots);
 int rn_session_recovered(const rn_session* s);          /* 1 if open() replayed journal data */
 int rn_session_has_unsaved_changes(const rn_session* s);
 const char* rn_session_rom_sha256(const rn_session* s);
@@ -339,7 +347,10 @@ void rn_input_poll_hotkeys(rn_input* in, uint32_t* pressed_edges, uint32_t* held
 typedef struct rn_renderer rn_renderer;
 
 /* Snapshots the active take; renders frames [start_frame, end_frame) (end_frame 0 = take length)
- * on a fresh core from power-on. The session is not modified and may keep running. */
+ * on a fresh core from power-on (start_frame > 0: from the session's latest checkpoint at or
+ * before start_frame, the bit-identical machine state seeking uses). Cheap: it only copies what
+ * it needs; the core is created by the first rn_renderer_next, on the rendering thread. The
+ * session is not modified and may keep running. */
 rn_status rn_renderer_new(rn_session* s, uint64_t start_frame, uint64_t end_frame, rn_renderer** out);
 uint64_t rn_renderer_total_frames(const rn_renderer* r);
 uint64_t rn_renderer_frames_done(const rn_renderer* r); /* progress = done/total */

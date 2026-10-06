@@ -486,6 +486,16 @@ Status ProjectStore::fullSave(Session& s) {
   if (fs::listDir(path("states"), names).ok())
     for (auto& n : names)
       if (!liveStates.count(n)) fs::removeFile(path("states/" + n));
+  // Segment files the committed index no longer references (a project reset, or the leftovers
+  // of a save that failed before its commit). Only "<id>.seg" names are touched.
+  names.clear();
+  if (fs::listDir(path("timeline/segments"), names).ok())
+    for (auto& n : names) {
+      if (n.size() <= 4 || n.compare(n.size() - 4, 4, ".seg") != 0) continue;
+      const std::string stem = n.substr(0, n.size() - 4);
+      if (stem.size() > 19 || stem.find_first_not_of("0123456789") != std::string::npos) continue;
+      if (!s.tl_.segment(std::stoull(stem))) fs::removeFile(path("timeline/segments/" + n));
+    }
   return Status::Ok();
 }
 

@@ -86,9 +86,9 @@ final class AppModel: ObservableObject {
     /// false: second instance, scripted run without --session-root, or the folder is unusable.
     /// Then quick play stays in memory and nothing is resumed (the behaviour before 0.3).
     private(set) var persistSessions = false
-    private struct SessionIdentity { let projectPath: String; let isTemp: Bool; let romSHA256: String }
+    struct SessionIdentity { let projectPath: String; let isTemp: Bool; let romSHA256: String }
     /// The installed session (main-thread view of what the emulation thread owns).
-    private var current: SessionIdentity?
+    private(set) var current: SessionIdentity?
     private var lastResume: ResumeRecord?
     private var resumeTimer: Timer?
     private let resumeQueue = DispatchQueue(label: "replaynes.resume", qos: .utility)
@@ -638,6 +638,15 @@ final class AppModel: ObservableObject {
         releaseSession()
         if wasTemp { removeTempProject() }
         writeResume(nil)
+    }
+
+    /// After "Reset Project" (ProjectReset.swift): the resume record restarts like a new project's
+    /// (frame 0, record mode) right away instead of at the next timer tick.
+    func sessionWasReset(keepPracticeSlots: Bool) {
+        guard let c = current, !c.projectPath.isEmpty else { return }
+        let hasSlots = keepPracticeSlots && practiceSlots.contains { $0.hasA }
+        writeResume(ResumeRecord(projectPath: c.projectPath, isTemp: c.isTemp, romPath: status.romPath, romSHA256: c.romSHA256,
+                                 frame: 0, atTakeEnd: true, mode: .record, hasContent: hasSlots))
     }
 
     /// Stops the emulation thread from using the installed session and closes it (files released).

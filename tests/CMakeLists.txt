@@ -24,6 +24,8 @@ rn_add_test(test_longrun)
 rn_add_test(test_practice)
 # A/B slots defined from take frames (timeline selection: rn_practice_set_range).
 rn_add_test(test_practice_range)
+# "Reset Project": session reset + persistence + crash safety (rn_session_reset).
+rn_add_test(test_reset)
 # Uses the developer's own ROMs in <repo>/roms when present (gitignored); skipped otherwise.
 rn_add_test(test_local_roms)
 target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")

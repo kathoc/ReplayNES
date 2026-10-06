@@ -23,6 +23,8 @@ struct SidebarView: View {
                 Button { model.undoTake() } label: { Label("Back to Previous Take", systemImage: "arrow.uturn.backward") }
                     .disabled(st.undoDepth == 0)
                 Button { openWindow(id: "takes") } label: { Label("Takes (Details)…", systemImage: "list.bullet.indent") }
+                Button { model.resetProjectPrompt() } label: { Label("Reset Project…", systemImage: "arrow.counterclockwise") }
+                    .help("Start this project over from power-on (every take and bookmark is deleted, after a confirmation)")
             }
             Section {
                 if model.bookmarks.isEmpty {
@@ -119,6 +121,10 @@ struct TakesPanel: View {
                 Button { model.undoTake() } label: { Label("Back to Previous Take", systemImage: "arrow.uturn.backward") }
                     .disabled(model.status.undoDepth == 0)
                 Text("Undo steps available: \(model.status.undoDepth)").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button { model.resetProjectPrompt() } label: { Label("Reset Project…", systemImage: "arrow.counterclockwise") }
+                    .disabled(!model.status.hasSession)
+                    .help("Start this project over from power-on (every take and bookmark is deleted, after a confirmation)")
             }
         }
         .padding(16)

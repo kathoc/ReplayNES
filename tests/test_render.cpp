@@ -243,3 +243,37 @@ TEST_CASE("video indices: raw PPU codes describe the same picture as rn_video; d
   REQUIRE(m->step(0, 0, 0).ok());
   CHECK(m->videoCodes(nullptr, nullptr) == nullptr);
 }
+
+TEST_CASE("render: single frames seeded from checkpoints equal a straight replay (thumbnails)") {
+  auto s = newSession(CoreKind::Nestopia);
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1300, 71, 600, 4)).ok());
+  REQUIRE(s->rewind(500).ok());
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(900, 72)).ok());  // branch at 800
+  auto log = s->timeline().flattenActive();
+  Replay ref = straightReplay(CoreKind::Nestopia, log);
+  std::vector<std::unique_ptr<OfflineRenderer>> rs;
+  std::vector<uint64_t> at = {1, 59, 60, 299, 600, 777, 799, 800, 801, 1234, 1699};
+  for (uint64_t f : at) {
+    std::unique_ptr<OfflineRenderer> r;
+    REQUIRE(OfflineRenderer::create(*s, f, f + 1, r).ok());
+    rs.push_back(std::move(r));
+  }
+  // The renderers own copies: the session may move on (another branch) before they run.
+  REQUIRE(s->seek(100).ok());
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(50, 73)).ok());
+  std::vector<std::thread> threads;
+  std::vector<int> ok(at.size(), 0);
+  for (size_t i = 0; i < at.size(); ++i)
+    threads.emplace_back([&, i] {
+      const uint32_t* v;
+      const int16_t* a;
+      size_t n;
+      uint64_t fi;
+      ok[i] = rs[i]->next(&v, &a, &n, &fi).ok() && fi == at[i] && Hasher64::of(v, 256 * 240 * 4) == ref.video[size_t(at[i])] &&
+                      Session::audioHashOf(a, n) == ref.audio[size_t(at[i])]
+                  ? 1
+                  : 0;
+    });
+  for (auto& t : threads) t.join();
+  for (size_t i = 0; i < at.size(); ++i) CHECK_EQ(ok[i], 1);
+}

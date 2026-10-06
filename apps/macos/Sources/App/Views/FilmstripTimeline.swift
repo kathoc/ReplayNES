@@ -15,10 +15,14 @@ struct FilmstripTimeline: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var strip = FilmstripModel.shared
     @ObservedObject private var clock = AppModel.shared.clock   // playhead / take length (AppModel.status)
+    @Environment(\.displayScale) private var displayScale
 
     static let laneHeight: CGFloat = 16
     static let stripHeight: CGFloat = 40
     static var tileWidth: CGFloat { stripHeight * CGFloat(RN_VIDEO_WIDTH) / CGFloat(RN_VIDEO_HEIGHT) }
+    /// Margin on both sides of the strip: the playhead's head, the A/B edges and flags stay whole
+    /// at frame 0 and at the take end (where the playhead sits while recording).
+    static let inset: CGFloat = 6
 
     private enum DragKind {
         case scrub
@@ -39,9 +43,13 @@ struct FilmstripTimeline: View {
 
     var body: some View {
         GeometryReader { geo in
-            let w = Double(geo.size.width)
+            let w = max(0, Double(geo.size.width - 2 * Self.inset))
             let st = clock.status
-            let g = TimelineGeometry(width: w, length: st.takeLength)
+            // Fixed scale (ThumbnailGrid): the step FilmstripModel.layout committed (it also starts
+            // the crossfade when the scale changes); the recorded part spans 0 ... extent.
+            let tw = Double(Self.tileWidth)
+            let step = strip.tileStep != 0 ? strip.tileStep : ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: st.takeLength)
+            let g = TimelineGeometry(width: ThumbnailGrid.extent(length: st.takeLength, step: step, tileWidth: tw), length: st.takeLength)
             let ranges = TimelineEditing.visibleRanges(slots: model.practiceSlots, takes: model.takes,
                                                        activeTake: st.activeTake, takeLength: st.takeLength)
             let version = strip.version
@@ -49,7 +57,9 @@ struct FilmstripTimeline: View {
             TimelineView(.animation(minimumInterval: nil, paused: fade == nil)) { tl in
                 Canvas { ctx, size in
                     _ = version
-                    draw(&ctx, size: size, g: g, st: st, ranges: ranges, fade: fade, now: tl.date)
+                    var c = ctx
+                    c.translateBy(x: Self.inset, y: 0)
+                    draw(&c, size: CGSize(width: w, height: size.height), g: g, step: step, st: st, ranges: ranges, fade: fade, now: tl.date)
                 }
             }
             .contentShape(Rectangle())
@@ -65,27 +75,30 @@ struct FilmstripTimeline: View {
 
     // MARK: drawing
 
-    private func draw(_ ctx: inout GraphicsContext, size: CGSize, g: TimelineGeometry, st: EmuStatus,
-                      ranges: [TimelineRange], fade: (from: UInt64, start: Date)?, now: Date) {
+    private func draw(_ ctx: inout GraphicsContext, size: CGSize, g: TimelineGeometry, step: Double, st: EmuStatus,
+                      ranges: [TimelineRange], fade: (from: Double, start: Date)?, now: Date) {
         let lane = Self.laneHeight
         let stripRect = CGRect(x: 0, y: lane, width: size.width, height: Self.stripHeight)
         let stripPath = Path(roundedRect: stripRect, cornerRadius: 4)
-        ctx.fill(stripPath, with: .color(Color.secondary.opacity(0.18)))
+        ctx.fill(stripPath, with: .color(Color.secondary.opacity(0.10)))  // nothing recorded there yet
+        if g.width > 0 {  // the recorded part
+            var rec = ctx
+            rec.clip(to: stripPath)
+            rec.fill(Path(CGRect(x: 0, y: lane, width: min(g.width, size.width), height: Self.stripHeight)),
+                     with: .color(Color.secondary.opacity(0.12)))
+        }
 
-        // Thumbnails anchored to take time (ThumbnailGrid.tiles): they slide smoothly as the take
-        // grows; the step change (x2) crossfades from the previous layout.
+        // Thumbnails at the fixed scale (ThumbnailGrid.tiles), clipped at the recorded extent; a
+        // scale change (x2) crossfades from the previous layout.
         var thumbs = ctx
         thumbs.clip(to: stripPath)
-        let tw = Double(Self.tileWidth)
-        let step = ThumbnailGrid.tileStep(width: g.width, tileWidth: tw, length: g.length,
-                                          current: strip.tileStep == 0 ? nil : strip.tileStep)
-        drawTiles(&thumbs, g: g, step: step)
+        drawTiles(&thumbs, length: g.length, step: step)
         if let f = fade, f.from != step, f.from == step * 2 || f.from * 2 == step {
             let p = now.timeIntervalSince(f.start) / FilmstripModel.fadeDuration
             if p < 1 {
                 var old = thumbs
                 old.opacity = 1 - max(0, p)
-                drawTiles(&old, g: g, step: f.from)
+                drawTiles(&old, length: g.length, step: f.from)
             }
         }
 
@@ -122,13 +135,14 @@ struct FilmstripTimeline: View {
                              at: CGPoint(x: xa + 3, y: Double(lane) / 2), anchor: .leading)
                 }
             } else {
-                // A only: flag at A.
+                // A only: flag at A (to the left of A near the take end, so it stays visible).
                 ctx.fill(Path(CGRect(x: xa - 1, y: 0, width: 2, height: Double(lane + Self.stripHeight))),
                          with: .color(c.opacity(hl ? 1 : 0.7)))
-                let flag = CGRect(x: xa, y: 2, width: 22, height: Double(lane) - 4)
+                let fx = xa + 22 > Double(size.width + Self.inset) ? xa - 22 : xa
+                let flag = CGRect(x: fx, y: 2, width: 22, height: Double(lane) - 4)
                 ctx.fill(Path(roundedRect: flag, cornerRadius: 3), with: .color(c.opacity(hl ? 0.95 : 0.6)))
                 ctx.draw(Text("\(r.slot + 1)A").font(.system(size: 9, weight: .bold)).foregroundColor(.black),
-                         at: CGPoint(x: xa + 3, y: Double(lane) / 2), anchor: .leading)
+                         at: CGPoint(x: fx + 3, y: Double(lane) / 2), anchor: .leading)
             }
         }
 
@@ -147,14 +161,15 @@ struct FilmstripTimeline: View {
             } else if st.practiceLength > 0 {
                 // Range not on this take (A set inside practice / on another take): A->B progress.
                 let p = min(1, Double(st.practiceFrame) / Double(st.practiceLength))
-                ctx.fill(Path(CGRect(x: 0, y: Double(lane + Self.stripHeight) - 4, width: g.width * p, height: 4)),
+                ctx.fill(Path(CGRect(x: 0, y: Double(lane + Self.stripHeight) - 4, width: Double(size.width) * p, height: 4)),
                          with: .color(.orange.opacity(0.9)))
             }
         } else if g.length > 0 {
             head = (g.x(forFrame: scrubFrame ?? st.frame), st.recording ? .red : .white)
         }
         if let h = head {
-            let x = max(1, min(g.width - 1, h.x))
+            // Whole backing pixels: while recording the playhead advances in clean 1-dot steps.
+            let x = ThumbnailGrid.snapToPixel(max(0, min(g.width, h.x)), scale: Double(displayScale))
             ctx.fill(Path(CGRect(x: x - 1, y: Double(lane) - 2, width: 2, height: Double(Self.stripHeight) + 2)),
                      with: .color(h.color))
             var tri = Path()
@@ -167,25 +182,24 @@ struct FilmstripTimeline: View {
         ctx.stroke(stripPath, with: .color(.secondary.opacity(0.35)), lineWidth: 1)
     }
 
-    /// Draws the filmstrip tiles for `step` frames per tile. A tile whose picture is not cached
-    /// (yet) shows the nearest cached one: no blank tiles once anything is cached.
-    private func drawTiles(_ ctx: inout GraphicsContext, g: TimelineGeometry, step: UInt64) {
+    /// Draws the filmstrip tiles at the scale `step` (ThumbnailGrid.tiles): each tile shows its
+    /// own picture at its natural size and position, clipped at the recorded extent (the newest
+    /// one is revealed as the take grows), never stretched, repeated or misdated: while it is being
+    /// made, the latest earlier picture within one step is shown dimmed
+    /// (ThumbnailGrid.fallbackWindow), otherwise the tile is an empty placeholder.
+    private func drawTiles(_ ctx: inout GraphicsContext, length: UInt64, step: Double) {
         let tw = Double(Self.tileWidth)
         let y = Double(Self.laneHeight), h = Double(Self.stripHeight)
-        let tiles = ThumbnailGrid.tiles(width: g.width, length: g.length, step: step)
-        for (i, t) in tiles.enumerated() {
-            let clip = CGRect(x: t.x, y: y, width: t.span, height: h)
-            if let img = strip.cache.image(near: t.frame, tolerance: .max) {
+        let base = ctx.opacity
+        for t in ThumbnailGrid.tiles(length: length, step: step, tileWidth: tw) {
+            let own = strip.cache.image(at: t.picture)
+            if let img = own ?? strip.cache.image(before: t.picture, within: ThumbnailGrid.fallbackWindow(step: step)) {
                 var c = ctx
-                c.clip(to: Path(clip))
-                let image = Image(decorative: img, scale: 1).interpolation(.none)
-                var x = t.x
-                repeat {  // natural aspect; repeated only when the take is too short to fill the strip
-                    c.draw(image, in: CGRect(x: x, y: y, width: tw, height: h))
-                    x += tw
-                } while x < t.x + t.span
+                c.clip(to: Path(CGRect(x: t.x, y: y, width: t.visible, height: h)))
+                c.opacity = own != nil ? base : base * ThumbnailGrid.fallbackOpacity
+                c.draw(Image(decorative: img, scale: 1).interpolation(.none), in: CGRect(x: t.x, y: y, width: tw, height: h))
             }
-            if i > 0 {  // subtle separator at the anchor
+            if t.index > 0 {  // subtle separator at the anchor
                 ctx.fill(Path(CGRect(x: t.x - 0.5, y: y, width: 1, height: h)), with: .color(.black.opacity(0.35)))
             }
         }
@@ -196,7 +210,9 @@ struct FilmstripTimeline: View {
     private func dragGesture(g: TimelineGeometry, st: EmuStatus, ranges: [TimelineRange]) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { v in
-                if dragKind == nil { dragKind = beginDrag(at: v.startLocation, g: g, st: st, ranges: ranges) }
+                if dragKind == nil {
+                    dragKind = beginDrag(at: CGPoint(x: v.startLocation.x - Self.inset, y: v.startLocation.y), g: g, st: st, ranges: ranges)
+                }
                 updateDrag(v, g: g, st: st)
             }
             .onEnded { v in
@@ -238,16 +254,16 @@ struct FilmstripTimeline: View {
     private func updateDrag(_ v: DragGesture.Value, g: TimelineGeometry, st: EmuStatus) {
         switch dragKind {
         case .scrub:
-            let f = g.frame(atX: Double(v.location.x))
+            let f = g.frame(atX: Double(v.location.x - Self.inset))
             if f != scrubFrame { scrubFrame = f; model.scrub(to: f) }
         case .select(let slot):
-            if let r = TimelineEditing.range(fromX: Double(v.startLocation.x), toX: Double(v.location.x), in: g) {
+            if let r = TimelineEditing.range(fromX: Double(v.startLocation.x - Self.inset), toX: Double(v.location.x - Self.inset), in: g) {
                 preview = TimelineRange(slot: slot, a: r.a, b: r.b)
             } else {
                 preview = nil
             }
         case .handle(let slot, let h, let a, let b):
-            let r = TimelineEditing.drag(h, of: (a, b), toX: Double(v.location.x), in: g)
+            let r = TimelineEditing.drag(h, of: (a, b), toX: Double(v.location.x - Self.inset), in: g)
             preview = TimelineRange(slot: slot, a: r.a, b: r.b)
         case .body(let slot):
             // Dragging from a range body (lane) selects a new range for the selected slot instead.
@@ -275,7 +291,7 @@ struct FilmstripTimeline: View {
             } else {
                 preview = nil
                 if case .select = dragKind, abs(v.translation.width) < 3, !st.practicing {
-                    model.seek(to: g.frame(atX: Double(v.location.x))) // plain click on the empty lane: move there
+                    model.seek(to: g.frame(atX: Double(v.location.x - Self.inset))) // plain click on the empty lane: move there
                 }
             }
         case .body(let slot):

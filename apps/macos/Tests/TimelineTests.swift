@@ -120,148 +120,104 @@ final class TimelineTests: XCTestCase {
 
     // MARK: thumbnails
 
-    func testThumbnailGrid() {
-        // Never denser than one picture per 5 s (300 frames), then 10 s, 20 s, ...
+    private let tw = 256.0 / 240.0 * 40
+
+    func testThumbnailSteps() {
         XCTAssertEqual(ThumbnailGrid.baseStep, 300)
-        XCTAssertEqual(ThumbnailGrid.step(length: 100, maxCount: 50), 300)
-        XCTAssertEqual(ThumbnailGrid.step(length: 10_000, maxCount: 50), 300)
-        XCTAssertEqual(ThumbnailGrid.step(length: 30_000, maxCount: 50), 600)
-        XCTAssertEqual(ThumbnailGrid.step(length: 60_000, maxCount: 50), 1_200)
-        // 1 hour take, 60 grid frames at most.
-        let hour: UInt64 = 216_000
-        let q = ThumbnailGrid.step(length: hour, maxCount: 60)
-        XCTAssertLessThanOrEqual(hour / q, 60)
-        XCTAssertGreaterThan(hour / (q / 2), 60, "smallest power-of-two step")
-        XCTAssertEqual(q % ThumbnailGrid.baseStep, 0)
-        // Coarser grids are subsets of finer ones (growing takes reuse images).
+        XCTAssertEqual(ThumbnailGrid.minStep, 300, "never more than one picture per 5 s")
+        XCTAssertTrue(ThumbnailGrid.isStep(300))
+        XCTAssertTrue(ThumbnailGrid.isStep(2_400))
+        XCTAssertFalse(ThumbnailGrid.isStep(150))
+        XCTAssertFalse(ThumbnailGrid.isStep(450))
+        XCTAssertFalse(ThumbnailGrid.isStep(0))
+        // Coarser grids are subsets of finer ones (growing takes / narrower windows reuse images).
         let fine = Set(ThumbnailGrid.frames(length: 100_000, step: 600))
         XCTAssertTrue(fine.isSuperset(of: ThumbnailGrid.frames(length: 100_000, step: 1_200)))
-        XCTAssertEqual(ThumbnailGrid.frames(length: 3, step: 4), [])
-        XCTAssertEqual(ThumbnailGrid.frames(length: 13, step: 4), [4, 8, 12])
-
+        XCTAssertEqual(ThumbnailGrid.frames(length: 299, step: 300), [])
+        XCTAssertEqual(ThumbnailGrid.frames(length: 1_000, step: 300), [300, 600, 900])
+        XCTAssertTrue(ThumbnailGrid.isGridFrame(900, step: 300))
+        XCTAssertFalse(ThumbnailGrid.isGridFrame(901, step: 300))
+        XCTAssertFalse(ThumbnailGrid.isGridFrame(0, step: 300))
+        // One picture per tile: tile 0 shows the screen 1 s in (not a later tile's picture).
+        XCTAssertEqual(ThumbnailGrid.startPicture(step: 300), 60)
+        XCTAssertEqual(ThumbnailGrid.targets(length: 59, step: 300), [])
+        XCTAssertEqual(ThumbnailGrid.targets(length: 60, step: 300), [60])
+        XCTAssertEqual(ThumbnailGrid.targets(length: 1_000, step: 300), [60, 300, 600, 900])
+        XCTAssertEqual(ThumbnailGrid.targets(length: 2_400, step: 1_200), [60, 1_200, 2_400])
     }
 
-    // MARK: filmstrip layout (anchored tiles)
-
-    func testFilmstripTilesAnchoredAndClipped() {
-        // 400 pt strip, 1000 frames, 100 frames per tile -> 40 pt per tile.
-        let tiles = ThumbnailGrid.tiles(width: 400, length: 1000, step: 100)
-        XCTAssertEqual(tiles.count, 10, "anchor at 1000 == strip end has no width")
-        XCTAssertEqual(tiles.map(\.frame), stride(from: 0, to: 1000, by: 100).map { UInt64($0) })
-        for (k, t) in tiles.enumerated() {
-            XCTAssertEqual(t.x, Double(k) * 40, accuracy: 1e-9, "x = g.x(k*F)")
-            XCTAssertEqual(t.span, 40, accuracy: 1e-9)
-        }
-        // A 42.67 pt picture is clipped at the next anchor; the last one at the strip end.
-        let tw = 256.0 / 240.0 * 40
-        XCTAssertEqual(tiles[3].visibleWidth(tileWidth: tw), 40, accuracy: 1e-9)
-
-        // Partial last tile: 1050 frames -> anchors 0..1000, the last one 1000..1050 is cut.
-        let t2 = ThumbnailGrid.tiles(width: 420, length: 1050, step: 100)
-        XCTAssertEqual(t2.count, 11)
-        XCTAssertEqual(t2.last!.frame, 1000)
-        XCTAssertEqual(t2.last!.x, 400, accuracy: 1e-9)
-        XCTAssertEqual(t2.last!.span, 20, accuracy: 1e-9)
-        XCTAssertEqual(t2.last!.visibleWidth(tileWidth: tw), 20, accuracy: 1e-9)
-        // Tiles cover the strip exactly, without gaps or overlaps.
-        var x = 0.0
-        for t in t2 { XCTAssertEqual(t.x, x, accuracy: 1e-9); x += t.span }
-        XCTAssertEqual(x, 420, accuracy: 1e-9)
-
-        XCTAssertEqual(ThumbnailGrid.tiles(width: 400, length: 0, step: 4), [])
-        XCTAssertEqual(ThumbnailGrid.tiles(width: 400, length: 3, step: 4).count, 1, "shorter than a step: one tile")
-    }
-
-    func testFilmstripTileStepHysteresis() {
-        let w = 800.0, tw = 256.0 / 240.0 * 40
-        func span(_ f: UInt64, _ len: UInt64) -> Double { ThumbnailGrid.span(step: f, width: w, length: len) }
-        // Fresh choice: largest power-of-two step with span <= tileWidth (span in (0.5, 1] * tw).
-        for len: UInt64 in [6_000, 36_000, 216_000, 1_000_000] {
-            let f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len)
-            XCTAssertEqual(f % ThumbnailGrid.baseStep, 0)
-            let m = f / ThumbnailGrid.baseStep
-            XCTAssertEqual(m & (m - 1), 0, "power-of-two multiple of 5 s")
-            XCTAssertLessThanOrEqual(span(f, len), tw)
-            XCTAssertGreaterThan(span(f, len), tw / 2)
-        }
-        // Too short to fill the strip: baseStep (tiles wider than a picture repeat it).
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: 20), ThumbnailGrid.baseStep)
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: 3_000), ThumbnailGrid.baseStep)
-        XCTAssertGreaterThan(span(ThumbnailGrid.baseStep, 3_000), tw)
-
-        // Growing take: F is kept while span >= 0.4 tw, then doubles once (span <= 0.8 tw: no gap).
-        var f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: 6_000)
-        var switches: [(len: UInt64, from: UInt64, to: UInt64)] = []
-        for len in UInt64(6_000)...UInt64(120_000) {
-            let n = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: f)
-            if n != f {
-                switches.append((len, f, n))
-                XCTAssertEqual(n, f * 2, "one doubling at a time")
-                XCTAssertLessThan(span(f, len), ThumbnailGrid.minSpanRatio * tw)
-                XCTAssertGreaterThanOrEqual(span(f, len - 1), ThumbnailGrid.minSpanRatio * tw)
-            }
-            XCTAssertLessThanOrEqual(span(n, len), tw)
-            XCTAssertGreaterThanOrEqual(span(n, len), ThumbnailGrid.minSpanRatio * tw)
-            f = n
-        }
-        XCTAssertEqual(switches.count, 4, "6000 -> 120000 frames at 800 pt: F 5 s -> 80 s")
-
-        // Hysteresis: in the overlap band both F and 2F are kept (no flip-flop on small changes).
-        let len: UInt64 = 100_000
-        let fresh = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len)
-        // span(fresh) in (0.5, 1] tw; span(fresh/2) in (0.25, 0.5] tw. Pick a length where
-        // span(fresh/2) is in [0.4, 0.5] so the finer step is still acceptable.
-        let half = fresh / 2
-        if span(half, len) >= ThumbnailGrid.minSpanRatio * tw {
-            XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: half), half)
-        }
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: fresh), fresh)
-        // Shrinking (shorter take / wider window): span > tw halves the step.
-        let shrunk = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len / 3, current: fresh)
-        XCTAssertLessThan(shrunk, fresh)
-        XCTAssertLessThanOrEqual(span(shrunk, len / 3), tw)
-        // Garbage hints are ignored.
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: 12), fresh)
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: 450), fresh)
-        XCTAssertEqual(ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: fresh * 64), fresh)
-    }
-
-    func testShortTakeTilesFillTheStrip() {
-        // 20 s take on an 800 pt strip: 5 s tiles (200 pt) are wider than a picture (42.7 pt);
-        // they still cover the strip without gaps (the view repeats the picture inside a tile).
-        let w = 800.0, tw = 256.0 / 240.0 * 40
-        for len: UInt64 in [1, 299, 300, 301, 1_200, 3_000] {
-            let f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len)
-            XCTAssertEqual(f, ThumbnailGrid.baseStep)
-            let tiles = ThumbnailGrid.tiles(width: w, length: len, step: f)
-            XCTAssertEqual(tiles.first?.x, 0)
-            var x = 0.0
-            for t in tiles { XCTAssertEqual(t.x, x, accuracy: 1e-9); x += t.span }
-            XCTAssertEqual(x, w, accuracy: 1e-6, "no gap at the end (\(len) frames)")
-        }
-    }
-
-    func testFilmstripPositionsMoveSmoothlyAsTakeGrows() {
-        // Recording: one frame at a time. Every tile anchored at the same frame only moves left,
-        // by much less than a tile per frame; the visible end of the strip is always covered.
-        let w = 800.0, tw = 256.0 / 240.0 * 40
-        var f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: 6_000)
-        var prev: [UInt64: Double] = [:]
-        for len in UInt64(6_000)...UInt64(60_000) {
-            f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len, current: f)
-            let tiles = ThumbnailGrid.tiles(width: w, length: len, step: f)
-            XCTAssertEqual(tiles.first?.x, 0)
-            XCTAssertEqual((tiles.last?.x ?? 0) + (tiles.last?.span ?? 0), w, accuracy: 1e-6, "no gap at the end")
-            XCTAssertTrue(tiles.allSatisfy { $0.span <= tw + 1e-9 }, "no gap between pictures")
-            var cur: [UInt64: Double] = [:]
-            for t in tiles {
-                cur[t.frame] = t.x
-                if let px = prev[t.frame] {
-                    XCTAssertLessThanOrEqual(t.x, px + 1e-9, "anchors only move left")
-                    XCTAssertLessThan(px - t.x, 2, "smooth: well under a tile per frame")
+    func testScaleIsSmallestStepThatFitsTheTake() {
+        for w in [300.0, 575.0, 800.0, 1_400.0] {
+            for len in stride(from: UInt64(0), through: 400_000, by: 97) {
+                let f = ThumbnailGrid.tileStep(width: w, tileWidth: tw, length: len)
+                XCTAssertGreaterThanOrEqual(f, 300, "never more than one picture per 5 s")
+                XCTAssertTrue(ThumbnailGrid.isStep(f))
+                XCTAssertLessThanOrEqual(ThumbnailGrid.extent(length: len, step: f, tileWidth: tw), w + 1e-9, "the take fits")
+                if f > 300 {
+                    XCTAssertGreaterThan(ThumbnailGrid.extent(length: len, step: f / 2, tileWidth: tw), w, "smallest such step")
                 }
+                let tiles = ThumbnailGrid.tiles(length: len, step: f, tileWidth: tw)
+                XCTAssertEqual(tiles.count, Int((Double(len) / f).rounded(.up)), "tile count == ceil(length / F)")
+                XCTAssertEqual(Set(tiles.map(\.picture)).count, tiles.count, "one distinct picture per tile")
             }
-            prev = cur
+        }
+        // 575 pt strip: 5 s tiles until 13 tiles fill it (about 67 s), then 10 s, 20 s ...
+        XCTAssertEqual(ThumbnailGrid.tileStep(width: 575, tileWidth: tw, length: 120), 300)
+        XCTAssertEqual(ThumbnailGrid.tileStep(width: 575, tileWidth: tw, length: 4_000), 300)
+        XCTAssertEqual(ThumbnailGrid.tileStep(width: 575, tileWidth: tw, length: 4_100), 600)
+        XCTAssertEqual(ThumbnailGrid.tileStep(width: 575, tileWidth: tw, length: 36_000), 4_800)
+    }
+
+    func testTilesNaturalWidthRevealedUpToTheExtent() {
+        // 7 s at 5 s per tile: tile 0 full (natural width), tile 1 revealed for 2 s of its 5 s.
+        let tiles = ThumbnailGrid.tiles(length: 420, step: 300, tileWidth: tw)
+        XCTAssertEqual(tiles.count, 2)
+        XCTAssertEqual(tiles.map(\.frame), [0, 300])
+        XCTAssertEqual(tiles.map(\.picture), [60, 300])
+        XCTAssertEqual(tiles[0].x, 0)
+        XCTAssertEqual(tiles[0].visible, tw, accuracy: 1e-9)
+        XCTAssertEqual(tiles[1].x, tw, accuracy: 1e-9)
+        XCTAssertEqual(tiles[1].visible, Double(420 - 300) * tw / 300, accuracy: 1e-9, "(length - tile start) * px per frame")
+        // Nothing is drawn beyond the recorded extent; every full tile has the natural width.
+        for len in UInt64(1)...UInt64(5_000) {
+            let f = ThumbnailGrid.tileStep(width: 575, tileWidth: tw, length: len)
+            let end = ThumbnailGrid.extent(length: len, step: f, tileWidth: tw)
+            let t = ThumbnailGrid.tiles(length: len, step: f, tileWidth: tw)
+            for x in t.dropLast() { XCTAssertEqual(x.visible, tw, accuracy: 1e-9) }
+            XCTAssertEqual(t.last!.x + t.last!.visible, end, accuracy: 1e-9)
+            XCTAssertGreaterThan(t.last!.visible, 0)
+            XCTAssertLessThanOrEqual(t.last!.visible, tw + 1e-9)
+        }
+        // A new tile appears right when its interval starts.
+        XCTAssertEqual(ThumbnailGrid.tiles(length: 300, step: 300, tileWidth: tw).count, 1)
+        XCTAssertEqual(ThumbnailGrid.tiles(length: 301, step: 300, tileWidth: tw).count, 2)
+        XCTAssertEqual(ThumbnailGrid.tiles(length: 0, step: 300, tileWidth: tw), [])
+    }
+
+    func testFrameMappingAtFixedScale() {
+        // The bar maps through TimelineGeometry(width: extent): x = frame * tileWidth / F.
+        let len: UInt64 = 1_000, f = 300.0
+        let g = TimelineGeometry(width: ThumbnailGrid.extent(length: len, step: f, tileWidth: tw), length: len)
+        XCTAssertEqual(g.x(forFrame: 300), tw, accuracy: 1e-9)
+        XCTAssertEqual(g.x(forFrame: 600), 2 * tw, accuracy: 1e-9)
+        XCTAssertEqual(g.frame(atX: tw), 300)
+        XCTAssertEqual(g.frame(atX: 10_000), len, "beyond the recorded extent clamps to the end")
+        XCTAssertEqual(g.frame(atX: -5), 0)
+        XCTAssertEqual(g.x(forFrame: 5_000), g.width, "the playhead never passes the end")
+    }
+
+    func testPlayheadSnapsToWholePixels() {
+        XCTAssertEqual(ThumbnailGrid.snapToPixel(10.74, scale: 2), 10.5)
+        XCTAssertEqual(ThumbnailGrid.snapToPixel(10.49, scale: 2), 10)
+        XCTAssertEqual(ThumbnailGrid.snapToPixel(10.5, scale: 2), 10.5)
+        XCTAssertEqual(ThumbnailGrid.snapToPixel(3.99, scale: 1), 3)
+        // Recording at 5 s per tile: the marker moves forward by 0 or 1 pixel per frame, never more.
+        let px = tw / 300
+        var last = 0.0
+        for len in UInt64(0)...UInt64(3_000) {
+            let x = ThumbnailGrid.snapToPixel(Double(len) * px, scale: 2)
+            XCTAssertTrue(x == last || abs(x - last - 0.5) < 1e-9, "1-dot steps")
+            last = x
         }
     }
 
@@ -270,6 +226,7 @@ final class TimelineTests: XCTestCase {
         c.reset(take: 1)
         c.setStep(10)
         XCTAssertTrue(c.wants(frame: 10, take: 1))
+        XCTAssertTrue(c.wants(frame: ThumbnailGrid.startPicture(step: 10), take: 1), "tile 0's picture")
         XCTAssertFalse(c.wants(frame: 15, take: 1), "off grid")
         XCTAssertFalse(c.wants(frame: 0, take: 1), "frame 0 is never a thumbnail")
         XCTAssertFalse(c.wants(frame: 10, take: 2), "other take")
@@ -289,39 +246,46 @@ final class TimelineTests: XCTestCase {
         c.rebase(toTake: 2, keepThrough: 0)
         XCTAssertEqual(c.count, 5, "same take: no-op")
 
-        // Nearest lookup.
-        XCTAssertNotNil(c.image(near: 30, tolerance: 0))
-        XCTAssertNotNil(c.image(near: 33, tolerance: 5))
-        XCTAssertNil(c.image(near: 47, tolerance: 2))
-        XCTAssertNotNil(c.image(near: 47, tolerance: 3), "50 is 3 away")
-        XCTAssertNil(c.image(near: 500, tolerance: 100))
+        // Exact lookup; fallback only to an EARLIER picture within the window.
+        XCTAssertNotNil(c.image(at: 30))
+        XCTAssertNil(c.image(at: 33))
+        XCTAssertNotNil(c.image(before: 45, within: 5), "40 is 5 earlier")
+        XCTAssertNil(c.image(before: 45, within: 4))
+        XCTAssertNil(c.image(before: 10, within: 100), "nothing earlier than 10")
+        XCTAssertNil(c.image(before: 500, within: 100))
+        // A batch is one change, rejected when stale.
+        let v = c.version
+        XCTAssertTrue(c.insert(batch: [(60, image()), (70, image())], take: 2, generation: c.generation))
+        XCTAssertEqual(c.version, v + 1)
+        XCTAssertFalse(c.insert(batch: [(80, image())], take: 2, generation: c.generation &- 1))
+        XCTAssertEqual(c.count, 7)
 
         // Session change.
         c.reset(take: 7)
         XCTAssertEqual(c.count, 0)
-        XCTAssertNil(c.image(near: 30, tolerance: 1000))
+        XCTAssertNil(c.image(at: 30))
 
         // Capacity: entries off the current grid are evicted when over capacity.
         c.capacity = 5
         for f in stride(from: UInt64(4), through: 40, by: 4) { c.insert(frame: f, take: 7, image: image()) }
         c.setStep(8)
         XCTAssertEqual(c.missing([8, 16, 24, 32, 40]), [])
-        XCTAssertEqual(c.count, 5)
+        XCTAssertEqual(c.count, 6, "grid + tile 0's picture (frame 4 at this step)")
     }
 
     func testDownscaler() {
         var px = [UInt32](repeating: 0, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
         for y in 0..<Int(RN_VIDEO_HEIGHT) {
             for x in 0..<Int(RN_VIDEO_WIDTH) {
-                // Left half red, right half: 4x4 checkerboard of white/black (averages to gray).
+                // Left half red, right half: 1-pixel checkerboard of white/black (averages to gray).
                 px[y * Int(RN_VIDEO_WIDTH) + x] = x < 128 ? 0xFFFF_0000 : ((x + y) % 2 == 0 ? 0xFFFF_FFFF : 0xFF00_0000)
             }
         }
         let out = px.withUnsafeBufferPointer { ThumbnailScaler.downscale($0.baseAddress!) }
-        XCTAssertEqual(out.count, 64 * 60)
+        XCTAssertEqual(out.count, 128 * 120)
         XCTAssertEqual(out[0], 0xFFFF_0000)
-        XCTAssertEqual(out[59 * 64 + 31], 0xFFFF_0000)
-        XCTAssertEqual(out[10 * 64 + 40], 0xFF7F_7F7F)
+        XCTAssertEqual(out[119 * 128 + 63], 0xFFFF_0000)
+        XCTAssertEqual(out[10 * 128 + 80], 0xFF7F_7F7F)
         XCTAssertNotNil(ThumbnailScaler.image(out))
     }
 

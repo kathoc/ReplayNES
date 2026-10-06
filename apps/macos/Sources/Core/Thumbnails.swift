@@ -1,5 +1,5 @@
 // Filmstrip thumbnails for the timeline: grid of sampled frames, the thread-safe cache and the
-// 256x240 -> 64x60 downscaler. Never used on the emulation hot path except for an O(1) "is this
+// 256x240 -> 128x120 downscaler. Never used on the emulation hot path except for an O(1) "is this
 // frame wanted?" check after a step (live capture of frames that are displayed anyway).
 // Thumbnail keys are CURSOR frames f (> 0): the picture shown at rn_frame() == f, i.e. the output
 // of input record f-1. It depends only on records [0, f), so it is valid on every take that
@@ -9,115 +9,149 @@ import CoreGraphics
 import Foundation
 
 enum ThumbnailGrid {
-    /// Finest spacing: one picture per 5 s of game time (300 frames). Longer takes use 10 s, 20 s,
-    /// 40 s ... (power-of-two multiples, so every coarser grid reuses the pictures already made).
-    /// Live capture therefore copies at most one frame per 5 s, and the background generator makes
-    /// a few dozen pictures per take instead of hundreds.
-    static let baseStep: UInt64 = 300
-
-    /// Smallest baseStep * 2^k with at most maxCount grid frames over the take. Power-of-two
-    /// steps make coarser grids subsets of finer ones: a growing take or a narrower window reuses
-    /// every image already made.
-    static func step(length: UInt64, maxCount: Int) -> UInt64 {
-        let m = UInt64(max(1, maxCount))
-        var q = baseStep
-        while length / q > m && q < (UInt64(1) << 40) { q *= 2 }
-        return q
-    }
-
-    /// Grid frames q, 2q, ... <= length.
-    static func frames(length: UInt64, step q: UInt64) -> [UInt64] {
-        guard q > 0, length >= q else { return [] }
-        return (1...(length / q)).map { $0 * q }
-    }
-
-    // MARK: filmstrip layout (video-editor style)
+    // MARK: filmstrip layout (video-editor style, fixed scale)
     //
-    // Tile k is anchored to take time: it starts at x(k*F) and shows the picture at frame k*F,
-    // drawn at its natural aspect (tileWidth wide) and clipped at the next tile's anchor / the
-    // strip end. As the take grows every anchor slides left continuously and the last tile is
-    // revealed gradually (partially visible), instead of the strip changing in whole tiles.
-    // F (frames per tile) is baseStep x 2^k chosen so the on-screen span per tile stays in
-    // [minSpanRatio, 1] * tileWidth (no gaps, at most ~2.5 tiles per tileWidth); it only changes
-    // (x2 / /2) when the span leaves that band (hysteresis). A take too short for that keeps
-    // baseStep: its tiles are wider than a picture, which is then repeated to fill the span.
+    // The timeline has a fixed scale: one tile = F frames of game time = one picture at its
+    // natural width (tileWidth), F = 5 s * 2^k. The recorded part of the take occupies
+    // x = 0 ... length * tileWidth / F (the extent) and grows to the right while recording; the
+    // strip to the right of it stays empty. Tile k starts at x = k * tileWidth, shows the picture
+    // at frame k*F (tile 0: startPicture) at its natural size and position, clipped at the extent:
+    // the newest tile appears clipped as soon as its interval starts and is revealed as the take
+    // grows (fully shown after F frames). F is the smallest step at which the whole take fits the
+    // strip: when the extent would pass the strip end, F doubles (the bar halves, crossfaded).
 
-    /// Lower bound of the span per tile (fraction of tileWidth) before F doubles. < 0.5, so both F
-    /// and 2F are acceptable for spans in [minSpanRatio, 0.5]: no flip-flopping at the boundary.
-    static let minSpanRatio = 0.4
+    /// 5 s of game time. Every step is baseStep * 2^e: a coarser grid is a subset of every finer
+    /// one, so a growing take or a narrower window reuses the pictures already made.
+    static let baseStep: Double = 300
+    static let minExponent = 0    // one picture per 5 s at most
+    static let maxExponent = 40
 
-    /// On-screen width of F frames.
-    static func span(step f: UInt64, width: Double, length: UInt64) -> Double {
-        guard length > 0, width > 0 else { return 0 }
-        return Double(f) / Double(length) * width
+    static func step(exponent e: Int) -> Double { scalbn(baseStep, max(minExponent, min(maxExponent, e))) }
+    static var minStep: Double { step(exponent: minExponent) }
+
+    /// True for baseStep * 2^e (minExponent...maxExponent).
+    static func isStep(_ f: Double) -> Bool {
+        guard f > 0, f.isFinite else { return false }
+        let e = Int((log2(f / baseStep)).rounded())
+        return e >= minExponent && e <= maxExponent && step(exponent: e) == f
     }
 
-    /// Frames per tile. Keeps `current` while its span is within [minSpanRatio, 1] * tileWidth
-    /// (or it is already baseStep and the take is too short to fill the strip); otherwise the
-    /// largest power-of-two step whose span is <= tileWidth (span then in (0.5, 1] * tileWidth).
-    static func tileStep(width: Double, tileWidth: Double, length: UInt64, current: UInt64? = nil) -> UInt64 {
-        guard width > 0, tileWidth > 0, length > 0 else { return current.map { max($0, baseStep) } ?? baseStep }
-        func ok(_ f: UInt64) -> Bool {
-            let s = span(step: f, width: width, length: length)
-            return (s <= tileWidth || f == baseStep) && s >= minSpanRatio * tileWidth
-        }
-        if let c = current, c >= baseStep, c % baseStep == 0, (c / baseStep) & (c / baseStep - 1) == 0, ok(c) {
-            return c
-        }
-        var f = baseStep
-        while f < (UInt64(1) << 40) && span(step: f * 2, width: width, length: length) <= tileWidth { f *= 2 }
-        return f
+    /// Cursor frame of grid point k (k * F rounded; exact for coarser grids, which are subsets).
+    static func frame(_ k: UInt64, step f: Double) -> UInt64 { UInt64((Double(k) * f).rounded()) }
+
+    /// Grid frames F, 2F, ... <= length.
+    static func frames(length: UInt64, step f: Double) -> [UInt64] {
+        guard f > 0, Double(length) >= f else { return [] }
+        return (1...UInt64((Double(length) / f).rounded(.down))).map { frame($0, step: f) }
     }
 
-    /// One tile: picture at `frame`, drawn from `x` (natural aspect, repeated if `span` is wider
-    /// than a tile) and clipped to [x, x + span).
-    struct Tile: Equatable {
-        var frame: UInt64
-        var x: Double
-        var span: Double
-        /// Width of the (first) picture actually visible.
-        func visibleWidth(tileWidth: Double) -> Double { min(tileWidth, span) }
+    static func isGridFrame(_ x: UInt64, step f: Double) -> Bool {
+        guard x > 0, f > 0 else { return false }
+        return frame(UInt64((Double(x) / f).rounded()), step: f) == x
     }
 
-    /// Tiles anchored at frames 0, F, 2F, ... <= length. The last one ends at the strip end.
-    static func tiles(width: Double, length: UInt64, step f: UInt64) -> [Tile] {
-        guard width > 0, length > 0, f > 0 else { return [] }
-        let g = TimelineGeometry(width: width, length: length)
-        let last = length / f
-        var out: [Tile] = []
-        out.reserveCapacity(Int(min(last + 1, 4096)))
+    /// The screen 1 s in: the first frames after power-on are blank (flat gray / green / black on
+    /// every game).
+    static let startFrame: UInt64 = 60
+
+    /// Picture of tile 0 (anchored at frame 0, where nothing has been drawn yet): 1 s in (never a
+    /// later tile's picture).
+    static func startPicture(step f: Double) -> UInt64 { min(startFrame, max(1, UInt64((f / 2).rounded()))) }
+
+    static func pictureFrame(tile k: UInt64, step f: Double) -> UInt64 { k == 0 ? startPicture(step: f) : frame(k, step: f) }
+
+    /// Pictures needed for a take of `length` frames at step F (sorted).
+    static func targets(length: UInt64, step f: Double) -> [UInt64] {
+        guard length > 0, f > 0 else { return [] }
+        let last = UInt64((Double(length) / f).rounded(.down))
+        var out: [UInt64] = []
         var k: UInt64 = 0
         while k <= last {
-            let x = g.x(forFrame: k * f)
-            let end = k < last ? g.x(forFrame: (k + 1) * f) : width
-            if end - x > 1e-9 { out.append(Tile(frame: k * f, x: x, span: end - x)) }
+            let p = pictureFrame(tile: k, step: f)
+            if p <= length, p > (out.last ?? 0) { out.append(p) }
             k += 1
         }
         return out
     }
+
+    /// Width of the recorded part of the bar: length frames at tileWidth per F frames.
+    static func extent(length: UInt64, step f: Double, tileWidth: Double) -> Double {
+        guard f > 0, tileWidth > 0 else { return 0 }
+        return Double(length) / f * tileWidth
+    }
+
+    /// Frames per tile: the smallest 5 s * 2^k at which the whole take fits `width`.
+    static func tileStep(width: Double, tileWidth: Double, length: UInt64) -> Double {
+        var f = minStep
+        guard width > 0, tileWidth > 0 else { return f }
+        while f < step(exponent: maxExponent) && extent(length: length, step: f, tileWidth: tileWidth) > width + 1e-9 { f *= 2 }
+        return f
+    }
+
+    /// One tile: anchored at `frame` (grid point `index`), showing `picture` at its natural size
+    /// from `x`; `visible` is the part left of the recorded extent (tileWidth for full tiles).
+    struct Tile: Equatable {
+        var index: UInt64
+        var frame: UInt64
+        var picture: UInt64
+        var x: Double
+        var visible: Double
+    }
+
+    /// Tiles whose interval has started (k*F < length): ceil(length / F) of them; all have the
+    /// natural width, only the newest one is clipped at the extent.
+    static func tiles(length: UInt64, step f: Double, tileWidth tw: Double) -> [Tile] {
+        guard length > 0, f > 0, tw > 0 else { return [] }
+        let end = extent(length: length, step: f, tileWidth: tw)
+        var out: [Tile] = []
+        var k: UInt64 = 0
+        while Double(k) * f < Double(length) {
+            let x = Double(k) * tw
+            out.append(Tile(index: k, frame: frame(k, step: f), picture: pictureFrame(tile: k, step: f), x: x,
+                            visible: max(0, min(tw, end - x))))
+            k += 1
+        }
+        return out
+    }
+
+    /// x snapped down to a whole backing pixel (the playhead moves in clean 1-dot steps).
+    static func snapToPixel(_ x: Double, scale: Double) -> Double {
+        guard scale > 0 else { return x }
+        return (x * scale + 1e-9).rounded(.down) / scale
+    }
+
+    /// While a tile's own picture is being made (e.g. right after the step halved: window made
+    /// wider), it shows the latest EARLIER picture within one step, dimmed. Farther or later
+    /// pictures would be misdated: the tile then stays empty until its own picture exists.
+    static func fallbackWindow(step f: Double) -> UInt64 { UInt64(f.rounded(.up)) }
+    static let fallbackOpacity = 0.45
 }
 
 enum ThumbnailScaler {
-    static let width = 64
-    static let height = 60
+    /// Half resolution: a tile wider than its natural width shows the picture enlarged
+    /// (ThumbnailGrid.fill), so a quarter-size picture would be too coarse.
+    static let factor = 2
+    static let width = Int(RN_VIDEO_WIDTH) / factor
+    static let height = Int(RN_VIDEO_HEIGHT) / factor
 
-    /// 256x240 BGRA8 (rn_video) -> 64x60 by 4x4 box averaging.
+    /// 256x240 BGRA8 (rn_video) -> 128x120 by 2x2 box averaging.
     static func downscale(_ src: UnsafePointer<UInt32>) -> [UInt32] {
-        let sw = Int(RN_VIDEO_WIDTH)
+        let sw = Int(RN_VIDEO_WIDTH), k = factor
+        let n = UInt32(k * k)
         var out = [UInt32](repeating: 0xFF00_0000, count: width * height)
         for y in 0..<height {
             for x in 0..<width {
                 var r: UInt32 = 0, g: UInt32 = 0, b: UInt32 = 0
-                for dy in 0..<4 {
-                    let row = src + (y * 4 + dy) * sw + x * 4
-                    for dx in 0..<4 {
+                for dy in 0..<k {
+                    let row = src + (y * k + dy) * sw + x * k
+                    for dx in 0..<k {
                         let p = row[dx]
                         b &+= p & 0xFF
                         g &+= (p >> 8) & 0xFF
                         r &+= (p >> 16) & 0xFF
                     }
                 }
-                out[y * width + x] = 0xFF00_0000 | ((r / 16) << 16) | ((g / 16) << 8) | (b / 16)
+                out[y * width + x] = 0xFF00_0000 | ((r / n) << 16) | ((g / n) << 8) | (b / n)
             }
         }
         return out
@@ -146,10 +180,10 @@ final class ThumbnailCache {
     private var keysDirty = false
     private var take: UInt64 = 0
     private var generationValue: UInt64 = 1
-    private var step: UInt64 = 0
+    private var step: Double = 0
     private var versionValue: UInt64 = 0
     /// Upper bound on kept images; extra images off the current grid are evicted.
-    var capacity = 2_000
+    var capacity = 600  // 60 KB each
 
     /// Called after every change, on the thread that made it (keep it cheap).
     var onChange: (() -> Void)?
@@ -159,7 +193,7 @@ final class ThumbnailCache {
     var generation: UInt64 { lock.lock(); defer { lock.unlock() }; return generationValue }
     var version: UInt64 { lock.lock(); defer { lock.unlock() }; return versionValue }
     var count: Int { lock.lock(); defer { lock.unlock() }; return images.count }
-    var gridStep: UInt64 { lock.lock(); defer { lock.unlock() }; return step }
+    var gridStep: Double { lock.lock(); defer { lock.unlock() }; return step }
 
     private func changed() {
         versionValue &+= 1
@@ -195,22 +229,23 @@ final class ThumbnailCache {
         notify()
     }
 
-    /// Grid spacing the UI currently wants (0 = none). Live capture only stores grid frames.
-    func setStep(_ q: UInt64) {
+    /// Frames per tile the UI currently wants (0 = none). Live capture only stores its pictures.
+    func setStep(_ q: Double) {
         lock.lock()
         step = q
         if images.count > capacity, q > 0 {
-            images = images.filter { $0.key % q == 0 }
+            images = images.filter { ThumbnailGrid.isGridFrame($0.key, step: q) || $0.key == ThumbnailGrid.startPicture(step: q) }
             keysDirty = true
         }
         lock.unlock()
     }
 
-    /// Cheap check for the emulation thread: is cursor frame f on the grid, on the cached take
-    /// and not cached yet?
+    /// Cheap check for the emulation thread: is cursor frame f a wanted picture (grid point or
+    /// tile 0's picture), on the cached take and not cached yet?
     func wants(frame f: UInt64, take t: UInt64) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return f > 0 && step > 0 && f % step == 0 && t == take && images[f] == nil
+        guard f > 0, step > 0, t == take, images[f] == nil else { return false }
+        return ThumbnailGrid.isGridFrame(f, step: step) || f == ThumbnailGrid.startPicture(step: step)
     }
 
     /// Stores an image made on take t (generation g, if given). Rejected if the take changed since.
@@ -225,6 +260,21 @@ final class ThumbnailCache {
         return true
     }
 
+    /// Stores a batch (one change notification: the filmstrip shows them all at once).
+    /// Rejected if the take or generation changed since the batch was started.
+    @discardableResult
+    func insert(batch: [(UInt64, CGImage)], take t: UInt64, generation g: UInt64) -> Bool {
+        lock.lock()
+        guard t == take, g == generationValue, !batch.isEmpty else { lock.unlock(); return false }
+        for (f, img) in batch where f > 0 {
+            if images.updateValue(img, forKey: f) == nil { keysDirty = true }
+        }
+        changed()
+        lock.unlock()
+        notify()
+        return true
+    }
+
     func contains(_ f: UInt64) -> Bool { lock.lock(); defer { lock.unlock() }; return images[f] != nil }
 
     func missing(_ frames: [UInt64]) -> [UInt64] {
@@ -232,26 +282,20 @@ final class ThumbnailCache {
         return frames.filter { images[$0] == nil }
     }
 
-    /// Image at frame f, or the cached frame nearest to f within `tolerance` frames.
-    func image(near f: UInt64, tolerance: UInt64) -> CGImage? {
+    /// Image at exactly frame f.
+    func image(at f: UInt64) -> CGImage? { lock.lock(); defer { lock.unlock() }; return images[f] }
+
+    /// Latest cached image at a frame in [f - window, f).
+    func image(before f: UInt64, within window: UInt64) -> CGImage? {
         lock.lock(); defer { lock.unlock() }
-        if let img = images[f] { return img }
         if keysDirty { sortedKeys = images.keys.sorted(); keysDirty = false }
-        guard !sortedKeys.isEmpty else { return nil }
-        // First key >= f.
         var lo = 0, hi = sortedKeys.count
-        while lo < hi {
+        while lo < hi {  // first key >= f
             let mid = (lo + hi) / 2
             if sortedKeys[mid] < f { lo = mid + 1 } else { hi = mid }
         }
-        var best: UInt64?
-        var bestDist = UInt64.max
-        for i in [lo - 1, lo] where i >= 0 && i < sortedKeys.count {
-            let k = sortedKeys[i]
-            let d = k > f ? k - f : f - k
-            if d < bestDist { best = k; bestDist = d }
-        }
-        guard let k = best, bestDist <= tolerance else { return nil }
-        return images[k]
+        guard lo > 0 else { return nil }
+        let k = sortedKeys[lo - 1]
+        return f - k <= window ? images[k] : nil
     }
 }
