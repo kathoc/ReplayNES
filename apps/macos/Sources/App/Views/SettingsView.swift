@@ -1,17 +1,99 @@
-// Settings: key/controller remap, hotkeys, turbo/SOCD, display/audio, general, updates.
+// Settings: controller diagram, key/controller remap, hotkeys, turbo/SOCD, display/audio,
+// general, updates.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
 struct SettingsView: View {
+    /// Selected tab; the sidebar's 「ボタン配置…」 sets "controller" before opening Settings.
+    @AppStorage(SettingsView.tabKey) private var tab = "controller"
+    static let tabKey = "settingsTab"
+
     var body: some View {
-        TabView {
-            BindingsTab(groups: [.player1, .player2]).tabItem { Label("ゲーム入力", systemImage: "gamecontroller") }
-            BindingsTab(groups: [.hotkey]).tabItem { Label("ホットキー", systemImage: "keyboard") }
-            TurboTab().tabItem { Label("連射・同時押し", systemImage: "bolt") }
-            DisplayTab().tabItem { Label("表示・音声", systemImage: "display") }
-            UpdatesTab().tabItem { Label("アップデート", systemImage: "arrow.triangle.2.circlepath") }
+        TabView(selection: $tab) {
+            ControllerTab().tabItem { Label("コントローラー", systemImage: "gamecontroller") }.tag("controller")
+            BindingsTab(groups: [.player1, .player2]).tabItem { Label("ゲーム入力", systemImage: "keyboard") }.tag("game")
+            BindingsTab(groups: [.hotkey]).tabItem { Label("ホットキー", systemImage: "command") }.tag("hotkey")
+            TurboTab().tabItem { Label("連射・同時押し", systemImage: "bolt") }.tag("turbo")
+            DisplayTab().tabItem { Label("表示・音声", systemImage: "display") }.tag("display")
+            UpdatesTab().tabItem { Label("アップデート", systemImage: "arrow.triangle.2.circlepath") }.tag("updates")
         }
         .frame(width: 620, height: 520)
+    }
+}
+
+/// Controller diagram: click a button on the picture to assign it; held buttons light up.
+struct ControllerTab: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        ControllerTabContent(monitor: model.input.controllerMonitor)
+    }
+}
+
+private struct ControllerTabContent: View {
+    @EnvironmentObject var model: AppModel
+    @ObservedObject var monitor: ControllerMonitor
+    @AppStorage("diagramSlot") private var slot = 0
+    @AppStorage("diagramFamily") private var familyChoice = "auto"
+
+    var body: some View {
+        let info = monitor.controllers.first { $0.slot == slot }
+        let family = ControllerFamily(rawValue: familyChoice) ?? info?.family ?? .generic
+        let slotCount = max(2, (monitor.controllers.map(\.slot).max() ?? 0) + 1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Picker("", selection: $slot) {
+                    ForEach(0..<slotCount, id: \.self) { i in
+                        let c = monitor.controllers.first { $0.slot == i }
+                        Text("パッド\(i + 1)（\(i == 0 ? "1P" : i == 1 ? "2P" : "—")）: \(c?.name ?? "未接続")").tag(i)
+                    }
+                }
+                .labelsHidden().frame(width: 300)
+                Spacer()
+                Picker("形", selection: $familyChoice) {
+                    Text("自動").tag("auto")
+                    ForEach(ControllerFamily.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .frame(width: 250)
+            }
+            Text(statusText(info))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ControllerDiagramView(family: family, slot: slot, config: model.inputConfig, labels: info?.labels ?? [:],
+                                  pressed: monitor.pressed) { id, action in
+                model.input.setAssignment(id, action: action)
+            }
+            .frame(maxWidth: .infinity)
+            HStack(spacing: 14) {
+                legend(.blue.opacity(0.85), "ゲームの入力（記録されます）")
+                legend(.orange, "ホットキー（記録されません）")
+            }
+            .font(.caption)
+            Spacer(minLength: 0)
+            HStack(alignment: .bottom) {
+                Text("キーやボタンを押して割り当てる方法は「ゲーム入力」「ホットキー」タブ")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Button("パッド\(slot + 1)を初期設定に戻す") { model.input.resetController(slot: slot) }
+            }
+        }
+        .padding()
+        .onAppear { monitor.setLive(true) }
+        .onDisappear { monitor.setLive(false) }
+    }
+
+    private func statusText(_ info: ControllerInfo?) -> String {
+        guard let info else {
+            return "未接続（接続すると、押したボタンが図の上で光ります）・図のボタンをクリックで割り当てを変更"
+        }
+        let kind = info.productCategory.isEmpty ? info.family.title : info.productCategory
+        return "\(info.name)（\(kind)）・押したボタンが光ります・図のボタンをクリックで割り当てを変更"
+    }
+
+    private func legend(_ color: Color, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Capsule().fill(color).frame(width: 18, height: 10)
+            Text(text).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -76,7 +158,7 @@ struct FlowChips: View {
             if ids.isEmpty { Text("未割り当て").font(.caption).foregroundStyle(.secondary) }
             ForEach(ids, id: \.self) { id in
                 HStack(spacing: 2) {
-                    Text(InputCatalog.displayName(id)).font(.caption)
+                    Text(InputCatalog.displayName(id, controllers: model.input.controllerMonitor.controllers)).font(.caption)
                     Button { model.input.unbind(id, from: action.id) } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.borderless).font(.caption2)
                 }

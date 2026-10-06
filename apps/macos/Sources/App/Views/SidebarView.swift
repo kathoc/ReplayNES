@@ -5,6 +5,7 @@ import SwiftUI
 struct SidebarView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @State private var editing: UInt64?
     @State private var editText = ""
 
@@ -64,6 +65,11 @@ struct SidebarView: View {
                     Text("未接続（キーボードで操作できます）").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(model.controllers, id: \.self) { Text($0).font(.caption) }
+                Button {
+                    UserDefaults.standard.set("controller", forKey: SettingsView.tabKey)
+                    openSettings()
+                } label: { Label("ボタン配置…", systemImage: "gamecontroller") }
+                    .help("コントローラーの図でボタンの割り当てを確認・変更します")
             }
             Section("ROM") {
                 Text(URL(fileURLWithPath: st.romPath).lastPathComponent).font(.caption)

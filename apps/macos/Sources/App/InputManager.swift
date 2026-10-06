@@ -1,12 +1,30 @@
 // Keyboard (NSEvent) + GameController.framework -> rn_input (engine input pipeline).
 // The engine does mapping, turbo, SOCD and hotkey separation; this file only reports
 // physical state changes with stable ids ("kb:<keyCode>", "gc<slot>:<element>").
+// Face buttons are reported by position ("gc0:face.east"), see ControllerLayout.swift.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import GameController
 
+/// Main-thread state for the controller diagram in Settings: connected controllers and, while a
+/// diagram is visible (`setLive`), the controller ids currently held.
+final class ControllerMonitor: ObservableObject {
+    @Published fileprivate(set) var controllers: [ControllerInfo] = []
+    @Published fileprivate(set) var pressed: Set<String> = []
+    private let lock = NSLock()
+    private var live = false
+
+    var isLive: Bool { lock.lock(); defer { lock.unlock() }; return live }
+
+    func setLive(_ on: Bool) {
+        lock.lock(); live = on; lock.unlock()
+        if !on { pressed = [] }
+    }
+}
+
 final class InputManager {
     let handle: OpaquePointer // rn_input (internally synchronized)
+    let controllerMonitor = ControllerMonitor()
 
     /// Called (main thread) with the physical id while capturing a binding. Esc cancels (nil).
     var captureHandler: ((String?) -> Void)? {
@@ -37,6 +55,7 @@ final class InputManager {
 
     private var monitor: Any?
     private var slots: [GCController?] = [nil, nil, nil, nil]
+    private var infos: [ControllerInfo?] = [nil, nil, nil, nil] // main thread
     private let gcQueue = DispatchQueue(label: "replaynes.gamecontroller", qos: .userInteractive)
     private var lastState: [String: Bool] = [:] // gcQueue only
     private let eventLock = NSLock()
@@ -71,20 +90,31 @@ final class InputManager {
         UserDefaults.standard.set(InputCatalog.controllerLayoutVersion, forKey: "controllerLayoutVersion")
     }
 
-    /// Saved bindings from 0.1.x still carry the old controller hotkeys (L1 rewind, R1 FF,
-    /// L2/R2 step): move them once to the 0.2.0 layout unless the user customised them.
+    /// One-time upgrades of saved bindings, unless the user customised the part concerned:
+    /// layout 2 (0.2.0): 0.1.x controller hotkeys (L1 rewind, R1 FF, L2/R2 step) -> new hotkeys.
+    /// layout 3: GameController face-button names -> positional ids (fixes A/B, X/Y on Nintendo
+    /// controllers). Customised face buttons are translated when their controller attaches.
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
-        guard d.integer(forKey: "controllerLayoutVersion") < InputCatalog.controllerLayoutVersion else { return }
+        let from = d.integer(forKey: "controllerLayoutVersion")
+        guard from < InputCatalog.controllerLayoutVersion else { return }
         d.set(InputCatalog.controllerLayoutVersion, forKey: "controllerLayoutVersion")
-        let m = InputCatalog.controllerLayoutMigration(config)
-        guard !m.bind.isEmpty else { return }
-        for (i, a) in m.unbind { _ = rn_input_unbind(handle, i, a) }
-        for (i, a) in m.bind { _ = rn_input_bind(handle, i, a) }
+        var changed = false
+        if from < 2 { changed = apply(InputCatalog.controllerLayoutMigration(config)) || changed }
+        if from < 3 { changed = apply(InputCatalog.faceLayoutMigration(config)) || changed }
+        guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
             rn_string_free(p)
         }
+    }
+
+    /// Applies an (unbind, bind) plan to the engine table without saving. Returns whether it did anything.
+    @discardableResult
+    private func apply(_ plan: (unbind: [(String, String)], bind: [(String, String)])) -> Bool {
+        for (i, a) in plan.unbind { _ = rn_input_unbind(handle, i, a) }
+        for (i, a) in plan.bind { _ = rn_input_bind(handle, i, a) }
+        return !plan.unbind.isEmpty || !plan.bind.isEmpty
     }
 
     private func refreshStepDirections() {
@@ -162,6 +192,19 @@ final class InputManager {
 
     func unbind(_ physical: String, from action: String) {
         _ = rn_input_unbind(handle, physical, action)
+        persist()
+    }
+
+    /// Diagram: `physical` does exactly `action` from now on (nil = nothing).
+    func setAssignment(_ physical: String, action: String?) {
+        _ = rn_input_unbind(handle, physical, nil)
+        if let action { _ = rn_input_bind(handle, physical, action) }
+        persist()
+    }
+
+    /// 「初期設定に戻す」 for one controller slot only (keyboard and other pads untouched).
+    func resetController(slot: Int) {
+        apply(InputCatalog.controllerResetPlan(config, slot: slot))
         persist()
     }
 
@@ -290,6 +333,17 @@ final class InputManager {
         GCController.startWirelessControllerDiscovery {}
     }
 
+    /// Positional element names for GameController's buttonA/B/X/Y on one controller.
+    private struct FaceNames {
+        let a: String, b: String, x: String, y: String
+        init(_ p: [String: FacePosition]) {
+            a = (p["buttonA"] ?? .south).element
+            b = (p["buttonB"] ?? .east).element
+            x = (p["buttonX"] ?? .west).element
+            y = (p["buttonY"] ?? .north).element
+        }
+    }
+
     private func attach(_ c: GCController) {
         if slots.contains(where: { $0 === c }) { return }
         guard let slot = slots.firstIndex(where: { $0 == nil }) else { return }
@@ -297,18 +351,33 @@ final class InputManager {
         c.playerIndex = GCControllerPlayerIndex(rawValue: slot) ?? .indexUnset
         c.handlerQueue = gcQueue
         let prefix = "gc\(slot):"
+        let category = c.productCategory
+        let family = ControllerFamily.from(productCategory: category, vendorName: c.vendorName)
+        let positions = c.extendedGamepad != nil
+            ? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName) : GCFaceMapping.micro
+        let face = FaceNames(positions)
+        var labels: [String: String] = [:]
         if let g = c.extendedGamepad {
-            g.valueChangedHandler = { [weak self] pad, _ in self?.update(extended: pad, prefix: prefix) }
+            g.valueChangedHandler = { [weak self] pad, _ in self?.update(extended: pad, prefix: prefix, face: face) }
+            for (name, button) in [("buttonA", g.buttonA), ("buttonB", g.buttonB), ("buttonX", g.buttonX), ("buttonY", g.buttonY)] {
+                if let pos = positions[name], let l = GCFaceMapping.label(fromSymbol: button.sfSymbolsName) { labels[pos.element] = l }
+            }
         } else if let m = c.microGamepad {
             m.reportsAbsoluteDpadValues = true
-            m.valueChangedHandler = { [weak self] pad, _ in self?.update(micro: pad, prefix: prefix) }
+            m.valueChangedHandler = { [weak self] pad, _ in self?.update(micro: pad, prefix: prefix, face: face) }
         }
+        NSLog("ReplayNES: controller \(slot + 1) \"\(c.vendorName ?? "?")\" category=\"\(category)\" family=\(family.rawValue) buttonA=\(face.a)")
+        infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? "コントローラー", productCategory: category, family: family, labels: labels)
+        // Customised bindings saved with GameController names (layout 2) keep their meaning on
+        // this controller.
+        if apply(InputCatalog.legacyFaceTranslation(config, slot: slot, positions: positions)) { persist() }
         publishControllers()
     }
 
     private func detach(_ c: GCController) {
         guard let slot = slots.firstIndex(where: { $0 === c }) else { return }
         slots[slot] = nil
+        infos[slot] = nil
         let prefix = "gc\(slot):"
         rn_input_release_prefix(handle, prefix)
         gcQueue.async { [weak self] in
@@ -326,7 +395,17 @@ final class InputManager {
 
     private func publishControllers() {
         let names = slots.enumerated().compactMap { i, c in c.map { "パッド\(i + 1): \($0.vendorName ?? "コントローラー")" } }
+        controllerMonitor.controllers = infos.compactMap { $0 }
         onControllersChanged?(names)
+    }
+
+    /// gcQueue: live highlight for the settings diagram (only while it is visible).
+    private func notePressed(_ id: String, _ down: Bool) {
+        guard controllerMonitor.isLive else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let m = self?.controllerMonitor, m.isLive else { return }
+            if down { m.pressed.insert(id) } else { m.pressed.remove(id) }
+        }
     }
 
     /// gcQueue
@@ -334,6 +413,7 @@ final class InputManager {
         let id = prefix + name
         if lastState[id] == down { return }
         lastState[id] = down
+        notePressed(id, down)
         if down, isCapturing {
             DispatchQueue.main.async { [weak self] in
                 guard let self, let cap = self.captureHandler else { return }
@@ -360,6 +440,7 @@ final class InputManager {
             let id = prefix + name + "." + dir
             if lastState[id] == on { continue }
             lastState[id] = on
+            notePressed(id, on)
             if on, isCapturing {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, let cap = self.captureHandler else { return }
@@ -372,11 +453,11 @@ final class InputManager {
         }
     }
 
-    private func update(extended g: GCExtendedGamepad, prefix p: String) {
-        set(p, "buttonA", g.buttonA.isPressed)
-        set(p, "buttonB", g.buttonB.isPressed)
-        set(p, "buttonX", g.buttonX.isPressed)
-        set(p, "buttonY", g.buttonY.isPressed)
+    private func update(extended g: GCExtendedGamepad, prefix p: String, face: FaceNames) {
+        set(p, face.a, g.buttonA.isPressed)
+        set(p, face.b, g.buttonB.isPressed)
+        set(p, face.x, g.buttonX.isPressed)
+        set(p, face.y, g.buttonY.isPressed)
         set(p, "dpad.up", g.dpad.up.isPressed)
         set(p, "dpad.down", g.dpad.down.isPressed)
         set(p, "dpad.left", g.dpad.left.isPressed)
@@ -394,9 +475,9 @@ final class InputManager {
         stick(p, "rstick", g.rightThumbstick.xAxis.value, g.rightThumbstick.yAxis.value)
     }
 
-    private func update(micro g: GCMicroGamepad, prefix p: String) {
-        set(p, "buttonA", g.buttonA.isPressed)
-        set(p, "buttonX", g.buttonX.isPressed)
+    private func update(micro g: GCMicroGamepad, prefix p: String, face: FaceNames) {
+        set(p, face.a, g.buttonA.isPressed)
+        set(p, face.x, g.buttonX.isPressed)
         set(p, "menu", g.buttonMenu.isPressed)
         set(p, "dpad.up", g.dpad.up.isPressed)
         set(p, "dpad.down", g.dpad.down.isPressed)

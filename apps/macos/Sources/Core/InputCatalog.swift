@@ -66,10 +66,12 @@ enum InputCatalog {
         ("kb:48", "hk.fast_forward"),                     // Tab
         ("kb:37", "hk.slow"),                             // L
         ("kb:11", "hk.bookmark"),                         // B
-        // Controller slot 0 -> P1, slot 1 -> P2 (Nintendo-style: east = A, south = B)
+        // Controller slot 0 -> P1, slot 1 -> P2. Face buttons by POSITION (see ControllerLayout.swift):
+        // east = A, south = B (Nintendo's own A/B; B/A on Xbox, ○/✕ on PlayStation),
+        // north = turbo A, west = turbo B.
         ("gc0:dpad.up", "p1.up"), ("gc0:dpad.down", "p1.down"), ("gc0:dpad.left", "p1.left"), ("gc0:dpad.right", "p1.right"),
         ("gc0:lstick.up", "p1.up"), ("gc0:lstick.down", "p1.down"), ("gc0:lstick.left", "p1.left"), ("gc0:lstick.right", "p1.right"),
-        ("gc0:buttonB", "p1.a"), ("gc0:buttonA", "p1.b"), ("gc0:buttonY", "p1.turbo_a"), ("gc0:buttonX", "p1.turbo_b"),
+        ("gc0:face.east", "p1.a"), ("gc0:face.south", "p1.b"), ("gc0:face.north", "p1.turbo_a"), ("gc0:face.west", "p1.turbo_b"),
         ("gc0:menu", "p1.start"), ("gc0:options", "p1.select"),
         // In-game controls (hotkeys, never recorded): R2 hold = rewind, L2 hold = fast-forward,
         // L = slow 1/2 toggle, R = pause/play. While paused the D-pad ←/→ steps frames
@@ -78,7 +80,7 @@ enum InputCatalog {
         ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
         ("gc1:dpad.up", "p2.up"), ("gc1:dpad.down", "p2.down"), ("gc1:dpad.left", "p2.left"), ("gc1:dpad.right", "p2.right"),
         ("gc1:lstick.up", "p2.up"), ("gc1:lstick.down", "p2.down"), ("gc1:lstick.left", "p2.left"), ("gc1:lstick.right", "p2.right"),
-        ("gc1:buttonB", "p2.a"), ("gc1:buttonA", "p2.b"), ("gc1:buttonY", "p2.turbo_a"), ("gc1:buttonX", "p2.turbo_b"),
+        ("gc1:face.east", "p2.a"), ("gc1:face.south", "p2.b"), ("gc1:face.north", "p2.turbo_a"), ("gc1:face.west", "p2.turbo_b"),
         ("gc1:menu", "p2.start"), ("gc1:options", "p2.select"),
     ]
 
@@ -92,7 +94,59 @@ enum InputCatalog {
         ("gc0:rightTrigger", "hk.rewind"), ("gc0:leftTrigger", "hk.fast_forward"),
         ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
     ]
-    static let controllerLayoutVersion = 2
+    /// 3: face buttons are positional ids ("face.east"...) instead of GameController names
+    /// ("buttonA"...), which mean the printed label - not the position - on Nintendo controllers.
+    static let controllerLayoutVersion = 3
+
+    /// Face-button bindings of layout 2 (GameController names) for slot 0 / 1.
+    static func legacyFaceDefaults(slot: Int) -> [(String, String)] {
+        let p = slot == 0 ? "p1" : "p2"
+        return [("gc\(slot):buttonB", "\(p).a"), ("gc\(slot):buttonA", "\(p).b"),
+                ("gc\(slot):buttonY", "\(p).turbo_a"), ("gc\(slot):buttonX", "\(p).turbo_b")]
+    }
+
+    static let legacyFaceNames: Set<String> = ["buttonA", "buttonB", "buttonX", "buttonY"]
+
+    static func isLegacyFace(_ input: String, slot: Int) -> Bool {
+        let prefix = "gc\(slot):"
+        return input.hasPrefix(prefix) && legacyFaceNames.contains(String(input.dropFirst(prefix.count)))
+    }
+
+    /// Layout 2 -> 3, step 1 (on load): slots whose face buttons still have the untouched layout-2
+    /// defaults get the new positional defaults (this is the Nintendo A/B fix). Customised slots
+    /// keep their bindings; see `legacyFaceTranslation`.
+    static func faceLayoutMigration(_ c: Config) -> (unbind: [(String, String)], bind: [(String, String)]) {
+        var unbind: [(String, String)] = [], bind: [(String, String)] = []
+        for slot in 0..<2 {
+            let legacy = c.bindings.filter { isLegacyFace($0.input, slot: slot) }.map { $0.input + "→" + $0.action }
+            let old = legacyFaceDefaults(slot: slot)
+            guard legacy.count == old.count, Set(legacy) == Set(old.map { $0.0 + "→" + $0.1 }) else { continue }
+            unbind += old
+            bind += defaultBindings.filter { $0.0.hasPrefix("gc\(slot):face.") }
+        }
+        return (unbind, bind)
+    }
+
+    /// Layout 2 -> 3, step 2 (when a controller attaches to `slot`): customised bindings that still
+    /// use GameController names move to the position that name has on THAT controller, so they keep
+    /// doing exactly what they did (e.g. a hand-swapped Pro Controller stays as it was).
+    static func legacyFaceTranslation(_ c: Config, slot: Int, positions: [String: FacePosition]) -> (unbind: [(String, String)], bind: [(String, String)]) {
+        let prefix = "gc\(slot):"
+        var unbind: [(String, String)] = [], bind: [(String, String)] = []
+        for b in c.bindings where isLegacyFace(b.input, slot: slot) {
+            guard let pos = positions[String(b.input.dropFirst(prefix.count))] else { continue }
+            unbind.append((b.input, b.action))
+            bind.append((prefix + pos.element, b.action))
+        }
+        return (unbind, bind)
+    }
+
+    /// 「初期設定に戻す」 for one controller: every binding of `gc<slot>:` replaced by the defaults.
+    static func controllerResetPlan(_ c: Config, slot: Int) -> (unbind: [(String, String)], bind: [(String, String)]) {
+        let prefix = "gc\(slot):"
+        return (c.bindings.filter { $0.input.hasPrefix(prefix) }.map { ($0.input, $0.action) },
+                defaultBindings.filter { $0.0.hasPrefix(prefix) })
+    }
 
     /// One-time upgrade of saved bindings to the 0.2.0 controller layout. Only applies when the
     /// user still has the untouched old controller hotkeys (customised layouts are kept).
@@ -167,6 +221,18 @@ enum InputCatalog {
         122: "F1", 123: "←", 124: "→", 125: "↓", 126: "↑", 102: "英数", 104: "かな",
     ]
 
+    /// `controllers`: connected controllers, used to add the printed label of face buttons
+    /// ("パッド1 右ボタン(A)").
+    static func displayName(_ physicalID: String, controllers: [ControllerInfo]) -> String {
+        let base = displayName(physicalID)
+        guard physicalID.hasPrefix("gc"), let colon = physicalID.firstIndex(of: ":"),
+              let slot = Int(physicalID[physicalID.index(physicalID.startIndex, offsetBy: 2)..<colon]),
+              let info = controllers.first(where: { $0.slot == slot }) else { return base }
+        let element = String(physicalID[physicalID.index(after: colon)...])
+        guard element.hasPrefix("face.") else { return base }
+        return base + "(\(info.label(element)))"
+    }
+
     static func displayName(_ physicalID: String) -> String {
         if physicalID.hasPrefix("kb:"), let code = UInt16(physicalID.dropFirst(3)) {
             return "キー " + (keyNames[code] ?? "#\(code)")
@@ -175,12 +241,13 @@ enum InputCatalog {
             let slot = Int(physicalID[physicalID.index(physicalID.startIndex, offsetBy: 2)..<colon]) ?? 0
             let name = String(physicalID[physicalID.index(after: colon)...])
             let pretty: [String: String] = [
-                "buttonA": "A(下)", "buttonB": "B(右)", "buttonX": "X(左)", "buttonY": "Y(上)",
+                "face.south": "下ボタン", "face.east": "右ボタン", "face.west": "左ボタン", "face.north": "上ボタン",
+                "buttonA": "A(旧設定)", "buttonB": "B(旧設定)", "buttonX": "X(旧設定)", "buttonY": "Y(旧設定)",
                 "dpad.up": "十字↑", "dpad.down": "十字↓", "dpad.left": "十字←", "dpad.right": "十字→",
                 "lstick.up": "左スティック↑", "lstick.down": "左スティック↓", "lstick.left": "左スティック←", "lstick.right": "左スティック→",
                 "rstick.up": "右スティック↑", "rstick.down": "右スティック↓", "rstick.left": "右スティック←", "rstick.right": "右スティック→",
-                "leftShoulder": "L(L1)", "rightShoulder": "R(R1)", "leftTrigger": "L2", "rightTrigger": "R2",
-                "menu": "Menu", "options": "Options", "home": "Home", "leftThumb": "L3", "rightThumb": "R3",
+                "leftShoulder": "L(L1/LB)", "rightShoulder": "R(R1/RB)", "leftTrigger": "ZL(L2/LT)", "rightTrigger": "ZR(R2/RT)",
+                "menu": "+(Menu)", "options": "−(Options)", "home": "Home", "leftThumb": "L3", "rightThumb": "R3",
             ]
             return "パッド\(slot + 1) " + (pretty[name] ?? name)
         }

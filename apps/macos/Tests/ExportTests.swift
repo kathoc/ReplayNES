@@ -174,7 +174,7 @@ final class ExportTests: XCTestCase {
         defer { rn_string_free(saved) }
         let cfg = InputCatalog.parse(String(cString: saved))
         XCTAssertEqual(cfg?.turboPeriod, 4)
-        XCTAssertEqual(Set(cfg?.inputs(for: "p1.a") ?? []), ["gc0:buttonB", "kb:7"])
+        XCTAssertEqual(Set(cfg?.inputs(for: "p1.a") ?? []), ["gc0:face.east", "kb:7"])
     }
 
     /// The documented default play keys/buttons reach P1 (Return/Menu = START etc.).
@@ -185,7 +185,7 @@ final class ExportTests: XCTestCase {
         let cases: [(String, Int32)] = [
             ("kb:36", RN_BTN_START), ("kb:126", RN_BTN_UP), ("kb:125", RN_BTN_DOWN), ("kb:123", RN_BTN_LEFT),
             ("kb:124", RN_BTN_RIGHT), ("kb:7", RN_BTN_A), ("kb:6", RN_BTN_B), ("kb:60", RN_BTN_SELECT),
-            ("gc0:menu", RN_BTN_START), ("gc0:options", RN_BTN_SELECT), ("gc0:buttonB", RN_BTN_A), ("gc0:buttonA", RN_BTN_B),
+            ("gc0:menu", RN_BTN_START), ("gc0:options", RN_BTN_SELECT), ("gc0:face.east", RN_BTN_A), ("gc0:face.south", RN_BTN_B),
             ("gc0:dpad.up", RN_BTN_UP), ("gc0:dpad.right", RN_BTN_RIGHT),
         ]
         for (i, (id, bit)) in cases.enumerated() {
