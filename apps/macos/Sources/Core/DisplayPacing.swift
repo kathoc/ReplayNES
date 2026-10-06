@@ -95,13 +95,15 @@ struct DisplayCadence {
 /// stall does not raise it, a run of heavier frames - e.g. the flash filter on a flashing scene -
 /// does within a few frames), plus a safety margin (on a ProMotion panel a commit later than about
 /// 1.5 ms before the deadline sometimes misses its refresh), plus a penalty that grows on every
-/// frame that still missed its refresh (presented after it) and decays while none do.
+/// frame committed less than `lateCommit` before its deadline and decays while none are.
 struct InputDeadline {
     static let margin = 0.0015
     static let minLead = 0.002
     static let maxLead = 0.010
     static let missPenalty = 0.0005
     static let maxPenalty = 0.003
+    /// A commit later than this before the deadline counts as a miss.
+    static let lateCommit = 0.0005
     /// Frames without a miss before the penalty shrinks by `penaltyDecay` (~10 s at 60 fps).
     static let decayAfter = 600
     static let penaltyDecay = 0.0001
@@ -146,7 +148,7 @@ struct InputDeadline {
         }
     }
 
-    /// A frame reached the screen later than its target refresh.
+    /// A frame was committed too close to (or after) its deadline.
     mutating func observeMiss() {
         misses &+= 1
         clean = 0

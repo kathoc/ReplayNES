@@ -23,15 +23,20 @@ final class DisplayTarget {
     }
 }
 
-/// Presentation feedback from Metal's presented handlers to the emulation thread.
+/// Presentation feedback from Metal's presented handlers to the emulation thread: detects a
+/// steady backlog (every present a whole refresh behind its target: one drawable too many in the
+/// queue, which a constant present-per-refresh cadence never drains by itself).
 private final class PresentFeedback {
     private let lock = NSLock()
-    private var misses = 0
-    private var backlog = false
-    func miss() { lock.lock(); misses += 1; backlog = true; lock.unlock() }
-    func late() { lock.lock(); backlog = true; lock.unlock() }
-    func takeMisses() -> Int { lock.lock(); defer { lock.unlock() }; let m = misses; misses = 0; return m }
-    func takeBacklog() -> Bool { lock.lock(); defer { lock.unlock() }; let b = backlog; backlog = false; return b }
+    private var lateRun = 0
+    func presented(late: Bool) { lock.lock(); lateRun = late ? lateRun + 1 : 0; lock.unlock() }
+    /// True (once) when the last `n` presents were all late.
+    func takeSteadyBacklog(_ n: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard lateRun >= n else { return false }
+        lateRun = 0
+        return true
+    }
 }
 
 /// CAMetalDisplayLinkDelegate for the emulation thread (EmulationController is not an NSObject).
@@ -174,11 +179,16 @@ final class EmulationController {
     private var lastStep: UInt64 = 0            // when a frame was last emulated (repeat presents)
     private var emulationRate = 1 / FramePacing.period
     private var pendingThumbnail: UInt64?       // captured after the frame is presented
+    private var lastDrain: UInt64 = 0
     /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
     private var workgroup: OpaquePointer?
     static let useWorkgroup = UserDefaults.standard.flag("frameWorkgroup", default: true)
     /// -repeatPresents NO: present only new frames (every k-th refresh) instead of every refresh.
     static let repeatPresents = UserDefaults.standard.flag("repeatPresents", default: true)
+    // Experiment knobs (docs/FRAME_PACING.md): -backlogDrain NO, -inputLeadMs <ms> (fixed lead).
+    static let backlogDrain = UserDefaults.standard.flag("backlogDrain", default: true)
+    static let fixedLead: Double? = UserDefaults.standard.object(forKey: "inputLeadMs") != nil
+        ? UserDefaults.standard.double(forKey: "inputLeadMs") / 1000 : nil
     // Requested viewport (any thread -> emulation thread).
     private let targetLock = NSLock()
     private var requestedTarget: DisplayTarget?
@@ -443,21 +453,23 @@ final class EmulationController {
         lastLinkCallback = cb
         linkActive = true
         guard let target = linkTarget else { return }
-        for _ in 0..<feedback.takeMisses() { inputDeadline.observeMiss() }
         let present = update.targetPresentationTimestamp
         let newFrame = cadence.refresh(presentation: present)
         let refresh = cadence.refresh > 0 ? cadence.refresh : 1.0 / 120
         let fb = feedback, lat = latency
         let onRepeat: (UInt64, Double) -> Void = { frame, t in
-            // A whole refresh late: the queue is behind (a ProMotion panel in full screen may run
-            // its refreshes up to half a refresh off the display link's timestamps; that is not).
-            if t > present + refresh * 0.75 { fb.late() }
+            // A whole refresh late = behind (a ProMotion panel in full screen may run its refreshes
+            // a fraction of a refresh off the display link's timestamps; that is not).
+            fb.presented(late: t > present + refresh * 0.75)
             lat.recordRepeatPresented(frame: frame, target: present, presentedSeconds: t)
         }
         guard newFrame else {
             let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
-            if playing && fb.takeBacklog() {
-                // The queue is a refresh behind: skipping this repeat lets it drain.
+            if playing && Self.backlogDrain && HostClock.seconds(cb &- lastDrain) > 5 && fb.takeSteadyBacklog(60) {
+                // Half a second of presents all a refresh behind: skipping one repeat drains the
+                // extra drawable (at most every 5 s: on a variable-refresh panel a skipped refresh
+                // shifts its timing, so this must stay rare).
+                lastDrain = cb
                 latency.recordBacklogDrain()
                 return
             }
@@ -470,7 +482,7 @@ final class EmulationController {
         }
         // Commands (seeks, take switches, ...) run before the wait: their cost is absorbed there.
         runCommands()
-        let lead = inputDeadline.lead
+        let lead = Self.fixedLead ?? inputDeadline.lead
         HostClock.wait(untilSeconds: update.targetTimestamp - lead)
         rn_frame_workgroup_start(workgroup, HostClock.now(), HostClock.ticks(seconds: update.targetTimestamp))
         tickStart = cb
@@ -485,10 +497,17 @@ final class EmulationController {
                 // Dropped by the window compositor (a repeat then shows the picture a refresh late).
                 // Measured independent of how early the frame is committed (still happens with an
                 // 9 ms lead), so it does not raise the input lead; a late presentation does.
-                if t <= 0 { lat.recordDropped() } else if lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t) { fb.miss() }
+                if t <= 0 { lat.recordDropped(); return }
+                fb.presented(late: lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t))
             },
             onRepeatPresented: onRepeat)
         rn_frame_workgroup_finish(workgroup)
+        // Committed (nearly) past the deadline: sample earlier from now on. (Presentation
+        // lateness is not used for this: a queue backlog or variable refresh also delays frames
+        // that were committed in time.)
+        if let commit, commit > HostClock.ticks(seconds: update.targetTimestamp - InputDeadline.lateCommit) {
+            inputDeadline.observeMiss()
+        }
         if stepped, let commit, commit > lastSample {
             // CPU work from the sample to the commit; the GPU part (a few µs for the plain picture,
             // more with the CRT model) is covered by the margin and the miss feedback (Metal's
