@@ -54,6 +54,43 @@ Rules:
   audio drift); drop/duplicate *presentation* frames instead.
 * A controller disconnect: `rn_input_release_prefix(in, "<device prefix>")` and pause.
 
+## Practice mode and A/B repeat
+
+`RN_MODE_PRACTICE` plays with live input but records nothing: `rn_frame`, the take, checkpoints
+and `rn_session_has_unsaved_changes` stay as they were. Leaving it (`rn_set_mode(s,
+RN_MODE_RECORD/REPLAY)`) restores the take state at the frame practice was entered from.
+Per project there are 8 A/B slots (`RN_PRACTICE_SLOTS`), saved with the project (full save and
+autosave journal); slot edits do mark the project unsaved.
+
+```c
+rn_practice_set_a(s, slot);          // any mode: A = current machine state, counter = 0, B cleared
+/* ...play (record, replay or practice)... */
+if (rn_practice_set_b(s, slot) == RN_ERR_DISCONTINUITY) tell_user("seeked since A: set A again");
+rn_practice_slot_rename(s, slot, "boss");
+
+rn_practice_goto_a(s, slot);         // enters practice (remembers take position), loads A
+for (;;) {                           // A/B loop, per emulation tick
+    rn_step(s, p1, p2, events, NULL);            // nothing recorded
+    rn_practice_slot_info si; rn_practice_slot_get(s, slot, &si);
+    if (si.has_b && rn_practice_frame(s) >= si.length_frames) {
+        pause_ms(500); play_rewind_animation(); rn_practice_goto_a(s, slot);  // autoplay again
+    }
+}
+rn_rewind(s, n);                     // in practice: rewinds the practice run (R2 hold), not the take
+rn_set_mode(s, RN_MODE_RECORD);      // leave practice: take exactly as before
+```
+
+* `rn_practice_frame` = frames since the current anchor (last set A / goto A / practice start);
+  `rn_practice_get_status` also gives the anchor slot, return frame and how far practice rewind can go.
+* Practice rewind keeps a bounded snapshot ring (dense-checkpoint policy: every `dense_interval`
+  frames, `dense_capacity` entries) plus the practice inputs; it is exact and stops at the anchor.
+* In practice `rn_seek`, `rn_bookmark_add/goto`, `rn_take_activate`, `rn_undo_take_switch` return
+  `RN_ERR_WRONG_MODE`; leave practice first. Saving while practicing saves the take position.
+* B needs unbroken emulation since that slot's A anchor: seek/take rewind, bookmark goto, take
+  switch/undo, leaving practice, another goto A or reopening the project break it
+  (`RN_ERR_DISCONTINUITY`); `rn_practice_goto_a(slot)` re-anchors so B can be re-set.
+* Practice is never persisted: a reopened project starts in its take mode at the take cursor.
+
 ## Threads
 
 * `rn_session` / `rn_renderer`: not thread-safe; one owner thread each (serialize calls).
@@ -104,6 +141,18 @@ paused re-process the current frame each display tick while `info.altered` so a 
 settles. For export use a fresh filter per export and process every rendered frame in order.
 Algorithm and limits: [FLASH_REDUCTION.md](FLASH_REDUCTION.md).
 
+## Streaming output (optional)
+
+The macOS app publishes the displayed frame (after the flash filter, before any UI) as a Syphon
+server named "ReplayNES" for OBS (`apps/macos/Sources/App/SyphonOutput.swift`): poll the same
+display frame copy from a separate thread, scale nearest-neighbour, and never let the consumer
+block the emulation thread. Equivalents for future frontends:
+
+- Windows: [Spout](https://spout.zeal.co) (OBS via the Spout2 plugin), sharing a D3D11 texture.
+- Linux: v4l2loopback (appears as a camera) or a PipeWire video stream (OBS PipeWire source).
+
+Audio needs no special output: OBS captures application audio on every OS.
+
 ## Errors to handle in UI
 
 | Code | Meaning / action |
@@ -111,7 +160,9 @@ Algorithm and limits: [FLASH_REDUCTION.md](FLASH_REDUCTION.md).
 | `RN_ERR_ROM_NOT_FOUND` | ask the user for the ROM, reopen with `rom_override` |
 | `RN_ERR_ROM_MISMATCH` | the chosen file is a different ROM (SHA-256 shown in message) |
 | `RN_ERR_CORE_MISMATCH` | project from another core build — see COMPATIBILITY.md; do not open |
-| `RN_ERR_CORRUPT` | name of the damaged file in the message; for damaged states offer reopen with `RN_OPEN_DROP_CORRUPT_STATES` |
+| `RN_ERR_CORRUPT` | name of the damaged file in the message; for damaged states offer reopen with `RN_OPEN_DROP_CORRUPT_STATES`; for a damaged practice slot ("practice slot N" in the message) offer `RN_OPEN_DROP_CORRUPT_PRACTICE` (that slot is lost) |
+| `RN_ERR_DISCONTINUITY` | B could not be set: emulation was interrupted since A (set A again / goto A) |
+| `RN_ERR_WRONG_MODE` | take navigation attempted while practicing: leave practice first |
 | `RN_ERR_UNSUPPORTED_FORMAT` | project written by a newer app |
 | `RN_ERR_DISK_FULL` / `RN_ERR_IO` | keep running, keep data in memory, retry save later |
 

@@ -132,6 +132,19 @@ ROM ファイルの場所を移した場合は、開くときに ROM を指定�
 - 「フラッシュ低減を適用」で、激しい点滅を抑えた映像にできます（上の「フラッシュ低減」を参照）。
 - 書き出しは別のエミュレーターで最初から計算し直します。書き出しによってプロジェクトが変わることはなく、書き出し中も作業を続けられます。
 
+### 配信 (OBS)
+
+ゲーム画面を [Syphon](https://syphon.github.io) で出力し、OBS などの配信ソフトに直接取り込めます（仮想カメラではありません）。
+
+1. ReplayNES で「設定 → 表示・音声 → 配信出力 (Syphon)」をオンにします（メニュー「表示 → 配信出力 (Syphon) を開始」でも切り替えられます）。オンの間はゲーム画面の左上に「Syphon出力中」と表示されます。
+2. OBS（macOS 版）で「ソース → ＋ → Syphon クライアント」を追加し、サーバーに「[ReplayNES] ReplayNES」を選びます。
+3. 音声は OBS の「macOS 音声キャプチャ」ソース（アプリケーションの音声をキャプチャ）を追加し、ReplayNES を選びます。ReplayNES 側の設定は不要です。
+
+- 出力されるのはゲーム画面だけです（UI やバッジは含みません）。フラッシュ低減は表示と同じく適用済みで、オーバースキャン部分も含む 256×240 全体を最近傍補間で拡大します。
+- 出力サイズ: 原寸 256×240、2〜4 倍（既定は 4 倍 1024×960）、1280×960 / 1920×1440（4:3・左右に黒帯）。ピクセル比 8:7 も選べます（表示設定とは別）。
+- 出力はエミュレーションとは別のスレッドで行い、受け取る側がいないときは描画もしません。OBS 側で数フレーム程度の遅延が出ることがあります。
+- 一時停止中は最後の画面が表示され続けます。
+
 ## コアの互換性について（重要）
 
 録画データは「どのエミュレーターコアで再生するか」に強く依存します。コアのバージョンが少しでも違うと、同じ入力でも結果がずれることがあります。
@@ -172,7 +185,7 @@ git clone --recursive https://github.com/kathoc/ReplayNES.git
 cd ReplayNES && scripts/build-macos.sh
 ```
 
-必要なもの: Xcode 16 以降、CMake、Ninja、XcodeGen（`brew install cmake ninja xcodegen`）。初回のビルドで Swift Package Manager が Sparkle を取得します。
+必要なもの: Xcode 16 以降、CMake、Ninja、XcodeGen（`brew install cmake ninja xcodegen`）。初回のビルドで Swift Package Manager が Sparkle を取得します。Syphon はサブモジュール `third_party/syphon` からソースでビルドされます（Metal Toolchain の追加ダウンロードは不要）。`scripts/check-syphon-macos.sh` で配信出力を OBS なしで確認できます。
 
 エンジンとテスト（macOS / Linux / Windows 共通）は次のとおりです。
 
