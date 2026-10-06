@@ -1,296 +1,161 @@
-// Display-locked pacing logic (pure, no clocks of its own; see docs/FRAME_PACING.md):
+// Display-locked pacing decisions (docs/FRAME_PACING.md). The logic lives in the shared frontend
+// core (frontend/src/pacing.cpp, rnf_cadence / rnf_input_deadline / ...); these are thin value
+// wrappers for the live loop (EmulationController, driven by CAMetalDisplayLink):
 //  * DisplayCadence  - which display refreshes start a new emulated frame
 //  * InputDeadline   - how long before the commit deadline input is sampled (just in time)
 //  * PresentPath     - whether the layer goes direct to the display (from the update timestamps)
 //  * BacklogDrain    - when a steady one-drawable backlog is drained
 //  * BuildAhead      - whether GPU-heavy pictures (CRT model) are built one refresh ahead
-//  * AudioRateControl - dynamic rate control: resampling ratio that keeps the audio buffer level
-//                       while emulation runs at the display rate instead of 60.0988 Hz
-// The live loop (EmulationController) is driven by CAMetalDisplayLink; these types only decide.
+//  * AudioRateControl - dynamic rate control keeping the audio buffer level
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
-/// Maps display refreshes to emulated frames.
-/// Locked: when the refresh rate is (within `lockTolerance`) an integer multiple k of the NES rate
-/// (60 Hz: k = 1, 120 Hz ProMotion: k = 2, 240 Hz: k = 4), exactly every k-th refresh starts a
-/// frame: emulation runs at refresh / k (60.000 Hz instead of 60.0988 Hz, -0.16 %) and every frame
-/// stays on screen for exactly k refreshes - no judder by construction. Logical time is the frame
-/// index, so this never affects determinism; audio follows through AudioRateControl.
-/// Free: other rates (e.g. 144 Hz, 75 Hz) keep the NTSC rate and pick the nearest refresh (a
-/// mixed cadence is unavoidable there without variable refresh).
+/// Maps display refreshes to emulated frames (locked to an integer multiple of the NES rate when
+/// the display allows it, free otherwise).
 struct DisplayCadence {
-    static let lockTolerance = 0.005
-    /// Plausible refresh intervals (500 Hz .. 24 Hz); other timestamp deltas are not refreshes.
-    static let minRefresh = 1.0 / 500
-    static let maxRefresh = 1.0 / 24
-    let framePeriod: Double
+    static let lockTolerance = RNF_CADENCE_LOCK_TOLERANCE
+    private var box: RNFHandle
 
+    init(framePeriod: Double = FramePacing.period) {
+        box = RNFHandle(rnf_cadence_new(framePeriod), free: { rnf_cadence_free($0) }, clone: { rnf_cadence_clone($0) })
+    }
+
+    var framePeriod: Double { rnf_cadence_frame_period(box.ptr) }
     /// Estimated refresh interval (seconds); 0 until two presentation times were seen.
-    private(set) var refresh = 0.0
-    private var lastPresentation: Double?
-    private var lastFrameTime: Double?
-    private var contentTime = 0.0   // free mode: ideal start of the next frame
-
-    init(framePeriod: Double = FramePacing.period) { self.framePeriod = framePeriod }
+    var refresh: Double { rnf_cadence_refresh_interval(box.ptr) }
 
     /// Refreshes per frame when locked, nil when the display rate is not a multiple of the NES rate.
     static func refreshesPerFrame(refresh: Double, framePeriod: Double = FramePacing.period) -> Int? {
-        guard refresh > 0 else { return nil }
-        let k = (framePeriod / refresh).rounded()
-        guard k >= 1, abs(k * refresh - framePeriod) / framePeriod <= lockTolerance else { return nil }
-        return Int(k)
+        let k = rnf_refreshes_per_frame(refresh, framePeriod)
+        return k > 0 ? Int(k) : nil
     }
 
-    var refreshesPerFrame: Int? { Self.refreshesPerFrame(refresh: refresh, framePeriod: framePeriod) }
+    var refreshesPerFrame: Int? {
+        let k = rnf_cadence_refreshes_per_frame(box.ptr)
+        return k > 0 ? Int(k) : nil
+    }
 
     /// Frames per second this cadence emulates (the NES rate when free or unknown).
-    var emulationRate: Double {
-        guard let k = refreshesPerFrame else { return 1 / framePeriod }
-        return 1 / (Double(k) * refresh)
-    }
+    var emulationRate: Double { rnf_cadence_emulation_rate(box.ptr) }
 
     /// Interval two consecutive frames are expected to be on screen apart (seconds).
-    var expectedFrameInterval: Double {
-        guard let k = refreshesPerFrame else { return framePeriod }
-        return Double(k) * refresh
-    }
-
-    /// Recent plausible timestamp deltas (the refresh estimate follows their median).
-    private var deltas: [Double] = []
-    private var deltaHead = 0
-    static let deltaWindow = 15
+    var expectedFrameInterval: Double { rnf_cadence_expected_frame_interval(box.ptr) }
 
     /// One display callback whose picture appears at `presentation` (seconds). Returns true when
     /// this refresh starts a new emulated frame.
-    mutating func refresh(presentation t: Double) -> Bool {
-        if let l = lastPresentation, t > l {
-            let d = t - l
-            if d >= Self.minRefresh && d <= Self.maxRefresh {
-                if deltas.count < Self.deltaWindow { deltas.append(d) } else { deltas[deltaHead] = d; deltaHead = (deltaHead + 1) % Self.deltaWindow }
-                let median = deltas.sorted()[deltas.count / 2]
-                if refresh == 0 || abs(refresh - median) > 0.1 * median {
-                    // First estimate, another display, or a wrong estimate from odd timestamps
-                    // (a single short delta once stuck the estimate at 2-4x the real rate).
-                    refresh = median
-                } else if abs(d - refresh) < 0.25 * refresh {
-                    refresh += (d - refresh) * 0.05              // refine (skipped callbacks are ignored)
-                }
-            }
-            // Other deltas are not one refresh apart (duplicate / bogus timestamps, or a gap).
-        }
-        lastPresentation = t
-        guard refresh > 0, let last = lastFrameTime else {
-            lastFrameTime = t
-            contentTime = t + framePeriod
-            return true
-        }
-        if t <= last { return false }
-        if let k = refreshesPerFrame {
-            // Every k-th refresh after the previous frame (half a refresh of tolerance absorbs
-            // timestamp noise; a refresh without a callback - display link hiccup - starts the
-            // frame at the next callback instead of skipping one).
-            guard t - last >= (Double(k) - 0.5) * refresh else { return false }
-            lastFrameTime = t
-            contentTime = t + framePeriod
-            return true
-        }
-        // Free: the refresh nearest to the ideal frame time; resynchronise after a long gap.
-        guard t >= contentTime - refresh / 2 else { return false }
-        contentTime = t - contentTime > 2 * framePeriod ? t + framePeriod : contentTime + framePeriod
-        lastFrameTime = t
-        return true
-    }
+    mutating func refresh(presentation t: Double) -> Bool { rnf_cadence_refresh(RNFHandle.unique(&box), t) != 0 }
 }
 
-/// Just-in-time input sampling: input is read `lead` seconds before the frame's commit deadline
-/// (CAMetalDisplayLink targetTimestamp), so the emulate + render work is committed just in time.
-/// The lead is the 99.5th percentile of the recent work (sample -> commit, last ~10 s: a single
-/// stall does not raise it, a run of heavier frames - e.g. the flash filter on a flashing scene -
-/// does within a few frames), plus a safety margin (on a ProMotion panel a commit later than about
-/// 1.5 ms before the deadline sometimes misses its refresh), plus a penalty that grows on every
-/// frame committed less than `lateCommit` before its deadline - or, direct to the display, whose
-/// present was dropped or late (EmulationController) - and decays while none are.
+/// Just-in-time input sampling: input is read `lead` seconds before the frame's commit deadline.
 struct InputDeadline {
-    static let margin = 0.0015
-    static let minLead = 0.002
-    static let maxLead = 0.010
-    static let missPenalty = 0.0005
-    static let maxPenalty = 0.003
+    static let margin = RNF_INPUT_DEADLINE_MARGIN
+    static let minLead = RNF_INPUT_DEADLINE_MIN_LEAD
+    static let maxLead = RNF_INPUT_DEADLINE_MAX_LEAD
+    static let missPenalty = RNF_INPUT_DEADLINE_MISS_PENALTY
+    static let maxPenalty = RNF_INPUT_DEADLINE_MAX_PENALTY
     /// A commit later than this before the deadline counts as a miss.
-    static let lateCommit = 0.0005
-    /// Frames without a miss before the penalty shrinks by `penaltyDecay` (~10 s at 60 fps).
-    static let decayAfter = 600
-    static let penaltyDecay = 0.0001
-    /// Work samples kept (~10 s at 60 fps) and the quantile used.
-    static let window = 600
-    static let quantile = 0.995
-    static let binWidth = 0.0001   // 0.1 ms
-    static let binCount = 101      // the last bin collects everything >= 10 ms
+    static let lateCommit = RNF_INPUT_DEADLINE_LATE_COMMIT
+    static let decayAfter = Int(RNF_INPUT_DEADLINE_DECAY_AFTER)
+    static let penaltyDecay = RNF_INPUT_DEADLINE_PENALTY_DECAY
+    static let window = Int(RNF_INPUT_DEADLINE_WINDOW)
 
-    private var ring = [UInt8](repeating: 0, count: InputDeadline.window)
-    private var bins = [Int](repeating: 0, count: InputDeadline.binCount)
-    private var filled = 0, head = 0
-    private(set) var penalty = 0.0
-    private var clean = 0
-    private(set) var misses: UInt64 = 0
+    private var box = RNFHandle(rnf_input_deadline_new(), free: { rnf_input_deadline_free($0) },
+                                clone: { rnf_input_deadline_clone($0) })
 
     /// The work quantile (seconds; the upper edge of its 0.1 ms bin), 0 before any sample.
-    var workQuantile: Double {
-        guard filled > 0 else { return 0 }
-        let need = Int((Double(filled) * Self.quantile).rounded(.up))
-        var sum = 0
-        for (i, n) in bins.enumerated() {
-            sum += n
-            if sum >= need { return Double(i + 1) * Self.binWidth }
-        }
-        return Double(Self.binCount) * Self.binWidth
-    }
-
-    var lead: Double { min(Self.maxLead, max(Self.minLead, workQuantile + Self.margin + penalty)) }
+    var workQuantile: Double { rnf_input_deadline_work_quantile(box.ptr) }
+    var lead: Double { rnf_input_deadline_lead(box.ptr) }
+    var penalty: Double { rnf_input_deadline_penalty(box.ptr) }
+    var misses: UInt64 { rnf_input_deadline_misses(box.ptr) }
 
     /// Seconds from the input sample to the frame's commit.
-    mutating func observeWork(_ seconds: Double) {
-        let bin = UInt8(min(Self.binCount - 1, max(0, Int(seconds / Self.binWidth))))
-        if filled == Self.window { bins[Int(ring[head])] -= 1 } else { filled += 1 }
-        ring[head] = bin
-        bins[Int(bin)] += 1
-        head = (head + 1) % Self.window
-        clean += 1
-        if clean >= Self.decayAfter {
-            clean = 0
-            penalty = max(0, penalty - Self.penaltyDecay)
-        }
-    }
+    mutating func observeWork(_ seconds: Double) { rnf_input_deadline_observe_work(RNFHandle.unique(&box), seconds) }
 
     /// A frame was committed too close to (or after) its deadline.
-    mutating func observeMiss() {
-        misses &+= 1
-        clean = 0
-        penalty = min(Self.maxPenalty, penalty + Self.missPenalty)
-    }
+    mutating func observeMiss() { rnf_input_deadline_observe_miss(RNFHandle.unique(&box)) }
 }
 
-/// Whether the game layer goes direct to the display: every one of the last `window` display link
-/// updates had presentDelay (targetPresentationTimestamp - targetTimestamp) of about one refresh.
-/// Composited it is two or more refreshes, but Core Animation sometimes predicts one refresh for a
-/// composited window too, so a single update is not enough.
+/// Whether the game layer goes direct to the display (every recent presentDelay about one refresh).
 struct PresentPath {
-    static let window = 60
-    private var delays: [Double] = []
-    private var head = 0
-    mutating func observe(presentDelay: Double) {
-        guard presentDelay > 0 else { return }
-        if delays.count < Self.window { delays.append(presentDelay) } else { delays[head] = presentDelay; head = (head + 1) % Self.window }
-    }
-    mutating func reset() { delays.removeAll(keepingCapacity: true); head = 0 }
+    static let window = Int(RNF_PRESENT_PATH_WINDOW)
+    private var box = RNFHandle(rnf_present_path_new(), free: { rnf_present_path_free($0) },
+                                clone: { rnf_present_path_clone($0) })
+    mutating func observe(presentDelay: Double) { rnf_present_path_observe(RNFHandle.unique(&box), presentDelay) }
+    mutating func reset() { rnf_present_path_reset(RNFHandle.unique(&box)) }
     /// The largest recent presentDelay (0 before any update).
-    var maxDelay: Double { delays.max() ?? 0 }
-    func isDirect(refresh: Double) -> Bool { delays.count >= Self.window / 4 && refresh > 0 && maxDelay < 1.5 * refresh }
+    var maxDelay: Double { rnf_present_path_max_delay(box.ptr) }
+    func isDirect(refresh: Double) -> Bool { rnf_present_path_is_direct(box.ptr, refresh) != 0 }
 }
 
-/// A steady backlog: every present a whole refresh behind its target (one drawable too many queued
-/// after a hiccup; presenting on every refresh never drains it by itself). Skipping one repeat
-/// present drains it. When the layer goes direct to a fixed-refresh display, a late present can
-/// only be such a backlog and skipping costs nothing but that refresh, so it is drained as soon as
-/// two frames' presents were late. Otherwise it stays rare (half a second of late presents, at
-/// most every 5 s): composited, a busy window server also shows presents a refresh late, which no
-/// skip fixes; on a variable-refresh panel (ProMotion, Adaptive-Sync) a skipped refresh shifts the
-/// panel's timing.
+/// When a steady one-drawable backlog is drained (fast when direct to a fixed-refresh display).
 enum BacklogDrain {
     struct Policy: Equatable {
         let lateRun: Int          // consecutive late presents (new or repeat)
         let minInterval: Double   // seconds since the previous drain
     }
-    static let fast = Policy(lateRun: 4, minInterval: 0.25)
-    static let rare = Policy(lateRun: 60, minInterval: 5)
+    static let fast = Policy(lateRun: Int(RNF_BACKLOG_FAST_LATE_RUN), minInterval: RNF_BACKLOG_FAST_MIN_INTERVAL)
+    static let rare = Policy(lateRun: Int(RNF_BACKLOG_RARE_LATE_RUN), minInterval: RNF_BACKLOG_RARE_MIN_INTERVAL)
     static func policy(variableRefresh: Bool, direct: Bool) -> Policy {
-        !variableRefresh && direct ? fast : rare
+        let p = rnf_backlog_drain_policy(variableRefresh ? 1 : 0, direct ? 1 : 0)
+        return Policy(lateRun: Int(p.late_run), minInterval: p.min_interval)
     }
 }
 
-/// GPU-heavy pictures (the CRT model) are built one refresh ahead of the present that shows them
-/// (GameRenderer) when the picture-building GPU time (p90 of the last `window` frames) exceeds what
-/// the display path leaves after the commit deadline: `presentDelay - enterMargin`, where
-/// presentDelay = targetPresentationTimestamp - targetTimestamp of the display link updates (one
-/// refresh when the layer goes direct to the display, two or more when composited; the largest of
-/// the recent ones). Back in the same refresh when clearly below (`presentDelay - leaveMargin`).
-/// Built in the same refresh, such a picture misses it and queues behind it (sticky one-refresh
-/// backlog, drawable starvation); built ahead, it is shown exactly one refresh later.
+/// GPU-heavy pictures are built one refresh ahead when they would miss their refresh otherwise.
 struct BuildAhead {
-    static let window = 120
-    static let delayWindow = 60
-    static let enterMargin = 0.0025
-    static let leaveMargin = 0.004
-    private(set) var active = false
-    private var times: [Double] = []
-    private var head = 0
-    private var delays: [Double] = []
-    private var delayHead = 0
+    static let window = Int(RNF_BUILD_AHEAD_WINDOW)
+    static let delayWindow = Int(RNF_BUILD_AHEAD_DELAY_WINDOW)
+    static let enterMargin = RNF_BUILD_AHEAD_ENTER_MARGIN
+    static let leaveMargin = RNF_BUILD_AHEAD_LEAVE_MARGIN
+    private var box = RNFHandle(rnf_build_ahead_new(), free: { rnf_build_ahead_free($0) },
+                                clone: { rnf_build_ahead_clone($0) })
+
+    var active: Bool { rnf_build_ahead_active(box.ptr) != 0 }
 
     /// GPU seconds of one picture build.
-    mutating func add(_ seconds: Double) {
-        if times.count < Self.window { times.append(seconds) } else { times[head] = seconds; head = (head + 1) % Self.window }
-    }
+    mutating func add(_ seconds: Double) { rnf_build_ahead_add(RNFHandle.unique(&box), seconds) }
 
     /// Forget the history (nothing is built: plain picture).
-    mutating func reset() { times.removeAll(keepingCapacity: true); head = 0; active = false }
+    mutating func reset() { rnf_build_ahead_reset(RNFHandle.unique(&box)) }
 
     /// p90 of the recent builds; nil until a quarter of the window was seen.
     var p90: Double? {
-        guard times.count >= Self.window / 4 else { return nil }
-        let s = times.sorted()
-        return s[Int((Double(s.count - 1) * 0.9).rounded())]
+        var q = 0.0
+        return rnf_build_ahead_p90(box.ptr, &q) != 0 ? q : nil
     }
 
     /// Re-decides at a display link update whose picture appears `presentDelay` seconds after its
     /// commit deadline.
-    mutating func update(presentDelay: Double) {
-        guard presentDelay > 0 else { return }
-        if delays.count < Self.delayWindow { delays.append(presentDelay) } else { delays[delayHead] = presentDelay; delayHead = (delayHead + 1) % Self.delayWindow }
-        guard let q = p90, let budget = delays.max() else { return }
-        if !active && q > budget - Self.enterMargin { active = true }
-        else if active && q < budget - Self.leaveMargin { active = false }
-    }
+    mutating func update(presentDelay: Double) { rnf_build_ahead_update(RNFHandle.unique(&box), presentDelay) }
 }
 
-/// Dynamic rate control for the audio stream (RetroArch-style DRC): the emulator produces
-/// 48000 / 60.0988 samples per frame, the device consumes 48000 per second of its own clock,
-/// and frames are emulated at the display rate. The output is resampled by
-/// `ratio = base x (1 + clamp(k x error))`, where `base` is the nominal / actual frame-rate
-/// ratio and `error` the smoothed relative distance of the buffer level from its target, so the
-/// buffer neither runs dry (underruns) nor grows (latency, skips). |ratio - base| <= 0.5 %:
-/// a pitch change far below audibility (0.5 % = 8.6 cents).
+/// Dynamic rate control for the audio stream (ratio within 0.5 % of nominal / actual frame rate).
 struct AudioRateControl {
-    static let maxDeviation = 0.005
-    /// Full deviation at this relative fill error.
-    static let gain = 0.005
-    /// Smoothing of the measured fill (per frame).
-    static let fillSmoothing = 0.02
-    let targetFill: Double   // samples
+    static let maxDeviation = RNF_DRC_MAX_DEVIATION
+    static let gain = RNF_DRC_GAIN
+    static let fillSmoothing = RNF_DRC_FILL_SMOOTHING
+    private var box: RNFHandle
 
-    private(set) var base = 1.0
-    private(set) var ratio = 1.0
-    private(set) var smoothedFill: Double?
+    init(targetFill: Double) {
+        box = RNFHandle(rnf_audio_rate_new(targetFill), free: { rnf_audio_rate_free($0) }, clone: { rnf_audio_rate_clone($0) })
+    }
 
-    init(targetFill: Double) { self.targetFill = targetFill }
+    var targetFill: Double { rnf_audio_rate_target_fill(box.ptr) }
+    var base: Double { rnf_audio_rate_base(box.ptr) }
+    var ratio: Double { rnf_audio_rate_ratio(box.ptr) }
+    var smoothedFill: Double? {
+        var f = 0.0
+        return rnf_audio_rate_smoothed_fill(box.ptr, &f) != 0 ? f : nil
+    }
 
     /// Frames are emulated at `rate` Hz while the content is `nominal` Hz.
     mutating func setFrameRate(_ rate: Double, nominal: Double = 1 / FramePacing.period) {
-        guard rate > 0 else { return }
-        base = nominal / rate
+        rnf_audio_rate_set_frame_rate(RNFHandle.unique(&box), rate, nominal)
     }
 
     /// Restart (after mute / underrun): forget the fill history.
-    mutating func reset() { smoothedFill = nil; ratio = base }
+    mutating func reset() { rnf_audio_rate_reset(RNFHandle.unique(&box)) }
 
-    /// Buffer level (samples) just before a frame's audio is pushed. Returns the ratio to use for
-    /// that frame (output samples per input sample).
-    mutating func update(fill: Double) -> Double {
-        let f = smoothedFill.map { $0 + (fill - $0) * Self.fillSmoothing } ?? fill
-        smoothedFill = f
-        let error = (targetFill - f) / targetFill
-        let adj = max(-Self.maxDeviation, min(Self.maxDeviation, error * Self.gain))
-        ratio = base * (1 + adj)
-        return ratio
-    }
+    /// Buffer level (samples) just before a frame's audio is pushed. Returns the ratio to use.
+    mutating func update(fill: Double) -> Double { rnf_audio_rate_update(RNFHandle.unique(&box), fill) }
 }

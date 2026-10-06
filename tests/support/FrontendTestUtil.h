@@ -1,6 +1,8 @@
 // Helpers for the frontend core tests (C API: replaynes/frontend.h).
 #pragma once
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <set>
 #include <string>
 #include <utility>

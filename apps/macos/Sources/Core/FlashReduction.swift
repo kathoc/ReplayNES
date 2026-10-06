@@ -1,4 +1,5 @@
-// Swift wrapper over the engine's photosensitive flash reduction filter (rn_flash_filter_*).
+// Swift wrapper over the engine's photosensitive flash reduction filter (rn_flash_filter_*); the
+// level texts come from the shared frontend core.
 // Display-side only: it processes copies of frames that are shown or exported and never touches
 // the session, so recorded input and verification hashes are unaffected.
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -7,22 +8,8 @@ import Foundation
 enum FlashLevel: Int, CaseIterable, Identifiable {
     case off = 0, low = 1, standard = 2, high = 3
     var id: Int { rawValue }
-    var label: String {
-        switch self {
-        case .off: return String(localized: "Off")
-        case .low: return String(localized: "Low")
-        case .standard: return String(localized: "Standard")
-        case .high: return String(localized: "High")
-        }
-    }
-    var detail: String {
-        switch self {
-        case .off: return String(localized: "Shows the screen as it is.")
-        case .low: return String(localized: "Follows the WCAG 2.x thresholds as written: areas of 25% or more of the screen flash no more than 3 times per second.")
-        case .standard: return String(localized: "Detects earlier than the thresholds and limits flashes of 20% or more of the screen to 2 per second (recommended).")
-        case .high: return String(localized: "Limits flashes of 15% or more of the screen to 1 per second and also softens the remaining small flicker.")
-        }
-    }
+    var label: String { rnfString(rnf_flash_level_label(cValue)) }
+    var detail: String { rnfString(rnf_flash_level_detail(cValue)) }
     var cValue: rn_flash_level { rn_flash_level(rawValue: UInt32(rawValue)) }
 }
 

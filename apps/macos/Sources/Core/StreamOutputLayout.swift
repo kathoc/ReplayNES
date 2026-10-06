@@ -1,5 +1,6 @@
 // Geometry of the streaming (Syphon) output picture: canvas size and where the 256x240 game
-// frame is drawn into it (nearest neighbour). Pure value code, shared with the tests.
+// frame is drawn into it (nearest neighbour). Computed by the shared frontend core
+// (rnf_stream_output_layout); the raw values below are persisted in user defaults.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import CoreGraphics
 
@@ -9,26 +10,24 @@ enum StreamOutputSize: String, CaseIterable, Identifiable {
     static let `default` = StreamOutputSize.x4
     var id: String { rawValue }
 
-    /// Integer multiple of the frame, or nil for a fixed 4:3 canvas.
-    var multiple: Int? {
+    var cValue: rnf_stream_size {
         switch self {
-        case .x1: return 1
-        case .x2: return 2
-        case .x3: return 3
-        case .x4: return 4
-        case .w1280, .w1920: return nil
+        case .x1: return RNF_STREAM_X1
+        case .x2: return RNF_STREAM_X2
+        case .x3: return RNF_STREAM_X3
+        case .x4: return RNF_STREAM_X4
+        case .w1280: return RNF_STREAM_W1280
+        case .w1920: return RNF_STREAM_W1920
         }
     }
 
-    func label(par87: Bool) -> String {
-        let c = StreamOutputLayout(size: self, par87: par87).canvas
-        let size = "\(c.width)×\(c.height)" // plain digits (no locale grouping)
-        switch multiple {
-        case 1: return String(localized: "Native \(size)")
-        case let n?: return String(localized: "\(n)× \(size)")
-        case nil: return String(localized: "\(size) (4:3, with black bars)")
-        }
+    /// Integer multiple of the frame, or nil for a fixed 4:3 canvas.
+    var multiple: Int? {
+        let n = rnf_stream_output_multiple(cValue)
+        return n > 0 ? Int(n) : nil
     }
+
+    func label(par87: Bool) -> String { rnfString(rnf_stream_output_label(cValue, par87 ? 1 : 0)) }
 }
 
 struct StreamOutputLayout: Equatable {
@@ -38,23 +37,11 @@ struct StreamOutputLayout: Equatable {
     /// Destination of the full 256x240 frame inside the canvas (pixels, origin top-left).
     let picture: CGRect
 
-    static let frameWidth = 256, frameHeight = 240
+    static let frameWidth = Int(RN_VIDEO_WIDTH), frameHeight = Int(RN_VIDEO_HEIGHT)
 
     init(size: StreamOutputSize, par87: Bool) {
-        let fw = Double(Self.frameWidth), fh = Double(Self.frameHeight)
-        let par = par87 ? 8.0 / 7.0 : 1.0
-        if let n = size.multiple {
-            // The canvas is exactly the scaled frame: no borders.
-            let w = Int((fw * par * Double(n)).rounded()), h = Self.frameHeight * n
-            canvas = Size(width: w, height: h)
-            picture = CGRect(x: 0, y: 0, width: w, height: h)
-        } else {
-            let (cw, ch) = size == .w1280 ? (1280, 960) : (1920, 1440)
-            // Largest scale that fits; integer when the aspect allows it (it does for both canvases).
-            let s = min(Double(cw) / (fw * par), Double(ch) / fh)
-            let pw = (fw * par * s).rounded(), ph = (fh * s).rounded()
-            canvas = Size(width: cw, height: ch)
-            picture = CGRect(x: ((Double(cw) - pw) / 2).rounded(.down), y: ((Double(ch) - ph) / 2).rounded(.down), width: pw, height: ph)
-        }
+        let l = rnf_stream_output_layout(size.cValue, par87 ? 1 : 0)
+        canvas = Size(width: Int(l.canvas_width), height: Int(l.canvas_height))
+        picture = CGRect(x: l.x, y: l.y, width: l.width, height: l.height)
     }
 }

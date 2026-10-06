@@ -1,5 +1,6 @@
-// Action names, localized labels, default bindings and physical-id display names.
-// The binding table itself lives in the engine (rn_input JSON); this file only describes it.
+// Action names, localized labels, default bindings, layout migrations and physical-id display
+// names. The binding table itself lives in the engine (rn_input JSON); the catalog and its rules
+// live in the shared frontend core (frontend/src/input.cpp); this file adapts them to Swift.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
@@ -11,177 +12,108 @@ struct InputAction: Identifiable, Hashable {
     enum Group: String, CaseIterable {
         case player1, player2, hotkey
 
-        var title: String {
+        var title: String { rnfString(rnf_input_group_title(cValue)) }
+
+        init(_ c: rnf_action_group) {
+            switch c {
+            case RNF_GROUP_PLAYER1: self = .player1
+            case RNF_GROUP_PLAYER2: self = .player2
+            default: self = .hotkey
+            }
+        }
+
+        var cValue: rnf_action_group {
             switch self {
-            case .player1: return String(localized: "Player 1")
-            case .player2: return String(localized: "Player 2")
-            case .hotkey: return String(localized: "Hotkeys")
+            case .player1: return RNF_GROUP_PLAYER1
+            case .player2: return RNF_GROUP_PLAYER2
+            case .hotkey: return RNF_GROUP_HOTKEY
             }
         }
     }
 }
 
 enum InputCatalog {
-    static let gameActions: [InputAction] = {
-        var out: [InputAction] = []
-        for (p, g) in [("p1", InputAction.Group.player1), ("p2", .player2)] {
-            out += [
-                InputAction(id: "\(p).up", label: String(localized: "↑ Up"), group: g),
-                InputAction(id: "\(p).down", label: String(localized: "↓ Down"), group: g),
-                InputAction(id: "\(p).left", label: String(localized: "← Left"), group: g),
-                InputAction(id: "\(p).right", label: String(localized: "→ Right"), group: g),
-                InputAction(id: "\(p).a", label: "A", group: g),
-                InputAction(id: "\(p).b", label: "B", group: g),
-                InputAction(id: "\(p).select", label: "SELECT", group: g),
-                InputAction(id: "\(p).start", label: "START", group: g),
-                InputAction(id: "\(p).turbo_a", label: String(localized: "Turbo A"), group: g),
-                InputAction(id: "\(p).turbo_b", label: String(localized: "Turbo B"), group: g),
-            ]
-        }
-        return out
-    }()
+    /// Keyboard ids are macOS virtual key codes ("kb:<kVK>").
+    static let keyboardScheme = RNF_KEYBOARD_MACOS
 
-    static let hotkeyActions: [InputAction] = [
-        InputAction(id: "hk.rewind", label: String(localized: "Rewind (while held)"), group: .hotkey),
-        InputAction(id: "hk.fast_forward", label: String(localized: "Fast-forward (while held, recorded range only)"), group: .hotkey),
-        InputAction(id: "hk.pause", label: String(localized: "Pause / Resume"), group: .hotkey),
-        InputAction(id: "hk.slow", label: String(localized: "Slow motion (normal ⇔ 1/2)"), group: .hotkey),
-        InputAction(id: "hk.frame_advance", label: String(localized: "Frame Advance"), group: .hotkey),
-        InputAction(id: "hk.step_back", label: String(localized: "Step Back One Frame"), group: .hotkey),
-        InputAction(id: "hk.toggle_mode", label: String(localized: "Record / playback (ends practice)"), group: .hotkey),
-        InputAction(id: "hk.bookmark", label: String(localized: "Add Bookmark"), group: .hotkey),
-        InputAction(id: "hk.undo_take", label: String(localized: "Back to Previous Take"), group: .hotkey),
-        InputAction(id: "hk.save", label: String(localized: "Save"), group: .hotkey),
-        InputAction(id: "hk.soft_reset", label: String(localized: "Soft Reset"), group: .hotkey),
-        InputAction(id: "hk.power_cycle", label: String(localized: "Power Cycle"), group: .hotkey),
-    ]
+    private static let catalog: [InputAction] = (0..<rnf_input_action_count()).compactMap { i in
+        var a = rnf_action_info()
+        guard rnf_input_action_get(i, &a) != 0 else { return nil }
+        let id = String(cString: a.id)
+        return InputAction(id: id, label: rnfString(rnf_input_action_label(id)), group: .init(a.group))
+    }
 
+    static let gameActions: [InputAction] = catalog.filter { $0.group != .hotkey }
+    static let hotkeyActions: [InputAction] = catalog.filter { $0.group == .hotkey }
     static var allActions: [InputAction] { gameActions + hotkeyActions }
 
-    /// Default keyboard + controller layout (macOS virtual key codes).
-    static let defaultBindings: [(String, String)] = [
-        ("kb:126", "p1.up"), ("kb:125", "p1.down"), ("kb:123", "p1.left"), ("kb:124", "p1.right"),
-        ("kb:7", "p1.a"), ("kb:6", "p1.b"),               // X = A, Z = B
-        ("kb:1", "p1.turbo_a"), ("kb:0", "p1.turbo_b"),   // S = turbo A, A = turbo B
-        ("kb:36", "p1.start"), ("kb:60", "p1.select"),    // Return = START, right Shift = SELECT
-        ("kb:42", "p1.select"),                           // \ = SELECT (laptops)
-        ("kb:49", "hk.pause"),                            // Space
-        ("kb:47", "hk.frame_advance"),                    // .
-        ("kb:43", "hk.step_back"),                        // ,
-        ("kb:51", "hk.rewind"),                           // Delete (Backspace)
-        ("kb:48", "hk.fast_forward"),                     // Tab
-        ("kb:37", "hk.slow"),                             // L
-        ("kb:11", "hk.bookmark"),                         // B
-        // Controller slot 0 -> P1, slot 1 -> P2. Face buttons by POSITION (see ControllerLayout.swift):
-        // east = A, south = B (Nintendo's own A/B; B/A on Xbox, ○/✕ on PlayStation),
-        // north = turbo A, west = turbo B.
-        ("gc0:dpad.up", "p1.up"), ("gc0:dpad.down", "p1.down"), ("gc0:dpad.left", "p1.left"), ("gc0:dpad.right", "p1.right"),
-        ("gc0:lstick.up", "p1.up"), ("gc0:lstick.down", "p1.down"), ("gc0:lstick.left", "p1.left"), ("gc0:lstick.right", "p1.right"),
-        ("gc0:face.east", "p1.a"), ("gc0:face.south", "p1.b"), ("gc0:face.north", "p1.turbo_a"), ("gc0:face.west", "p1.turbo_b"),
-        ("gc0:menu", "p1.start"), ("gc0:options", "p1.select"),
-        // In-game controls (hotkeys, never recorded): R2 hold = rewind, L2 hold = fast-forward,
-        // L = slow 1/2 toggle, R = pause/play. While paused the D-pad ←/→ steps frames
-        // (frontend rule, see InputManager.pausedStepDirection).
-        ("gc0:rightTrigger", "hk.rewind"), ("gc0:leftTrigger", "hk.fast_forward"),
-        ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
-        ("gc1:dpad.up", "p2.up"), ("gc1:dpad.down", "p2.down"), ("gc1:dpad.left", "p2.left"), ("gc1:dpad.right", "p2.right"),
-        ("gc1:lstick.up", "p2.up"), ("gc1:lstick.down", "p2.down"), ("gc1:lstick.left", "p2.left"), ("gc1:lstick.right", "p2.right"),
-        ("gc1:face.east", "p2.a"), ("gc1:face.south", "p2.b"), ("gc1:face.north", "p2.turbo_a"), ("gc1:face.west", "p2.turbo_b"),
-        ("gc1:menu", "p2.start"), ("gc1:options", "p2.select"),
-    ]
+    /// Default keyboard + controller layout (macOS virtual key codes; face buttons by position).
+    static let defaultBindings: [(String, String)] = (0..<rnf_input_default_binding_count(keyboardScheme)).compactMap { i in
+        var b = rnf_binding()
+        guard rnf_input_default_binding_get(keyboardScheme, i, &b) != 0 else { return nil }
+        return (String(cString: b.input), String(cString: b.action))
+    }
 
     /// Controller hotkeys of layout 1 (ReplayNES <= 0.1.x defaults).
-    static let legacyControllerHotkeys: [(String, String)] = [
-        ("gc0:leftShoulder", "hk.rewind"), ("gc0:rightShoulder", "hk.fast_forward"),
-        ("gc0:leftTrigger", "hk.step_back"), ("gc0:rightTrigger", "hk.frame_advance"),
-    ]
+    static let legacyControllerHotkeys: [(String, String)] = rnfPairs(rnf_input_legacy_controller_hotkeys())
     /// Controller hotkeys of layout 2 (0.2.0+).
-    static let controllerHotkeys: [(String, String)] = [
-        ("gc0:rightTrigger", "hk.rewind"), ("gc0:leftTrigger", "hk.fast_forward"),
-        ("gc0:leftShoulder", "hk.slow"), ("gc0:rightShoulder", "hk.pause"),
-    ]
-    /// 3: face buttons are positional ids ("face.east"...) instead of GameController names
-    /// ("buttonA"...), which mean the printed label - not the position - on Nintendo controllers.
-    static let controllerLayoutVersion = 3
+    static let controllerHotkeys: [(String, String)] = rnfPairs(rnf_input_controller_hotkeys())
+    /// 3: face buttons are positional ids ("face.east"...) instead of GameController names.
+    static let controllerLayoutVersion = Int(RNF_CONTROLLER_LAYOUT_VERSION)
 
     /// Face-button bindings of layout 2 (GameController names) for slot 0 / 1.
-    static func legacyFaceDefaults(slot: Int) -> [(String, String)] {
-        let p = slot == 0 ? "p1" : "p2"
-        return [("gc\(slot):buttonB", "\(p).a"), ("gc\(slot):buttonA", "\(p).b"),
-                ("gc\(slot):buttonY", "\(p).turbo_a"), ("gc\(slot):buttonX", "\(p).turbo_b")]
-    }
+    static func legacyFaceDefaults(slot: Int) -> [(String, String)] { rnfPairs(rnf_input_legacy_face_defaults(Int32(slot))) }
 
     static let legacyFaceNames: Set<String> = ["buttonA", "buttonB", "buttonX", "buttonY"]
 
-    static func isLegacyFace(_ input: String, slot: Int) -> Bool {
-        let prefix = "gc\(slot):"
-        return input.hasPrefix(prefix) && legacyFaceNames.contains(String(input.dropFirst(prefix.count)))
+    static func isLegacyFace(_ input: String, slot: Int) -> Bool { rnf_input_is_legacy_face(input, Int32(slot)) != 0 }
+
+    typealias Plan = (unbind: [(String, String)], bind: [(String, String)])
+
+    private static func plan(_ c: Config, _ fn: (UnsafePointer<rnf_binding>?, Int, UnsafeMutablePointer<OpaquePointer?>,
+                                                 UnsafeMutablePointer<OpaquePointer?>) -> Void) -> Plan {
+        withBindings(c.bindings) { b, n in
+            var u: OpaquePointer?, a: OpaquePointer?
+            fn(b, n, &u, &a)
+            return (rnfPairs(u), rnfPairs(a))
+        }
     }
 
     /// Layout 2 -> 3, step 1 (on load): slots whose face buttons still have the untouched layout-2
-    /// defaults get the new positional defaults (this is the Nintendo A/B fix). Customised slots
-    /// keep their bindings; see `legacyFaceTranslation`.
-    static func faceLayoutMigration(_ c: Config) -> (unbind: [(String, String)], bind: [(String, String)]) {
-        var unbind: [(String, String)] = [], bind: [(String, String)] = []
-        for slot in 0..<2 {
-            let legacy = c.bindings.filter { isLegacyFace($0.input, slot: slot) }.map { $0.input + "→" + $0.action }
-            let old = legacyFaceDefaults(slot: slot)
-            guard legacy.count == old.count, Set(legacy) == Set(old.map { $0.0 + "→" + $0.1 }) else { continue }
-            unbind += old
-            bind += defaultBindings.filter { $0.0.hasPrefix("gc\(slot):face.") }
-        }
-        return (unbind, bind)
-    }
+    /// defaults get the new positional defaults. Customised slots keep their bindings.
+    static func faceLayoutMigration(_ c: Config) -> Plan { plan(c) { rnf_input_face_layout_migration($0, $1, $2, $3) } }
 
     /// Layout 2 -> 3, step 2 (when a controller attaches to `slot`): customised bindings that still
-    /// use GameController names move to the position that name has on THAT controller, so they keep
-    /// doing exactly what they did (e.g. a hand-swapped Pro Controller stays as it was).
-    static func legacyFaceTranslation(_ c: Config, slot: Int, positions: [String: FacePosition]) -> (unbind: [(String, String)], bind: [(String, String)]) {
-        let prefix = "gc\(slot):"
-        var unbind: [(String, String)] = [], bind: [(String, String)] = []
-        for b in c.bindings where isLegacyFace(b.input, slot: slot) {
-            guard let pos = positions[String(b.input.dropFirst(prefix.count))] else { continue }
-            unbind.append((b.input, b.action))
-            bind.append((prefix + pos.element, b.action))
+    /// use GameController names move to the position that name has on THAT controller.
+    static func legacyFaceTranslation(_ c: Config, slot: Int, positions: [String: FacePosition]) -> Plan {
+        let entries = Array(positions)
+        return withCStrings(entries.map(\.key)) { names in
+            let pos = entries.map { Int32($0.value.cValue.rawValue) }
+            return plan(c) { b, n, u, a in
+                rnf_input_legacy_face_translation(b, n, Int32(slot), names, pos, pos.count, u, a)
+            }
         }
-        return (unbind, bind)
     }
 
     /// "Reset to Defaults" for one controller: every binding of `gc<slot>:` replaced by the defaults.
-    static func controllerResetPlan(_ c: Config, slot: Int) -> (unbind: [(String, String)], bind: [(String, String)]) {
-        let prefix = "gc\(slot):"
-        return (c.bindings.filter { $0.input.hasPrefix(prefix) }.map { ($0.input, $0.action) },
-                defaultBindings.filter { $0.0.hasPrefix(prefix) })
+    static func controllerResetPlan(_ c: Config, slot: Int) -> Plan {
+        plan(c) { rnf_input_controller_reset_plan($0, $1, Int32(slot), $2, $3) }
     }
 
-    /// One-time upgrade of saved bindings to the 0.2.0 controller layout. Only applies when the
-    /// user still has the untouched old controller hotkeys (customised layouts are kept).
-    /// Returns (unbind, bind) pairs, empty if nothing to do.
-    static func controllerLayoutMigration(_ c: Config) -> (unbind: [(String, String)], bind: [(String, String)]) {
-        func has(_ p: (String, String)) -> Bool { c.bindings.contains { $0.input == p.0 && $0.action == p.1 } }
-        let hotkeyOnGC0 = c.bindings.filter { $0.input.hasPrefix("gc0:") && $0.action.hasPrefix("hk.") }
-        guard legacyControllerHotkeys.allSatisfy(has), hotkeyOnGC0.count == legacyControllerHotkeys.count else { return ([], []) }
-        return (legacyControllerHotkeys, controllerHotkeys)
+    /// One-time upgrade of saved bindings to the 0.2.0 controller layout (untouched old hotkeys only).
+    static func controllerLayoutMigration(_ c: Config) -> Plan {
+        plan(c) { rnf_input_controller_layout_migration($0, $1, $2, $3) }
     }
 
-    /// Frame-step direction for a physical id while paused: controller ids bound to a D-pad
-    /// left/right game action (-1 = back, +1 = forward). Sticks are excluded (they drift).
+    /// Frame-step direction for a physical id while paused (-1 = back, +1 = forward).
     static func pausedStepDirections(_ c: Config) -> [String: Int] {
+        let l = withBindings(c.bindings) { b, n in rnfValues(rnf_input_paused_step_directions(b, n)) }
         var out: [String: Int] = [:]
-        for b in c.bindings where b.input.hasPrefix("gc") && !b.input.contains("stick") {
-            if b.action == "p1.left" || b.action == "p2.left" { out[b.input] = -1 }
-            if b.action == "p1.right" || b.action == "p2.right" { out[b.input] = 1 }
-        }
+        for (input, dir) in l { out[input] = Int(dir) }
         return out
     }
 
-    static func defaultConfigJSON() -> String {
-        let b = defaultBindings.map { ["input": $0.0, "action": $0.1] }
-        let obj: [String: Any] = ["version": 1, "bindings": b, "turbo": ["period": 4, "duty": 2],
-                                  "socd": "neutral", "analogThreshold": 0.5]
-        let data = try! JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
-    }
+    static func defaultConfigJSON() -> String { rnfString(rnf_input_default_config_json(keyboardScheme)) }
 
     struct Config: Equatable {
         var bindings: [(input: String, action: String)]
@@ -199,64 +131,34 @@ enum InputCatalog {
     }
 
     static func parse(_ json: String) -> Config? {
-        guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return nil }
-        let b = (obj["bindings"] as? [[String: Any]] ?? []).compactMap { e -> (String, String)? in
-            guard let i = e["input"] as? String, let a = e["action"] as? String else { return nil }
-            return (i, a)
+        var c: OpaquePointer?
+        guard rnf_input_config_parse(json, &c) == RN_OK, let c else { return nil }
+        defer { rnf_input_config_free(c) }
+        let bindings: [(input: String, action: String)] = (0..<rnf_input_config_binding_count(c)).compactMap { i in
+            var b = rnf_binding()
+            guard rnf_input_config_binding_get(c, i, &b) != 0 else { return nil }
+            return (input: String(cString: b.input), action: String(cString: b.action))
         }
-        let t = obj["turbo"] as? [String: Any] ?? [:]
-        return Config(bindings: b.map { (input: $0.0, action: $0.1) },
-                      turboPeriod: (t["period"] as? NSNumber)?.intValue ?? 2,
-                      turboDuty: (t["duty"] as? NSNumber)?.intValue ?? 1,
-                      socd: obj["socd"] as? String ?? "neutral",
-                      analogThreshold: (obj["analogThreshold"] as? NSNumber)?.doubleValue ?? 0.5)
+        return Config(bindings: bindings, turboPeriod: Int(rnf_input_config_turbo_period(c)),
+                      turboDuty: Int(rnf_input_config_turbo_duty(c)), socd: String(cString: rnf_input_config_socd(c)),
+                      analogThreshold: rnf_input_config_analog_threshold(c))
     }
 
     // MARK: display names
-    private static let keyNames: [UInt16: String] = [
-        0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V", 11: "B", 12: "Q", 13: "W", 14: "E",
-        15: "R", 16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 24: "=", 25: "9", 26: "7", 27: "-",
-        28: "8", 29: "0", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 36: "Return", 37: "L", 38: "J", 39: "'",
-        40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".", 48: "Tab", 49: "Space", 50: "`",
-        51: "Delete", 53: "Esc", 54: String(localized: "Right ⌘"), 55: "⌘", 56: String(localized: "Left Shift"), 57: "Caps", 58: String(localized: "Left Option"), 59: String(localized: "Left Control"),
-        60: String(localized: "Right Shift"), 61: String(localized: "Right Option"), 62: String(localized: "Right Control"), 63: "fn", 65: String(localized: "Keypad ."), 67: String(localized: "Keypad *"), 69: String(localized: "Keypad +"),
-        71: "Clear", 75: String(localized: "Keypad /"), 76: "Enter", 78: String(localized: "Keypad -"), 81: String(localized: "Keypad ="), 82: String(localized: "Keypad 0"), 83: String(localized: "Keypad 1"),
-        84: String(localized: "Keypad 2"), 85: String(localized: "Keypad 3"), 86: String(localized: "Keypad 4"), 87: String(localized: "Keypad 5"), 88: String(localized: "Keypad 6"), 89: String(localized: "Keypad 7"),
-        91: String(localized: "Keypad 8"), 92: String(localized: "Keypad 9"), 96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9", 103: "F11",
-        109: "F10", 111: "F12", 115: "Home", 116: "PageUp", 117: "⌦", 118: "F4", 119: "End", 120: "F2", 121: "PageDown",
-        122: "F1", 123: "←", 124: "→", 125: "↓", 126: "↑", 102: String(localized: "Eisu"), 104: String(localized: "Kana"),
-    ]
 
     /// `controllers`: connected controllers, used to add the printed label of face buttons
     /// ("Pad 1 Right Button(A)").
     static func displayName(_ physicalID: String, controllers: [ControllerInfo]) -> String {
-        let base = displayName(physicalID)
-        guard physicalID.hasPrefix("gc"), let colon = physicalID.firstIndex(of: ":"),
-              let slot = Int(physicalID[physicalID.index(physicalID.startIndex, offsetBy: 2)..<colon]),
-              let info = controllers.first(where: { $0.slot == slot }) else { return base }
-        let element = String(physicalID[physicalID.index(after: colon)...])
-        guard element.hasPrefix("face.") else { return base }
-        return base + "(\(info.label(element)))"
+        var slot: Int32 = 0
+        var label: String?
+        if rnf_input_controller_slot(physicalID, &slot) != 0, let info = controllers.first(where: { $0.slot == Int(slot) }),
+           let colon = physicalID.firstIndex(of: ":") {
+            label = info.label(String(physicalID[physicalID.index(after: colon)...]))
+        }
+        return rnfString(rnf_input_display_name(keyboardScheme, physicalID, label))
     }
 
     static func displayName(_ physicalID: String) -> String {
-        if physicalID.hasPrefix("kb:"), let code = UInt16(physicalID.dropFirst(3)) {
-            return String(localized: "Key \(keyNames[code] ?? "#\(code)")")
-        }
-        if physicalID.hasPrefix("gc"), let colon = physicalID.firstIndex(of: ":") {
-            let slot = Int(physicalID[physicalID.index(physicalID.startIndex, offsetBy: 2)..<colon]) ?? 0
-            let name = String(physicalID[physicalID.index(after: colon)...])
-            let pretty: [String: String] = [
-                "face.south": String(localized: "Bottom Button"), "face.east": String(localized: "Right Button"), "face.west": String(localized: "Left Button"), "face.north": String(localized: "Top Button"),
-                "buttonA": String(localized: "A (legacy)"), "buttonB": String(localized: "B (legacy)"), "buttonX": String(localized: "X (legacy)"), "buttonY": String(localized: "Y (legacy)"),
-                "dpad.up": String(localized: "D-pad ↑"), "dpad.down": String(localized: "D-pad ↓"), "dpad.left": String(localized: "D-pad ←"), "dpad.right": String(localized: "D-pad →"),
-                "lstick.up": String(localized: "L Stick ↑"), "lstick.down": String(localized: "L Stick ↓"), "lstick.left": String(localized: "L Stick ←"), "lstick.right": String(localized: "L Stick →"),
-                "rstick.up": String(localized: "R Stick ↑"), "rstick.down": String(localized: "R Stick ↓"), "rstick.left": String(localized: "R Stick ←"), "rstick.right": String(localized: "R Stick →"),
-                "leftShoulder": "L(L1/LB)", "rightShoulder": "R(R1/RB)", "leftTrigger": "ZL(L2/LT)", "rightTrigger": "ZR(R2/RT)",
-                "menu": "+(Menu)", "options": "−(Options)", "home": "Home", "leftThumb": "L3", "rightThumb": "R3",
-            ]
-            return String(localized: "Pad \(slot + 1) \(pretty[name] ?? name)")
-        }
-        return physicalID
+        rnfString(rnf_input_display_name(keyboardScheme, physicalID, nil))
     }
 }

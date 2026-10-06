@@ -1,6 +1,8 @@
 #!/bin/sh
-# Builds the portable engine (same CMake source list as Linux/Windows) as static libs for the
-# macOS app. Always Release: the emulator core is far too slow unoptimized for real-time play.
+# Builds the portable engine and the shared frontend core (same CMake source lists as
+# Linux/Windows) as static libs for the macOS app. Always Release: the emulator core is far too
+# slow unoptimized for real-time play. The frontend core's localization table is generated from
+# Resources/Localizable.xcstrings by this build (python3).
 set -eu
 REPO="$(cd "${SRCROOT:-$(dirname "$0")/..}/../.." && pwd)"
 OUT="${RN_ENGINE_BUILD_DIR:-$REPO/build/xcode-engine}"
@@ -25,6 +27,7 @@ if [ ! -f "$OUT/CMakeCache.txt" ]; then
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
 fi
-"$CMAKE" --build "$OUT" --target replaynes_engine
+"$CMAKE" --build "$OUT" --target replaynes_engine replaynes_frontend
 test -f "$OUT/engine/libreplaynes_engine.a"
+test -f "$OUT/frontend/libreplaynes_frontend.a"
 test -f "$OUT/libnestopia_core.a"

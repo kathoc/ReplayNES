@@ -4,21 +4,18 @@
 import Foundation
 
 enum ProjectBackup {
-    /// "<name> (Before Reset 2026-10-06 20.15).nesrec" next to `project`; " 2", " 3" ... if taken.
+    /// "<name> (Before Reset 2026-10-06 20.15).nesrec" next to `project`; " 2", " 3" ... if taken
+    /// (naming by the shared frontend core, rnf_backup_path).
     static func backupURL(for project: URL, date: Date = Date(), exists: (URL) -> Bool) -> URL {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH.mm"
-        let stamp = f.string(from: date)
-        let name = project.deletingPathExtension().lastPathComponent
-        let ext = project.pathExtension.isEmpty ? "nesrec" : project.pathExtension
-        let dir = project.deletingLastPathComponent()
-        let base = String(localized: "\(name) (Before Reset \(stamp))")
-        var n = 1
-        while true {
-            let candidate = dir.appendingPathComponent((n == 1 ? base : "\(base) \(n)") + "." + ext, isDirectory: true)
-            if !exists(candidate) { return candidate }
-            n += 1
+        withoutActuallyEscaping(exists) { exists in
+            var check = exists
+            let path = withUnsafeMutablePointer(to: &check) { ctx in
+                rnfString(rnf_backup_path(project.path, date.timeIntervalSince1970, { p, ctx in
+                    let fn = ctx!.assumingMemoryBound(to: ((URL) -> Bool).self).pointee
+                    return fn(URL(fileURLWithPath: String(cString: p!), isDirectory: true)) ? 1 : 0
+                }, ctx))
+            }
+            return URL(fileURLWithPath: path, isDirectory: true)
         }
     }
 

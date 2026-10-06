@@ -109,32 +109,6 @@ final class ExportTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: out2.path), "cancelled export leaves no file")
     }
 
-    func testGeometry() {
-        var s = ExportSettings()
-        s.cropTop = 0; s.cropBottom = 0
-        s.preset = .canvas(1280, 960)
-        var g = ExportGeometry(s)
-        XCTAssertEqual([g.canvasWidth, g.canvasHeight, g.dstWidth, g.dstHeight, g.dstX, g.dstY], [1280, 960, 1024, 960, 128, 0])
-        let cols = g.columnMap()
-        XCTAssertEqual(Array(cols[0..<8]), [0, 0, 0, 0, 1, 1, 1, 1], "integer nearest scaling")
-
-        s.cropTop = 8; s.cropBottom = 8; s.pixelAspect87 = true
-        g = ExportGeometry(s)
-        XCTAssertEqual(g.srcHeight, 224)
-        XCTAssertEqual(g.verticalScale, 4)
-        XCTAssertEqual(g.dstHeight, 896)
-        XCTAssertEqual(g.dstWidth, 1170)
-
-        s.preset = .native(3); s.pixelAspect87 = false
-        g = ExportGeometry(s)
-        XCTAssertEqual([g.canvasWidth, g.canvasHeight], [768, 672])
-
-        s.preset = .canvas(1920, 1080); s.cropTop = 0; s.cropBottom = 0
-        g = ExportGeometry(s)
-        XCTAssertEqual(g.verticalScale, 4)
-        XCTAssertEqual(g.dstHeight, 960)
-    }
-
     func testAudioRing() {
         let r = rn_ring_create(4096, 800, 3200)!
         defer { rn_ring_destroy(r) }

@@ -1,5 +1,6 @@
-// Transport / practice logic: controller hotkey defaults, record toggle, paused stepping,
-// practice A/B loop (fake clock + real engine session), fast-forward without recording.
+// Transport / practice wrappers against a real engine session: default hotkeys through rn_input,
+// record toggle, practice A/B loop, fast-forward without recording. The state machines themselves
+// are tested in tests/test_frontend_playback.cpp / test_frontend_input.cpp.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import XCTest
 
@@ -32,22 +33,6 @@ final class PlaybackLogicTests: XCTestCase {
     }
 
     // MARK: controller hotkeys
-
-    func testDefaultControllerHotkeys() {
-        let b = Set(InputCatalog.defaultBindings.map { "\($0.0)=\($0.1)" })
-        XCTAssertTrue(b.contains("gc0:rightTrigger=hk.rewind"), "R2 hold = rewind")
-        XCTAssertTrue(b.contains("gc0:leftTrigger=hk.fast_forward"), "L2 hold = fast-forward")
-        XCTAssertTrue(b.contains("gc0:leftShoulder=hk.slow"), "L = slow toggle")
-        XCTAssertTrue(b.contains("gc0:rightShoulder=hk.pause"), "R = pause/play")
-        // Keyboard equivalents stay.
-        for k in ["kb:51=hk.rewind", "kb:48=hk.fast_forward", "kb:49=hk.pause", "kb:37=hk.slow", "kb:43=hk.step_back", "kb:47=hk.frame_advance"] {
-            XCTAssertTrue(b.contains(k), k)
-        }
-        // Old controller layout gone; the D-pad is never a hotkey.
-        XCTAssertFalse(b.contains("gc0:leftShoulder=hk.rewind"))
-        XCTAssertFalse(b.contains("gc0:rightTrigger=hk.frame_advance"))
-        XCTAssertFalse(InputCatalog.defaultBindings.contains { $0.0.contains("dpad") && $0.1.hasPrefix("hk.") })
-    }
 
     /// The defaults through the engine input pipeline: triggers/shoulders are hotkeys and never
     /// reach the recorded game input.
@@ -82,69 +67,7 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertEqual(p1, 0)
     }
 
-    func testPausedDpadStepDirections() {
-        let c = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
-        let d = InputCatalog.pausedStepDirections(c)
-        XCTAssertEqual(d["gc0:dpad.left"], -1)
-        XCTAssertEqual(d["gc0:dpad.right"], 1)
-        XCTAssertEqual(d["gc1:dpad.right"], 1)
-        XCTAssertNil(d["gc0:lstick.left"], "sticks never step")
-        XCTAssertNil(d["kb:123"], "keyboard arrows stay game input (, and . step)")
-        XCTAssertNil(d["gc0:dpad.up"])
-    }
-
-    func testControllerLayoutMigration() {
-        // A 0.1.x bindings file: old controller hotkeys.
-        var legacy = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
-        legacy.bindings.removeAll { b in InputCatalog.controllerHotkeys.contains { $0.0 == b.input && $0.1 == b.action } }
-        legacy.bindings += InputCatalog.legacyControllerHotkeys.map { (input: $0.0, action: $0.1) }
-        let m = InputCatalog.controllerLayoutMigration(legacy)
-        XCTAssertEqual(m.bind.map { $0.0 + $0.1 }, InputCatalog.controllerHotkeys.map { $0.0 + $0.1 })
-        XCTAssertEqual(m.unbind.count, 4)
-        // Already new, or customised: untouched.
-        XCTAssertTrue(InputCatalog.controllerLayoutMigration(InputCatalog.parse(InputCatalog.defaultConfigJSON())!).bind.isEmpty)
-        var custom = legacy
-        custom.bindings.append((input: "gc0:buttonY", action: "hk.bookmark"))
-        XCTAssertTrue(InputCatalog.controllerLayoutMigration(custom).bind.isEmpty)
-    }
-
-    func testSlowToggle() {
-        XCTAssertEqual(SlowRate.normal.toggled, .half)
-        XCTAssertEqual(SlowRate.half.toggled, .normal)
-        XCTAssertEqual(SlowRate.quarter.toggled, .normal)
-    }
-
-    func testStepRepeater() {
-        var r = StepRepeater()
-        XCTAssertEqual(r.press(-1), -1, "press steps immediately")
-        var steps: [Int] = []
-        for t in 1...30 { let d = r.tick(); if d != 0 { steps.append(t) } }
-        XCTAssertEqual(steps.first, StepRepeater.initialDelayTicks, "repeat only after the delay")
-        XCTAssertEqual(steps, Array(stride(from: StepRepeater.initialDelayTicks, through: 30, by: StepRepeater.intervalTicks)))
-        r.release(-1)
-        XCTAssertEqual(r.tick(), 0)
-        XCTAssertEqual(r.press(1), 1)
-        r.release(-1) // other direction: still held
-        XCTAssertEqual(r.direction, 1)
-    }
-
     // MARK: record toggle
-
-    func testRecordToggleStateMachine() {
-        // record -> replay at the take end: jump to the start and play.
-        XCTAssertEqual(RecordToggle.plan(recording: true, frame: 300, takeLength: 300), .init(record: false, seek: 0, play: true))
-        // record -> replay mid-take (last seek position): play from here.
-        XCTAssertEqual(RecordToggle.plan(recording: true, frame: 120, takeLength: 300), .init(record: false, seek: nil, play: true))
-        // nothing recorded: stays put, no play.
-        XCTAssertEqual(RecordToggle.plan(recording: true, frame: 0, takeLength: 0).play, false)
-        // replay -> record: current position, paused.
-        XCTAssertEqual(RecordToggle.plan(recording: false, frame: 150, takeLength: 300), .init(record: true, seek: nil, play: false))
-        // play pressed in replay at the end restarts; not in record mode / practice.
-        XCTAssertTrue(RecordToggle.shouldRestartOnPlay(recording: false, practicing: false, frame: 300, takeLength: 300))
-        XCTAssertFalse(RecordToggle.shouldRestartOnPlay(recording: true, practicing: false, frame: 300, takeLength: 300))
-        XCTAssertFalse(RecordToggle.shouldRestartOnPlay(recording: false, practicing: true, frame: 300, takeLength: 300))
-        XCTAssertFalse(RecordToggle.shouldRestartOnPlay(recording: false, practicing: false, frame: 10, takeLength: 300))
-    }
 
     /// The replay toggle really plays: replay mode steps recorded frames from the start.
     func testReplayToggleActuallyPlays() throws {
@@ -162,54 +85,6 @@ final class PlaybackLogicTests: XCTestCase {
     }
 
     // MARK: practice loop
-
-    func testPracticeLoopStateMachineFakeClock() {
-        var loop = PracticeLoop()
-        var now = 0.0
-        var counter: UInt64 = 0
-        let length: UInt64 = 10
-        var actions: [PracticeLoop.Action] = []
-        // play to B
-        while true {
-            let a = loop.tick(now: now, counter: counter, length: length)
-            actions.append(a)
-            if a == .step { counter += 1 } else { break }
-            now += 1.0 / 60
-        }
-        XCTAssertEqual(actions.filter { $0 == .step }.count, 10)
-        XCTAssertEqual(actions.last, .beginHold)
-        let holdStart = now
-        // hold 0.5 s: last frame kept
-        var a = PracticeLoop.Action.hold
-        while case .hold = a { now += 1.0 / 60; a = loop.tick(now: now, counter: counter, length: length) }
-        XCTAssertGreaterThanOrEqual(now - holdStart, PracticeLoop.holdSeconds)
-        XCTAssertEqual(a, .rewindFrame(back: 0))
-        // rewind animation ~0.5 s, going further back each tick
-        let rwStart = now
-        var lastBack = -1.0
-        while true {
-            now += 1.0 / 60
-            a = loop.tick(now: now, counter: counter, length: length)
-            if case .rewindFrame(let b) = a { XCTAssertGreaterThan(b, lastBack); lastBack = b } else { break }
-        }
-        XCTAssertEqual(a, .restart)
-        XCTAssertGreaterThanOrEqual(now - rwStart, PracticeLoop.rewindSeconds)
-        XCTAssertEqual(loop.loops, 1)
-        // after goto A (counter 0) it plays again
-        XCTAssertEqual(loop.tick(now: now, counter: 0, length: length), .step)
-        // no B: never loops
-        var free = PracticeLoop()
-        XCTAssertEqual(free.tick(now: 0, counter: 9999, length: nil), .step)
-        // interrupt during hold -> playing
-        var l2 = PracticeLoop()
-        _ = l2.tick(now: 0, counter: 10, length: 10)
-        XCTAssertTrue(l2.isLooping)
-        l2.interrupt()
-        XCTAssertEqual(l2.tick(now: 1, counter: 5, length: 10), .step)
-        XCTAssertEqual(PracticeLoop.historyIndex(back: 0, count: 60), 0)
-        XCTAssertEqual(PracticeLoop.historyIndex(back: 0.999, count: 60), 59)
-        XCTAssertEqual(PracticeLoop.historyIndex(back: 0.5, count: 0), 0)
-    }
 
     /// Drives the same loop the emulation thread runs, against a real session: reaching B ->
     /// hold -> rewind animation -> goto A, replaying the identical section; the take is untouched.
@@ -320,29 +195,5 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertEqual(s.takeLength, 100)
         XCTAssertEqual(s.activeTake, take)
         XCTAssertEqual(s.takes().count, takes, "no branch was created")
-    }
-
-    // MARK: helpers
-
-    func testAudioFadeTail() {
-        let src = [Int16](repeating: 12000, count: 800)
-        let tail = src.withUnsafeBufferPointer { AudioFade.tail(from: $0, repeats: 4) }
-        XCTAssertEqual(tail.count, 3200)
-        XCTAssertEqual(tail.last, 0)
-        XCTAssertLessThanOrEqual(tail.first!, 12000)
-        for i in 1..<tail.count { XCTAssertLessThanOrEqual(tail[i], tail[i - 1]) }
-        XCTAssertTrue([Int16]().withUnsafeBufferPointer { AudioFade.tail(from: $0) }.isEmpty)
-    }
-
-    func testFrameHistoryRing() {
-        let h = FrameHistory(capacity: 3)
-        let n = Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT)
-        for v in 1...5 { let f = [UInt32](repeating: UInt32(v), count: n); f.withUnsafeBufferPointer { h.append($0.baseAddress!) } }
-        XCTAssertEqual(h.count, 3)
-        XCTAssertEqual(h.withFrame(back: 0) { $0[0] }, 5)
-        XCTAssertEqual(h.withFrame(back: 2) { $0[100] }, 3)
-        XCTAssertNil(h.withFrame(back: 3) { $0[0] })
-        h.release()
-        XCTAssertEqual(h.count, 0)
     }
 }

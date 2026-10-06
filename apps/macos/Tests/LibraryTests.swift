@@ -82,12 +82,6 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(projects[0].name, "Test ROM \(LibraryScanner.timestamp(date))")
     }
 
-    func testSanitize() {
-        XCTAssertEqual(LibraryScanner.sanitize("Mario/Luigi: Deluxe"), "Mario_Luigi_ Deluxe")
-        XCTAssertEqual(LibraryScanner.sanitize("  "), "ROM")
-        XCTAssertEqual(LibraryScanner.sanitize(".hidden"), "_hidden")
-    }
-
     // MARK: flash reduction (Swift wrapper + export)
 
     func testFlashFilterLimitsFullScreenFlashingAndOffIsIdentity() {
