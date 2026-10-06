@@ -1,0 +1,153 @@
+# ReplayNES on Steam Deck / Linux
+
+Status 2026-10-07: **skeleton** (plan `docs/plans/2026-10-07-steam-deck-plan.md`, Step 2). It records,
+replays, rewinds, fast-forwards, pauses and steps with the same controller hotkeys as the macOS
+app, with display-locked low-latency pacing. Library, timeline, practice, takes, settings, CRT,
+export and Japanese UI follow in Step 3 (on the shared frontend core in `frontend/`).
+
+## Install
+
+ReplayNES is a Flatpak (`io.github.replaynes.ReplayNES`, runtime `org.freedesktop.Platform` 25.08), so
+nothing touches the read-only SteamOS system.
+
+From a bundle (`dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak`), in Desktop Mode
+(Konsole):
+
+```sh
+flatpak install --user io.github.replaynes.ReplayNES-0.2.0-x86_64.flatpak   # fetches the runtime from Flathub
+flatpak run io.github.replaynes.ReplayNES
+```
+
+From source (builds on the Deck itself; run on a Mac or Linux checkout with ssh access to the Deck):
+
+```sh
+scripts/build-linux-flatpak.sh                    # deck@steamdeck.local; or user@host, or HOST=local on Linux
+```
+
+It rsyncs the checkout to `~/ReplayNES-dev/src` on the Deck (never `roms/`, `.git`, build trees or ROM
+files), installs `org.freedesktop.Sdk//25.08` and `org.flatpak.Builder` with `--user` if missing,
+builds with flatpak-builder (the Nestopia core is fetched at the pinned commit), installs the app
+`--user` and copies the bundle to `dist/`. `DEV=1` instead does an incremental SDK build in
+`~/ReplayNES-dev/build-dev` (needs the pinned core cloned into `src/third_party/nestopia` on the Deck).
+
+ROMs go into `~/Documents/ReplayNES/ROM` (created on first start; `*.nes`, also one folder level
+down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-documents/ReplayNES`).
+
+## Gaming Mode (add to Steam)
+
+1. Desktop Mode: Steam -> Games -> "Add a Non-Steam Game to My Library..." -> tick **ReplayNES**
+   (listed from the Flatpak's desktop entry) -> Add Selected Programs. Steam stores
+   `flatpak run ... io.github.replaynes.ReplayNES` as the target.
+2. Back in Gaming Mode, start ReplayNES from the library. It opens full screen (it detects gamescope).
+3. Controller: Steam Input's default gamepad layout works as is (Steam Input presents an Xbox-style
+   pad; SDL reads it by button position).
+4. Recommended: Quick Access -> Performance -> **Refresh rate 60 Hz** for this game on the OLED
+   model (see "Pacing" below; the LCD model is 60 Hz anyway).
+5. Artwork is optional (Steam shows the icon from the desktop entry).
+
+## Controls
+
+| Input | Action |
+|---|---|
+| D-pad / left stick | NES D-pad |
+| B (east) / A (south) | NES A / NES B (by position, as on macOS: Nintendo's A/B) |
+| Y (north) / X (west) | turbo A / turbo B |
+| Menu (≡) / View (⧉) | START / SELECT |
+| R2 hold | rewind |
+| L2 hold | fast-forward (recorded part only) |
+| L | slow motion 1/2 on/off |
+| R | pause / play |
+| D-pad left/right while paused | step back / forward one frame (repeats when held) |
+| R3 (right stick click) | menu (open ROM, record/play back, save, display options, quit) |
+
+Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
+Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, Esc/F1 menu, F11 full
+screen, F3 stats overlay. In the menu: D-pad + A (gamepad) or arrows + Space (keyboard); B closes it.
+
+Sessions: opening a ROM records into a temporary project
+(`~/.var/app/io.github.replaynes.ReplayNES/data/ReplayNES/Session/current.nesrec`, autosaved every
+3 s, fully saved on quit, including when Steam closes the game). "Resume last session" in the menu
+reopens it. Opening another ROM moves a temporary project with recorded content into
+`~/Documents/ReplayNES/Projects/` first.
+
+## Pacing (how it works)
+
+`apps/linux/src/main.cpp`, `display_scheduler.h`, `vk_renderer.cpp`; pure logic ported from the
+macOS app in `apps/linux/src/interim/` (to be replaced by the shared core in Step 3). See
+`docs/FRAME_PACING.md` for the macOS design this follows.
+
+* Vulkan FIFO swapchain; every present carries a present id, and a waiter thread
+  (`VK_KHR_present_wait`) records when each picture reached the screen. Those timestamps give a vblank
+  grid (refresh estimate + phase).
+* One emulated frame per display frame, aimed at a specific vblank: 60 Hz every refresh (emulation
+  at 60.000 Hz), 120 Hz every 2nd, **90 Hz (Deck OLED default) alternating 2 and 1 refreshes**
+  (exactly 60.000 Hz, but pictures stay 22.2 / 11.1 ms on screen: a regular 3:2 pattern, like film
+  on 60 Hz), other rates take the nearest refresh. The audio follows with dynamic rate control
+  (SDL audio stream frequency ratio, within +-0.5 %). Logical time is the frame index; the host
+  clock never changes what is emulated.
+* Input is sampled just in time: `target vblank - lead`, lead = p99.5 of the sample -> submit work +
+  1.5 ms + a penalty learned from missed vblanks (it absorbs the compositor's latch point before
+  the vblank). Frames may overlap (lead > one refresh) when the work is heavy.
+* A FIFO backlog (pictures queued one refresh late after a hiccup) is drained by moving the targets
+  one refresh later once.
+* Controllers are updated on their own ~1 kHz thread: SDL's Steam Deck HIDAPI driver blocks ~8 ms
+  every ~3 s (lizard-mode reports), which must not land on the input sample.
+* Without `VK_KHR_present_wait` the loop falls back to the host clock at the NES rate (FIFO only,
+  no just-in-time sampling).
+
+## Measurements (Steam Deck OLED, SteamOS 3 / kernel 6.18, Mesa 26.2 RADV in the Flatpak GL extension, 90 Hz panel, 2026-10-07)
+
+`scripts/perf-smoke-deck.sh` (runs `replaynes-linux --perf-seconds N` on the Deck over ssh; 20 s
+warm-up, 30 s measured; Super Mario Bros. unless noted; "on screen" = vkWaitForPresentKHR
+returned; judder = a picture whose time on screen differs from what the cadence intends by more
+than half a refresh). Gaming Mode runs were started over ssh in the running gamescope session,
+with the window given gamescope's focus (the script does this; a window without focus is not
+shown, yet its presents still "complete").
+
+| Run | sample -> on screen p50 / p99 (ms) | event -> on screen p50 | emulate+filter p50 | judder/min | audio underruns | CPU % (process) |
+|---|---|---|---|---|---|---|
+| Gaming Mode (gamescope, X11), 90 Hz 3:2 | 6.75 / 6.95 | - | 1.7 ms | 4 | 0 | 15.1 |
+| Gaming Mode, injected B presses every 0.25 s | 5.70 / 6.35 | 12.8 | 1.7 ms | 8 | 0 | 15.2 |
+| Gaming Mode, test ROM (flash filter heaviest path) | 12.54 / 12.81 | - | 6.4 ms | 0 | 0 | 39.9 |
+| Desktop Mode (Plasma X11), full screen | 5.70 / 6.84 | - | 1.7 ms | 12 | 0 | 15.1 |
+| Desktop Mode, window 1280x722 | 5.39 / 5.97 | - | 1.6 ms | 14 | 0 | 15.0 |
+| Desktop Mode, full screen, injected presses | 6.77 / 7.81 | 13.8 | 1.6 ms | 20 | 0 | 15.1 |
+| Desktop Mode, full screen, test ROM | 11.94 / 12.10 | - | 6.3 ms | 4 | 0 | 39.8 |
+| Desktop Mode, full screen, installed Flatpak | 5.77 / 6.63 | - | 1.7 ms | 8 | 0 | 15.2 |
+
+Emulated 59.97-60.00 fps in every run above, DRC ratio ~1.0016 (emulation at 60.000 Hz instead of
+60.0988 Hz), audio level 26-40 ms. The intended 3:2 pattern itself is not counted as judder.
+
+Notes:
+* The flash filter's heaviest path costs ~4.5 ms on the Deck's CPU (powersave governor, bursty
+  load keeps the clock low); the lead grows to cover it, so such pictures arrive ~12.5 ms after the
+  sample instead of ~6 ms, still without judder or underruns.
+* Before the controller thread, the HIDAPI stall caused a missed vblank every ~3.4 s; before the
+  present-wait thread (one frame in flight) the heavy test ROM ran at 51 fps at 90 Hz.
+* Not measured: 60 Hz panel rate (Desktop Mode exposes only 90 Hz on the OLED; in Gaming Mode the
+  rate follows Steam's per-game setting, which needs a Steam-launched game). Nested gamescope
+  (`gamescope -r 60` inside Plasma at 90 Hz) is not a useful proxy: its present timing runs at
+  45 Hz and the app then emulates at 45 fps (see open issues).
+
+Measure yourself:
+
+```sh
+scripts/perf-smoke-deck.sh 30                       # generated test ROM, the Deck's current session
+ROM=smb WARMUP=20 INPUT=1 scripts/perf-smoke-deck.sh 30
+EXTRA_ARGS=--fullscreen SESSION=desktop scripts/perf-smoke-deck.sh 30
+```
+
+Or from a Steam shortcut in Gaming Mode (launch options), then read the JSON line:
+
+```
+--rom "/home/deck/Documents/ReplayNES/ROM/<game>.nes" --perf-seconds 60 --stats-log /home/deck/Documents/ReplayNES/perf.jsonl
+```
+
+## Open issues
+
+1. Display rates below 60 Hz (Gaming Mode's 40-59 Hz settings, nested compositors) slow emulation
+   down to the display rate: frames are never emulated two per present yet.
+2. 90 Hz shows the 3:2 pattern; 60 Hz (QAM) is recommended until a measured comparison exists.
+3. Gamepad navigation of the menu was verified with keyboard events (Space/arrows) over ssh; the
+   built-in controls themselves need a hands-on check (Steam Input template, R3 menu).
+4. Feature parity (library, timeline, practice, takes, settings + remap, CRT, export, ja) is Step 3.

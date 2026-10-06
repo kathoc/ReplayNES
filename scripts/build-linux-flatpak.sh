@@ -64,7 +64,7 @@ run "cd ~/$RDIR && flatpak run org.flatpak.Builder --user $INSTALL --force-clean
 
 if [ "${NO_BUNDLE:-0}" != "1" ]; then
   echo "==> bundle $BUNDLE"
-  run "cd ~/$RDIR && flatpak build-bundle repo $BUNDLE $APP_ID"
+  run "cd ~/$RDIR && flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo $BUNDLE $APP_ID"
   mkdir -p "$ROOT/dist"
   if [ "$HOST" = "local" ]; then cp ~/"$RDIR/$BUNDLE" "$ROOT/dist/"; else scp -q "$HOST:$RDIR/$BUNDLE" "$ROOT/dist/"; fi
   echo "    $ROOT/dist/$BUNDLE"

@@ -52,8 +52,12 @@ rm -rf "$D/session"
 PRE=""
 case "$SESSION" in
   gaming)  export DISPLAY=:0 GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 XDG_CURRENT_DESKTOP=gamescope ;;
-  desktop) export WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XDG_CURRENT_DESKTOP=KDE ;;
-  nested)  export WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XDG_CURRENT_DESKTOP=KDE; PRE="gamescope -W 1280 -H 800 -r 60 -f --" ;;
+  desktop|nested)
+    # The Plasma session's display variables (SteamOS 3 Desktop Mode is Plasma on X11 or Wayland).
+    P=$(pgrep -x plasmashell | head -1)
+    eval "$(tr '\0' '\n' </proc/$P/environ | grep -E '^(DISPLAY|XAUTHORITY|WAYLAND_DISPLAY|XDG_SESSION_TYPE)=' | sed 's/^/export /')"
+    export XDG_CURRENT_DESKTOP=KDE
+    [ "$SESSION" = nested ] && PRE="gamescope -W 1280 -H 800 -r 60 -f --" ;;
 esac
 [ -n "$DRIVER" ] && export SDL_VIDEO_DRIVER="$DRIVER"
 echo "session: $SESSION"

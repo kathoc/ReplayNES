@@ -97,7 +97,7 @@ std::string iso8601(double t) {
   int64_t y;
   unsigned m, d;
   civilFromDays(days, y, m, d);
-  char buf[40];
+  char buf[96];  // room for any int64 (GCC -Wformat-truncation)
   std::snprintf(buf, sizeof buf, "%04lld-%02u-%02uT%02lld:%02lld:%02lldZ", (long long)y, m, d, (long long)(rem / 3600),
                 (long long)(rem / 60 % 60), (long long)(rem % 60));
   return buf;
