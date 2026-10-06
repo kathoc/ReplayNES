@@ -1,5 +1,7 @@
 #include "session/Session.h"
 
+#include <algorithm>
+
 #include "persist/ProjectStore.h"
 #include "util/Hash.h"
 
@@ -61,6 +63,35 @@ Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
   StepInfo si;
   si.mode = mode_;
   InputRecord r;
+  if (mode_ == Mode::Practice) {
+    if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
+    r.p1 = p1;
+    r.p2 = p2;
+    r.events = events;
+    RN_TRY(core_->stepRecord(r.p1, r.p2, r.events, true));
+    // Nothing is recorded: no timeline, no take checkpoints, no change counter.
+    pInputs_.push_back(r);
+    ++emuCount_;
+    audioValid_ = true;
+    const uint64_t interval = cps_.policy().denseInterval;
+    if ((emuCount_ - pSnaps_.front().count) % interval == 0) {
+      PracticeSnap snap{emuCount_, {}};
+      if (captureState(snap.state).ok()) {  // a missing snapshot only shortens rewind
+        pSnaps_.push_back(std::move(snap));
+        const size_t cap = std::max<size_t>(2, cps_.policy().denseCapacity);
+        while (pSnaps_.size() > cap) {
+          uint64_t dropTo = pSnaps_[1].count;
+          pInputs_.erase(pInputs_.begin(), pInputs_.begin() + ptrdiff_t(dropTo - pSnaps_.front().count));
+          pSnaps_.pop_front();
+        }
+      }
+    }
+    si.frame = frame_;
+    si.applied = r;
+    si.take = tl_.head();
+    if (info) *info = si;
+    return Status::Ok();
+  }
   if (mode_ == Mode::Replay) {
     const InputRecord* rec = tl_.recordAt(frame_);
     if (!rec) {
@@ -87,6 +118,7 @@ Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
     touch();
   }
   ++frame_;
+  ++emuCount_;
   audioValid_ = true;
   maybeCheckpoint();
   si.frame = frame_;
@@ -100,6 +132,7 @@ Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
 Status Session::resync(uint64_t target, bool forceReload) {
   if (target > tl_.length()) return Error(Err::OutOfRange, "seek target beyond take end");
   if (!forceReload && target == frame_) return Status::Ok();
+  ++emuEpoch_;  // any seek / reload breaks emulation continuity (A/B anchors)
   const Checkpoint* cp = target > 0 ? cps_.best(target - 1, tl_) : nullptr;
   bool continueCurrent = !forceReload && target > frame_ && (!cp || cp->frame <= frame_);
   if (!continueCurrent) {
@@ -126,13 +159,20 @@ Status Session::resync(uint64_t target, bool forceReload) {
 }
 
 Status Session::seek(uint64_t target) {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot seek the take while practicing (leave practice first)");
   RN_TRY(resync(target, false));
   touch();
   return Status::Ok();
 }
 
+Status Session::rewind(uint64_t n) {
+  if (mode_ == Mode::Practice) return practiceRewind(n);
+  return seek(frame_ - (n > frame_ ? frame_ : n));
+}
+
 // ------------------------------------------------------------------ bookmarks
 Status Session::bookmarkAdd(const std::string& name, uint64_t* id) {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot add a take bookmark while practicing");
   Bookmark b;
   b.id = nextBookmarkId_++;
   b.name = name;
@@ -174,6 +214,7 @@ Status Session::bookmarkRename(uint64_t id, const std::string& name) {
 }
 
 Status Session::bookmarkGoto(uint64_t id) {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot jump on the take while practicing");
   Bookmark* b = findBm(bookmarks_, id);
   if (!b) return Error(Err::NotFound, "bookmark not found");
   if (!tl_.stateValid(b->frame, b->owner)) {
@@ -199,6 +240,7 @@ std::vector<TakeInfo> Session::takes() const {
 }
 
 Status Session::activateTake(uint64_t id) {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
   if (id == tl_.head()) return Status::Ok();
   tl_.undo().push_back({tl_.head(), frame_});
@@ -209,6 +251,7 @@ Status Session::activateTake(uint64_t id) {
 }
 
 Status Session::undoTakeSwitch() {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (tl_.undo().empty()) return Error(Err::NotFound, "nothing to undo");
   UndoEntry e = tl_.undo().back();
   tl_.undo().pop_back();
@@ -216,6 +259,236 @@ Status Session::undoTakeSwitch() {
   uint64_t target = e.frame < tl_.length() ? e.frame : tl_.length();
   touch();
   return resync(target, true);
+}
+
+// ------------------------------------------------------------------ practice
+Status Session::setMode(Mode m) {
+  if (m == mode_) return Status::Ok();
+  if (m == Mode::Practice) return enterPractice();
+  if (mode_ == Mode::Practice) return leavePractice(m);
+  mode_ = m;
+  touch();
+  return Status::Ok();
+}
+
+Status Session::cursorState(std::vector<uint8_t>& out) {
+  if (mode_ == Mode::Practice) {
+    out = returnState_;
+    return Status::Ok();
+  }
+  return captureState(out);
+}
+
+void Session::resetPracticeRun(std::vector<uint8_t> base) {
+  pSnaps_.clear();
+  pInputs_.clear();
+  pSnaps_.push_back({emuCount_, std::move(base)});
+}
+
+Status Session::enterPractice() {
+  std::vector<uint8_t> st;
+  RN_TRY(captureState(st));
+  returnMode_ = mode_;
+  returnState_ = st;
+  mode_ = Mode::Practice;
+  // Continuous with the take: anchors set before entering stay live.
+  pEntryEpoch_ = emuEpoch_;
+  pEntryCount_ = emuCount_;
+  curAnchorSlot_ = -1;
+  curAnchorEpoch_ = emuEpoch_;
+  curAnchorCount_ = emuCount_;
+  resetPracticeRun(std::move(st));
+  return Status::Ok();  // the persisted mode/cursor are unchanged: not a project change
+}
+
+Status Session::leavePractice(Mode to) {
+  Status st = frame_ == 0 ? powerOnFresh() : core_->loadState(returnState_.data(), returnState_.size());
+  if (!st.ok()) {
+    mode_ = returnMode_;  // fall back to rebuilding the take state from the input log
+    uint64_t f = frame_;
+    st = resync(f, true);
+    if (!st.ok()) return st;
+  }
+  ++emuEpoch_;
+  audioValid_ = false;
+  pSnaps_.clear();
+  pInputs_.clear();
+  returnState_.clear();
+  returnState_.shrink_to_fit();
+  curAnchorSlot_ = -1;
+  mode_ = to;
+  if (to != returnMode_) touch();
+  return Status::Ok();
+}
+
+uint64_t Session::practiceFloor() const {
+  uint64_t floor = pSnaps_.empty() ? emuCount_ : pSnaps_.front().count;
+  if (curAnchorEpoch_ == emuEpoch_ && curAnchorCount_ > floor) floor = curAnchorCount_;
+  return floor > emuCount_ ? emuCount_ : floor;
+}
+
+Status Session::practiceRewind(uint64_t n) {
+  uint64_t floor = practiceFloor();
+  uint64_t back = std::min<uint64_t>(n, emuCount_ - floor);
+  if (back == 0) return Status::Ok();
+  uint64_t target = emuCount_ - back;
+  size_t k = pSnaps_.size();
+  while (k > 0 && pSnaps_[k - 1].count > target) --k;
+  if (k == 0) return Error(Err::Internal, "practice rewind: no snapshot");
+  const PracticeSnap& snap = pSnaps_[k - 1];
+  const uint64_t inputBase = pSnaps_.front().count;
+  RN_TRY(core_->loadState(snap.state.data(), snap.state.size()));
+  for (uint64_t c = snap.count; c < target; ++c) {
+    const InputRecord& r = pInputs_[size_t(c - inputBase)];
+    RN_TRY(core_->stepRecord(r.p1, r.p2, r.events, c + 1 == target));
+  }
+  pSnaps_.erase(pSnaps_.begin() + ptrdiff_t(k), pSnaps_.end());
+  pInputs_.resize(size_t(target - inputBase));
+  emuCount_ = target;  // same epoch: the run from the anchor is still unbroken
+  for (auto& p : slots_)
+    if (p.anchorEpoch == emuEpoch_ && p.anchorCount > target) p.anchorEpoch = 0;  // A lies in the discarded future
+  audioValid_ = false;
+  return Status::Ok();
+}
+
+bool Session::checkSlot(int slot, Status& err) const {
+  if (slot < 0 || slot >= kPracticeSlots) {
+    err = Error(Err::OutOfRange, "practice slot must be 0.." + std::to_string(kPracticeSlots - 1));
+    return false;
+  }
+  return true;
+}
+
+const PracticeSlot* Session::practiceSlot(int slot) const {
+  return slot >= 0 && slot < kPracticeSlots ? &slots_[size_t(slot)] : nullptr;
+}
+
+Status Session::practiceSetA(int slot) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  std::vector<uint8_t> st;
+  RN_TRY(captureState(st));
+  PracticeSlot& p = slots_[size_t(slot)];
+  if (!p.used) {
+    p = PracticeSlot();
+    p.used = true;
+    p.createdSeq = ++practiceSeq_;
+    p.updatedSeq = p.createdSeq;
+  } else {
+    p.updatedSeq = ++practiceSeq_;
+  }
+  p.stateSeq = p.updatedSeq;
+  p.crc = crc32(st.data(), st.size());
+  p.state = std::move(st);
+  p.compat = core_->compatId();
+  p.stateFormatVersion = core_->stateFormatVersion();
+  p.hasB = false;
+  p.length = 0;
+  // On the take (or at the untouched practice entry point, which is the same machine state).
+  bool onTake = mode_ != Mode::Practice || (emuEpoch_ == pEntryEpoch_ && emuCount_ == pEntryCount_);
+  p.hasTakeFrame = onTake;
+  p.takeFrame = onTake ? frame_ : 0;
+  p.takeId = onTake ? tl_.head() : 0;
+  p.anchorEpoch = emuEpoch_;
+  p.anchorCount = emuCount_;
+  p.stateJournaled = p.stateFiled = false;
+  curAnchorSlot_ = slot;
+  curAnchorEpoch_ = emuEpoch_;
+  curAnchorCount_ = emuCount_;
+  touch();
+  return Status::Ok();
+}
+
+bool Session::practiceBSettable(int slot) const {
+  const PracticeSlot* p = practiceSlot(slot);
+  return p && p->used && p->anchorEpoch != 0 && p->anchorEpoch == emuEpoch_ && emuCount_ >= p->anchorCount;
+}
+
+Status Session::practiceSetB(int slot) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  PracticeSlot& p = slots_[size_t(slot)];
+  if (!p.used) return Error(Err::NotFound, "practice slot " + std::to_string(slot) + " has no A");
+  if (!practiceBSettable(slot))
+    return Error(Err::Discontinuity, "emulation was not continuous since A of slot " + std::to_string(slot) +
+                                         " (seek/load/take switch in between): set A again or go to A first");
+  uint64_t len = emuCount_ - p.anchorCount;
+  if (len == 0) return Error(Err::InvalidArg, "B must be at least one frame after A");
+  p.hasB = true;
+  p.length = len;
+  p.updatedSeq = ++practiceSeq_;
+  touch();
+  return Status::Ok();
+}
+
+Status Session::practiceGotoA(int slot) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  PracticeSlot& p = slots_[size_t(slot)];
+  if (!p.used) return Error(Err::NotFound, "practice slot " + std::to_string(slot) + " has no A");
+  bool entered = false;
+  if (mode_ != Mode::Practice) {
+    RN_TRY(enterPractice());
+    entered = true;
+  }
+  Status st = core_->loadState(p.state.data(), p.state.size());
+  if (!st.ok()) {
+    if (entered) {
+      Status back = leavePractice(returnMode_);
+      if (!back.ok()) return back;
+    } else {
+      // The practice machine state is unknown now: restart the run from the saved take state.
+      ++emuEpoch_;
+      if (core_->loadState(returnState_.data(), returnState_.size()).ok()) resetPracticeRun(returnState_);
+    }
+    return Error(st.code, "practice slot " + std::to_string(slot) + " A state failed to load: " + st.message);
+  }
+  ++emuEpoch_;
+  resetPracticeRun(p.state);
+  p.anchorEpoch = emuEpoch_;
+  p.anchorCount = emuCount_;
+  curAnchorSlot_ = slot;
+  curAnchorEpoch_ = emuEpoch_;
+  curAnchorCount_ = emuCount_;
+  audioValid_ = false;
+  return Status::Ok();
+}
+
+Status Session::practiceRename(int slot, const std::string& name) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  PracticeSlot& p = slots_[size_t(slot)];
+  if (!p.used) return Error(Err::NotFound, "practice slot " + std::to_string(slot) + " is empty");
+  p.name = name;
+  p.updatedSeq = ++practiceSeq_;
+  touch();
+  return Status::Ok();
+}
+
+Status Session::practiceClear(int slot) {
+  Status err;
+  if (!checkSlot(slot, err)) return err;
+  if (!slots_[size_t(slot)].used) return Status::Ok();
+  slots_[size_t(slot)] = PracticeSlot();
+  if (curAnchorSlot_ == slot) curAnchorSlot_ = -1;  // counter origin is kept
+  touch();
+  return Status::Ok();
+}
+
+uint64_t Session::practiceCounter() const {
+  if (curAnchorEpoch_ != emuEpoch_ || emuCount_ < curAnchorCount_) return 0;
+  return emuCount_ - curAnchorCount_;
+}
+
+PracticeStatus Session::practiceStatus() const {
+  PracticeStatus ps;
+  ps.active = mode_ == Mode::Practice;
+  bool live = curAnchorEpoch_ == emuEpoch_ && emuCount_ >= curAnchorCount_;
+  ps.anchorSlot = live ? curAnchorSlot_ : -1;
+  ps.counter = practiceCounter();
+  ps.returnFrame = frame_;
+  ps.rewindAvailable = ps.active ? emuCount_ - practiceFloor() : 0;
+  return ps;
 }
 
 // ------------------------------------------------------------------ persistence

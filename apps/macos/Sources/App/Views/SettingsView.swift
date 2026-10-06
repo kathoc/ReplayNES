@@ -135,6 +135,7 @@ struct DisplayTab: View {
                     .font(.caption).foregroundStyle(.orange)
                 Toggle("低減中は画面に「フラッシュ低減中」と表示する", isOn: $model.showFlashIndicator)
             }
+            StreamOutputSection()
             Section("音声") {
                 Slider(value: $model.volume, in: 0...1) { Text("音量") }
                 Text("一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。").font(.caption).foregroundStyle(.secondary)

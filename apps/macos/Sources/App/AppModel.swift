@@ -419,6 +419,7 @@ final class AppModel: ObservableObject {
 
     /// Clean shutdown: stop the emulation thread and clear the crash marker.
     func shutdown() {
+        StreamOutputModel.shared.stop()
         emu.shutdown()
         openProjectPath = ""
     }

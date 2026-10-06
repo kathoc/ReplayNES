@@ -1,3 +1,6 @@
 [submodule "third_party/nestopia"]
 	path = third_party/nestopia
 	url = https://github.com/0ldsk00l/nestopia.git
+[submodule "third_party/syphon"]
+	path = third_party/syphon
+	url = https://github.com/Syphon/Syphon-Framework.git

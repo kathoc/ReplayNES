@@ -24,6 +24,7 @@ enum class Err : int {
   AlreadyExists = 14,
   WrongMode = 15,
   EndOfTake = 16,
+  Discontinuity = 17,  // practice: B needs unbroken emulation since that slot's A anchor
   Internal = 99,
 };
 

@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --update-check-now  see Updater.swift
         //   --library-root <dir>  use <dir> instead of ~/Documents/ReplayNES for the ROM library
         //   --library-play <name> start a new library project for that ROM (TestHooks.swift)
+        //   --syphon            enable the Syphon streaming output for this run (not saved)
         let args = ProcessInfo.processInfo.arguments
         if !args.contains("--no-updater") && !args.contains("--snapshot") && !args.contains("--inject-keys") {
             UpdaterModel.shared.start(arguments: args)
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // ROM library: create ~/Documents/ReplayNES/{ROM,Projects}. A failure is reported, never
         // silently replaced by another location.
+        StreamOutputModel.shared.start(frames: model.emu.frames, forceEnable: args.contains("--syphon"))
         if let root = arg("--library-root") { model.library.setRoot(URL(fileURLWithPath: root)) }
         if let err = model.library.start() {
             DispatchQueue.main.async {
@@ -98,7 +100,10 @@ struct ReplayNESApp: App {
             ContentView().environmentObject(AppModel.shared)
         }
         .defaultSize(width: 1240, height: 820)
-        .commands { AppCommands(model: AppModel.shared) }
+        .commands {
+            AppCommands(model: AppModel.shared)
+            StreamOutputCommands(stream: StreamOutputModel.shared)
+        }
 
         Window("ライブラリ", id: "library") {
             LibraryWindow().environmentObject(AppModel.shared)

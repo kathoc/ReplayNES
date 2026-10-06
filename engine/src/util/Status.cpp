@@ -20,6 +20,7 @@ const char* errName(Err e) {
     case Err::AlreadyExists: return "already_exists";
     case Err::WrongMode: return "wrong_mode";
     case Err::EndOfTake: return "end_of_take";
+    case Err::Discontinuity: return "discontinuity";
     case Err::Internal: return "internal";
   }
   return "unknown";

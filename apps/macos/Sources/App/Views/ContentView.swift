@@ -105,6 +105,7 @@ struct StatusBadges: View {
             else if st.slow != .normal { badge("スロー \(st.slow.label)", .purple) }
             if st.endOfTake { badge("テイク終端", .yellow) }
             if st.flashActive && model.showFlashIndicator { badge("フラッシュ低減中", .teal) }
+            StreamOutputBadge()
         }
         .allowsHitTesting(false)
     }

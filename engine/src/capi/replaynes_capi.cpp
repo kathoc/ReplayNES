@@ -24,6 +24,8 @@
 
 static_assert(int(RN_ERR_CORE_MISMATCH) == int(rn::Err::CoreMismatch), "status codes must match");
 static_assert(int(RN_ERR_END_OF_TAKE) == int(rn::Err::EndOfTake), "status codes must match");
+static_assert(int(RN_ERR_DISCONTINUITY) == int(rn::Err::Discontinuity), "status codes must match");
+static_assert(RN_PRACTICE_SLOTS == rn::kPracticeSlots, "practice slot count must match");
 static_assert(int(RN_ERR_INTERNAL) == int(rn::Err::Internal), "status codes must match");
 static_assert(RN_FPS_NUM == rn::kFpsNum && RN_FPS_DEN == rn::kFpsDen, "rate constants must match");
 
@@ -75,6 +77,7 @@ rn::SessionOptions toOptions(const rn_session_options* o) {
   if (o->dense_capacity) so.checkpoints.denseCapacity = o->dense_capacity;
   if (o->sparse_interval) so.checkpoints.sparseInterval = o->sparse_interval;
   so.dropCorruptStates = (o->open_flags & RN_OPEN_DROP_CORRUPT_STATES) != 0;
+  so.dropCorruptPractice = (o->open_flags & RN_OPEN_DROP_CORRUPT_PRACTICE) != 0;
   return so;
 }
 
@@ -83,6 +86,10 @@ char* dupString(const std::string& s) {
   if (!p) throw std::bad_alloc();
   std::memcpy(p, s.c_str(), s.size() + 1);
   return p;
+}
+
+rn_mode toCMode(rn::Mode m) {
+  return m == rn::Mode::Replay ? RN_MODE_REPLAY : m == rn::Mode::Practice ? RN_MODE_PRACTICE : RN_MODE_RECORD;
 }
 }  // namespace
 
@@ -204,14 +211,14 @@ rn_status rn_project_manifest_json(const char* project_dir, char** out_json) {
 
 // ------------------------------------------------------------------ play
 rn_status rn_set_mode(rn_session* s, rn_mode mode) {
-  if (!s) return invalid("null session");
-  if (mode != RN_MODE_RECORD && mode != RN_MODE_REPLAY) return invalid("bad mode");
-  s->s->setMode(mode == RN_MODE_REPLAY ? rn::Mode::Replay : rn::Mode::Record);
-  return RN_OK;
+  return guard([&] {
+    if (!s) return invalid("null session");
+    if (mode != RN_MODE_RECORD && mode != RN_MODE_REPLAY && mode != RN_MODE_PRACTICE) return invalid("bad mode");
+    rn::Mode m = mode == RN_MODE_REPLAY ? rn::Mode::Replay : mode == RN_MODE_PRACTICE ? rn::Mode::Practice : rn::Mode::Record;
+    return ret(s->s->setMode(m));
+  });
 }
-rn_mode rn_get_mode(const rn_session* s) {
-  return s && s->s->mode() == rn::Mode::Replay ? RN_MODE_REPLAY : RN_MODE_RECORD;
-}
+rn_mode rn_get_mode(const rn_session* s) { return s ? toCMode(s->s->mode()) : RN_MODE_RECORD; }
 
 rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info) {
   return guard([&] {
@@ -221,7 +228,7 @@ rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step
     if (!st.ok()) return fail(st);
     if (info) {
       info->frame = si.frame;
-      info->mode = si.mode == rn::Mode::Replay ? RN_MODE_REPLAY : RN_MODE_RECORD;
+      info->mode = toCMode(si.mode);
       info->branched = si.branched;
       info->end_of_take = si.endOfTake;
       info->p1 = si.applied.p1;
@@ -278,6 +285,55 @@ rn_status rn_bookmark_get(const rn_session* s, size_t index, rn_bookmark_info* o
 rn_status rn_bookmark_goto(rn_session* s, uint64_t id) {
   return guard([&] { return s ? ret(s->s->bookmarkGoto(id)) : invalid("null session"); });
 }
+
+// ------------------------------------------------------------------ practice
+rn_status rn_practice_set_a(rn_session* s, uint32_t slot) {
+  return guard([&] { return s ? ret(s->s->practiceSetA(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
+}
+rn_status rn_practice_set_b(rn_session* s, uint32_t slot) {
+  return guard([&] { return s ? ret(s->s->practiceSetB(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
+}
+rn_status rn_practice_goto_a(rn_session* s, uint32_t slot) {
+  return guard([&] { return s ? ret(s->s->practiceGotoA(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
+}
+rn_status rn_practice_slot_get(const rn_session* s, uint32_t slot, rn_practice_slot_info* out) {
+  if (!s || !out) return invalid("null argument");
+  const rn::PracticeSlot* p = s->s->practiceSlot(slot < 1024 ? int(slot) : -1);
+  if (!p) return fail(rn::Error(rn::Err::OutOfRange, "practice slot out of range"));
+  std::memset(out, 0, sizeof *out);
+  out->name = p->used ? p->name.c_str() : "";
+  if (!p->used) return RN_OK;
+  out->has_a = 1;
+  out->has_b = p->hasB ? 1 : 0;
+  out->length_frames = p->hasB ? p->length : 0;
+  out->has_take_frame = p->hasTakeFrame ? 1 : 0;
+  out->take_frame = p->takeFrame;
+  out->take_id = p->takeId;
+  out->created_seq = p->createdSeq;
+  out->updated_seq = p->updatedSeq;
+  out->b_settable = s->s->practiceBSettable(int(slot)) ? 1 : 0;
+  return RN_OK;
+}
+rn_status rn_practice_slot_rename(rn_session* s, uint32_t slot, const char* name) {
+  return guard([&] {
+    return s ? ret(s->s->practiceRename(slot < 1024 ? int(slot) : -1, name ? name : "")) : invalid("null session");
+  });
+}
+rn_status rn_practice_slot_clear(rn_session* s, uint32_t slot) {
+  return guard([&] { return s ? ret(s->s->practiceClear(slot < 1024 ? int(slot) : -1)) : invalid("null session"); });
+}
+uint64_t rn_practice_frame(const rn_session* s) { return s ? s->s->practiceCounter() : 0; }
+rn_status rn_practice_get_status(const rn_session* s, rn_practice_status* out) {
+  if (!s || !out) return invalid("null argument");
+  rn::PracticeStatus ps = s->s->practiceStatus();
+  out->active = ps.active ? 1 : 0;
+  out->anchor_slot = ps.anchorSlot;
+  out->counter = ps.counter;
+  out->return_frame = ps.returnFrame;
+  out->rewind_available = ps.rewindAvailable;
+  return RN_OK;
+}
+uint32_t rn_practice_dropped_slots(const rn_session* s) { return s ? s->s->droppedPracticeSlots() : 0; }
 
 // ------------------------------------------------------------------ takes
 size_t rn_take_count(const rn_session* s) { return s ? s->s->timeline().segments().size() : 0; }

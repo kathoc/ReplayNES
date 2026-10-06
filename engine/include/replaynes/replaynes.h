@@ -81,6 +81,7 @@ typedef enum rn_status {
   RN_ERR_ALREADY_EXISTS = 14,
   RN_ERR_WRONG_MODE = 15,
   RN_ERR_END_OF_TAKE = 16,
+  RN_ERR_DISCONTINUITY = 17,     /* practice B: emulation was not continuous since that slot's A */
   RN_ERR_INTERNAL = 99
 } rn_status;
 
@@ -101,9 +102,12 @@ void rn_string_free(char* s); /* frees strings returned by rn_*_json functions *
 typedef struct rn_session rn_session;
 
 typedef enum rn_core_kind { RN_CORE_NESTOPIA = 0, RN_CORE_MOCK = 1 } rn_core_kind;
-typedef enum rn_mode { RN_MODE_RECORD = 0, RN_MODE_REPLAY = 1 } rn_mode;
+/* PRACTICE: non-recording play (see "practice" section below). */
+typedef enum rn_mode { RN_MODE_RECORD = 0, RN_MODE_REPLAY = 1, RN_MODE_PRACTICE = 2 } rn_mode;
 
-#define RN_OPEN_DROP_CORRUPT_STATES 0x1u /* discard corrupt checkpoint files (they are a cache) */
+#define RN_OPEN_DROP_CORRUPT_STATES 0x1u   /* discard corrupt checkpoint files (they are a cache) */
+#define RN_OPEN_DROP_CORRUPT_PRACTICE 0x2u /* discard A/B practice slots whose A state is corrupt
+                                              (NOT a cache: the slot is lost; see rn_practice_dropped_slots) */
 
 typedef struct rn_session_options {
   uint32_t struct_size;     /* set by rn_session_options_init */
@@ -138,6 +142,9 @@ const char* rn_session_project_dir(const rn_session* s); /* "" for in-memory ses
 rn_status rn_project_manifest_json(const char* project_dir, char** out_json);
 
 /* ------------------------------------------------------------------ play / record */
+/* RECORD <-> REPLAY switch the take mode. PRACTICE enters practice from the current take
+ * position (machine state continues). Leaving PRACTICE (RECORD or REPLAY) restores the take
+ * state at the frame practice was entered from, so the take is exactly as before. */
 rn_status rn_set_mode(rn_session* s, rn_mode mode);
 rn_mode rn_get_mode(const rn_session* s);
 
@@ -153,17 +160,24 @@ typedef struct rn_step_info {
 /* RECORD: emulates one frame with (p1,p2,events) and records it at rn_frame(). Recording at a
  * frame < take length creates a new branch (old future is kept as another take).
  * REPLAY: inputs are ignored; the recorded frame is emulated. At the take end nothing is
- * emulated and info.end_of_take = 1 (returns RN_OK). info may be NULL. */
+ * emulated and info.end_of_take = 1 (returns RN_OK).
+ * PRACTICE: emulates one frame with (p1,p2,events) and records NOTHING (rn_frame, take length,
+ * takes, checkpoints and the unsaved-changes flag are unchanged); rn_practice_frame() += 1.
+ * info may be NULL. */
 rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info);
 
 const uint32_t* rn_video(const rn_session* s); /* 256x240 BGRA8 (B,G,R,A bytes), alpha 255 */
 /* PCM of the last emulated frame. count = 0 after seek/rewind/take switch (seeking is silent). */
 const int16_t* rn_audio(const rn_session* s, size_t* count);
 
-uint64_t rn_frame(const rn_session* s);
+uint64_t rn_frame(const rn_session* s);       /* take cursor; frozen at the return frame in PRACTICE */
 uint64_t rn_take_length(const rn_session* s);
-rn_status rn_seek(rn_session* s, uint64_t frame);     /* 0 <= frame <= take length */
-rn_status rn_rewind(rn_session* s, uint64_t nframes); /* clamps at 0 */
+/* 0 <= frame <= take length. RN_ERR_WRONG_MODE in PRACTICE (leave practice first). */
+rn_status rn_seek(rn_session* s, uint64_t frame);
+/* RECORD/REPLAY: seek back on the take, clamps at 0. PRACTICE: rewinds the practice run (bounded
+ * in-memory ring, same policy as dense checkpoints), clamped at the current anchor (last A set /
+ * goto A, or the practice start) and at the oldest kept snapshot; never touches the take. */
+rn_status rn_rewind(rn_session* s, uint64_t nframes);
 
 /* Verification hashes (determinism diagnostics, tests, CLI). */
 uint64_t rn_state_hash(rn_session* s);
@@ -186,6 +200,55 @@ size_t rn_bookmark_count(const rn_session* s);
 rn_status rn_bookmark_get(const rn_session* s, size_t index, rn_bookmark_info* out);
 /* Seeks to the bookmark; switches the active take if needed (undoable via rn_undo_take_switch). */
 rn_status rn_bookmark_goto(rn_session* s, uint64_t id);
+
+/* ------------------------------------------------------------------ practice + A/B repeat slots */
+/* Per-project A/B slots 0..RN_PRACTICE_SLOTS-1, saved in the .nesrec (full save + autosave
+ * journal). A = full machine state; B = frame count after A ("length").
+ * Anchors: set_a / goto_a start an anchor (counter 0). Emulation continuity is broken by seek,
+ * rewind on the take, bookmark goto, take switch/undo, leaving practice and goto_a; practice
+ * rewind keeps continuity back to its target. rn_bookmark_add, rn_bookmark_goto,
+ * rn_take_activate, rn_undo_take_switch, rn_seek: RN_ERR_WRONG_MODE in PRACTICE. */
+#define RN_PRACTICE_SLOTS 8
+
+typedef struct rn_practice_slot_info {
+  int has_a;              /* 0 = empty slot (all other fields zero / "") */
+  int has_b;
+  uint64_t length_frames; /* B - A (valid if has_b) */
+  const char* name;       /* UTF-8, valid until the next mutating call */
+  int has_take_frame;     /* 1 if A was set on the take (not inside a practice run) */
+  uint64_t take_frame;    /* take frame at A (informational label) */
+  uint64_t take_id;       /* take active when A was set */
+  uint64_t created_seq;   /* project-wide sequence numbers (ordering; no wall-clock time) */
+  uint64_t updated_seq;
+  int b_settable;         /* 1 if rn_practice_set_b would pass the continuity check now */
+} rn_practice_slot_info;
+
+typedef struct rn_practice_status {
+  int active;                /* 1 in RN_MODE_PRACTICE */
+  int anchor_slot;           /* slot of the live current anchor, -1 = practice start / none */
+  uint64_t counter;          /* == rn_practice_frame() */
+  uint64_t return_frame;     /* take frame restored when practice is left (== rn_frame) */
+  uint64_t rewind_available; /* frames rn_rewind can go back in practice (0 outside) */
+} rn_practice_status;
+
+/* Captures the CURRENT machine state as A of slot (any mode); counter = 0 from here; clears B.
+ * Keeps the slot's name. RN_ERR_OUT_OF_RANGE for slot >= RN_PRACTICE_SLOTS. */
+rn_status rn_practice_set_a(rn_session* s, uint32_t slot);
+/* length = frames emulated since this slot's A anchor (>= 1). RN_ERR_NOT_FOUND: no A;
+ * RN_ERR_DISCONTINUITY: seek/load/take switch since the anchor (also after reopening: goto A
+ * first); RN_ERR_INVALID_ARG: 0 frames. */
+rn_status rn_practice_set_b(rn_session* s, uint32_t slot);
+/* Enters PRACTICE if needed (remembering the take position), loads A, counter = 0. A loop:
+ * step until rn_practice_frame() == length_frames, then goto_a again. RN_ERR_NOT_FOUND: no A. */
+rn_status rn_practice_goto_a(rn_session* s, uint32_t slot);
+rn_status rn_practice_slot_get(const rn_session* s, uint32_t slot, rn_practice_slot_info* out);
+rn_status rn_practice_slot_rename(rn_session* s, uint32_t slot, const char* name); /* NOT_FOUND if empty */
+rn_status rn_practice_slot_clear(rn_session* s, uint32_t slot);                   /* OK if already empty */
+/* Frames since the current anchor (set_a / goto_a / practice start); 0 once continuity breaks. */
+uint64_t rn_practice_frame(const rn_session* s);
+rn_status rn_practice_get_status(const rn_session* s, rn_practice_status* out);
+/* Bitmask of slots discarded by rn_session_open with RN_OPEN_DROP_CORRUPT_PRACTICE (tell the user). */
+uint32_t rn_practice_dropped_slots(const rn_session* s);
 
 /* ------------------------------------------------------------------ takes (branches) */
 typedef struct rn_take_info {

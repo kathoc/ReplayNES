@@ -43,6 +43,10 @@ if [ -d "$SPK" ]; then
   sign -o runtime "$SPK/Versions/B/Updater.app"
   sign -o runtime "$SPK"
 fi
+# Syphon (streaming output; built from third_party/syphon): plain framework, no helpers inside.
+SYP="$OUT_APP/Contents/Frameworks/Syphon.framework"
+[ -d "$SYP" ] || { echo "missing $SYP"; exit 1; }
+sign "$SYP"
 sign "$OUT_APP"
 codesign --verify --deep --strict "$OUT_APP"
 

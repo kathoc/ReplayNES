@@ -19,8 +19,9 @@ const uint32_t kSegMagic = 0x47534E52;    // "RNSG"
 const uint32_t kStateMagic = 0x54534E52;  // "RNST"
 const uint32_t kJrnMagic = 0x4C4A4E52;    // "RNJL"
 const uint32_t kRecMagic = 0x524A4E52;    // "RNJR" (per journal record, for resync/corruption detection)
+const uint32_t kPracMagic = 0x53504E52;   // "RNPS" (practice slot A state)
 const uint32_t kBinVersion = 1;
-enum : uint8_t { J_SEG_NEW = 1, J_SEG_APPEND = 2, J_META = 3 };
+enum : uint8_t { J_SEG_NEW = 1, J_SEG_APPEND = 2, J_META = 3, J_PRACTICE_STATE = 4 };
 
 const char* kindName(CpKind k) {
   switch (k) {
@@ -43,6 +44,42 @@ bool persistable(CpKind k) { return k != CpKind::Dense; }
 std::string segRel(uint64_t id) { return "timeline/segments/" + std::to_string(id) + ".seg"; }
 std::string stateRel(uint64_t id) { return "states/" + std::to_string(id) + ".state"; }
 const char* kJournalRel = "journal/journal.bin";
+std::string practiceName(int slot, uint64_t seq) {
+  return "practice-" + std::to_string(slot) + "-" + std::to_string(seq) + ".state";
+}
+std::string practiceRel(int slot, uint64_t seq) { return "states/" + practiceName(slot, seq); }
+
+// Shared by the state file and the journal record: u8 slot, u64 stateSeq, u32 stateFormatVersion,
+// varint+bytes compat, u64 n, n bytes core state.
+void encodePracticePayload(ByteWriter& w, int slot, const PracticeSlot& p) {
+  w.u8(uint8_t(slot));
+  w.u64(p.stateSeq);
+  w.u32(p.stateFormatVersion);
+  w.str(p.compat);
+  w.u64(p.state.size());
+  w.bytes(p.state.data(), p.state.size());
+}
+bool decodePracticePayload(ByteReader& r, int& slot, uint64_t& seq, uint32_t& sfv, std::string& compat,
+                           std::vector<uint8_t>& data) {
+  slot = r.u8();
+  seq = r.u64();
+  sfv = r.u32();
+  compat = r.str(256);
+  uint64_t n = r.u64();
+  if (!r.ok() || n > r.remaining()) return false;
+  const uint8_t* p = r.ptr(size_t(n));
+  if (!p) return false;
+  data.assign(p, p + n);
+  return true;
+}
+std::vector<uint8_t> encodePracticeFile(int slot, const PracticeSlot& p) {
+  ByteWriter w;
+  w.u32(kPracMagic);
+  w.u32(kBinVersion);
+  encodePracticePayload(w, slot, p);
+  w.u32(crc32(w.buf.data(), w.buf.size()));
+  return w.buf;
+}
 
 std::vector<uint8_t> encodeSegment(const Segment& s) {
   ByteWriter w;
@@ -167,7 +204,7 @@ std::string ProjectStore::metaJson(const Session& s) const {
   Json m = Json::object();
   m.set("activeHead", s.tl_.head());
   m.set("cursorFrame", s.frame_);
-  m.set("mode", s.mode_ == Mode::Replay ? "replay" : "record");
+  m.set("mode", s.takeMode() == Mode::Replay ? "replay" : "record");  // practice is never persisted
   m.set("romPath", s.romPath_);
   m.set("nextBookmarkId", s.nextBookmarkId_);
   Json undo = Json::array();
@@ -189,6 +226,29 @@ std::string ProjectStore::metaJson(const Session& s) const {
     bms.push(e);
   }
   m.set("bookmarks", bms);
+  Json pr = Json::object();
+  pr.set("nextSeq", s.practiceSeq_);
+  Json slots = Json::array();
+  for (int i = 0; i < kPracticeSlots; ++i) {
+    const PracticeSlot& p = s.slots_[size_t(i)];
+    if (!p.used) continue;
+    Json e = Json::object();
+    e.set("slot", i);
+    e.set("name", p.name);
+    e.set("stateSeq", p.stateSeq);
+    e.set("file", practiceRel(i, p.stateSeq));
+    e.set("crc32", p.crc);
+    e.set("size", uint64_t(p.state.size()));
+    e.set("hasB", p.hasB);
+    e.set("lengthFrames", p.length);
+    e.set("takeFrame", p.hasTakeFrame ? Json(p.takeFrame) : Json());
+    e.set("takeId", p.takeId);
+    e.set("createdSeq", p.createdSeq);
+    e.set("updatedSeq", p.updatedSeq);
+    slots.push(e);
+  }
+  pr.set("slots", slots);
+  m.set("practice", pr);
   return m.dump(0);
 }
 
@@ -213,6 +273,50 @@ Status ProjectStore::applyMeta(Session& s, const std::string& text) {
     if (b.owner != 0 && !s.tl_.segment(b.owner)) return Error(Err::Corrupt, "bookmark refers to missing take");
     if (b.stateId && !s.cps_.get(b.stateId)) b.stateId = 0;  // state was never persisted; seek replays instead
     s.bookmarks_.push_back(b);
+  }
+  // Practice slots (absent in formatVersion 1). A states come from practicePool_ (files of the
+  // index generation + journal records); problems are kept per slot and decided after open.
+  for (auto& p : s.slots_) p = PracticeSlot();
+  for (auto& e : slotErr_) e = Status::Ok();
+  const Json& pr = m["practice"];
+  s.practiceSeq_ = uint64_t(pr["nextSeq"].asInt(0));
+  for (auto& e : pr["slots"].items()) {
+    int64_t i = e["slot"].asInt(-1);
+    if (i < 0 || i >= kPracticeSlots) return Error(Err::Corrupt, "practice slot index out of range");
+    PracticeSlot& p = s.slots_[size_t(i)];
+    if (p.used) return Error(Err::Corrupt, "duplicate practice slot " + std::to_string(i));
+    p.used = true;
+    p.name = e["name"].asString();
+    p.stateSeq = uint64_t(e["stateSeq"].asInt());
+    p.crc = uint32_t(e["crc32"].asInt());
+    p.hasB = e["hasB"].asBool();
+    p.length = uint64_t(e["lengthFrames"].asInt());
+    p.hasTakeFrame = e["takeFrame"].isNumber();
+    p.takeFrame = uint64_t(e["takeFrame"].asInt());
+    p.takeId = uint64_t(e["takeId"].asInt());
+    p.createdSeq = uint64_t(e["createdSeq"].asInt());
+    p.updatedSeq = uint64_t(e["updatedSeq"].asInt());
+    s.practiceSeq_ = std::max({s.practiceSeq_, p.createdSeq, p.updatedSeq, p.stateSeq});
+    const std::string what = "practice slot " + std::to_string(i) + " (" + practiceRel(int(i), p.stateSeq) + ")";
+    auto it = practicePool_.find({int(i), p.stateSeq});
+    if (it == practicePool_.end()) {
+      slotErr_[size_t(i)] = Error(Err::Corrupt, what + ": A state missing");
+      continue;
+    }
+    const PracticeBlob& b = it->second;
+    if (!b.status.ok()) {
+      slotErr_[size_t(i)] = b.status;
+      continue;
+    }
+    if (b.data.size() != uint64_t(e["size"].asInt()) || crc32(b.data.data(), b.data.size()) != p.crc) {
+      slotErr_[size_t(i)] = Error(Err::Corrupt, what + ": A state checksum mismatch");
+      continue;
+    }
+    p.state = b.data;
+    p.compat = b.compat;
+    p.stateFormatVersion = b.stateFormatVersion;
+    p.stateJournaled = true;
+    p.stateFiled = b.fromFile;
   }
   s.nextBookmarkId_ = uint64_t(m["nextBookmarkId"].asInt(1));
   for (auto& b : s.bookmarks_) if (b.id >= s.nextBookmarkId_) s.nextBookmarkId_ = b.id + 1;
@@ -264,7 +368,7 @@ Status ProjectStore::fullSave(Session& s) {
       if (kv.second.frame == s.frame_ && kv.second.owner == owner && persistable(kv.second.kind)) have = true;
     if (!have) {
       std::vector<uint8_t> st;
-      RN_TRY(s.captureState(st));
+      RN_TRY(s.cursorState(st));  // while practicing: the saved take state, not the practice run
       s.cps_.add(s.frame_, owner, CpKind::Head, s.core_->compatId(), s.core_->stateFormatVersion(), std::move(st));
     }
   }
@@ -282,6 +386,12 @@ Status ProjectStore::fullSave(Session& s) {
     if (!persistable(c.kind) || c.persisted) continue;
     std::vector<uint8_t> b = encodeState(c);
     RN_TRY(fs::writeFileAtomic(path(stateRel(c.id)), b.data(), b.size()));
+  }
+  for (int i = 0; i < kPracticeSlots; ++i) {
+    const PracticeSlot& p = s.slots_[size_t(i)];
+    if (!p.used || p.stateFiled) continue;
+    std::vector<uint8_t> b = encodePracticeFile(i, p);
+    RN_TRY(fs::writeFileAtomic(path(practiceRel(i, p.stateSeq)), b.data(), b.size()));
   }
 
   // 2. index (commit point for timeline content)
@@ -319,6 +429,8 @@ Status ProjectStore::fullSave(Session& s) {
     liveStates.insert(std::to_string(c.id) + ".state");
   }
   idx.set("checkpoints", cps);
+  for (int i = 0; i < kPracticeSlots; ++i)
+    if (s.slots_[size_t(i)].used) liveStates.insert(practiceName(i, s.slots_[size_t(i)].stateSeq));
   std::string meta = metaJson(s);
   Json metaObj;
   Json::parse(meta, metaObj);
@@ -334,6 +446,8 @@ Status ProjectStore::fullSave(Session& s) {
   }
   for (auto& kv : s.cps_.all())
     if (persistable(kv.second.kind)) s.cps_.getMutable(kv.first)->persisted = true;
+  for (auto& p : s.slots_)
+    if (p.used) p.stateFiled = p.stateJournaled = true;
   lastMeta_ = meta;
 
   // 3. bookmark mirror, manifest (last), journal reset, GC
@@ -342,6 +456,11 @@ Status ProjectStore::fullSave(Session& s) {
   bm.set("note", "mirror of timeline/index.json meta.bookmarks; index.json is authoritative");
   bm.set("bookmarks", metaObj["bookmarks"]);
   RN_TRY(fs::writeFileAtomic(path("metadata/bookmarks.json"), bm.dump()));
+  Json pm = Json::object();
+  pm.set("generation", newGen);
+  pm.set("note", "mirror of timeline/index.json meta.practice; index.json is authoritative");
+  pm.set("practice", metaObj["practice"]);
+  RN_TRY(fs::writeFileAtomic(path("metadata/practice.json"), pm.dump()));
 
   Json man = Json::object();
   man.set("format", "replaynes-project");
@@ -399,6 +518,15 @@ Status ProjectStore::autosave(Session& s) {
     }
     pend.push_back({&seg, seg.records.size()});
   }
+  std::vector<PracticeSlot*> pendSlots;
+  for (int i = 0; i < kPracticeSlots; ++i) {
+    PracticeSlot& p = s.slots_[size_t(i)];
+    if (!p.used || p.stateJournaled) continue;
+    ByteWriter pw;
+    encodePracticePayload(pw, i, p);
+    putRecord(w, J_PRACTICE_STATE, pw.buf);  // before META, which references it
+    pendSlots.push_back(&p);
+  }
   std::string meta = metaJson(s);
   bool metaChanged = meta != lastMeta_;
   if (metaChanged) putRecord(w, J_META, std::vector<uint8_t>(meta.begin(), meta.end()));
@@ -416,6 +544,7 @@ Status ProjectStore::autosave(Session& s) {
     p.seg->journalCreated = true;
     p.seg->journalCount = p.newCount;
   }
+  for (PracticeSlot* p : pendSlots) p->stateJournaled = true;
   if (metaChanged) lastMeta_ = meta;
   return Status::Ok();
 }
@@ -432,7 +561,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   if (man["format"].asString() != "replaynes-project") return Error(Err::Corrupt, "not a ReplayNES project");
   int64_t fv = man["formatVersion"].asInt(-1);
   if (fv < 1) return Error(Err::Corrupt, "manifest has no formatVersion");
-  if (fv > int64_t(kProjectFormatVersion))
+  if (fv > int64_t(kProjectFormatVersion))  // 1..kProjectFormatVersion are read
     return Error(Err::UnsupportedFormat, "project format " + std::to_string(fv) + " is newer than supported " +
                                              std::to_string(kProjectFormatVersion));
   if (man["inputFormatVersion"].asInt(-1) != kInputFormatVersion)
@@ -533,6 +662,38 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   s->cps_.setNextId(uint64_t(idx["nextCheckpointId"].asInt(1)));
 
   if (!idx["meta"].isObject()) return Error(Err::Corrupt, "index has no meta");
+  // Practice A states referenced by the index (validated now, decided per slot later).
+  for (auto& e : idx["meta"]["practice"]["slots"].items()) {
+    int64_t slot = e["slot"].asInt(-1);
+    uint64_t seq = uint64_t(e["stateSeq"].asInt());
+    if (slot < 0 || slot >= kPracticeSlots) continue;  // applyMeta reports it
+    const std::string rel = practiceRel(int(slot), seq);
+    PracticeBlob blob;
+    blob.fromFile = true;
+    std::vector<uint8_t> b;
+    Status st = fs::readFile(ps->path(rel), b);
+    if (st.ok() && b.size() < 12) st = Error(Err::Corrupt, "practice state truncated: " + rel);
+    if (st.ok()) {
+      uint32_t stored = uint32_t(b[b.size() - 4]) | uint32_t(b[b.size() - 3]) << 8 |
+                        uint32_t(b[b.size() - 2]) << 16 | uint32_t(b[b.size() - 1]) << 24;
+      if (crc32(b.data(), b.size() - 4) != stored) st = Error(Err::Corrupt, "practice state checksum mismatch: " + rel);
+    }
+    if (st.ok()) {
+      ByteReader r(b.data(), b.size() - 4);
+      int fslot = -1;
+      uint64_t fseq = 0;
+      if (r.u32() != kPracMagic || r.u32() != kBinVersion ||
+          !decodePracticePayload(r, fslot, fseq, blob.stateFormatVersion, blob.compat, blob.data) || r.remaining() ||
+          fslot != slot || fseq != seq)
+        st = Error(Err::Corrupt, "bad practice state file: " + rel);
+    } else if (st.code == Err::NotFound) {
+      st = Error(Err::Corrupt, "missing practice state file: " + rel);
+    }
+    if (st.ok() && blob.compat != compat)
+      st = Error(Err::CoreMismatch, "practice state " + rel + " was produced by core '" + blob.compat + "'");
+    blob.status = st;
+    ps->practicePool_[{int(slot), seq}] = std::move(blob);
+  }
   RN_TRY(ps->applyMeta(*s, idx["meta"].dump(0)));
   ps->lastMeta_ = ps->metaJson(*s);
 
@@ -601,6 +762,20 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
             seg.journalCount = seg.records.size();
             break;
           }
+          case J_PRACTICE_STATE: {
+            PracticeBlob blob;
+            int slot = -1;
+            uint64_t seq = 0;
+            if (!decodePracticePayload(p, slot, seq, blob.stateFormatVersion, blob.compat, blob.data) || p.remaining() ||
+                slot >= kPracticeSlots)
+              return Error(Err::Corrupt, "bad journal PRACTICE_STATE");
+            if (blob.compat != compat)
+              blob.status = Error(Err::CoreMismatch, "journaled practice state of slot " + std::to_string(slot) +
+                                                         " was produced by core '" + blob.compat + "'");
+            auto it = ps->practicePool_.find({slot, seq});
+            if (it == ps->practicePool_.end() || !it->second.status.ok()) ps->practicePool_[{slot, seq}] = std::move(blob);
+            break;
+          }
           case J_META:
             lastMetaText.assign(reinterpret_cast<const char*>(body + 1), len - 1);
             RN_TRY(ps->applyMeta(*s, lastMetaText));
@@ -618,6 +793,20 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
     return js;
   }
 
+  // Practice slots whose A state is missing/corrupt: explicit error unless the caller opted in.
+  for (int i = 0; i < kPracticeSlots; ++i) {
+    const Status& st = ps->slotErr_[size_t(i)];
+    if (st.ok()) continue;
+    if (!opt.dropCorruptPractice) {
+      if (st.code == Err::CoreMismatch) return st;
+      return Error(Err::Corrupt, st.message + " (reopen with drop-corrupt-practice to discard this A/B slot)");
+    }
+    rep.droppedPracticeSlots.push_back(st.message);
+    s->slots_[size_t(i)] = PracticeSlot();
+    s->droppedPracticeMask_ |= 1u << i;
+  }
+  ps->practicePool_.clear();
+
   RN_TRY(s->tl_.validate());
   if (s->frame_ > s->tl_.length()) return Error(Err::Corrupt, "cursor beyond take end");
   for (auto& b : s->bookmarks_)
@@ -631,7 +820,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
 
   s->recovered_ = rep.journalApplied;
   // Recovered journal data / a relocated ROM are not in a committed full save yet.
-  if (rep.journalApplied || romPath != romJ["lastPath"].asString()) s->changeSeq_ = 1;
+  if (rep.journalApplied || romPath != romJ["lastPath"].asString() || s->droppedPracticeMask_) s->changeSeq_ = 1;
   s->store_ = std::move(ps);
   if (report) *report = rep;
   out = std::move(s);
