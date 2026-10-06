@@ -75,6 +75,12 @@
 	<string>ReplayNES - GPL-2.0-or-later. Includes Nestopia UE (GPL-2.0-or-later).</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/kathoc/ReplayNES/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>epSlR4TX073wn6yhEigPygjpRMr2K39iu9ZbQg3OPgQ=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

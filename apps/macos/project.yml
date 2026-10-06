@@ -9,10 +9,17 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+packages:
+  # Auto-update framework (MIT-style license; see THIRD_PARTY_NOTICES.md). Pinned for
+  # reproducible release builds; its bin/ tools (generate_keys, sign_update) are used by
+  # scripts/release.sh from the resolved SPM artifacts.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 settings:
   base:
-    MARKETING_VERSION: "0.1.1"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "0.1.2"
+    CURRENT_PROJECT_VERSION: "3"
     SWIFT_VERSION: "5.0"
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO
@@ -51,6 +58,7 @@ targets:
       - path: Sources/App
     dependencies:
       - target: Engine
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.replaynes.ReplayNES
@@ -72,6 +80,12 @@ targets:
         NSHumanReadableCopyright: "ReplayNES - GPL-2.0-or-later. Includes Nestopia UE (GPL-2.0-or-later)."
         NSSupportsAutomaticGraphicsSwitching: true
         GCSupportsControllerUserInteraction: true
+        # Sparkle auto-update. The feed is the appcast.xml asset of the latest GitHub release
+        # (scripts/release.sh). SUEnableAutomaticChecks is deliberately unset so Sparkle asks the
+        # user for permission before the first automatic check; no system profile is sent.
+        SUFeedURL: https://github.com/kathoc/ReplayNES/releases/latest/download/appcast.xml
+        SUPublicEDKey: epSlR4TX073wn6yhEigPygjpRMr2K39iu9ZbQg3OPgQ=
+        SUEnableSystemProfiling: false
         GCSupportedGameControllers:
           - ProfileName: ExtendedGamepad
           - ProfileName: MicroGamepad

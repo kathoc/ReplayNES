@@ -16,7 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --autoplay          with --rom: start running in record mode immediately
         //   --snapshot <png> [--snapshot-delay s] [--quit-after-snapshot]  capture window + stats
         //   --inject-keys "<sec>:<keyCode>:<d|u>,..."  synthetic key events (TestHooks.swift)
+        //   --no-updater        do not start Sparkle (also implied by --snapshot / --inject-keys)
+        //   --update-check-now  see Updater.swift
         let args = ProcessInfo.processInfo.arguments
+        if !args.contains("--no-updater") && !args.contains("--snapshot") && !args.contains("--inject-keys") {
+            UpdaterModel.shared.start(arguments: args)
+        }
         func arg(_ name: String) -> String? {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
@@ -59,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Also the path Sparkle uses before installing an update (it sends a normal quit event):
+    /// unsaved changes are offered for saving (the user may cancel, postponing the update) and
+    /// the emulation thread is stopped before the bundle is replaced.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if !model.confirmDiscardIfNeeded() { return .terminateCancel }
         model.shutdown()
@@ -95,6 +103,9 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesCommand(updates: UpdaterModel.shared)
+        }
         CommandGroup(replacing: .newItem) {
             Button("新規プロジェクト…") { model.newProject() }.keyboardShortcut("n")
             Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])

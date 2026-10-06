@@ -104,8 +104,14 @@ final class EmulationController {
         return sem.wait(timeout: .now() + timeout) == .success ? out : nil
     }
 
+    /// Stops the emulation thread and releases the session (closing its files) on that thread
+    /// before returning, so quitting - including Sparkle's install-and-relaunch - never races
+    /// with an in-flight frame or autosave.
     func shutdown() {
-        _ = sync(timeout: 10) { emu in emu.running = false }
+        _ = sync(timeout: 10) { emu in
+            emu.running = false
+            emu.session = nil
+        }
     }
 
     private func onMain(_ f: @escaping () -> Void) { DispatchQueue.main.async(execute: f) }

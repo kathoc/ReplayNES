@@ -1,4 +1,4 @@
-// Settings: key/controller remap, hotkeys, turbo/SOCD, display/audio, general.
+// Settings: key/controller remap, hotkeys, turbo/SOCD, display/audio, general, updates.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -9,6 +9,7 @@ struct SettingsView: View {
             BindingsTab(groups: [.hotkey]).tabItem { Label("ホットキー", systemImage: "keyboard") }
             TurboTab().tabItem { Label("連射・同時押し", systemImage: "bolt") }
             DisplayTab().tabItem { Label("表示・音声", systemImage: "display") }
+            UpdatesTab().tabItem { Label("アップデート", systemImage: "arrow.triangle.2.circlepath") }
         }
         .frame(width: 620, height: 520)
     }
