@@ -132,6 +132,16 @@ void EmuHost::publishPicture(Tick* t) {
   if (flash_) rn_flash_filter_process(flash_, rn_video(session_), display_.data(), &info);
   flashAltered_ = info.altered != 0;
   pictureDirty_ = true;
+  rn_video_indices_info vi{};
+  signal_ = Signal();
+  if (rn_video_indices(session_, &vi) == RN_OK && vi.codes) {
+    signal_.codes = vi.codes;
+    signal_.burstPhase = vi.burst_phase;
+    signal_.ordinal = vi.frame;
+  } else {
+    signal_.ordinal = rn_frame(session_);
+  }
+  signal_.flashAltered = flashAltered_;
   (void)t;
 }
 

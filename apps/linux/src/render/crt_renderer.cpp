@@ -493,6 +493,11 @@ void CrtRenderer::configure(const CrtSettings& newSettings, int outputWidth, int
   buildCv_.notify_all();
 }
 
+bool CrtRenderer::planPending() {
+  std::lock_guard<std::mutex> lk(lock_);
+  return hasPending_ || hasInFlight_ || builtTube_ != nullptr;
+}
+
 void CrtRenderer::buildLoop() {
   std::unique_lock<std::mutex> lk(lock_);
   for (;;) {

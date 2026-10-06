@@ -108,7 +108,7 @@ std::string PerfStats::finish(const RunInfo& info, const std::string& statsPath,
     } else {
       unconfirmed += 1;
     }
-    if (prev && r.frame == prev->frame + 1 && r.displayed > 0 && prev->displayed > 0 && r.refresh > 0) {
+    if (prev && r.frame > prev->frame && r.frame <= prev->frame + uint64_t(std::max(1, r.frames)) && r.displayed > 0 && prev->displayed > 0 && r.refresh > 0) {
       double actual = r.displayed - prev->displayed;
       intervals.push_back(actual);
       pairs += 1;
@@ -147,11 +147,13 @@ std::string PerfStats::finish(const RunInfo& info, const std::string& statsPath,
                 "\"seconds\":%.1f,\"refreshHz\":%.3f,\"emulatedFPS\":%.3f,\"presentedFPS\":%.3f,\"liveFrames\":%llu,"
                 "\"judderPerMin\":%.2f,\"intervalJudderPerMin\":%.2f,\"missedTargets\":%llu,\"unconfirmedFrames\":%llu,"
                 "\"skippedRefreshes\":%llu,\"audioUnderruns\":%llu,\"audioRatio\":%.5f,\"audioFillMs\":%.1f,"
-                "\"cpuProcess\":%.2f,\"cpuFrameThread\":%.2f,\"backlogDrains\":%llu,",
+                "\"cpuProcess\":%.2f,\"cpuFrameThread\":%.2f,\"backlogDrains\":%llu,\"multiFramePresents\":%llu,"
+                "\"droppedFrames\":%llu,\"crt\":\"%s\",",
                 dt, refresh > 0 ? 1 / refresh : 0.0, emuFps, presFps, (unsigned long long)live, judder / mins,
                 intervalJudder / mins, (unsigned long long)missed, (unsigned long long)unconfirmed,
                 (unsigned long long)skipped_, (unsigned long long)(under1_ - under0_), ratio_, fillMs_, cpuProc, cpuThread,
-                (unsigned long long)info.backlogDrains);
+                (unsigned long long)info.backlogDrains, (unsigned long long)info.multiFramePresents,
+                (unsigned long long)info.droppedFrames, esc(info.crt).c_str());
   js << head << body << "\"stages\":{" << jstat("wake->sample", sJit) << "," << jstat("sample->submit", sWork) << "," << jstat("events", sPoll) << "," << jstat("emulate", sEmu) << "," << jstat("ui", sUi) << ","
      << jstat("draw+present", sDraw) << "," << jstat("acquireWait", sAcq) << ","
      << jstat("submit->onScreen", sGpu) << "," << jstat("sample->onScreen", sTotal) << ","
@@ -200,6 +202,9 @@ std::string PerfStats::finish(const RunInfo& info, const std::string& statsPath,
   h << line;
   std::snprintf(line, sizeof line, "audio underruns %llu  ratio %.5f  fill %.1f ms   CPU %% of one core: process %.1f  frame thread %.1f\n",
                 (unsigned long long)(under1_ - under0_), ratio_, fillMs_, cpuProc, cpuThread);
+  h << line;
+  std::snprintf(line, sizeof line, "presents with 2 emulated frames %llu  dropped frames %llu  CRT %s\n",
+                (unsigned long long)info.multiFramePresents, (unsigned long long)info.droppedFrames, info.crt.c_str());
   h << line;
   return h.str();
 }

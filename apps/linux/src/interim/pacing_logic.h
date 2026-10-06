@@ -15,6 +15,7 @@
 #include <optional>
 #include <vector>
 
+#include "replaynes/frontend.h"
 #include "replaynes/replaynes.h"
 
 namespace rnl::interim {
@@ -28,9 +29,12 @@ constexpr double kNesFramePeriod = double(RN_FPS_DEN) / double(RN_FPS_NUM);
 ///  * Locked 3:2: refresh x 1.5 == NES period within 0.5 % (90 Hz panels, e.g. Steam Deck OLED):
 ///    frames alternate 2 and 1 refreshes on screen (a regular pattern at exactly refresh / 1.5).
 ///  * Free: other rates keep the NTSC rate and take the refresh nearest to the ideal frame time.
+///  * Slower: displays slower than the NTSC rate (40-59 Hz, nested compositors, 30 Hz): every
+///    refresh shows a frame and up to 2 frames are emulated for it (shared core
+///    rnf_frame_budget), so emulation keeps the NTSC rate.
 struct Cadence {
   static constexpr double kLockTolerance = 0.005;
-  enum class Kind { unknown, locked, three_two, free };
+  enum class Kind { unknown, locked, three_two, free, slower };
   Kind kind = Kind::unknown;
   int k = 0;  // refreshes per frame when locked
 
@@ -43,6 +47,8 @@ struct Cadence {
       c.k = int(kk);
     } else if (std::fabs(1.5 * refresh - framePeriod) / framePeriod <= kLockTolerance) {
       c.kind = Kind::three_two;
+    } else if (rnf_display_slower_than_frames(refresh, framePeriod)) {
+      c.kind = Kind::slower;
     } else {
       c.kind = Kind::free;
     }

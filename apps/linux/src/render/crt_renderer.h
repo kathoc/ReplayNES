@@ -83,6 +83,8 @@ class CrtRenderer {
   /// previous plan keeps rendering until then, like nesterm's worker).
   void configure(const CrtSettings& s, int outputWidth, int outputHeight, bool synchronous = false);
   const CrtSettings& settings() const { return settings_; }
+  /// A tube plan is queued, being built, or built and not adopted yet.
+  bool planPending();
 
   /// Records one emulated frame's compute passes. `ordinal` = machine frame ordinal (persistence
   /// history + RF noise key); a non-increasing ordinal is a discontinuity: receiver, supply and

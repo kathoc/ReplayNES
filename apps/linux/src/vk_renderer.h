@@ -18,6 +18,9 @@
 #include <utility>
 #include <vector>
 
+#include "render/crt_display.h"
+#include "render/post_process.h"
+
 struct ImDrawData;
 
 namespace rnl {
@@ -33,6 +36,9 @@ struct GameRect {
   bool visible = false;
   float x = 0, y = 0, w = 0, h = 0;  // pixels, origin top-left
   int crop = 0;                      // source pixels hidden on every side
+  // CRT Display: the 4:3 tube face (no 8:7), fitted to the same height (MetalView.crtViewport).
+  CrtRect crt;
+  double crtCrop = 0;                // tube rows hidden at the top and bottom (fraction)
 };
 
 /// Destination rectangle of the game picture in a drawable (MetalView.viewport on macOS).
@@ -50,8 +56,22 @@ class VkRenderer {
   uint32_t imageCount() const { return uint32_t(images_.size()); }
 
   /// Draws (newPicture: upload it first; nullptr keeps the last one) and presents. Returns the
-  /// present id (0 when nothing was presented, e.g. a minimised window).
-  uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui);
+  /// present id (0 when nothing was presented, e.g. a minimised window). `signal`: the CRT side
+  /// channel of newPicture (render/post_process.h).
+  uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui,
+                          const FrameSignal* signal = nullptr);
+
+  /// Display post-process (CRT on/off + parameters). Takes effect with the next draw; switching
+  /// the CRT off frees its GPU resources.
+  void setPostProcess(const DisplayPostProcess& pp) { post_ = pp; }
+  const DisplayPostProcess& postProcess() const { return post_; }
+  PostProcessStatus postProcessStatus() const { return status_; }
+  /// Seconds the GPU may spend on a new picture between the commit and its target vblank at the
+  /// maximum input lead (build-ahead decision; 0 = unknown, never build ahead).
+  void setGpuBudget(double seconds) { gpuBudget_ = seconds; }
+  /// GPU time a new picture's build adds before it can be shown (CRT on, not built ahead): the
+  /// frame loop samples input that much earlier (it is part of the sample -> screen work).
+  double gpuLeadExtra() const { return status_.crtShown && !crt_.pipelined() ? crt_.gpuP90() : 0; }
 
   /// Presents confirmed on screen since the last call, in present order. A waiter thread calls
   /// vkWaitForPresentKHR for every present id (the frame loop never blocks on it, so the input
@@ -112,6 +132,14 @@ class VkRenderer {
     void* stagingPtr = nullptr;
   };
   Slot slots_[kSlots];
+  VkCommandBuffer buildCmds_[kSlots] = {};  // CRT build-ahead: recorded after the present's commands
+  CrtDisplay crt_;
+  DisplayPostProcess post_;
+  PostProcessStatus status_;
+  bool crtSupported_ = false;
+  double gpuBudget_ = 0;
+  DisplayPostProcess shownPost_;
+  CrtRect shownCrt_;
   int slot_ = 0;
   VkCommandPool pool_ = VK_NULL_HANDLE;
 

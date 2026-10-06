@@ -33,6 +33,8 @@ struct FrameRecord {
   double event = 0;       // game-button event this frame's sample picked up (0 = none)
   double lead = 0;        // input lead used (s)
   double refresh = 0;     // refresh estimate (s)
+  int frames = 1;         // frames emulated for this present (2 on displays slower than 60.0988 Hz)
+  double gpuExtra = 0;    // CRT build GPU time counted into the work (s)
 };
 
 struct RunInfo {
@@ -40,6 +42,8 @@ struct RunInfo {
   int width = 0, height = 0;
   bool fullscreen = false, presentWait = false;
   uint64_t backlogDrains = 0;
+  uint64_t multiFramePresents = 0, droppedFrames = 0;  // displays slower than the NES rate
+  std::string crt = "off";                             // CRT display status
 };
 
 class PerfStats {

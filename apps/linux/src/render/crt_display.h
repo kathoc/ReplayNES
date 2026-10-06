@@ -43,6 +43,8 @@ class CrtDisplay {
   /// Records the build passes of the stored picture. False when nothing was recorded (no plan yet).
   bool build(VkCommandBuffer cmd);
   bool canShow() const { return renderer_ && renderer_->hasOutput(); }
+  /// A tube plan is being built / waits to be adopted by the next build.
+  bool planPending() { return renderer_ && renderer_->planPending(); }
   void show(VkCommandBuffer cmd, int targetWidth, int targetHeight, const CrtRect& dst, double cropFraction);
 
   /// Once per frame: GPU times of finished builds -> build-ahead / adaptive resolution.

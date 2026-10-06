@@ -48,6 +48,14 @@ GameRect computeGameRect(int width, int height, bool integerScale, bool par87, b
   r.w = float(dw);
   r.h = float(dh);
   r.visible = dw > 0 && dh > 0;
+  // CRT: full 4:3 raster minus the cropped rows, at the plain (1:1 pixel) viewport's height.
+  r.crtCrop = (hideOverscan ? 8.0 : 0.0) / 240;
+  double aspect = (4.0 / 3.0) / (1 - 2 * r.crtCrop);
+  double ps = std::min(width / srcW, height / srcH);
+  if (integerScale && ps >= 1) ps = std::floor(ps);
+  double ch = std::round(srcH * ps), cw = std::round(ch * aspect);
+  if (cw > width) { cw = width; ch = std::round(cw / aspect); }
+  r.crt = CrtRect{float(std::round((width - cw) / 2)), float(std::round((height - ch) / 2)), float(cw), float(ch)};
   return r;
 }
 
@@ -96,6 +104,7 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
     ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     ai.commandBufferCount = 1;
     vkAllocateCommandBuffers(device_, &ai, &s.cmd);
+    vkAllocateCommandBuffers(device_, &ai, &buildCmds_[&s - slots_]);
     VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device_, &fci, nullptr, &s.fence);
@@ -164,6 +173,17 @@ bool VkRenderer::createDevice(std::string* error) {
   if (presentWait_) {
     exts.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
     exts.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+  }
+  // CRT Display (render/crt_renderer.h) needs push descriptors.
+  std::string crtWhy;
+  crtSupported_ = CrtRenderer::supported(phys_, &crtWhy);
+  status_.crtAvailable = crtSupported_;
+  if (crtSupported_) {
+    uint32_t cn = 0;
+    const char* const* ce = CrtRenderer::requiredDeviceExtensions(&cn);
+    for (uint32_t i = 0; i < cn; ++i) exts.push_back(ce[i]);
+  } else {
+    status_.crtError = crtWhy;
   }
 
   float prio = 1.0f;
@@ -485,7 +505,20 @@ bool VkRenderer::initImGui() {
   return imguiReady_;
 }
 
-uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui) {
+uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
+  // CRT Display on / off (created on first use, freed when switched off).
+  bool crtOn = post_.crt && crtSupported_;
+  if (crtOn && !crt_.active()) {
+    std::string e;
+    if (!crt_.ensure(CrtVulkanContext{phys_, device_, queueFamily_, queue_}, renderPass_, &e)) {
+      status_.crtError = e;
+      std::fprintf(stderr, "CRT: %s\n", e.c_str());
+      post_.crt = false;
+      crtOn = false;
+    }
+  }
+  if (!crtOn && crt_.active()) crt_.release();  // waits for the device (the toggle, not the frame loop)
+  status_.crtShown = false;
   int w = 0, h = 0;
   SDL_GetWindowSizeInPixels(window_, &w, &h);
   if (needRecreate_ || swapchain_ == VK_NULL_HANDLE || extent_.width == 0 ||
@@ -537,6 +570,22 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
                          nullptr, 1, &toRead);
     hasPicture_ = true;
   }
+  // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
+  // here before the show pass (or, built ahead, after this present: the next one shows it).
+  bool crtBuildAfter = false;
+  if (crtOn) {
+    crt_.update(gpuBudget_, post_.allowBuildAhead, post_.adaptiveResolution);
+    if (newPicture) crt_.store(newPicture, signal);
+    if (rect.visible) crt_.configure(post_, rect.crt, rect.crtCrop);
+    bool changed = shownPost_ != post_ || shownCrt_.w != rect.crt.w || shownCrt_.h != rect.crt.h;
+    bool needBuild = crt_.hasFrame() && (newPicture || changed || !crt_.canShow() || crt_.planPending());
+    if (needBuild) {
+      if (crt_.pipelined() && crt_.canShow()) crtBuildAfter = true;
+      else crt_.build(cmd);
+    }
+    shownPost_ = post_;
+    shownCrt_ = rect.crt;
+  }
   VkClearValue clear{};
   clear.color = {{0.f, 0.f, 0.f, 1.f}};
   VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -546,7 +595,10 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   rbi.clearValueCount = 1;
   rbi.pClearValues = &clear;
   vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
-  if (rect.visible && hasPicture_) {
+  if (crtOn && rect.visible && crt_.canShow()) {
+    crt_.show(cmd, int(extent_.width), int(extent_.height), rect.crt, rect.crtCrop);
+    status_.crtShown = true;
+  } else if (rect.visible && hasPicture_) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
     VkViewport v{rect.x, rect.y, rect.w, rect.h, 0.f, 1.f};
     vkCmdSetViewport(cmd, 0, 1, &v);
@@ -565,15 +617,29 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   vkEndCommandBuffer(cmd);
 
   VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  si.waitSemaphoreCount = 1;
-  si.pWaitSemaphores = &s.acquired;
-  si.pWaitDstStageMask = &waitStage;
-  si.commandBufferCount = 1;
-  si.pCommandBuffers = &cmd;
-  si.signalSemaphoreCount = 1;
-  si.pSignalSemaphores = &renderDone_[idx];
-  vkQueueSubmit(queue_, 1, &si, s.fence);
+  VkSubmitInfo si[2]{{VK_STRUCTURE_TYPE_SUBMIT_INFO}, {VK_STRUCTURE_TYPE_SUBMIT_INFO}};
+  si[0].waitSemaphoreCount = 1;
+  si[0].pWaitSemaphores = &s.acquired;
+  si[0].pWaitDstStageMask = &waitStage;
+  si[0].commandBufferCount = 1;
+  si[0].pCommandBuffers = &cmd;
+  si[0].signalSemaphoreCount = 1;
+  si[0].pSignalSemaphores = &renderDone_[idx];
+  uint32_t submits = 1;
+  VkCommandBuffer bcmd = buildCmds_[slot_];
+  if (crtBuildAfter) {
+    // Built ahead: the present above only waits for its own commands; the new picture's passes
+    // run after it (same queue, ordered by the CRT's barriers) and the next present shows it.
+    vkResetCommandBuffer(bcmd, 0);
+    vkBeginCommandBuffer(bcmd, &bi);
+    crt_.build(bcmd);
+    vkEndCommandBuffer(bcmd);
+    si[1].commandBufferCount = 1;
+    si[1].pCommandBuffers = &bcmd;
+    submits = 2;
+  }
+  vkQueueSubmit(queue_, submits, si, s.fence);
+  if (crtOn) crt_.fillStatus(&status_);
 
   uint64_t id = ++presentId_;
   VkPresentIdKHR pid{VK_STRUCTURE_TYPE_PRESENT_ID_KHR};
@@ -649,6 +715,7 @@ void VkRenderer::shutdown() {
   vkDeviceWaitIdle(device_);
   if (imguiReady_) ImGui_ImplVulkan_Shutdown();
   imguiReady_ = false;
+  crt_.release();
   destroySwapchain();
   if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
   if (pipeLayout_) vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);

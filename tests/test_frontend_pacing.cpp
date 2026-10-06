@@ -360,3 +360,104 @@ TEST_CASE("callback regularity") {
   CHECK(near(rnf_callback_regularity_take_window_max(r), 2 * P, 1e-9));
   rnf_callback_regularity_free(r);
 }
+
+// ------------------------------------------------------------------ displays slower than 60.0988 Hz
+TEST_CASE("displays slower than the frame rate are detected") {
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 45, 0), 1);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 40, 0), 1);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 59, 0), 1);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 50, 0), 1);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 30, 0), 1);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 60, 0), 0);     // locked (within 0.5 %)
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 59.94, 0), 0);  // locked
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 90, 0), 0);
+  CHECK_EQ(rnf_display_slower_than_frames(1.0 / 75, 0), 0);
+  CHECK_EQ(rnf_display_slower_than_frames(0, 0), 0);
+}
+
+namespace {
+struct BudgetRun {
+  std::vector<int> frames;
+  double maxLag = 0;  // |displayed time - emulated time| (s)
+  uint64_t total = 0;
+  double shown = 0;
+};
+BudgetRun runBudget(double refresh, int presents, double jitter = 0, unsigned seed = 1) {
+  rnf_frame_budget* b = rnf_frame_budget_new(0);
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> u(-jitter, jitter);
+  BudgetRun r;
+  double shown = 0, emulated = 0;
+  for (int i = 0; i < presents; ++i) {
+    double interval = refresh + (jitter > 0 ? u(rng) : 0);
+    shown += interval;
+    int n = rnf_frame_budget_frames(b, interval, RNF_MAX_FRAMES_PER_PRESENT);
+    r.frames.push_back(n);
+    r.total += uint64_t(n);
+    emulated += double(n) * P;
+    r.maxLag = std::max(r.maxLag, std::fabs(shown - emulated));
+  }
+  r.shown = shown;
+  rnf_frame_budget_free(b);
+  return r;
+}
+}  // namespace
+
+TEST_CASE("45 Hz: 1,2,1,1,2,... keeps the NES rate") {
+  BudgetRun r = runBudget(1.0 / 45, 4500);  // 100 s
+  CHECK(std::fabs(double(r.total) - 100.0 / P) <= 1.0);
+  CHECK(r.maxLag <= P / 2 + 1e-9);
+  for (size_t i = 0; i < r.frames.size(); ++i) {
+    CHECK(r.frames[i] == 1 || r.frames[i] == 2);
+    if (i > 0) CHECK(!(r.frames[i] == 2 && r.frames[i - 1] == 2));  // ratio 1.34: never two doubles in a row
+  }
+}
+
+TEST_CASE("40 Hz alternates 1 and 2 frames") {
+  BudgetRun r = runBudget(1.0 / 40, 4000);
+  CHECK(std::fabs(double(r.total) - 100.0 / P) <= 1.0);
+  CHECK(r.maxLag <= P / 2 + 1e-9);
+  int doubles = 0;
+  for (int n : r.frames) doubles += n == 2;
+  CHECK(std::abs(doubles - 2000) <= 100);  // 40 x 1.5 = 60.1 Hz: about every second present
+}
+
+TEST_CASE("59 Hz needs a double frame about once a second") {
+  BudgetRun r = runBudget(1.0 / 59, 5900);  // 100 s
+  CHECK(std::fabs(double(r.total) - 100.0 / P) <= 1.0);
+  int doubles = 0;
+  for (int n : r.frames) doubles += n == 2;
+  CHECK(doubles >= 100 && doubles <= 120);  // 60.0988 - 59 = 1.1 frames/s
+}
+
+TEST_CASE("jittered present intervals keep the average rate") {
+  BudgetRun r = runBudget(1.0 / 48, 4800, 0.003, 7);
+  CHECK(std::fabs(double(r.total) - r.shown / P) <= 1.0);
+  CHECK(r.maxLag <= P / 2 + 0.004);
+}
+
+TEST_CASE("30 Hz and slower: two frames per present, the rest is dropped") {
+  BudgetRun r = runBudget(1.0 / 30, 300);
+  for (int n : r.frames) CHECK_EQ(n, 2);
+  rnf_frame_budget* b = rnf_frame_budget_new(0);
+  for (int i = 0; i < 300; ++i) rnf_frame_budget_frames(b, 1.0 / 25, RNF_MAX_FRAMES_PER_PRESENT);
+  CHECK(rnf_frame_budget_dropped(b) > 0);
+  CHECK(rnf_frame_budget_debt(b) <= P / 2 + 1e-12);
+  rnf_frame_budget_free(b);
+}
+
+TEST_CASE("a stall is not caught up in a burst") {
+  rnf_frame_budget* b = rnf_frame_budget_new(0);
+  for (int i = 0; i < 10; ++i) rnf_frame_budget_frames(b, 1.0 / 45, 2);
+  CHECK_EQ(rnf_frame_budget_frames(b, 0.5, 2), 2);
+  CHECK(rnf_frame_budget_debt(b) <= P / 2 + 1e-12);
+  CHECK(rnf_frame_budget_dropped(b) >= 25);
+  int next = rnf_frame_budget_frames(b, 1.0 / 45, 2);
+  CHECK(next == 1 || next == 2);
+  rnf_frame_budget_reset(b);
+  CHECK_EQ(rnf_frame_budget_debt(b), 0.0);
+  CHECK_EQ(rnf_frame_budget_frames(b, 1.0 / 60, 2), 1);   // faster displays: always one
+  CHECK_EQ(rnf_frame_budget_frames(nullptr, 1, 2), 1);
+  CHECK_EQ(rnf_frame_budget_frames(b, 0.1, 0), 1);       // max < 1 counts as 1
+  rnf_frame_budget_free(b);
+}

@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -39,6 +40,8 @@
 #include "interim/emu_host.h"
 #include "interim/pacing_logic.h"
 #include "interim/playback_logic.h"
+#include "mp4_export.h"
+#include "render/crt_export.h"
 #include "paths.h"
 #include "perf_stats.h"
 #include "replaynes/replaynes.h"
@@ -58,6 +61,11 @@ struct Options {
   bool injectInput = false;
   bool resume = false;
   int flash = -1;  // -1 = the saved setting
+  bool crt = false;          // --crt: start with the CRT display on (F4 toggles; temporary hook)
+  int crtMaxWidth = 1600;
+  bool crtAdaptive = true;
+  bool crtBuildAhead = true;
+  int integerScale = -1;     // --integer-scale 0|1 for this run (-1 = the saved setting)
 };
 
 void usage() {
@@ -72,7 +80,11 @@ void usage() {
       "  --session-root DIR    session folder (perf runs use a scratch folder)\n"
       "  --inject-input        press B every ~0.25 s from another thread (event -> screen latency)\n"
       "  --label NAME          label of the summary\n"
-      "  --flash 0-3           flash reduction level for this run (off / low / standard / high)\n");
+      "  --flash 0-3           flash reduction level for this run (off / low / standard / high)\n"
+      "  --crt                 CRT display (nesterm physical model) on; F4 toggles it\n"
+      "  --crt-max-width N     tube width cap (default 1600); --crt-fixed: no adaptive resolution;\n"
+      "  --crt-no-build-ahead  never build CRT pictures one frame ahead\n"
+      "  --integer-scale 0|1   integer scaling for this run (0 = fill the screen)\n");
 }
 
 bool parseArgs(int argc, char** argv, Options* o) {
@@ -92,6 +104,11 @@ bool parseArgs(int argc, char** argv, Options* o) {
     else if (a == "--session-root" && next(&v)) o->sessionRoot = v;
     else if (a == "--label" && next(&v)) o->label = v;
     else if (a == "--flash" && next(&v)) o->flash = std::atoi(v.c_str());
+    else if (a == "--crt") o->crt = true;
+    else if (a == "--integer-scale" && next(&v)) o->integerScale = std::atoi(v.c_str()) != 0;
+    else if (a == "--crt-max-width" && next(&v)) o->crtMaxWidth = std::atoi(v.c_str());
+    else if (a == "--crt-fixed") o->crtAdaptive = false;
+    else if (a == "--crt-no-build-ahead") o->crtBuildAhead = false;
     else if (a == "--fullscreen") o->fullscreen = 1;
     else if (a == "--windowed") o->fullscreen = 0;
     else if (a == "--inject-input") o->injectInput = true;
@@ -205,6 +222,7 @@ class App {
   interim::EmuHost emu_;
   DisplayScheduler sched_;
   interim::InputDeadline deadline_;
+  interim::InputDeadline cpuWork_;  // CPU part of the work only (build-ahead budget)
   PadSlot pads_[2];
   std::set<std::string> routedSteps_;
   bool running_ = true;
@@ -214,6 +232,8 @@ class App {
   bool sessionLocked_ = true;
   bool wasPaused_ = false;
   std::vector<std::string> roms_;
+  ExportJob exportJob_;  // F6: temporary hook for the MP4 export (until the export UI)
+  bool exportReported_ = true;
   std::atomic<double> lastEvent_{0};
   double pickedEvent_ = 0;
   std::string error_;
@@ -373,6 +393,26 @@ void App::handleEvent(const SDL_Event& e, double now) {
       if (down && (sc == SDL_SCANCODE_ESCAPE || sc == SDL_SCANCODE_F1)) { setMenu(!menuOpen_ || !emu_.session()); break; }
       if (down && sc == SDL_SCANCODE_F11) { applyFullscreen(!fullscreen_); break; }
       if (down && sc == SDL_SCANCODE_F3) { settings_.showStats = !settings_.showStats; break; }
+      if (down && sc == SDL_SCANCODE_F6 && emu_.session()) {
+        // MP4 export of the take (temporary hook): current flash level and CRT display state.
+        if (exportJob_.running()) { exportJob_.cancel(); break; }
+        ExportOptions eo;
+        eo.flash = emu_.flashLevel();
+        if (vr_.postProcess().crt) eo.makeProcessor = crtExportProcessorFactory(vr_.postProcess().crtSettings);
+        char name[64];
+        std::snprintf(name, sizeof name, "export-%lld.mp4", (long long)std::time(nullptr));
+        std::string out = (fs::path(paths_.projectsDir).parent_path() / name).string();
+        if (exportJob_.start(emu_.session(), eo, out)) { emu_.setNotice("Exporting " + out); exportReported_ = false; }
+        else emu_.setNotice("Export failed: " + exportJob_.error());
+        break;
+      }
+      if (down && sc == SDL_SCANCODE_F4) {  // CRT display on/off (temporary hook until the settings UI)
+        DisplayPostProcess pp = vr_.postProcess();
+        pp.crt = !pp.crt;
+        vr_.setPostProcess(pp);
+        emu_.setNotice(pp.crt ? "CRT display on" : "CRT display off");
+        break;
+      }
       if (menuOpen_) break;
       rn_input_set_pressed(emu_.input(), ("kb:" + std::to_string(int(sc))).c_str(), down);
       if (down) lastEvent_.store(evTime);
@@ -399,6 +439,14 @@ void App::buildUI(double now) {
       if (emu_.fastForwarding()) state += "  >> FF";
       if (emu_.slow() != interim::SlowRate::normal) state += "  SLOW 1/2";
     }
+    if (exportJob_.running()) {
+      char b[96];
+      std::snprintf(b, sizeof b, "Exporting MP4 %.0f %% (F6 cancels)", exportJob_.progress() * 100);
+      emu_.setNotice(b);
+    } else if (!exportReported_ && exportJob_.finished()) {
+      exportReported_ = true;
+      emu_.setNotice(exportJob_.succeeded() ? "Exported " + exportJob_.outPath() : "Export: " + exportJob_.error());
+    }
     bool notice = !emu_.notice().empty() && now - emu_.noticeTime() < 3.0;
     bool showState = s && (emu_.paused() || emu_.rewinding() || emu_.fastForwarding() || emu_.slow() != interim::SlowRate::normal);
     if (showState || notice || settings_.showStats) {
@@ -412,13 +460,17 @@ void App::buildUI(double now) {
       if (settings_.showStats) {
         double r = sched_.refresh();
         interim::Cadence c = sched_.cadence();
-        const char* cn = c.kind == interim::Cadence::Kind::locked ? "locked" : c.kind == interim::Cadence::Kind::three_two ? "3:2" : c.kind == interim::Cadence::Kind::free ? "free" : "?";
+        const char* cn = c.kind == interim::Cadence::Kind::locked ? "locked" : c.kind == interim::Cadence::Kind::three_two ? "3:2" : c.kind == interim::Cadence::Kind::free ? "free" : c.kind == interim::Cadence::Kind::slower ? "slower (<=2 frames/present)" : "?";
         double lat = 0;
         for (double v : recentLatency_) lat += v;
         if (!recentLatency_.empty()) lat /= double(recentLatency_.size());
         ImGui::Text("%.2f Hz %s  lead %.2f ms  sample->screen %.2f ms", r > 0 ? 1 / r : 0, cn, deadline_.lead() * 1000, lat * 1000);
         ImGui::Text("audio ratio %.4f  fill %.1f ms  underruns %llu  present_wait %s", audio_.ratio(), audio_.fillMs(),
                     (unsigned long long)audio_.underruns(), vr_.presentWait() ? "yes" : "no");
+        PostProcessStatus ps = vr_.postProcessStatus();
+        if (vr_.postProcess().crt)
+          ImGui::Text("CRT %dx%d (x%.2f) %s  GPU p50 %.2f / p90 %.2f ms%s", ps.tubeWidth, ps.tubeHeight, ps.scale,
+                      ps.usedCodes ? "RF" : "RGB", ps.gpuMsP50, ps.gpuMsP90, ps.buildAhead ? "  built ahead" : "");
       }
       ImGui::End();
     }
@@ -501,6 +553,7 @@ int App::run(const Options& opt) {
   paths_.ensure();
   settings_.load(paths_.settingsFile());
   if (opt.flash >= 0 && opt.flash <= 3) settings_.flash = opt.flash;
+  if (opt.integerScale >= 0) settings_.integerScale = opt.integerScale != 0;
   sessionLocked_ = lockSessionRoot(paths_);
   prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);  // precise wake-ups for the just-in-time sample
 
@@ -549,6 +602,14 @@ int App::run(const Options& opt) {
 
   bindDefaults(emu_.input());
   emu_.setFlashLevel(rn_flash_level(settings_.flash));
+  {
+    DisplayPostProcess pp;
+    pp.crt = opt.crt;
+    pp.maxTubeWidth = opt.crtMaxWidth;
+    pp.adaptiveResolution = opt.crtAdaptive;
+    pp.allowBuildAhead = opt.crtBuildAhead;
+    vr_.setPostProcess(pp);
+  }
   if (!sessionLocked_) error_ = "Another ReplayNES instance is running: the session folder is in use";
   if (!opt.rom.empty()) openRom(opt.rom);
   else if (opt.resume && emu_.resume(paths_.tempProject(), &err)) {}
@@ -628,7 +689,8 @@ int App::run(const Options& opt) {
       if (std::fabs(rate - lastRate) > 0.01) { audio_.setEmulationRate(rate); lastRate = rate; }
     }
     double lead = deadline_.lead();
-    double target = vr_.presentWait() ? sched_.nextTarget(nowSeconds(), lead) : 0;
+    int frames = 1;
+    double target = vr_.presentWait() ? sched_.nextTarget(nowSeconds(), lead, &frames) : 0;
     double sampleAt = target > 0 ? target - lead : 0;
     lastTargetIssued = target;
     if (!vr_.presentWait()) {
@@ -636,7 +698,18 @@ int App::run(const Options& opt) {
       sampleAt = lastSample + interim::kNesFramePeriod;
       if (sampleAt < nowSeconds() - 2 * interim::kNesFramePeriod) sampleAt = nowSeconds();
     }
-    // 3. Housekeeping in the slack, then wait for the sample point.
+    // 3. Display slower than the NES rate: the frames before the shown one are emulated now, in
+    //    the slack (their own, earlier time slots); the shown frame keeps its just-in-time sample.
+    for (int i = 1; i < frames; ++i) {
+      SDL_Event e;
+      while (SDL_PollEvent(&e)) handleEvent(e, nowSeconds());
+      interim::EmuHost::Tick early = emu_.tick(menuOpen_);
+      if (audioOK_) {
+        audio_.setMuted(!early.audible);
+        if (early.audible) audio_.push(early.pcm, early.pcmCount);
+      }
+    }
+    // Housekeeping in the slack, then wait for the sample point.
     if (sampleAt - nowSeconds() > 0.004) emu_.housekeeping(nowSeconds());
     sleepUntil(sampleAt);
 
@@ -646,6 +719,7 @@ int App::run(const Options& opt) {
     rec.wake = wake;
     rec.target = target;
     rec.lead = lead;
+    rec.frames = frames;
     rec.refresh = sched_.refresh();
     rec.sample = lastSample = nowSeconds();
     SDL_Event e;
@@ -674,10 +748,17 @@ int App::run(const Options& opt) {
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window_, &w, &h);
     GameRect rect = emu_.session() ? computeGameRect(w, h, settings_.integerScale, settings_.par87, settings_.hideOverscan) : GameRect{};
-    uint64_t id = vr_.drawAndPresent(tick.newPicture ? emu_.picture() : nullptr, rect, ImGui::GetDrawData());
+    const interim::EmuHost::Signal& es = emu_.signal();
+    FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered};
+    uint64_t id = vr_.drawAndPresent(tick.newPicture ? emu_.picture() : nullptr, rect, ImGui::GetDrawData(), &sig);
     rec.submit = nowSeconds();
     rec.acquireWait = vr_.lastAcquireWait();
-    deadline_.observeWork(rec.submit - rec.sample);
+    // CRT built with the present: its GPU time is part of the sample -> screen work.
+    rec.gpuExtra = vr_.gpuLeadExtra();
+    cpuWork_.observeWork(rec.submit - rec.sample);
+    deadline_.observeWork(rec.submit - rec.sample + rec.gpuExtra);
+    // Build-ahead budget: GPU time left before the target vblank at the maximum lead.
+    vr_.setGpuBudget(std::max(0.0, deadline_.maxLead - cpuWork_.workQuantile() - deadline_.margin));
     if (id) {
       presents_ += 1;
       rec.presentId = id;
@@ -713,7 +794,21 @@ int App::run(const Options& opt) {
     for (auto& rec : inflight) settle(rec, nullptr);
     interim::Cadence c = sched_.cadence();
     info.cadence = c.kind == interim::Cadence::Kind::locked ? "locked k=" + std::to_string(c.k)
-                   : c.kind == interim::Cadence::Kind::three_two ? "3:2" : c.kind == interim::Cadence::Kind::free ? "free" : "unknown";
+                   : c.kind == interim::Cadence::Kind::three_two ? "3:2" : c.kind == interim::Cadence::Kind::free ? "free"
+                   : c.kind == interim::Cadence::Kind::slower ? "slower" : "unknown";
+    info.multiFramePresents = sched_.multiFramePresents();
+    info.droppedFrames = sched_.droppedFrames();
+    {
+      PostProcessStatus ps = vr_.postProcessStatus();
+      if (vr_.postProcess().crt) {
+        char b[200];
+        std::snprintf(b, sizeof b, "%dx%d x%.2f %s gpu p50 %.2f p90 %.2f ms%s", ps.tubeWidth, ps.tubeHeight, ps.scale,
+                      ps.usedCodes ? "RF" : "RGB", ps.gpuMsP50, ps.gpuMsP90, ps.buildAhead ? " built-ahead" : "");
+        info.crt = b;
+      } else {
+        info.crt = "off";
+      }
+    }
     info.videoDriver = SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?";
     info.gpu = vr_.description();
     info.audioDevice = audio_.deviceName();

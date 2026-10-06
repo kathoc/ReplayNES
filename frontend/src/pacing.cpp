@@ -58,6 +58,12 @@ struct rnf_cadence {
   Ring<double> deltas{kDeltaWindow};
 };
 
+struct rnf_frame_budget {
+  double framePeriod = rnf_frame_period();
+  double debt = 0;
+  double droppedTime = 0;
+};
+
 struct rnf_input_deadline {
   static constexpr double binWidth = 0.0001;
   static constexpr int binCount = 101;
@@ -139,6 +145,47 @@ static T* cloneOf(const T* p) {
 }
 
 extern "C" {
+
+// ------------------------------------------------------------------ displays slower than the frame rate
+int rnf_display_slower_than_frames(double refresh, double frame_period) {
+  if (!(frame_period > 0)) frame_period = rnf_frame_period();
+  if (!(refresh > 0)) return 0;
+  return refresh > frame_period && refreshesPerFrame(refresh, frame_period) == 0 ? 1 : 0;
+}
+
+rnf_frame_budget* rnf_frame_budget_new(double frame_period) {
+  try {
+    auto* b = new rnf_frame_budget;
+    if (frame_period > 0) b->framePeriod = frame_period;
+    return b;
+  } catch (...) { return nullptr; }
+}
+rnf_frame_budget* rnf_frame_budget_clone(const rnf_frame_budget* b) { return cloneOf(b); }
+void rnf_frame_budget_free(rnf_frame_budget* b) { delete b; }
+void rnf_frame_budget_reset(rnf_frame_budget* b) {
+  if (!b) return;
+  b->debt = 0;
+}
+int rnf_frame_budget_frames(rnf_frame_budget* b, double interval, int max_frames) {
+  if (!b) return 1;
+  if (max_frames < 1) max_frames = 1;
+  const double p = b->framePeriod;
+  if (interval > 0) b->debt += interval;
+  double n = std::floor(b->debt / p + 0.5);  // nearest whole number of frames
+  int frames = n < 1 ? 1 : n > double(max_frames) ? max_frames : int(n);
+  b->debt -= double(frames) * p;
+  // Never owe more than half a frame (no catch-up bursts) nor run more than half a frame ahead.
+  if (b->debt > p / 2) {
+    b->droppedTime += b->debt - p / 2;
+    b->debt = p / 2;
+  }
+  if (b->debt < -p / 2) b->debt = -p / 2;
+  return frames;
+}
+double rnf_frame_budget_debt(const rnf_frame_budget* b) { return b ? b->debt : 0; }
+uint64_t rnf_frame_budget_dropped(const rnf_frame_budget* b) {
+  return b ? uint64_t(std::floor(b->droppedTime / b->framePeriod)) : 0;
+}
 
 // ------------------------------------------------------------------ cadence
 rnf_cadence* rnf_cadence_new(double frame_period) {

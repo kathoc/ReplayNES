@@ -85,7 +85,7 @@ add_executable(replaynes-linux
   src/interim/emu_host.cpp
   ${SHADER_INCS})
 target_include_directories(replaynes-linux PRIVATE src ${SHADER_OUT})
-target_link_libraries(replaynes-linux PRIVATE replaynes_engine rnl_export rn_imgui SDL3::SDL3 Vulkan::Vulkan Threads::Threads)
+target_link_libraries(replaynes-linux PRIVATE replaynes_engine rnl_crt_export rnl_render rnl_export rn_imgui SDL3::SDL3 Vulkan::Vulkan Threads::Threads)
 target_compile_options(replaynes-linux PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 
 install(TARGETS replaynes-linux RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -48,6 +48,15 @@ class EmuHost {
   void housekeeping(double now);
 
   const uint32_t* picture() const { return display_.data(); }
+  /// CRT side channel of picture() (display only): rn_video_indices of the same frame + whether
+  /// the flash filter changed it. codes == nullptr when the core has none.
+  struct Signal {
+    const uint16_t* codes = nullptr;
+    uint32_t burstPhase = 0;
+    uint64_t ordinal = 0;
+    bool flashAltered = false;
+  };
+  const Signal& signal() const { return signal_; }
 
   // Commands (UI / hotkeys).
   void togglePause();
@@ -85,6 +94,7 @@ class EmuHost {
   rn_flash_filter* flash_ = nullptr;
   rn_flash_level flashLevel_ = RN_FLASH_STANDARD;
   bool flashAltered_ = false;
+  Signal signal_;
   bool pictureDirty_ = false;
   std::vector<uint32_t> display_;
   bool paused_ = false;
