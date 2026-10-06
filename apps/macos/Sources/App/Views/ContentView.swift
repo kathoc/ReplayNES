@@ -165,6 +165,8 @@ struct LatencyOverlay: View {
             row("サンプル→エミュ完了", String(format: "%.2f ms", s.sampleToEmulatedMs))
             row("エミュ完了→表示", String(format: "%.1f ms", s.emulatedToPresentMs))
             row("表示 fps", String(format: "%.1f", s.presentedFPS))
+            row("表示 GPU (平均/最大)", String(format: "%.2f / %.2f ms", s.displayGPUMs, s.displayGPUMaxMs))
+            if !s.crtInfo.isEmpty { row("ブラウン管 (CRT)", s.crtInfo) }
             row("音声バッファ / 出力遅延", String(format: "%.1f ms / %.1f ms", s.audioFillMs, s.audioOutputLatencyMs))
             row("音声 IO フレーム", "\(s.audioCallbackFrames)")
             row("アンダーラン / 破棄サンプル", "\(s.audioUnderruns) / \(s.audioDropped)")

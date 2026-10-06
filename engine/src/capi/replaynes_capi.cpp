@@ -91,6 +91,19 @@ char* dupString(const std::string& s) {
 rn_mode toCMode(rn::Mode m) {
   return m == rn::Mode::Replay ? RN_MODE_REPLAY : m == rn::Mode::Practice ? RN_MODE_PRACTICE : RN_MODE_RECORD;
 }
+template <class Src>
+rn_status videoIndices(const Src* src, rn_video_indices_info* out) {
+  if (!src || !out) return invalid("null argument");
+  uint32_t phase = 0;
+  uint64_t frame = 0;
+  const uint16_t* codes = src->videoCodes(&phase, &frame);
+  if (!codes) {
+    *out = rn_video_indices_info{nullptr, 0, 0};
+    return fail(rn::Error(rn::Err::UnsupportedFormat, "this core does not expose raw PPU output"));
+  }
+  *out = rn_video_indices_info{codes, phase, frame};
+  return RN_OK;
+}
 }  // namespace
 
 extern "C" {
@@ -241,6 +254,9 @@ rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step
 }
 
 const uint32_t* rn_video(const rn_session* s) { return s ? s->s->video() : nullptr; }
+rn_status rn_video_indices(const rn_session* s, rn_video_indices_info* out) {
+  return guard([&] { return videoIndices(s ? s->s.get() : nullptr, out); });
+}
 const int16_t* rn_audio(const rn_session* s, size_t* count) {
   size_t n = 0;
   const int16_t* a = s ? s->s->audio(&n) : nullptr;
@@ -460,6 +476,9 @@ rn_status rn_renderer_next(rn_renderer* r, const uint32_t** video, const int16_t
     if (st.code == rn::Err::EndOfTake) return RN_ERR_END_OF_TAKE;  // normal completion, not an error message
     return ret(st);
   });
+}
+rn_status rn_renderer_video_indices(const rn_renderer* r, rn_video_indices_info* out) {
+  return guard([&] { return videoIndices(r ? r->r.get() : nullptr, out); });
 }
 uint64_t rn_renderer_hash(const rn_renderer* r) { return r ? r->r->hash() : 0; }
 void rn_renderer_free(rn_renderer* r) { delete r; }

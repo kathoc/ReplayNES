@@ -1,6 +1,6 @@
 // Metal game viewport: 256x240 BGRA texture, nearest-neighbour, optional integer scale,
-// 8:7 pixel aspect and overscan hiding. Presentation only: frame drops/dupes here never
-// affect emulation.
+// 8:7 pixel aspect and overscan hiding, or the physical CRT model (CRTRenderer, nesterm port).
+// Presentation only: frame drops/dupes here never affect emulation.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import MetalKit
 import SwiftUI
@@ -95,33 +95,133 @@ final class GameRenderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
-        seenSeq = frames.readIfNewer(than: seenSeq) { px, meta in
+        let crtState = CRTSettingsModel.shared.snapshot
+        let crtOn = crtState.enabled
+        let store = crtFrame
+        // CRT just switched on (e.g. while paused): fetch the current frame again for it.
+        let refetch = crtOn && !store.valid
+        seenSeq = frames.readFrameIfNewer(than: refetch ? .max : seenSeq) { px, codes, meta in
             texture.replace(region: MTLRegionMake2D(0, 0, w, Int(RN_VIDEO_HEIGHT)), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
             newMeta = meta
+            if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
+            if crtOn { store.store(px, codes, meta) }
         }
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-              let cb = queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
-
+              let cb = queue.makeCommandBuffer() else { return }
         let size = view.drawableSize
-        let (r, crop) = Self.viewport(drawableSize: size, options: options)
-        let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop)
-        var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float(r.minY / size.height * 2 - 1),
-                                Float(r.width / size.width * 2), Float(r.height / size.height * 2))
-        var uvr = SIMD4<Float>(0, Float(Double(crop) / Double(RN_VIDEO_HEIGHT)), 1, Float(srcH / Double(RN_VIDEO_HEIGHT)))
-        enc.setRenderPipelineState(pipeline)
-        enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
-        enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
-        enc.setFragmentTexture(texture, index: 0)
-        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        enc.endEncoding()
-        if let meta = newMeta, meta.emulatedTime != 0 {
+
+        // Physical CRT model (nesterm port): every pass is encoded into THIS command buffer right
+        // before the present, so a new emulated frame reaches the next vsync like the plain path.
+        var crtShown = false, crtInfo = ""
+        if crtOn, let crt = crtRenderer() {
+            let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
+            let (tw, th) = CRTRenderer.tubeSize(forDestination: dst.size, cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
+            crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
+            if newMeta != nil || !crt.hasOutput, store.valid {
+                store.encode(into: crt, cb: cb)
+            }
+            if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+                crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
+                enc.endEncoding()
+                crtShown = true
+                if let o = crt.outputSize { crtInfo = "\(o.width)x\(o.height) " + (store.usedCodes ? "RF" : "RGB") }
+            }
+        } else if !crtOn && crtRenderer_ != nil {
+            crtRenderer_ = nil          // free the tube buffers when CRT is switched off
+            store.valid = false
+        }
+        if !crtShown {
+            guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
+            let (r, crop) = Self.viewport(drawableSize: size, options: options)
+            let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop)
+            var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float(r.minY / size.height * 2 - 1),
+                                    Float(r.width / size.width * 2), Float(r.height / size.height * 2))
+            var uvr = SIMD4<Float>(0, Float(Double(crop) / Double(RN_VIDEO_HEIGHT)), 1, Float(srcH / Double(RN_VIDEO_HEIGHT)))
+            enc.setRenderPipelineState(pipeline)
+            enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+            enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+            enc.setFragmentTexture(texture, index: 0)
+            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            enc.endEncoding()
+        }
+        if let meta = newMeta {
             let lat = latency
-            drawable.addPresentedHandler { d in
-                if d.presentedTime > 0 { lat.recordPresent(meta: meta, presentedSeconds: d.presentedTime) }
+            if meta.emulatedTime != 0 {
+                drawable.addPresentedHandler { d in
+                    if d.presentedTime > 0 { lat.recordPresent(meta: meta, presentedSeconds: d.presentedTime) }
+                }
+            }
+            let info = crtInfo
+            cb.addCompletedHandler { b in
+                if b.gpuEndTime > b.gpuStartTime { lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: info) }
             }
         }
         cb.present(drawable)
         cb.commit()
+    }
+
+    // MARK: CRT
+
+    /// nesterm OUTPUT-RESOLUTION-SPEC: the tube follows the displayed pixels, bounded at 1600x1200
+    /// (the reference's detector work budget); larger destinations are scaled up in linear light.
+    static let crtMaxWidth = 1600
+
+    private var crtRenderer_: CRTRenderer?
+    private var crtFailed = false
+    private let crtFrame = CRTFrameStore()
+
+    private func crtRenderer() -> CRTRenderer? {
+        if let r = crtRenderer_ { return r }
+        if crtFailed { return nil }
+        do { crtRenderer_ = try CRTRenderer(device: device, targetPixelFormat: .bgra8Unorm) } catch {
+            NSLog("ReplayNES: CRT pipeline unavailable: \(error)")
+            crtFailed = true
+        }
+        return crtRenderer_
+    }
+
+    /// CRT destination: the full 4:3 raster (minus the hidden overscan rows), as tall as the plain
+    /// viewport would be (integer scale or FILL), centred. Pixel aspect does not apply (the tube
+    /// geometry is 4:3 by construction). Origin top-left (Metal render target coordinates).
+    static func crtViewport(drawableSize size: CGSize, options: DisplayOptions) -> (CGRect, Double) {
+        let cropFraction = (options.hideOverscan ? 8.0 : 0.0) / 240
+        let aspect = (4.0 / 3.0) / (1 - 2 * cropFraction)
+        var plain = options
+        plain.pixelAspect87 = false
+        let (r, _) = viewport(drawableSize: size, options: plain)
+        var h = r.height, wd = (h * aspect).rounded()
+        if wd > size.width { wd = size.width; h = (wd / aspect).rounded() }
+        let x0 = ((size.width - wd) / 2).rounded(), y0 = ((size.height - h) / 2).rounded()
+        return (CGRect(x: x0, y: y0, width: wd, height: h), cropFraction)
+    }
+}
+
+/// Last frame handed to the CRT (re-encoded when the tube plan changes while paused).
+final class CRTFrameStore {
+    var valid = false
+    private(set) var usedCodes = false
+    private var pixels = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var codes = [UInt16](repeating: 0x0F, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var meta = FrameMeta()
+
+    func store(_ px: UnsafePointer<UInt32>, _ c: UnsafePointer<UInt16>?, _ m: FrameMeta) {
+        pixels.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: px, count: $0.count) }
+        if let c { codes.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: c, count: $0.count) } }
+        meta = m
+        meta.hasCodes = c != nil && m.hasCodes
+        valid = true
+    }
+
+    /// RF path from the raw PPU codes; the flash-filtered RGB picture (nesterm's synthetic-RGB
+    /// source) when the photosensitive filter altered the frame or the core has no codes.
+    func encode(into crt: CRTRenderer, cb: MTLCommandBuffer) {
+        usedCodes = meta.hasCodes && !meta.flashAltered
+        let ordinal = meta.hasCodes ? meta.signalFrame : meta.frame
+        if usedCodes {
+            codes.withUnsafeBufferPointer { _ = crt.encode(.codes($0.baseAddress!, burstPhase: meta.burstPhase), ordinal: ordinal, into: cb) }
+        } else {
+            pixels.withUnsafeBufferPointer { _ = crt.encode(.rgb($0.baseAddress!), ordinal: ordinal, into: cb) }
+        }
     }
 }
 

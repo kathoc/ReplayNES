@@ -11,7 +11,8 @@
 //                                                path (hotkeys, paused D-pad stepping, game input).
 //   --test-actions "<sec>:<action>[:<n>],..."    UI actions: setA/setB/practice:<slot 0-7>, stopPractice,
 //                                                toggleRecord, togglePause, panel, fill, integer,
-//                                                quit (the ⌘Q path: persist + resume record).
+//                                                quit (the ⌘Q path: persist + resume record),
+//                                                fullscreen, crtOn, crtOff.
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
@@ -90,6 +91,9 @@ extension AppModel {
                 case "fill": self.integerScale = false
                 case "integer": self.integerScale = true
                 case "quit": NSApp.terminate(nil)
+                case "fullscreen": self.mainWindow?.toggleFullScreen(nil)
+                case "crtOn": CRTSettingsModel.shared.launchOverride = true
+                case "crtOff": CRTSettingsModel.shared.enabled = false
                 default: NSLog("ReplayNES: unknown test action \(parts[1])")
                 }
             }

@@ -203,6 +203,46 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## nesterm physical CRT model (ブラウン管 (CRT) display, macOS app)
+
+- Project: nesterm by kathoc (Web version, `web/physical-*.mjs` and `vendor/crt/`). Its `vendor/crt/` modules
+  were exported from the same author's research project **crt-physical-model**
+  (`vendor/crt/EXPORT-MANIFEST.json`: commit `919c156329dae4f2a832460fb3726a5f09c20213`, working tree dirty).
+  crt-physical-model has no separate license file; the code is distributed inside nesterm under nesterm's MIT license.
+- What ReplayNES contains: a Metal/Swift port (no JavaScript is shipped) in `apps/macos/Sources/Core/CRT/`
+  (setup math, MSL ports of the WebGL2 shaders), the settings UI in `apps/macos/Sources/App/CRTSettings.swift`,
+  and `tools/crt-reference/generate-fixtures.mjs`, which imports nesterm's reference modules from a local nesterm
+  checkout at test-fixture generation time (they are not copied into this repository). Mapping and deviations:
+  `docs/CRT_PORT.md`.
+- License (nesterm `LICENSE`):
+
+```
+MIT License
+
+Copyright (c) 2026 kathoc
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+- The model cites published measurements and papers for its assumed values (NESdev NTSC video levels,
+  Kuhn 2002 phosphor decay fits, etc.); no third-party code from those sources is included.
+
 ## Apple frameworks
 
 SwiftUI, Metal, AVFoundation, GameController (system frameworks, not redistributed).

@@ -1,5 +1,6 @@
 // Streaming output for OBS & co. via Syphon (OBS on macOS: "Syphon Client" source).
-// Publishes the game frame as displayed (after the flash reduction filter, before any UI) from
+// Publishes the game frame as displayed (after the flash reduction filter, before any UI; with the
+// CRT model when 表示 → ブラウン管 (CRT) → 配信出力 says so) from
 // its own queue: it polls the shared FrameBuffer exactly like the on-screen renderer, so the
 // emulation thread is never waited on and a slow consumer only drops output frames.
 // Off unless enabled (settings, menu, or the --syphon launch argument for this run only).
@@ -29,6 +30,11 @@ final class SyphonPublisher {
     private var target: MTLTexture?
     private var layout = StreamOutputLayout(size: .default, par87: false)
     private var seenSeq: UInt64 = .max
+    // CRT output (work queue only).
+    private var usingCRT = false
+    private var crt: CRTRenderer?
+    private let crtStore = CRTFrameStore()
+    private var crtShowsFallback = false
 
     private static let shader = """
     #include <metal_stdlib>
@@ -109,16 +115,30 @@ final class SyphonPublisher {
         // Nobody watching: do nothing and leave the frame unconsumed, so a client that connects
         // later (even while paused) gets the current frame on the next tick.
         guard timer != nil, inFlight < Self.maxInFlight, server.hasClients else { return }
+        // CRT picture (nesterm physical model) when chosen in 表示 → ブラウン管 (CRT). Its own
+        // pipeline instance at the Syphon canvas size: deterministic for the same frame sequence.
+        let crtState = CRTSettingsModel.shared.snapshot
+        if crtState.syphonUsesCRT != usingCRT {
+            usingCRT = crtState.syphonUsesCRT
+            seenSeq = .max                      // republish the current frame in the new mode
+            if !usingCRT { crt = nil; crtStore.valid = false }
+        }
         let src = sources[sourceIndex]
         var got = false
-        let seq = frames.readIfNewer(than: seenSeq) { px, _ in
+        let store = crtStore, wantCRT = usingCRT
+        let seq = frames.readFrameIfNewer(than: seenSeq) { px, codes, meta in
             src.replace(region: MTLRegionMake2D(0, 0, StreamOutputLayout.frameWidth, StreamOutputLayout.frameHeight),
                         mipmapLevel: 0, withBytes: px, bytesPerRow: StreamOutputLayout.frameWidth * 4)
+            if wantCRT { store.store(px, codes, meta) }
             got = true
         }
-        guard got else { return }
-        seenSeq = seq
-        sourceIndex = (sourceIndex + 1) % sources.count
+        // A CRT plan that finished building while no new frame arrives (paused): show it now.
+        let crtPending = !got && usingCRT && crtStore.valid && crt.map { !$0.hasOutput } == true && crtShowsFallback
+        guard got || crtPending else { return }
+        if got {
+            seenSeq = seq
+            sourceIndex = (sourceIndex + 1) % sources.count
+        }
 
         let c = layout.canvas
         if target?.width != c.width || target?.height != c.height {
@@ -128,17 +148,38 @@ final class SyphonPublisher {
             target = device.makeTexture(descriptor: td)
         }
         guard let target, let cb = queue.makeCommandBuffer() else { return }
+        var crtDst = CGRect.zero
+        var crtReady = false
+        if usingCRT {
+            if crt == nil { crt = try? CRTRenderer(device: device, targetPixelFormat: .bgra8Unorm) }
+            if let crt {
+                // Full 4:3 raster (overscan included, like the plain Syphon picture), centred.
+                var h = Double(c.height), w = (h * 4 / 3).rounded()
+                if w > Double(c.width) { w = Double(c.width); h = (w * 3 / 4).rounded() }
+                crtDst = CGRect(x: ((Double(c.width) - w) / 2).rounded(), y: ((Double(c.height) - h) / 2).rounded(), width: w, height: h)
+                let (tw, th) = CRTRenderer.tubeSize(forDestination: crtDst.size, cropFraction: 0, maxWidth: GameRenderer.crtMaxWidth)
+                crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
+                if crtStore.valid { crtStore.encode(into: crt, cb: cb) }
+                crtReady = crt.hasOutput
+            }
+            if !crtReady && crtPending { return }   // plan still building: keep the last published picture
+        }
+        crtShowsFallback = usingCRT && !crtReady
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = target
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         rpd.colorAttachments[0].storeAction = .store
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
-        let p = layout.picture
-        enc.setViewport(MTLViewport(originX: p.minX, originY: p.minY, width: p.width, height: p.height, znear: 0, zfar: 1))
-        enc.setRenderPipelineState(pipeline)
-        enc.setFragmentTexture(src, index: 0)
-        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        if crtReady, let crt {
+            crt.encodeShow(enc, targetSize: CGSize(width: c.width, height: c.height), dst: crtDst, cropFraction: 0)
+        } else {
+            let p = layout.picture
+            enc.setViewport(MTLViewport(originX: p.minX, originY: p.minY, width: p.width, height: p.height, znear: 0, zfar: 1))
+            enc.setRenderPipelineState(pipeline)
+            enc.setFragmentTexture(src, index: 0)
+            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         enc.endEncoding()
         // Top-left origin texture => not flipped. Same pixel format, not framebuffer-only, so
         // Syphon copies it into its shared IOSurface with a blit and publishes on completion.
@@ -236,7 +277,7 @@ struct StreamOutputSection: View {
             } else if stream.active {
                 Text("Syphon出力中（サーバー名「\(SyphonPublisher.serverName)」）").font(.caption).foregroundStyle(.green)
             }
-            Text("OBS の「Syphon クライアント」ソースで「ReplayNES」を選ぶと、ゲーム画面だけ（フラッシュ低減後・UI なし・オーバースキャン込みの 256×240 全体）を最近傍補間で拡大して取り込めます。音声は OBS の「macOS 音声キャプチャ」（アプリケーション音声）で ReplayNES を選んでください。")
+            Text("OBS の「Syphon クライアント」ソースで「ReplayNES」を選ぶと、ゲーム画面だけ（フラッシュ低減後・UI なし・オーバースキャン込みの 256×240 全体）を最近傍補間で拡大して取り込めます（ブラウン管 (CRT) を使う設定のときは 4:3 の CRT 画像）。音声は OBS の「macOS 音声キャプチャ」（アプリケーション音声）で ReplayNES を選んでください。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

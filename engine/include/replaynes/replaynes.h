@@ -167,6 +167,16 @@ typedef struct rn_step_info {
 rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info);
 
 const uint32_t* rn_video(const rn_session* s); /* 256x240 BGRA8 (B,G,R,A bytes), alpha 255 */
+/* Display-only side channel for signal-level display models (the CRT / composite path): the raw
+ * PPU output of the SAME picture as rn_video. Never affects emulation, states or any hash. */
+typedef struct rn_video_indices_info {
+  const uint16_t* codes;  /* 256x240 9-bit codes: bits 0-5 palette index (after greyscale),
+                             bits 6-8 = $2001 colour-emphasis bits 5-7; valid like rn_video */
+  uint32_t burst_phase;   /* core colour-burst phase of that frame (0..2; Nestopia's NTSC phase) */
+  uint64_t frame;         /* machine frame ordinal that produced it (core frame index) */
+} rn_video_indices_info;
+/* RN_ERR_UNSUPPORTED_FORMAT when the core has no raw PPU output (mock core). */
+rn_status rn_video_indices(const rn_session* s, rn_video_indices_info* out);
 /* PCM of the last emulated frame. count = 0 after seek/rewind/take switch (seeking is silent). */
 const int16_t* rn_audio(const rn_session* s, size_t* count);
 
@@ -337,6 +347,8 @@ uint64_t rn_renderer_frames_done(const rn_renderer* r); /* progress = done/total
  * Returns RN_ERR_END_OF_TAKE when finished. Cancel = stop calling and free. */
 rn_status rn_renderer_next(rn_renderer* r, const uint32_t** video, const int16_t** audio, size_t* sample_count,
                            uint64_t* frame_index);
+/* rn_video_indices for the frame returned by the last rn_renderer_next. */
+rn_status rn_renderer_video_indices(const rn_renderer* r, rn_video_indices_info* out);
 uint64_t rn_renderer_hash(const rn_renderer* r); /* running hash of output (compare with replay) */
 void rn_renderer_free(rn_renderer* r);
 

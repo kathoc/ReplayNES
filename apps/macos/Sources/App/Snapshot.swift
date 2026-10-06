@@ -62,6 +62,8 @@ extension AppModel {
             "sampleToEmulatedMs": s.sampleToEmulatedMs, "audioUnderruns": s.audioUnderruns,
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,
             "lateTicks": s.lateTicks,
+            "displayGPUMs": s.displayGPUMs, "displayGPUMaxMs": s.displayGPUMaxMs, "crtInfo": s.crtInfo,
+            "crtEnabled": CRTSettingsModel.shared.enabled,
             "flashReduction": flashLevel.label, "flashActive": status.flashActive,
             "libraryROMs": library.roms.count, "libraryRoot": library.paths.root.path,
             "practicing": status.practicing, "practiceSlot": status.practiceSlot,

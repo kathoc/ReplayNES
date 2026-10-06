@@ -13,6 +13,7 @@ struct ExportSheet: View {
     @State private var startFrame = 0
     @State private var endFrame = 0
     @State private var applyFlash = true
+    @State private var applyCRT = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -28,6 +29,7 @@ struct ExportSheet: View {
         .onAppear {
             endFrame = Int(model.status.takeLength)
             applyFlash = model.flashLevel != .off
+            applyCRT = CRTSettingsModel.shared.enabled
         }
     }
 
@@ -55,6 +57,13 @@ struct ExportSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("フラッシュ低減を適用")
                     Text("激しい点滅を抑えた映像で書き出します（強さ: \(exportFlashLevel.label)。設定 → 表示・音声で変更）。オフにすると記録どおりの映像です。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Toggle(isOn: $applyCRT) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ブラウン管効果を適用")
+                    Text("表示 → ブラウン管 (CRT) の設定で、同じ Metal パイプラインを使って 1 フレームずつ描画します（4:3・内部解像度は最大 1600×1200、1280×960 などの 4:3 サイズ向き）。書き出しは遅くなります。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -91,6 +100,7 @@ struct ExportSheet: View {
     private func chooseAndStart() {
         var s = settings
         s.flashReduction = applyFlash ? exportFlashLevel : .off
+        s.crt = applyCRT ? CRTSettingsModel.shared.settings : nil
         s.cropTop = cropOverscan ? 8 : 0
         s.cropBottom = cropOverscan ? 8 : 0
         if wholeTake {

@@ -153,6 +153,11 @@ final class EngineSession {
     }
 
     var video: UnsafePointer<UInt32>? { rn_video(handle) }
+    /// Display-only raw PPU output of the picture in `video` (CRT signal path); nil if unsupported.
+    var videoIndices: rn_video_indices_info? {
+        var info = rn_video_indices_info()
+        return rn_video_indices(handle, &info) == RN_OK && info.codes != nil ? info : nil
+    }
     func audio() -> UnsafeBufferPointer<Int16> {
         var n = 0
         guard let p = rn_audio(handle, &n), n > 0 else { return UnsafeBufferPointer(start: nil, count: 0) }

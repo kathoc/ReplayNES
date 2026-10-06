@@ -177,3 +177,69 @@ TEST_CASE("C API: end-to-end flow (new, record, bookmark, branch, undo, render, 
   rn_session_close(s);
   CHECK_EQ(rn_session_open((root + "/missing.nesrec").c_str(), nullptr, nullptr, &s), RN_ERR_NOT_FOUND);
 }
+
+TEST_CASE("video indices: raw PPU codes describe the same picture as rn_video; display-only") {
+  auto s = newSession(CoreKind::Nestopia);
+  auto script = DeterminismHarness::randomScript(240, 77, 0, 0);
+  REQUIRE(recordScript(*s, script).ok());
+  uint32_t phase = 99;
+  uint64_t frame = 0;
+  const uint16_t* codes = s->videoCodes(&phase, &frame);
+  REQUIRE(codes != nullptr);
+  CHECK(phase <= 2u);
+  CHECK_EQ(frame, s->frame() - 1);  // the frame just emulated
+  // Every code is a 9-bit palette index + emphasis, and the RGB picture is a function of it.
+  std::vector<uint32_t> rgbOf(512, 0);
+  std::vector<bool> seen(512, false);
+  bool valid = true, consistent = true;
+  const uint32_t* v = s->video();
+  for (size_t i = 0; i < 256 * 240; ++i) {
+    valid = valid && codes[i] <= 511;
+    uint16_t c = codes[i] & 511;
+    if (!seen[c]) { seen[c] = true; rgbOf[c] = v[i]; }
+    consistent = consistent && rgbOf[c] == v[i];
+  }
+  CHECK(valid);
+  CHECK(consistent);
+  // Reading the side channel changes nothing: same hashes as a straight replay.
+  Replay ref = straightReplay(CoreKind::Nestopia, s->timeline().flattenActive());
+  CHECK_EQ(s->videoHash(), ref.video.back());
+  CHECK_EQ(s->stateHash(), ref.finalState);
+  // The burst phase follows the frame sequence (Nestopia advances it every frame).
+  std::vector<uint32_t> phases;
+  for (int i = 0; i < 6; ++i) {
+    REQUIRE(s->step(0, 0, 0).ok());
+    uint32_t p = 0;
+    REQUIRE(s->videoCodes(&p, &frame) != nullptr);
+    CHECK_EQ(frame, s->frame() - 1);
+    phases.push_back(p);
+  }
+  bool changes = false;
+  for (size_t i = 1; i < phases.size(); ++i) changes = changes || phases[i] != phases[i - 1];
+  CHECK(changes);
+
+  // C API: session and offline renderer report identical codes for the same frame.
+  REQUIRE(s->seek(100).ok());
+  std::unique_ptr<OfflineRenderer> r;
+  REQUIRE(OfflineRenderer::create(*s, 99, 100, r).ok());
+  const uint32_t* rv;
+  const int16_t* ra;
+  size_t n;
+  uint64_t fi;
+  REQUIRE(r->next(&rv, &ra, &n, &fi).ok());
+  uint32_t rp = 0, sp = 0;
+  uint64_t rf = 0, sf = 0;
+  const uint16_t* rc = r->videoCodes(&rp, &rf);
+  const uint16_t* sc = s->videoCodes(&sp, &sf);
+  REQUIRE(rc != nullptr);
+  REQUIRE(sc != nullptr);
+  CHECK_EQ(rf, 99u);
+  CHECK_EQ(sf, 99u);
+  CHECK_EQ(rp, sp);
+  CHECK(std::equal(rc, rc + 256 * 240, sc));
+
+  // Mock core: explicit "unsupported", never a fake picture.
+  auto m = newSession(CoreKind::Mock);
+  REQUIRE(m->step(0, 0, 0).ok());
+  CHECK(m->videoCodes(nullptr, nullptr) == nullptr);
+}

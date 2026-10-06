@@ -101,6 +101,7 @@ class Session {
   Status rewind(uint64_t n);
 
   const uint32_t* video() const { return core_->video(); }
+  const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const { return core_->videoCodes(burstPhase, frame); }
   const int16_t* audio(size_t* count) const;
   uint64_t stateHash() { return core_->machineHash(); }
   uint64_t videoHash() const { return core_->videoHash(); }

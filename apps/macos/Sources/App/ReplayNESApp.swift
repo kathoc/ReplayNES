@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --session-root <dir>  use <dir> instead of ~/Library/Application Support/ReplayNES/Session
         //                       for the temporary project + resume record (scripted runs without it
         //                       keep quick play in memory and never resume)
+        //   --crt               enable the ブラウン管 (CRT) display for this run (not saved)
         //   --inject-pad / --test-actions / --snapshot-at   scripted checks (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
         let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at"].contains { args.contains($0) }
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ROM library: create ~/Documents/ReplayNES/{ROM,Projects}. A failure is reported, never
         // silently replaced by another location.
         StreamOutputModel.shared.start(frames: model.emu.frames, forceEnable: args.contains("--syphon"))
+        if args.contains("--crt") { CRTSettingsModel.shared.launchOverride = true }
         if let root = arg("--library-root") { model.library.setRoot(URL(fileURLWithPath: root)) }
         let sessionRoot = arg("--session-root")
         model.setupSessionPersistence(root: sessionRoot.map { URL(fileURLWithPath: $0) }, enabled: !scripted || sessionRoot != nil)

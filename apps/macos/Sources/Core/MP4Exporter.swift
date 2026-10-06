@@ -6,6 +6,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import Metal
 
 struct ExportSettings: Equatable {
     enum Codec: String, CaseIterable, Identifiable {
@@ -39,6 +40,9 @@ struct ExportSettings: Equatable {
     /// Photosensitive flash reduction applied to the exported picture only (the renderer, its
     /// hash and the project are unaffected). .off = the exact emulated frames.
     var flashReduction: FlashLevel = .off
+    /// 「ブラウン管効果を適用」: the physical CRT model (same Metal pipeline as the live view),
+    /// rendered offline frame by frame in order (deterministic for the frame sequence). nil = off.
+    var crt: CRTRenderer.Settings?
 
     func validate() throws {
         let ok = cropTop >= 0 && cropBottom >= 0 && cropLeft >= 0 && cropRight >= 0
@@ -200,7 +204,8 @@ final class MP4Exporter {
         // interleaving). Rendering happens on demand when either queue runs dry; pending video
         // is kept as raw 256x240 frames so memory stays small even if one input runs ahead.
         let lock = NSLock()
-        var videoQueue: [(pixels: [UInt32], pts: CMTime)] = []
+        var videoQueue: [(pixels: [UInt32], pts: CMTime, signal: CRTExportFrame?)] = []
+        let crt = try settings.crt.map { try CRTExportRenderer(settings: $0, geometry: g, crop: settings) }
         var audioQueue: [CMSampleBuffer] = []
         var sourceDone = false
         var failure: Error?
@@ -221,11 +226,20 @@ final class MP4Exporter {
             guard let video else { failure = ExportError.writer("no video"); return }
             // Video PTS = frame offset * 655171 / 39375000 s (exact rational).
             let pts = CMTime(value: CMTimeValue((f - startFrame) * UInt64(RN_FPS_DEN)), timescale: CMTimeScale(RN_FPS_NUM))
+            // CRT signal side channel of the same picture (display only).
+            var signal: CRTExportFrame?
+            if crt != nil {
+                var info = rn_video_indices_info()
+                signal = CRTExportFrame(codes: rn_renderer_video_indices(renderer, &info) == RN_OK && info.codes != nil
+                                            ? Array(UnsafeBufferPointer(start: info.codes, count: frameBytes)) : nil,
+                                        burstPhase: info.burst_phase, ordinal: info.codes != nil ? info.frame : f, flashAltered: false)
+            }
             if let flash {
-                filtered.withUnsafeMutableBufferPointer { _ = flash.process(video, into: $0.baseAddress!) }
-                videoQueue.append((filtered, pts))
+                let altered = filtered.withUnsafeMutableBufferPointer { flash.process(video, into: $0.baseAddress!) }
+                signal?.flashAltered = altered
+                videoQueue.append((filtered, pts, signal))
             } else {
-                videoQueue.append((Array(UnsafeBufferPointer(start: video, count: frameBytes)), pts))
+                videoQueue.append((Array(UnsafeBufferPointer(start: video, count: frameBytes)), pts, signal))
             }
             if n > 0, let audio {
                 // Audio PTS from the absolute sample count at 48 kHz.
@@ -265,7 +279,14 @@ final class MP4Exporter {
                     lock.lock(); failure = failure ?? ExportError.writer("pixel buffer"); lock.unlock()
                     continue
                 }
-                item.pixels.withUnsafeBufferPointer { MP4Exporter.scale($0.baseAddress!, into: pb, geometry: g, cols: cols, rows: rows) }
+                if let crt, let signal = item.signal {
+                    if !crt.render(pixels: item.pixels, signal: signal, into: pb) {
+                        lock.lock(); failure = failure ?? ExportError.writer("CRT rendering failed"); lock.unlock()
+                        continue
+                    }
+                } else {
+                    item.pixels.withUnsafeBufferPointer { MP4Exporter.scale($0.baseAddress!, into: pb, geometry: g, cols: cols, rows: rows) }
+                }
                 if !adaptor.append(pb, withPresentationTime: item.pts) {
                     lock.lock(); failure = failure ?? ExportError.writer(writer.error?.localizedDescription ?? "append video"); lock.unlock()
                     continue
@@ -365,5 +386,69 @@ final class MP4Exporter {
               let sb
         else { throw ExportError.writer("audio sample buffer") }
         return sb
+    }
+}
+
+/// One exported frame's CRT input (raw PPU codes when the core has them).
+struct CRTExportFrame {
+    var codes: [UInt16]?
+    var burstPhase: UInt32
+    var ordinal: UInt64
+    var flashAltered: Bool
+}
+
+/// Offline CRT rendering for the exporter: the live pipeline (CRTRenderer), synchronous plan,
+/// one frame at a time in order, read back into the encoder's pixel buffer.
+final class CRTExportRenderer {
+    private let renderer: CRTRenderer
+    private let queue: MTLCommandQueue
+    private let target: MTLTexture
+    private let dst: CGRect
+    private let cropFraction: Double
+
+    init(settings: CRTRenderer.Settings, geometry g: ExportGeometry, crop: ExportSettings) throws {
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
+            throw ExportError.writer("Metal を利用できません（ブラウン管効果）")
+        }
+        renderer = try CRTRenderer(device: device, targetPixelFormat: nil)
+        self.queue = queue
+        cropFraction = Double(crop.cropTop + crop.cropBottom) / 2 / 240
+        // Full 4:3 raster minus the cropped overscan rows, fitted into the canvas and centred.
+        let aspect = (4.0 / 3.0) / (1 - 2 * cropFraction)
+        var h = Double(g.canvasHeight), w = (h * aspect).rounded()
+        if w > Double(g.canvasWidth) { w = Double(g.canvasWidth); h = (w / aspect).rounded() }
+        dst = CGRect(x: ((Double(g.canvasWidth) - w) / 2).rounded(), y: ((Double(g.canvasHeight) - h) / 2).rounded(), width: w, height: h)
+        let (tw, th) = CRTRenderer.tubeSize(forDestination: dst.size, cropFraction: cropFraction, maxWidth: 1600)
+        renderer.configure(settings: settings, outputWidth: tw, outputHeight: th, synchronous: true)
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: g.canvasWidth, height: g.canvasHeight, mipmapped: false)
+        td.usage = [.shaderWrite, .shaderRead]
+        td.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: td) else { throw ExportError.writer("CRT texture") }
+        target = t
+    }
+
+    var destination: CGRect { dst }
+
+    /// Same input rule as the live view: RF path from the PPU codes, or the (flash-filtered) RGB
+    /// picture when the filter altered the frame / the core has no codes.
+    func render(pixels: [UInt32], signal: CRTExportFrame, into pb: CVPixelBuffer) -> Bool {
+        guard let cb = queue.makeCommandBuffer() else { return false }
+        let ok: Bool
+        if let codes = signal.codes, !signal.flashAltered {
+            ok = codes.withUnsafeBufferPointer { renderer.encode(.codes($0.baseAddress!, burstPhase: signal.burstPhase), ordinal: signal.ordinal, into: cb) }
+        } else {
+            ok = pixels.withUnsafeBufferPointer { renderer.encode(.rgb($0.baseAddress!), ordinal: signal.ordinal, into: cb) }
+        }
+        guard ok else { return false }
+        renderer.encodeShow(into: target, cb: cb, dst: dst, cropFraction: cropFraction)
+        cb.commit()
+        cb.waitUntilCompleted()
+        if cb.error != nil { return false }
+        CVPixelBufferLockBaseAddress(pb, [])
+        defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+        guard let base = CVPixelBufferGetBaseAddress(pb) else { return false }
+        let bpr = CVPixelBufferGetBytesPerRow(pb)
+        target.getBytes(base, bytesPerRow: bpr, from: MTLRegionMake2D(0, 0, target.width, target.height), mipmapLevel: 0)
+        return true
     }
 }

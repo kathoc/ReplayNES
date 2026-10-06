@@ -21,18 +21,27 @@ struct FrameMeta {
     var inputEventTime: UInt64 = 0  // last physical input change consumed by this frame (0 = none)
     var sampleTime: UInt64 = 0      // rn_input_sample_game
     var emulatedTime: UInt64 = 0    // rn_step returned
+    // CRT signal side channel (display only; see rn_video_indices).
+    var hasCodes = false            // raw PPU codes published with this frame
+    var burstPhase: UInt32 = 0      // core colour-burst phase of the frame (0..2)
+    var signalFrame: UInt64 = 0     // machine frame ordinal (CRT persistence / RF noise key)
+    var flashAltered = false        // the flash filter changed this picture (CRT then uses the RGB path)
 }
 
 /// Latest-frame mailbox between the emulation thread (writer) and the Metal view (reader).
 final class FrameBuffer {
     private let lock = NSLock()
     private var pixels = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var codes = [UInt16](repeating: 0x0F, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
     private var meta = FrameMeta()
     private var seq: UInt64 = 0
 
-    func publish(_ src: UnsafePointer<UInt32>, meta m: FrameMeta) {
+    /// `codes`: raw PPU codes of the same picture (CRT signal path), copied when given.
+    func publish(_ src: UnsafePointer<UInt32>, meta m: FrameMeta, codes c: UnsafePointer<UInt16>? = nil) {
         lock.lock()
         pixels.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: src, count: $0.count) }
+        var m = m
+        if let c { codes.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: c, count: $0.count) } } else { m.hasCodes = false }
         meta = m
         seq &+= 1
         lock.unlock()
@@ -54,6 +63,17 @@ final class FrameBuffer {
         pixels.withUnsafeBufferPointer { body($0.baseAddress!, meta) }
         return seq
     }
+
+    /// Like readIfNewer, also handing out the raw PPU codes (nil when the frame has none).
+    func readFrameIfNewer(than seen: UInt64, _ body: (UnsafePointer<UInt32>, UnsafePointer<UInt16>?, FrameMeta) -> Void) -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        if seq == seen { return seen }
+        pixels.withUnsafeBufferPointer { px in
+            codes.withUnsafeBufferPointer { cd in body(px.baseAddress!, meta.hasCodes ? cd.baseAddress! : nil, meta) }
+        }
+        return seq
+    }
 }
 
 /// Rolling latency / health statistics. Thread-safe.
@@ -72,12 +92,16 @@ final class LatencyMeter {
         var audioCallbackFrames: UInt32 = 0
         var audioOutputLatencyMs = 0.0
         var lateTicks: UInt64 = 0
+        var displayGPUMs = 0.0       // GPU time of the display command buffer for a new frame (EMA)
+        var displayGPUMaxMs = 0.0    // max over the last second
+        var crtInfo = ""             // "" = CRT off; else tube size / signal path
     }
 
     private let lock = NSLock()
     private var s = Snapshot()
     private var presentCount = 0
     private var fpsWindowStart = HostClock.now()
+    private var gpuMaxWindow = 0.0, gpuWindowStart = HostClock.now()
 
     private static func ema(_ old: Double, _ v: Double) -> Double { old == 0 ? v : old * 0.9 + v * 0.1 }
 
@@ -105,6 +129,15 @@ final class LatencyMeter {
         let now = HostClock.now()
         let dt = HostClock.seconds(now - fpsWindowStart)
         if dt >= 1 { s.presentedFPS = Double(presentCount) / dt; presentCount = 0; fpsWindowStart = now }
+    }
+
+    func recordDisplayGPU(ms: Double, crtInfo: String) {
+        lock.lock(); defer { lock.unlock() }
+        s.displayGPUMs = Self.ema(s.displayGPUMs, ms)
+        s.crtInfo = crtInfo
+        gpuMaxWindow = max(gpuMaxWindow, ms)
+        let now = HostClock.now()
+        if HostClock.seconds(now - gpuWindowStart) >= 1 { s.displayGPUMaxMs = gpuMaxWindow; gpuMaxWindow = 0; gpuWindowStart = now }
     }
 
     func recordAutosave(ticks: UInt64) { lock.lock(); s.lastAutosaveMs = HostClock.seconds(ticks) * 1000; lock.unlock() }
