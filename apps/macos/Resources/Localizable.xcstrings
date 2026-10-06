@@ -461,6 +461,46 @@
         }
       }
     },
+    "Add to Steam": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam に追加"
+          }
+        }
+      }
+    },
+    "Adding ReplayNES to Steam failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES を Steam に追加できませんでした。"
+          }
+        }
+      }
+    },
+    "Adding to Steam…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam に追加中…"
+          }
+        }
+      }
+    },
+    "Adds ReplayNES to the Steam library with its artwork, for every Steam account on this device. Close Steam first (Desktop Mode).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末のすべての Steam アカウントのライブラリに、アートワーク付きで ReplayNES を追加します。先に Steam を終了してください（デスクトップモード）。"
+          }
+        }
+      }
+    },
     "Add…": {
       "localizations": {
         "ja": {
@@ -3271,6 +3311,16 @@
         }
       }
     },
+    "No Steam account was found. Start Steam and sign in once, then try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam アカウントが見つかりません。Steam を起動して一度サインインしてから、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "None": {
       "localizations": {
         "ja": {
@@ -4207,6 +4257,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "R3 / ガイド: ReplayNES のメニュー（予約済み）"
+          }
+        }
+      }
+    },
+    "ReplayNES is already in Steam with its artwork.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES はアートワーク付きで Steam に追加済みです。"
+          }
+        }
+      }
+    },
+    "ReplayNES was added to Steam.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES を Steam に追加しました。"
+          }
+        }
+      }
+    },
+    "ReplayNES was added to Steam. Start (or restart) Steam to see it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES を Steam に追加しました。Steam を起動（または再起動）すると表示されます。"
           }
         }
       }
@@ -5521,6 +5601,16 @@
         }
       }
     },
+    "Steam is running. Close Steam first (Desktop Mode: Steam menu → Exit), then try again. Artwork that could be installed appears after Steam restarts.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam が起動中です。先に Steam を終了してください（デスクトップモード: Steam メニュー → 終了）。そのあと、もう一度お試しください。導入できたアートワークは Steam の再起動後に表示されます。"
+          }
+        }
+      }
+    },
     "Step Back": {
       "localizations": {
         "ja": {
@@ -5647,6 +5737,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Syphon出力中（サーバー名「%@」）"
+          }
+        }
+      }
+    },
+    "System": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム"
           }
         }
       }

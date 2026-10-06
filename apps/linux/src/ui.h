@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
 #include <initializer_list>
 #include <optional>
 #include <string>
@@ -33,6 +34,7 @@
 #include "mp4_export.h"
 #include "imgui.h"
 #include "replaynes/frontend.h"
+#include "steam_shortcut.h"
 #include "ui_logic.h"
 #include "vk_renderer.h"
 
@@ -183,6 +185,8 @@ class UI : public DialogHost {
   void buildDiagram(rnf_controller_family family, int slot, float width);
   void buildAssignPicker();
   void buildCrtSettings();
+  void startAddToSteam();
+  void pollAddToSteam();
   void changed();
 
   Deps d_;
@@ -207,6 +211,8 @@ class UI : public DialogHost {
   // Notices.
   std::string notice_;
   double noticeTime_ = 0;
+  // Settings -> Audio & Controls -> System -> Add to Steam (file I/O on a worker thread).
+  std::future<steam::Report> steamJob_;
   // Dialogs.
   std::deque<Dialog> dialogs_;
   bool dialogOpened_ = false;

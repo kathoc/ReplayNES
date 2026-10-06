@@ -285,6 +285,7 @@ void UI::build(double now) {
     if (practicePanel_ || st.practicing) buildPracticeOverlay(false);
   }
   buildOverlays(now);
+  pollAddToSteam();
   buildDialogs();
   buildChooser();
   buildRename();

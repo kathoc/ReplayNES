@@ -93,6 +93,8 @@ void usage() {
       "  --crt-max-width N     tube width cap (default 1600); --crt-fixed: no adaptive resolution;\n"
       "  --crt-no-build-ahead  never build CRT pictures one frame ahead\n"
       "  --integer-scale 0|1   integer scaling for this run (0 = fill the screen)\n"
+      "  --add-to-steam        add ReplayNES to the Steam library with its artwork, then exit (close Steam first);\n"
+      "                        add --dry-run to only show what would change (also --force, --steam-userdata DIR, --steam-artwork DIR)\n"
       "Environment: REPLAYNES_LANG=ja|en overrides the system language.\n");
 }
 
@@ -255,7 +257,7 @@ int App::run(const Options& opt) {
   prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);  // precise wake-ups for the just-in-time sample
   const bool perfMode = opt.perfSeconds > 0;
 
-  SDL_SetAppMetadata("ReplayNES", "0.2.0", "io.github.replaynes.ReplayNES");
+  SDL_SetAppMetadata("ReplayNES", "0.3.0", "io.github.replaynes.ReplayNES");
   SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
   SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
   // Controllers are updated on their own thread (below), not by the frame loop's event pump: the

@@ -16,7 +16,7 @@ From a bundle (`dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak`), i
 (Konsole):
 
 ```sh
-flatpak install --user io.github.replaynes.ReplayNES-0.2.0-x86_64.flatpak   # fetches the runtime from Flathub
+flatpak install --user io.github.replaynes.ReplayNES-0.3.0-x86_64.flatpak   # fetches the runtime from Flathub
 flatpak run io.github.replaynes.ReplayNES
 ```
 
@@ -56,7 +56,7 @@ wide capsules, hero background, logo, icon):
 
 1. Switch to **Desktop Mode** and **close Steam** (Steam icon in the system tray -> Exit, or Steam
    menu -> Exit). Steam keeps its shortcut list in memory and would overwrite the change otherwise.
-2. Start ReplayNES from the application menu and choose **Settings -> System -> Add to Steam**, or
+2. Start ReplayNES from the application menu and choose **Settings -> Audio & Controls -> System -> Add to Steam**, or
    run in Konsole:
    ```
    flatpak run io.github.replaynes.ReplayNES --add-to-steam --dry-run   # show what would change

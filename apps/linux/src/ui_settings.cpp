@@ -3,7 +3,9 @@
 // light up, per-pad reset) and the keyboard / game input bindings (press-to-assign, turbo, SOCD).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <future>
 #include <map>
 #include <string>
 
@@ -172,6 +174,58 @@ void UI::buildAudioControlSettings() {
   ImGui::SeparatorText(TR("Files"));
   wrappedDisabled(TRF("Settings file: %@", {Paths::display(d_.app->paths().settingsFile())}).c_str());
   wrappedDisabled(TRF("Temporary session: %@", {Paths::display(d_.app->paths().tempProject())}).c_str());
+  ImGui::SeparatorText(TR("System"));
+  bool busy = steamJob_.valid();
+  ImGui::BeginDisabled(busy);
+  if (ImGui::Button((std::string(busy ? TR("Adding to Steam…") : TR("Add to Steam")) + "##addtosteam").c_str())) startAddToSteam();
+  ImGui::EndDisabled();
+  wrappedDisabled(TR("Adds ReplayNES to the Steam library with its artwork, for every Steam account on this device. Close Steam "
+                     "first (Desktop Mode)."));
+}
+
+// "Add to Steam": runs steam::addToSteam off the render thread (it reads / writes the Steam folders); the result
+// is shown in a dialog by pollAddToSteam().
+void UI::startAddToSteam() {
+  if (steamJob_.valid()) return;
+  steamJob_ = std::async(std::launch::async, [] {
+    steam::Report r;
+    steam::addToSteam(steam::AddOptions{}, r);
+    return r;
+  });
+}
+
+void UI::pollAddToSteam() {
+  if (!steamJob_.valid() || steamJob_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+  steam::Report r = steamJob_.get();
+  bool failed = false, running = false, changedAny = false;
+  std::string error;
+  for (const steam::UserResult& u : r.users) {
+    switch (u.action) {
+      case steam::UserAction::Failed:
+        failed = true;
+        if (error.empty()) error = u.error;
+        break;
+      case steam::UserAction::SteamRunning: running = true; break;
+      case steam::UserAction::Added:
+      case steam::UserAction::Updated: changedAny = true; break;
+      case steam::UserAction::Unchanged: break;
+    }
+  }
+  Dialog d;
+  d.title = TR("Add to Steam");
+  if (r.users.empty())
+    d.message = TR("No Steam account was found. Start Steam and sign in once, then try again.");
+  else if (failed)
+    d.message = std::string(TR("Adding ReplayNES to Steam failed.")) + "\n\n" + r.summary + (error.empty() ? "" : "\n" + error);
+  else if (running)
+    d.message = TR("Steam is running. Close Steam first (Desktop Mode: Steam menu → Exit), then try again. Artwork that could "
+                   "be installed appears after Steam restarts.");
+  else if (changedAny)
+    d.message = r.restartSteam ? TR("ReplayNES was added to Steam. Start (or restart) Steam to see it.")
+                               : TR("ReplayNES was added to Steam.");
+  else
+    d.message = TR("ReplayNES is already in Steam with its artwork.");
+  showDialog(std::move(d));
 }
 
 // ------------------------------------------------------------------ controller diagram
