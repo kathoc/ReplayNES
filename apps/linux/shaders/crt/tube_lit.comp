@@ -1,0 +1,17 @@
+// tube-webgl.mjs litprog: emitted light (after scatter, before ambient) into a half-float ring slot (slot = P.extra).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 emission[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 broad[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { uvec2 ring[]; };
+TUBE_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) >= P.oh) return;
+  int i = int(g.y) * P.ow + int(g.x);
+  precise vec3 v = emission[i].rgb * P.keep + broad[i].rgb * P.scatterFraction;
+  ring[P.extra * P.ow * P.oh + i] = uvec2(packHalf2x16(v.rg), packHalf2x16(vec2(v.b, 1.0)));
+}

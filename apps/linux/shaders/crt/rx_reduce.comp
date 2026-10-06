@@ -1,0 +1,18 @@
+// receiver-webgl.mjs reduction: porch clamp, burst correlation, sync level per row.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 64) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec2 carrier[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 basis[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 stats[]; };
+void main() {
+  uint g = gl_GlobalInvocationID.x;
+  if (g >= 240u) return;
+  int y = int(g); precise float porch = 0.0, bc = 0.0, bs = 0.0, sync = 0.0;
+  for (int n = 2172; n < 2244; n++) porch += carrier[y * 2728 + n].x;
+  for (int n = 2476; n < 2596; n++) { float a = carrier[y * 2728 + n].x; vec2 b = basis[n]; bc += a * b.x; bs += a * b.y; }
+  for (int n = 2324; n < 2364; n++) sync += carrier[y * 2728 + n].x;
+  stats[y] = vec4(porch / 72.0, bc / 60.0, bs / 60.0, sync / 40.0);
+}

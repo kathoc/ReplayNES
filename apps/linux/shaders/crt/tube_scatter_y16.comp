@@ -1,0 +1,35 @@
+// tube_scatter along y, 16 outputs per thread (default path).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { float weights[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+TUBE_PARAMS
+// Same arithmetic as tube_scatter: every output sums its taps d = -R..R in the same order with the
+// same weights (out-of-screen taps add an exact +0). Each thread makes 16 consecutive outputs along
+// the axis from a sliding register window (one source read per tap step).
+const int K = 16;
+vec3 fetchSrc(int qx, int qy) { return (qx >= 0 && qy >= 0 && qx < P.ow && qy < P.oh) ? src[qy * P.ow + qx].rgb : vec3(0.0); }
+void scatterSlide(int px, int py, int ax, int ay) {
+  int R = P.radius;
+  vec3 win[K]; precise vec3 sum[K];
+  for (int k = 0; k < K; k++) { win[k] = fetchSrc(px + ax * (k - R), py + ay * (k - R)); sum[k] = vec3(0.0); }
+  for (int d = -R; d <= R; d++) {
+    float w = weights[d + R];
+    for (int k = 0; k < K; k++) sum[k] += win[k] * w;
+    for (int k = 0; k < K - 1; k++) win[k] = win[k + 1];
+    win[K - 1] = fetchSrc(px + ax * (K + d), py + ay * (K + d));
+  }
+  for (int k = 0; k < K; k++) {
+    int qx = px + ax * k, qy = py + ay * k;
+    if (qx < P.ow && qy < P.oh) outp[qy * P.ow + qx] = vec4(sum[k], 1.0);
+  }
+}
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) * 16 >= P.oh) return;
+  scatterSlide(int(g.x), int(g.y) * 16, 0, 1);
+}

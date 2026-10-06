@@ -1,0 +1,21 @@
+// rf-webgl.mjs butterfly: single radix-2 stage (unused for N=4096; kept for parity).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec2 inp[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec2 outp[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { vec2 tw[]; };
+layout(push_constant) uniform FFTParams { int span; float signValue; int blocks; int pad; } P;
+vec2 twv(int k, float s) { vec2 p = tw[k]; return vec2(p.x, s * p.y); }
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 4096u || int(g.y) >= P.blocks) return;
+  int x = int(g.x), row = int(g.y), span = P.span, halfSpan = span / 2;
+  int j = x % halfSpan; int base = (x / span) * span;
+  vec2 a = inp[row * 4096 + base + j]; vec2 b = inp[row * 4096 + base + j + halfSpan];
+  vec2 t = cmul(b, twv(j * (4096 / span), P.signValue));
+  precise vec2 r = (x % span < halfSpan) ? a + t : a - t;
+  outp[row * 4096 + x] = r;
+}

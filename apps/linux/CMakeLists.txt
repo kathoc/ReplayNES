@@ -19,10 +19,20 @@ set(REPLAYNES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 option(REPLAYNES_BUILD_CLI "Build replaynes-cli" ON)
 add_subdirectory(${REPLAYNES_ROOT} replaynes)
 
-find_package(SDL3 REQUIRED CONFIG)
 find_package(Vulkan REQUIRED)
 find_package(Threads REQUIRED)
 find_program(GLSLC glslc REQUIRED)
+
+# CRT (Vulkan compute port of the nesterm physical model) + its headless conformance test.
+enable_testing()
+add_subdirectory(src/render)
+if(APPLE)
+  # Development on a Mac (MoltenVK): only the platform-independent Vulkan parts build here.
+  message(STATUS "macOS: building the render module and its tests only")
+  return()
+endif()
+
+find_package(SDL3 REQUIRED CONFIG)
 
 # Shaders: GLSL -> SPIR-V at build time, included as uint32 initialisers.
 set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)

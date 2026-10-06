@@ -1,0 +1,16 @@
+// supply-webgl.mjs meanProgram (M4c).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 64) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec4 means[]; };
+layout(push_constant) uniform SupplyParams { int width; int rows; float decay; float v0; float reff; float imax; float n; float relax; float reqScale; float ablFraction; float ilim; float pad; vec4 share; } P;
+void main() {
+  uint g = gl_GlobalInvocationID.x;
+  if (int(g) >= P.rows) return;
+  int y = int(g); precise vec3 s = vec3(0.0);
+  for (int x = 0; x < P.width; x++) s += src[y * P.width + x].rgb;
+  means[y] = vec4(s / float(P.width), 1.0);
+}

@@ -1,0 +1,18 @@
+// tube-webgl.mjs mixprog (no persistence): ambient + emitted light.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 emission[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 broad[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { float ambient[]; };
+layout(std430, set = 0, binding = 3) buffer B3 { vec4 outp[]; };
+TUBE_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) >= P.oh) return;
+  int i = int(g.y) * P.ow + int(g.x);
+  precise vec3 v = vec3(ambient[i]) + emission[i].rgb * P.keep + broad[i].rgb * P.scatterFraction;
+  outp[i] = vec4(v, 1.0);
+}

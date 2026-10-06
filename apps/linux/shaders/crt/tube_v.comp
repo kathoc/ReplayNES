@@ -1,0 +1,25 @@
+// tube-webgl.mjs vprog (fixed spot).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 hsrc[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 ymap[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+TUBE_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) >= P.oh) return;
+  int px = int(g.x), py = int(g.y);
+  precise vec3 value = vec3(0.0);
+  for (int parity = 0; parity < 2; parity++) {
+    precise vec3 sum = vec3(0.0);
+    for (int k = 0; k < P.yCount; k++) {
+      vec2 w = ymap[(py * 2 + parity) * P.yCount + k];
+      sum += hsrc[(int(w.x) + parity * P.height) * P.ow + px].rgb * w.y;
+    }
+    value += sum * P.gain;
+  }
+  outp[py * P.ow + px] = vec4(value, 1.0);
+}

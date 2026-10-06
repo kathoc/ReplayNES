@@ -1,0 +1,17 @@
+// rf-webgl.mjs initCodes (multi-pass direct port; the default path is rf_forward_tg).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 64, local_size_y = 4) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) writeonly buffer B0 { vec2 outp[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { uint codes[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { int phases[]; };
+layout(std430, set = 0, binding = 3) readonly buffer B3 { float volts[]; };
+RF_PARAMS
+#include "rf_common.glsl"
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 4096u || int(g.y) >= P.blocks) return;
+  outp[g.y * 4096u + g.x] = vec2(rfInitValue(int(g.x), int(g.y)), 0.0);
+}

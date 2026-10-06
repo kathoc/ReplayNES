@@ -1,0 +1,21 @@
+// tube-webgl.mjs hprog: horizontal detector integration per (column, branch c*2+parity), rows height*2.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 xmap[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+TUBE_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) >= P.height * 2) return;
+  int px = int(g.x); int parity = int(g.y) / P.height; int y = int(g.y) % P.height;
+  precise vec3 sum = vec3(0.0);
+  for (int c = 0; c < 3; c++) for (int k = 0; k < P.xCount; k++) {
+    vec2 w = xmap[(px * 6 + c * 2 + parity) * P.xCount + k];
+    sum[c] += src[y * P.width + int(w.x)][c] * w.y;
+  }
+  outp[int(g.y) * P.ow + px] = vec4(sum, 1.0);
+}

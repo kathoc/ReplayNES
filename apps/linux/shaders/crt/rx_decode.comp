@@ -1,0 +1,27 @@
+// receiver-webgl.mjs decode.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 prepared[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 stats[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { float gains[]; };
+layout(std430, set = 0, binding = 3) buffer B3 { vec4 outp[]; };
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 512u || g.y >= 240u) return;
+  int px = int(g.x), py = int(g.y);
+  vec4 stat = stats[py]; float gn = gains[py];
+  float lengthC = length(stat.yz); vec2 rot = vec2(-stat.y, stat.z) / max(lengthC, 1e-30);
+  precise float Y = 0.0; precise vec2 CS = vec2(0.0);
+  for (int k = 0; k < 3; k++) Y += prepared[py * 682 + px + 8 + k].x;
+  for (int k = 0; k < 12; k++) CS += prepared[py * 682 + px + 3 + k].yz;
+  float factor = gn / ((0.875 / (1.100 - 0.048)) * (1.100 - 0.312));
+  Y *= factor / 12.0;
+  float u = (CS.x * rot.x - CS.y * rot.y) * factor * (-2.0 / 48.0);
+  float cv = (CS.y * rot.x + CS.x * rot.y) * factor * (2.0 / 48.0);
+  float I = 0.838670568 * cv - 0.544639035 * u, Q = 0.544639035 * cv + 0.838670568 * u;
+  vec3 rgb = vec3(Y + 0.956 * I + 0.621 * Q, Y - 0.272 * I - 0.647 * Q, Y - 1.106 * I + 1.703 * Q);
+  outp[py * 512 + px] = vec4(pow(clamp(rgb, 0.0, 1.0), vec3(2.2)), 1.0);
+}

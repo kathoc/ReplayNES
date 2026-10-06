@@ -1,0 +1,35 @@
+// GatedAGC (reference/agc.mjs) over the 240 rows, on the GPU instead of the JS readback loop (one thread).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 1) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 stats[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { float gains[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 state[]; };
+layout(push_constant) uniform AGCParams { float lineSeconds; float attack; float release; float minGain; float maxGain; int enabled; int delay; int pad; } P;
+void main() {
+  if (gl_GlobalInvocationID.x != 0u) return;
+  float lo = log(P.minGain), hi = log(P.maxGain);
+  float gain = state[0].x;
+  float logGain = log(gain);   // a fresh GatedAGC({initialGain: controller.gain}) per packet
+  float lost = 0.0;
+  for (int row = 0; row < 240; row++) {
+    float gainBefore = gain;
+    vec4 s = stats[row];
+    bool gateValid = row * 2728 + 2324 - P.delay >= 0 && row * 2728 + 2363 + P.delay < 654720;
+    float detectedSync = gainBefore * s.w;
+    float amplitude = gainBefore * sqrt(s.y * s.y + s.z * s.z) / (0.875 / (1.100 - 0.048));
+    if (amplitude < 1e-12) lost = 1.0;
+    gains[row] = gainBefore;
+    bool controlGate = P.enabled != 0 && gateValid && detectedSync > 0.0;
+    if (controlGate) {
+      float desired = clamp(logGain - log(detectedSync), lo, hi);
+      float tau = desired < logGain ? P.attack : P.release;
+      float fraction = 1.0 - exp(-P.lineSeconds / tau);   // -expm1(-dt/tau)
+      logGain = clamp(logGain + (desired - logGain) * fraction, lo, hi);
+      gain = clamp(exp(logGain), P.minGain, P.maxGain);
+    }
+  }
+  state[0] = vec4(gain, lost, 0.0, 0.0);
+}

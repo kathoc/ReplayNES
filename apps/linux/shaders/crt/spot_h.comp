@@ -1,0 +1,28 @@
+// spot-h-webgl.mjs (M4C-SPOT-H): horizontal counterpart of the beam-current spot growth.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec4 outp[]; };
+layout(push_constant) uniform SpotParams { int width; int rows; int radius; float k1; } P;
+float spotW(float u, int k) {
+  float s = P.k1 * sqrt(max(u, 0.0));
+  if (s <= 1e-6) return k == 0 ? 1.0 : 0.0;
+  precise float sum = 0.0;
+  for (int i = -P.radius; i <= P.radius; i++) sum += exp(-0.5 * float(i * i) / (s * s));
+  return exp(-0.5 * float(k * k) / (s * s)) / sum;
+}
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.width || int(g.y) >= P.rows) return;
+  int px = int(g.x), py = int(g.y);
+  precise vec3 acc = vec3(0.0);
+  for (int k = -P.radius; k <= P.radius; k++) {
+    int j = px - k; if (j < 0 || j >= P.width) continue;
+    vec3 u = src[py * P.width + j].rgb;
+    acc += vec3(u.r * spotW(u.r, k), u.g * spotW(u.g, k), u.b * spotW(u.b, k));
+  }
+  outp[py * P.width + px] = vec4(acc, 1.0);
+}

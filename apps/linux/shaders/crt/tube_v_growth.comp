@@ -1,0 +1,34 @@
+// tube-webgl.mjs vprog (M4B-GPU-CURRENT): drive-dependent vertical spot, tables interpolated in current.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 hsrc[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 gmap[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { float colsum[]; };
+layout(std430, set = 0, binding = 3) buffer B3 { vec4 outp[]; };
+TUBE_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.ow || int(g.y) >= P.oh) return;
+  int px = int(g.x), py = int(g.y);
+  int rowWidth = P.levels * P.gCount;
+  precise vec3 value = vec3(0.0);
+  for (int parity = 0; parity < 2; parity++) {
+    vec3 cs = vec3(colsum[parity * P.ow + px], colsum[(2 + parity) * P.ow + px], colsum[(4 + parity) * P.ow + px]);
+    precise vec3 sum = vec3(0.0); int row = py * 2 + parity;
+    for (int k = 0; k < P.gCount; k++) {
+      float fy = gmap[row * rowWidth + k].x; if (fy < 0.0) continue;
+      vec3 h = hsrc[(int(fy) + parity * P.height) * P.ow + px].rgb;
+      for (int c = 0; c < 3; c++) {
+        if (h[c] == 0.0 || cs[c] <= 0.0) continue;
+        precise float t = clamp(h[c] / cs[c], 0.0, 1.0) * float(P.levels - 1);
+        int kk = min(P.levels - 2, int(floor(t))); float f = t - float(kk);
+        sum[c] += h[c] * glmix1(gmap[row * rowWidth + kk * P.gCount + k].y, gmap[row * rowWidth + (kk + 1) * P.gCount + k].y, f);
+      }
+    }
+    value += sum * P.gain;
+  }
+  outp[py * P.ow + px] = vec4(value, 1.0);
+}
