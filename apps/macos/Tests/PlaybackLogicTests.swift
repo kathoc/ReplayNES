@@ -43,17 +43,17 @@ final class PlaybackLogicTests: XCTestCase {
         var e: UInt32 = 0, held: UInt32 = 0, p1: UInt8 = 0, p2: UInt8 = 0
         rn_input_poll_hotkeys(h, &e, &held)
 
-        rn_input_set_pressed(h, "gc0:rightTrigger", 1)
+        rn_input_set_pressed(h, "gc0:leftTrigger", 1)
         rn_input_poll_hotkeys(h, &e, &held)
         XCTAssertNotEqual(held & UInt32(RN_HK_REWIND), 0)
         rn_input_sample_game(h, 0, &p1, &p2)
         XCTAssertEqual(p1, 0)
-        rn_input_set_pressed(h, "gc0:rightTrigger", 0)
+        rn_input_set_pressed(h, "gc0:leftTrigger", 0)
 
-        rn_input_set_pressed(h, "gc0:leftTrigger", 1)
+        rn_input_set_pressed(h, "gc0:rightTrigger", 1)
         rn_input_poll_hotkeys(h, &e, &held)
         XCTAssertNotEqual(held & UInt32(RN_HK_FAST_FORWARD), 0)
-        rn_input_set_pressed(h, "gc0:leftTrigger", 0)
+        rn_input_set_pressed(h, "gc0:rightTrigger", 0)
 
         rn_input_set_pressed(h, "gc0:leftShoulder", 1)
         rn_input_poll_hotkeys(h, &e, &held)

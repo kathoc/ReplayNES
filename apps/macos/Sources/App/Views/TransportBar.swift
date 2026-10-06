@@ -87,7 +87,7 @@ struct TransportBar: View {
                 RecordToggleButton()
                 Divider().frame(height: 20).padding(.horizontal, 4)
                 IconButton(systemImage: "backward.end.fill", help: st.practicing ? String(localized: "Back to A") : String(localized: "Go to Start")) { model.seek(to: 0) }
-                HoldButton(systemImage: "backward.fill", help: String(localized: "Rewind while held (R2 / Delete)")) { model.setRewindHeld($0) }
+                HoldButton(systemImage: "backward.fill", help: String(localized: "Rewind while held (L2 / Delete)")) { model.setRewindHeld($0) }
                 IconButton(systemImage: "backward.frame.fill", help: String(localized: "Step back one frame (while paused: D-pad ← / ,)")) { model.stepBack() }
                     .opacity(st.paused ? 1 : 0).disabled(!st.paused)
                 IconButton(systemImage: st.paused ? "play.fill" : "pause.fill", help: String(localized: "Resume / Pause (R / Space)"), prominent: true) {
@@ -95,7 +95,7 @@ struct TransportBar: View {
                 }
                 IconButton(systemImage: "forward.frame.fill", help: String(localized: "Frame advance (while paused: D-pad → / .)")) { model.frameAdvance() }
                     .opacity(st.paused ? 1 : 0).disabled(!st.paused)
-                HoldButton(systemImage: "forward.fill", help: String(localized: "Fast-forward while held (L2 / Tab). Plays only the recorded range and stops at its end")) {
+                HoldButton(systemImage: "forward.fill", help: String(localized: "Fast-forward while held (R2 / Tab). Plays only the recorded range and stops at its end")) {
                     model.setFastForwardHeld($0)
                 }
                 .opacity(st.practicing ? 0.35 : 1).disabled(st.practicing)

@@ -8,8 +8,8 @@ struct GuideView: View {
         (String(localized: "Right / Bottom button"), String(localized: "NES A / B (Pro Controller A / B, Xbox B / A, PS ○ / ✕)")),
         (String(localized: "Top / Left button"), String(localized: "Turbo A / Turbo B (Pro Controller X / Y, Xbox Y / X, PS △ / □)")),
         (String(localized: "+ / − (Menu / Options)"), "START / SELECT"),
-        (String(localized: "ZR / R2 / RT (hold)"), String(localized: "Rewind")),
-        (String(localized: "ZL / L2 / LT (hold)"), String(localized: "Fast-forward (recorded range only; pauses at the end)")),
+        (String(localized: "ZL / L2 / LT (hold)"), String(localized: "Rewind")),
+        (String(localized: "ZR / R2 / RT (hold)"), String(localized: "Fast-forward (recorded range only; pauses at the end)")),
         ("R", String(localized: "Pause / Resume")),
         ("L", String(localized: "Slow 1/2 ⇔ normal speed")),
     ]

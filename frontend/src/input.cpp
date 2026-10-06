@@ -101,14 +101,14 @@ const Pair kKeyboardSDL[] = {
 };
 // Controller slot 0 -> P1, slot 1 -> P2. Face buttons by POSITION: east = A, south = B
 // (Nintendo's own A/B; B/A on Xbox, ○/✕ on PlayStation), north = turbo A, west = turbo B.
-// In-game controls (hotkeys, never recorded): R2 hold = rewind, L2 hold = fast-forward,
+// In-game controls (hotkeys, never recorded): L2 hold = rewind, R2 hold = fast-forward,
 // L = slow 1/2 toggle, R = pause/play. While paused the D-pad ←/→ steps frames.
 const Pair kController[] = {
     {"gc0:dpad.up", "p1.up"}, {"gc0:dpad.down", "p1.down"}, {"gc0:dpad.left", "p1.left"}, {"gc0:dpad.right", "p1.right"},
     {"gc0:lstick.up", "p1.up"}, {"gc0:lstick.down", "p1.down"}, {"gc0:lstick.left", "p1.left"}, {"gc0:lstick.right", "p1.right"},
     {"gc0:face.east", "p1.a"}, {"gc0:face.south", "p1.b"}, {"gc0:face.north", "p1.turbo_a"}, {"gc0:face.west", "p1.turbo_b"},
     {"gc0:menu", "p1.start"}, {"gc0:options", "p1.select"},
-    {"gc0:rightTrigger", "hk.rewind"}, {"gc0:leftTrigger", "hk.fast_forward"},
+    {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
     {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
     {"gc1:dpad.up", "p2.up"}, {"gc1:dpad.down", "p2.down"}, {"gc1:dpad.left", "p2.left"}, {"gc1:dpad.right", "p2.right"},
     {"gc1:lstick.up", "p2.up"}, {"gc1:lstick.down", "p2.down"}, {"gc1:lstick.left", "p2.left"}, {"gc1:lstick.right", "p2.right"},
@@ -124,8 +124,12 @@ const Pair kLegacyControllerHotkeys[] = {
     {"gc0:leftTrigger", "hk.step_back"}, {"gc0:rightTrigger", "hk.frame_advance"},
 };
 const Pair kControllerHotkeys[] = {
-    {"gc0:rightTrigger", "hk.rewind"}, {"gc0:leftTrigger", "hk.fast_forward"},
+    {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
     {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
+};
+// Layouts 2-3 had the triggers the other way round (R2 rewind, L2 fast-forward).
+const Pair kLayout3TriggerHotkeys[] = {
+    {"gc0:rightTrigger", "hk.rewind"}, {"gc0:leftTrigger", "hk.fast_forward"},
 };
 const char* const kLegacyFaceNames[] = {"buttonA", "buttonB", "buttonX", "buttonY"};
 
@@ -573,6 +577,21 @@ void rnf_input_controller_layout_migration(const rnf_binding* bindings, size_t c
   constexpr size_t n = sizeof(kLegacyControllerHotkeys) / sizeof(kLegacyControllerHotkeys[0]);
   if (!all || hotkeyOnGC0 != n) return emit({}, {}, unbind, bind);
   emit(toPairs(kLegacyControllerHotkeys), toPairs(kControllerHotkeys), unbind, bind);
+}
+
+void rnf_input_trigger_swap_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {
+  // Only when both triggers of pad 1 still do exactly what layout 3 assigned (nothing else on
+  // them): customised triggers are left alone.
+  Pairs b = rnf::toPairs(bindings, count);
+  for (const Pair& old : kLayout3TriggerHotkeys) {
+    size_t onInput = size_t(std::count_if(b.begin(), b.end(), [&](auto& x) { return x.first == old.input; }));
+    bool has = std::any_of(b.begin(), b.end(), [&](auto& x) { return x.first == old.input && x.second == old.action; });
+    if (!has || onInput != 1) return emit({}, {}, unbind, bind);
+  }
+  Pairs u = toPairs(kLayout3TriggerHotkeys), nb;
+  for (const Pair& p : kControllerHotkeys)
+    if (std::string(p.input) == "gc0:leftTrigger" || std::string(p.input) == "gc0:rightTrigger") nb.emplace_back(p.input, p.action);
+  emit(u, nb, unbind, bind);
 }
 
 void rnf_input_face_layout_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {

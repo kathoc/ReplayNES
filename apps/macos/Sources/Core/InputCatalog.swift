@@ -83,6 +83,10 @@ enum InputCatalog {
     /// defaults get the new positional defaults. Customised slots keep their bindings.
     static func faceLayoutMigration(_ c: Config) -> Plan { plan(c) { rnf_input_face_layout_migration($0, $1, $2, $3) } }
 
+    /// Layout 3 -> 4: pad 1's triggers, if still the layout-3 defaults (R2 rewind, L2 fast-forward),
+    /// swap to L2 rewind / R2 fast-forward. Customised triggers are kept.
+    static func triggerSwapMigration(_ c: Config) -> Plan { plan(c) { rnf_input_trigger_swap_migration($0, $1, $2, $3) } }
+
     /// Layout 2 -> 3, step 2 (when a controller attaches to `slot`): customised bindings that still
     /// use GameController names move to the position that name has on THAT controller.
     static func legacyFaceTranslation(_ c: Config, slot: Int, positions: [String: FacePosition]) -> Plan {

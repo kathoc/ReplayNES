@@ -287,7 +287,7 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 3
+#define RNF_CONTROLLER_LAYOUT_VERSION 4
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
@@ -316,6 +316,9 @@ double rnf_input_config_analog_threshold(const rnf_input_config* c);
 /* Layout 1 -> 2: untouched 0.1.x controller hotkeys -> the 0.2.0 hotkeys. */
 void rnf_input_controller_layout_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind,
                                            rnf_list** bind);
+/* Layout 3 -> 4: pad 1's triggers, if still exactly the layout-3 defaults (R2 rewind, L2 fast-forward),
+ * are swapped to the new defaults (L2 rewind, R2 fast-forward). */
+void rnf_input_trigger_swap_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Layout 2 -> 3 step 1 (on load): slots with untouched layout-2 face defaults get positional defaults. */
 void rnf_input_face_layout_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Layout 2 -> 3 step 2 (controller attached): legacy GameController names of slot move to the

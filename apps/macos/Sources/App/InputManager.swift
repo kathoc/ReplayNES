@@ -94,6 +94,7 @@ final class InputManager {
     /// layout 2 (0.2.0): 0.1.x controller hotkeys (L1 rewind, R1 FF, L2/R2 step) -> new hotkeys.
     /// layout 3: GameController face-button names -> positional ids (fixes A/B, X/Y on Nintendo
     /// controllers). Customised face buttons are translated when their controller attaches.
+    /// layout 4: untouched trigger hotkeys swap to L2 rewind / R2 fast-forward.
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
         let from = d.integer(forKey: "controllerLayoutVersion")
@@ -102,6 +103,7 @@ final class InputManager {
         var changed = false
         if from < 2 { changed = apply(InputCatalog.controllerLayoutMigration(config)) || changed }
         if from < 3 { changed = apply(InputCatalog.faceLayoutMigration(config)) || changed }
+        if from < 4 { changed = apply(InputCatalog.triggerSwapMigration(config)) || changed }
         guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)

@@ -115,8 +115,8 @@ TEST_CASE("default face buttons are positional") {
 
 TEST_CASE("default controller hotkeys") {
   auto b = asSet(defaultBindings());
-  CHECK(b.count("gc0:rightTrigger=hk.rewind"));
-  CHECK(b.count("gc0:leftTrigger=hk.fast_forward"));
+  CHECK(b.count("gc0:leftTrigger=hk.rewind"));
+  CHECK(b.count("gc0:rightTrigger=hk.fast_forward"));
   CHECK(b.count("gc0:leftShoulder=hk.slow"));
   CHECK(b.count("gc0:rightShoulder=hk.pause"));
   for (auto k : {"kb:51=hk.rewind", "kb:48=hk.fast_forward", "kb:49=hk.pause", "kb:37=hk.slow", "kb:43=hk.step_back",
@@ -150,11 +150,15 @@ TEST_CASE("defaults load into the engine and hotkeys are not game input") {
   uint32_t e = 0, held = 0;
   uint8_t p1 = 0, p2 = 0;
   rn_input_poll_hotkeys(h, &e, &held);
-  rn_input_set_pressed(h, "gc0:rightTrigger", 1);
+  rn_input_set_pressed(h, "gc0:leftTrigger", 1);
   rn_input_poll_hotkeys(h, &e, &held);
   CHECK(held & RN_HK_REWIND);
   rn_input_sample_game(h, 0, &p1, &p2);
   CHECK_EQ(p1, 0);
+  rn_input_set_pressed(h, "gc0:leftTrigger", 0);
+  rn_input_set_pressed(h, "gc0:rightTrigger", 1);
+  rn_input_poll_hotkeys(h, &e, &held);
+  CHECK(held & RN_HK_FAST_FORWARD);
   rn_input_set_pressed(h, "gc0:rightTrigger", 0);
   rn_input_set_pressed(h, "gc0:leftShoulder", 1);
   rn_input_poll_hotkeys(h, &e, &held);
@@ -242,6 +246,37 @@ TEST_CASE("customised face buttons are kept per slot") {
   CHECK((translation(applying(pro, migrated), 0, {}).bind.empty()));
 }
 
+static Pairs layout3Triggers(Pairs c) {
+  // The layout-3 defaults: R2 rewind, L2 fast-forward.
+  removeIf(c, [](const std::pair<std::string, std::string>& b) {
+    return b.first == "gc0:leftTrigger" || b.first == "gc0:rightTrigger";
+  });
+  c.emplace_back("gc0:rightTrigger", "hk.rewind");
+  c.emplace_back("gc0:leftTrigger", "hk.fast_forward");
+  return c;
+}
+
+TEST_CASE("trigger swap migration (layout 3 -> 4)") {
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 4);
+  Pairs old = layout3Triggers(defaultConfig());
+  Plan m = plan(rnf_input_trigger_swap_migration, old);
+  CHECK_EQ(m.unbind.size(), size_t(2));
+  CHECK_EQ(m.bind.size(), size_t(2));
+  CHECK(asSet(applying(m, old)) == asSet(defaultConfig()));
+  // Already the new defaults: nothing to do.
+  CHECK(plan(rnf_input_trigger_swap_migration, defaultConfig()).bind.empty());
+  // Customised triggers are kept: another action on a trigger, or a trigger rebound.
+  Pairs extra = old;
+  extra.emplace_back("gc0:rightTrigger", "hk.bookmark");
+  CHECK(plan(rnf_input_trigger_swap_migration, extra).bind.empty());
+  Pairs rebound = old;
+  removeIf(rebound, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:leftTrigger"; });
+  rebound.emplace_back("gc0:leftTrigger", "hk.step_back");
+  CHECK(plan(rnf_input_trigger_swap_migration, rebound).bind.empty());
+  // Pad 2 is not touched.
+  for (auto& b : m.bind) CHECK(b.first.rfind("gc0:", 0) == 0);
+}
+
 TEST_CASE("full chain from 0.1.x") {
   Pairs c = layout2Defaults();
   auto hk = listPairs(rnf_input_controller_hotkeys());
@@ -250,7 +285,12 @@ TEST_CASE("full chain from 0.1.x") {
   c.insert(c.end(), old.begin(), old.end());
   c = applying(plan(rnf_input_controller_layout_migration, c), c);
   c = applying(plan(rnf_input_face_layout_migration, c), c);
+  c = applying(plan(rnf_input_trigger_swap_migration, c), c);
   CHECK(asSet(c) == asSet(defaultConfig()));
+  // From layout 3 (0.2.x): the triggers swap.
+  Pairs l3 = layout3Triggers(defaultConfig());
+  l3 = applying(plan(rnf_input_trigger_swap_migration, l3), l3);
+  CHECK(asSet(l3) == asSet(defaultConfig()));
 }
 
 TEST_CASE("per-controller reset") {
@@ -465,8 +505,8 @@ TEST_CASE("diagram badges show game buttons and hotkeys") {
   Pairs c = defaultConfig();
   CHECK_EQ(badge(c, "face.east", 0), "A");
   CHECK_EQ(badge(c, "face.north", 0), "Turbo A");
-  CHECK_EQ(badge(c, "rightTrigger", 0), "Rewind");
-  CHECK_EQ(badge(c, "leftTrigger", 0), "Fast Fwd");
+  CHECK_EQ(badge(c, "leftTrigger", 0), "Rewind");
+  CHECK_EQ(badge(c, "rightTrigger", 0), "Fast Fwd");
   CHECK_EQ(badge(c, "leftShoulder", 0), "Slow");
   CHECK_EQ(badge(c, "rightShoulder", 0), "Pause");
   CHECK_EQ(badge(c, "menu", 0), "START");
