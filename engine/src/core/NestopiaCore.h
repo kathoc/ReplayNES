@@ -27,6 +27,11 @@ class NestopiaCore final : public ICore {
   uint64_t frameIndex() const override { return frame_; }
   const uint32_t* video() const override { return video_.data(); }
   const int16_t* audio(size_t* count) const override { *count = audioCount_; return audio_.data(); }
+  const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const override {
+    if (burstPhase) *burstPhase = codesBurstPhase_;
+    if (frame) *frame = codesFrame_;
+    return codes_.data();
+  }
   Status saveState(std::vector<uint8_t>& out) override;
   Status loadState(const uint8_t* data, size_t size) override;
   std::string compatId() const override { return staticCompatId(); }
@@ -40,6 +45,9 @@ class NestopiaCore final : public ICore {
   bool loaded_ = false;
   uint64_t frame_ = 0;
   std::vector<uint32_t> video_;
+  std::vector<uint16_t> codes_;    // raw PPU codes of the picture in video_ (display-only copy)
+  uint32_t codesBurstPhase_ = 0;
+  uint64_t codesFrame_ = 0;
   std::vector<int16_t> audio_;
   size_t audioCount_ = 0;
 };

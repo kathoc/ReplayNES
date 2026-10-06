@@ -45,6 +45,15 @@ class ICore {
   virtual uint64_t frameIndex() const = 0;
   virtual const uint32_t* video() const = 0;  // kVideoWidth*kVideoHeight BGRA8 (0xAARRGGBB LE), alpha=255
   virtual const int16_t* audio(size_t* count) const = 0;  // samples of the last stepFrame
+  // Display-only side channel for the CRT signal model: the raw PPU output codes of the frame in
+  // video() (kVideoWidth*kVideoHeight, bits 0-5 = palette index after greyscale, bits 6-8 =
+  // $2001 emphasis bits 5-7), the core's colour-burst phase for that frame (0..2) and the
+  // frameIndex() that produced it. Captured together with video(), so they always describe the
+  // same picture. Never part of state or hashes. nullptr = not supported by this core.
+  virtual const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const {
+    (void)burstPhase; (void)frame;
+    return nullptr;
+  }
   virtual Status saveState(std::vector<uint8_t>& out) = 0;
   virtual Status loadState(const uint8_t* data, size_t size) = 0;
   virtual std::string compatId() const = 0;    // changes whenever replay results could change

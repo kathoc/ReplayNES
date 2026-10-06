@@ -221,14 +221,19 @@ final class EmulationController {
     /// Hands a frame to the display, through the flash filter unless it is off. The session's own
     /// buffer is only read; the filtered copy is what the viewport (and snapshots) show.
     private func show(_ v: UnsafePointer<UInt32>, meta: FrameMeta) {
+        // Raw PPU codes of the same picture for the CRT signal path (display only).
+        var meta = meta
+        let signal = session?.videoIndices
+        if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
         if flashFilter.level == .off {
-            frames.publish(v, meta: meta)
+            frames.publish(v, meta: meta, codes: signal?.codes)
             return
         }
         let altered = displayFrame.withUnsafeMutableBufferPointer { flashFilter.process(v, into: $0.baseAddress!) }
         flashAltered = altered
         if altered { lastFlashTick = tickCount }
-        displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta) }
+        meta.flashAltered = altered
+        displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta, codes: signal?.codes) }
     }
 
     /// Seek helper used by commands: pauses, mutes, refreshes the picture.

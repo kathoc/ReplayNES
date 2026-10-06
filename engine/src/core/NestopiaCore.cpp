@@ -8,6 +8,7 @@
 #include "core/api/NstApiMachine.hpp"
 #include "core/api/NstApiSound.hpp"
 #include "core/api/NstApiVideo.hpp"
+#include "core/NstMachine.hpp"
 
 #if !defined(RN_NESTOPIA_COMMIT) || !defined(RN_NESTOPIA_PATCHLEVEL)
 #error "RN_NESTOPIA_COMMIT / RN_NESTOPIA_PATCHLEVEL must be defined by the build (cmake/NestopiaCore.cmake)"
@@ -43,7 +44,10 @@ std::string NestopiaCore::buildId() const {
 }
 
 NestopiaCore::NestopiaCore()
-    : impl_(new Impl()), video_(size_t(kVideoWidth) * kVideoHeight, 0xFF000000u), audio_(kMaxSamplesPerFrame, 0) {}
+    : impl_(new Impl()),
+      video_(size_t(kVideoWidth) * kVideoHeight, 0xFF000000u),
+      codes_(size_t(kVideoWidth) * kVideoHeight, 0x0F),
+      audio_(kMaxSamplesPerFrame, 0) {}
 
 NestopiaCore::~NestopiaCore() {
   if (loaded_) {
@@ -129,6 +133,9 @@ Status NestopiaCore::loadROM(const uint8_t* data, size_t size) {
   frame_ = 0;
   audioCount_ = 0;
   std::fill(video_.begin(), video_.end(), 0xFF000000u);
+  std::fill(codes_.begin(), codes_.end(), uint16_t(0x0F));  // $0F = black, like the cleared picture
+  codesBurstPhase_ = 0;
+  codesFrame_ = 0;
   return Status::Ok();
 }
 
@@ -160,8 +167,16 @@ Status NestopiaCore::stepFrame(uint8_t p1, uint8_t p2, bool renderVideo) {
   im.soundOut.length[1] = 0;
   Nes::Result r = im.emu.Execute(renderVideo ? &im.videoOut : nullptr, &im.soundOut, &im.controllers);
   if (NES_FAILED(r)) return nstErr(Err::StateError, "execute", r);
-  if (renderVideo)
+  if (renderVideo) {
     for (auto& px : video_) px |= 0xFF000000u;
+    // Display-only copy of the PPU output the RGB picture was converted from (read, never
+    // written: emulation and every hash are unaffected).
+    Nes::Core::Ppu& ppu = static_cast<Nes::Core::Machine&>(im.emu).ppu;
+    const Nes::Core::Video::Screen::Pixel* src = ppu.GetScreen().pixels;
+    for (size_t i = 0; i < codes_.size(); ++i) codes_[i] = uint16_t(src[i] & 0x1FF);
+    codesBurstPhase_ = ppu.GetBurstPhase();
+    codesFrame_ = frame_;
+  }
   ++frame_;
   return Status::Ok();
 }

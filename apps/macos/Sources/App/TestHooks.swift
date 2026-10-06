@@ -10,7 +10,8 @@
 //                                                leftShoulder, dpad.left) through the real controller
 //                                                path (hotkeys, paused D-pad stepping, game input).
 //   --test-actions "<sec>:<action>[:<n>],..."    UI actions: setA/setB/practice:<slot 0-7>, stopPractice,
-//                                                toggleRecord, togglePause, panel, fill, integer.
+//                                                toggleRecord, togglePause, panel, fill, integer,
+//                                                fullscreen, crtOn, crtOff.
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
@@ -88,6 +89,9 @@ extension AppModel {
                 case "panel": self.showPracticePanel.toggle()
                 case "fill": self.integerScale = false
                 case "integer": self.integerScale = true
+                case "fullscreen": self.mainWindow?.toggleFullScreen(nil)
+                case "crtOn": CRTSettingsModel.shared.launchOverride = true
+                case "crtOff": CRTSettingsModel.shared.enabled = false
                 default: NSLog("ReplayNES: unknown test action \(parts[1])")
                 }
             }

@@ -19,6 +19,10 @@ class OfflineRenderer {
   uint64_t framesDone() const { return pos_ > start_ ? pos_ - start_ : 0; }
   // Returns Err::EndOfTake when all frames were produced. Buffers valid until the next call.
   Status next(const uint32_t** video, const int16_t** audio, size_t* samples, uint64_t* frameIndex);
+  // CRT signal side channel of the frame returned by the last next() (see ICore::videoCodes).
+  const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const {
+    return core_ ? core_->videoCodes(burstPhase, frame) : nullptr;
+  }
   uint64_t hash() const { return running_.digest(); }  // over all (videoHash, audioHash) pairs output so far
 
  private:

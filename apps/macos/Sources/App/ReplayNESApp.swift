@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --library-root <dir>  use <dir> instead of ~/Documents/ReplayNES for the ROM library
         //   --library-play <name> start a new library project for that ROM (TestHooks.swift)
         //   --syphon            enable the Syphon streaming output for this run (not saved)
+        //   --crt               enable the ブラウン管 (CRT) display for this run (not saved)
         //   --inject-pad / --test-actions / --snapshot-at   scripted checks (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
         let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at"].contains { args.contains($0) }
@@ -42,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ROM library: create ~/Documents/ReplayNES/{ROM,Projects}. A failure is reported, never
         // silently replaced by another location.
         StreamOutputModel.shared.start(frames: model.emu.frames, forceEnable: args.contains("--syphon"))
+        if args.contains("--crt") { CRTSettingsModel.shared.launchOverride = true }
         if let root = arg("--library-root") { model.library.setRoot(URL(fileURLWithPath: root)) }
         if let err = model.library.start() {
             DispatchQueue.main.async {
