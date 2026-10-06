@@ -75,6 +75,8 @@ extension AppModel {
             "sampleToEmulatedMs": s.sampleToEmulatedMs, "audioUnderruns": s.audioUnderruns,
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,
             "lateTicks": s.lateTicks,
+            "flashReduction": flashLevel.label, "flashActive": status.flashActive,
+            "libraryROMs": library.roms.count, "libraryRoot": library.paths.root.path,
         ]
         info.merge(keyboardDiagnostics) { a, _ in a }
         if let data = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]) {

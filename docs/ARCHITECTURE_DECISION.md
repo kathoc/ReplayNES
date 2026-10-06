@@ -58,6 +58,8 @@ GPL-3.0, multi-threaded internally and designed around one global emulator insta
   persist/   ProjectStore: .nesrec package, atomic writes, journal, crash recovery (FILE_FORMAT.md)
   input/     InputPipeline: physical ids -> actions -> turbo/SOCD -> final bitfields; hotkeys separate
   render/    OfflineRenderer: snapshot of active take on a fresh core (export path)
+  video/     FlashFilter: display-side photosensitive flash reduction (pure function of shown frames;
+             never touches sessions or hashes; see FLASH_REDUCTION.md)
   harness/   DeterminismHarness: multi-run + mid-savestate comparison, first divergent frame/component
   core/      ICore; NestopiaCore (pinned settings); MockCore (fast deterministic fake for tests)
   util/      SHA-256, CRC32, Hasher64, JSON, byte codecs, Fs (the ONLY OS-specific file: fsync/rename)

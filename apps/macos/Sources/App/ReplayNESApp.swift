@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --inject-keys "<sec>:<keyCode>:<d|u>,..."  synthetic key events (TestHooks.swift)
         //   --no-updater        do not start Sparkle (also implied by --snapshot / --inject-keys)
         //   --update-check-now  see Updater.swift
+        //   --library-root <dir>  use <dir> instead of ~/Documents/ReplayNES for the ROM library
+        //   --library-play <name> start a new library project for that ROM (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
         if !args.contains("--no-updater") && !args.contains("--snapshot") && !args.contains("--inject-keys") {
             UpdaterModel.shared.start(arguments: args)
@@ -26,7 +28,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        if let rom = arg("--rom") {
+        // ROM library: create ~/Documents/ReplayNES/{ROM,Projects}. A failure is reported, never
+        // silently replaced by another location.
+        if let root = arg("--library-root") { model.library.setRoot(URL(fileURLWithPath: root)) }
+        if let err = model.library.start() {
+            DispatchQueue.main.async {
+                self.model.showError("ライブラリのフォルダを作成できませんでした",
+                                     err + "\n\n「書類」フォルダへのアクセスを許可しているか確認してください（システム設定 → プライバシーとセキュリティ → ファイルとフォルダ）。ライブラリ画面の「再試行」でもう一度作成できます。")
+            }
+        }
+        if let name = arg("--library-play") {
+            model.scheduleLibraryPlay(name)
+        } else if let rom = arg("--rom") {
             model.createSession(rom: URL(fileURLWithPath: rom), projectDir: nil, autoplay: args.contains("--autoplay"))
         } else if let p = arg("--project") {
             model.openProject(URL(fileURLWithPath: p))
@@ -87,6 +100,11 @@ struct ReplayNESApp: App {
         .defaultSize(width: 1240, height: 820)
         .commands { AppCommands(model: AppModel.shared) }
 
+        Window("ライブラリ", id: "library") {
+            LibraryWindow().environmentObject(AppModel.shared)
+        }
+        .defaultSize(width: 860, height: 560)
+
         Window("テイク一覧", id: "takes") {
             TakesPanel().environmentObject(AppModel.shared)
         }
@@ -110,6 +128,8 @@ struct AppCommands: Commands {
             Button("新規プロジェクト…") { model.newProject() }.keyboardShortcut("n")
             Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
             Button("プロジェクトを開く…") { model.openProjectPanel() }.keyboardShortcut("o")
+            // ⌘L is the latency overlay; ⇧⌘L is free.
+            Button("ライブラリ…") { openWindow(id: "library") }.keyboardShortcut("l", modifiers: [.command, .shift])
             Divider()
             Button("プロジェクトを閉じる") { model.closeProject() }.disabled(!model.status.hasSession)
         }

@@ -4,6 +4,8 @@
 //                                                same path as real keys (app event queue ->
 //                                                InputManager's local monitor -> rn_input), so the
 //                                                key-window / first-responder gating is exercised.
+//   --library-play "<ROM name>"                 start a new library project for that ROM (as if
+//                                                chosen in the library) once the scan has found it.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 
@@ -52,6 +54,15 @@ extension AppModel {
             NSApp.postEvent(ev, atStart: false)
         }
         injectQueue.removeAll()
+    }
+
+    func scheduleLibraryPlay(_ name: String, attempts: Int = 50) {
+        if let rom = library.roms.first(where: { $0.name == name || $0.relativePath == name }) {
+            playFromLibrary(rom)
+            return
+        }
+        guard attempts > 0 else { NSLog("ReplayNES: --library-play: ROM \(name) not found"); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.scheduleLibraryPlay(name, attempts: attempts - 1) }
     }
 
     /// Diagnostics for the snapshot JSON: can keyboard input reach the game right now?

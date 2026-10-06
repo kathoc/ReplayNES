@@ -23,3 +23,6 @@ rn_add_test(test_longrun)
 # Uses the developer's own ROMs in <repo>/roms when present (gitignored); skipped otherwise.
 rn_add_test(test_local_roms)
 target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")
+# Display-side photosensitive flash reduction (synthetic frames; local ROMs when present).
+rn_add_test(test_flash_filter)
+target_compile_definitions(test_flash_filter PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")

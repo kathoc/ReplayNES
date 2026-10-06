@@ -16,6 +16,7 @@
 #include "testrom/TestRom.h"
 #include "util/Fs.h"
 #include "util/Hash.h"
+#include "video/FlashFilter.h"
 
 #ifndef RN_ENGINE_VERSION
 #define RN_ENGINE_VERSION "0.0.0"
@@ -35,6 +36,9 @@ struct rn_input {
 };
 struct rn_renderer {
   std::unique_ptr<rn::OfflineRenderer> r;
+};
+struct rn_flash_filter {
+  rn::FlashFilter f;
 };
 
 namespace {
@@ -398,5 +402,47 @@ rn_status rn_renderer_next(rn_renderer* r, const uint32_t** video, const int16_t
 }
 uint64_t rn_renderer_hash(const rn_renderer* r) { return r ? r->r->hash() : 0; }
 void rn_renderer_free(rn_renderer* r) { delete r; }
+
+// ------------------------------------------------------------------ flash reduction
+static bool validFlashLevel(rn_flash_level l) { return int(l) >= RN_FLASH_OFF && int(l) <= RN_FLASH_HIGH; }
+
+rn_flash_filter* rn_flash_filter_new(rn_flash_level level) {
+  if (!validFlashLevel(level)) {
+    invalid("invalid flash reduction level");
+    return nullptr;
+  }
+  try {
+    return new rn_flash_filter{rn::FlashFilter(rn::FlashLevel(int(level)))};
+  } catch (...) {
+    fail(rn::Error(rn::Err::Internal, "out of memory"));
+    return nullptr;
+  }
+}
+void rn_flash_filter_free(rn_flash_filter* f) { delete f; }
+void rn_flash_filter_reset(rn_flash_filter* f) {
+  if (f) f->f.reset();
+}
+rn_status rn_flash_filter_set_level(rn_flash_filter* f, rn_flash_level level) {
+  if (!f) return invalid("null filter");
+  if (!validFlashLevel(level)) return invalid("invalid flash reduction level");
+  f->f.setLevel(rn::FlashLevel(int(level)));
+  return RN_OK;
+}
+rn_flash_level rn_flash_filter_get_level(const rn_flash_filter* f) {
+  return f ? rn_flash_level(int(f->f.level())) : RN_FLASH_OFF;
+}
+rn_status rn_flash_filter_process(rn_flash_filter* f, const uint32_t* in, uint32_t* out, rn_flash_info* info) {
+  return guard([&] {
+    if (!f || !in || !out) return invalid("null argument");
+    rn::FlashFrameInfo r = f->f.process(in, out);
+    if (info) {
+      info->altered = r.altered ? 1 : 0;
+      info->altered_blocks = uint32_t(r.alteredBlocks);
+      info->event_area_permille = uint32_t(r.eventAreaPermille);
+      info->large_area = r.largeArea ? 1 : 0;
+    }
+    return RN_OK;
+  });
+}
 
 }  // extern "C"

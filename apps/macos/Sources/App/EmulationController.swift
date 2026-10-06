@@ -29,6 +29,7 @@ struct EmuStatus: Equatable {
     var projectPath = ""
     var romPath = ""
     var advancePending = 0
+    var flashActive = false   // the flash reduction filter changed the picture recently
 }
 
 final class EmulationController {
@@ -72,6 +73,12 @@ final class EmulationController {
     private var pauseHintShown = false
     private var autosaveFailed = false
     private var nextDeadline: UInt64 = 0
+    // Photosensitive flash reduction (display only: filters the copy that is shown).
+    private let flashFilter = FlashFilter(level: .standard)
+    private var displayFrame = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var flashAltered = false        // last shown frame differs from the emulated one
+    private var lastFlashTick: UInt64 = 0   // tick of the last altered frame
+    private var flashActiveShown = false
     private let period: UInt64 = HostClock.ticks(seconds: Double(RN_FPS_DEN) / Double(RN_FPS_NUM))
 
     init(input: InputManager) {
@@ -146,16 +153,48 @@ final class EmulationController {
         autosaveFailed = false
         structureDirty = true
         statusDirty = true
-        if let s, let v = s.video { frames.publish(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
+        resetFlashFilter()
+        if let s, let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
         publishStatus(force: true)
     }
 
     func markStructureDirty() { structureDirty = true; statusDirty = true }
 
-    func publishVideo() {
+    /// Shows the session's current frame. `continuous` = it directly follows the previously shown
+    /// frame (playback, rewind steps); otherwise it is a jump and the flash filter is reset first so
+    /// unrelated pictures are never blended.
+    func publishVideo(continuous: Bool = false) {
         guard let s = session, let v = s.video else { return }
-        frames.publish(v, meta: FrameMeta(frame: s.frame, emulatedTime: HostClock.now()))
+        if !continuous { resetFlashFilter() }
+        show(v, meta: FrameMeta(frame: s.frame, emulatedTime: HostClock.now()))
         statusDirty = true
+    }
+
+    // MARK: flash reduction (emulation thread)
+
+    func setFlashLevel(_ l: FlashLevel) {
+        guard l != flashFilter.level else { return }
+        flashFilter.setLevel(l)
+        flashAltered = false
+        if l == .off { publishVideo() } // show the unfiltered picture right away
+    }
+
+    func resetFlashFilter() {
+        flashFilter.reset()
+        flashAltered = false
+    }
+
+    /// Hands a frame to the display, through the flash filter unless it is off. The session's own
+    /// buffer is only read; the filtered copy is what the viewport (and snapshots) show.
+    private func show(_ v: UnsafePointer<UInt32>, meta: FrameMeta) {
+        if flashFilter.level == .off {
+            frames.publish(v, meta: meta)
+            return
+        }
+        let altered = displayFrame.withUnsafeMutableBufferPointer { flashFilter.process(v, into: $0.baseAddress!) }
+        flashAltered = altered
+        if altered { lastFlashTick = tickCount }
+        displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta) }
     }
 
     /// Seek helper used by commands: pauses, mutes, refreshes the picture.
@@ -229,6 +268,7 @@ final class EmulationController {
         fastForward = wantFF
 
         if wantRewind {
+            if !rewinding { resetFlashFilter() } // rewind start: a new continuous (backwards) sequence
             rewinding = true
             audio.setMuted(true)
             rewindTicks += 1
@@ -237,7 +277,7 @@ final class EmulationController {
                 do {
                     try s.rewind(n)
                     endOfTake = false
-                    publishVideo()
+                    publishVideo(continuous: true)
                 } catch { reportError("巻き戻しに失敗しました", error); uiRewindHeld = false }
             }
             finishTick(s)
@@ -268,9 +308,20 @@ final class EmulationController {
             audible = slow == .normal
         }
         audio.setMuted(!audible)
+        // Fast-forward emulates several frames per tick but only the last one is visible: only
+        // that one goes through the flash filter, so its 1-second window stays wall-clock based.
+        var stepped = 0
         for _ in 0..<steps {
-            if !stepOnce(s, audible: audible) { break }
+            if !stepOnce(s, audible: audible, publish: steps == 1) { break }
+            stepped += 1
         }
+        if steps > 1 && stepped > 0 { publishVideo(continuous: true) }
+        // A frame held back by the flash filter while nothing new is emulated (pause, slow
+        // motion) is re-filtered every tick, so the picture settles on the real frame within the
+        // filter's 1-second budget instead of staying blended.
+        if stepped == 0 && flashAltered && !rewinding { publishVideo(continuous: true) }
+        let active = flashFilter.level != .off && tickCount &- lastFlashTick < 45 && lastFlashTick != 0
+        if active != flashActiveShown { flashActiveShown = active; statusDirty = true }
         maybeAutosave(s)
         finishTick(s)
     }
@@ -281,7 +332,7 @@ final class EmulationController {
 
     /// Emulates exactly one frame. Returns false if nothing was emulated (end of take / error).
     @discardableResult
-    func stepOnce(_ s: EngineSession, audible: Bool) -> Bool {
+    func stepOnce(_ s: EngineSession, audible: Bool, publish: Bool = true) -> Bool {
         let recording = s.mode == RN_MODE_RECORD
         let tSample = HostClock.now()
         var p1: UInt8 = 0, p2: UInt8 = 0
@@ -313,8 +364,8 @@ final class EmulationController {
             notice("新しいテイクを作成しました。以前の続きは「前の試行へ戻す」で戻せます")
         }
         let tEmu = HostClock.now()
-        if let v = s.video {
-            frames.publish(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
+        if publish, let v = s.video {
+            show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
         }
         if audible { audio.push(s.audio()) }
         latency.recordStep(sampleToEmulated: tEmu - tSample)
@@ -455,6 +506,7 @@ final class EmulationController {
             st.projectPath = s.projectDir
             st.romPath = s.romPath
             st.advancePending = advanceRemaining
+            st.flashActive = flashActiveShown
         }
         statusDirty = false
         var structure: ([BookmarkInfo], [TakeInfo])?

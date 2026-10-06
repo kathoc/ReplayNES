@@ -43,6 +43,7 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .navigation) {
                 Button { model.newProject() } label: { Label("新規", systemImage: "doc.badge.plus") }.help("新規プロジェクト (⌘N)")
                 Button { model.openProjectPanel() } label: { Label("開く", systemImage: "folder") }.help("プロジェクトを開く (⌘O)")
+                LibraryToolbarButton()
                 Button { model.saveSync() } label: { Label("保存", systemImage: "square.and.arrow.down") }
                     .disabled(!model.status.hasSession).help("保存 (⌘S)")
             }
@@ -103,6 +104,7 @@ struct StatusBadges: View {
             else if st.fastForward { badge("▶▶ 早送り", .blue) }
             else if st.slow != .normal { badge("スロー \(st.slow.label)", .purple) }
             if st.endOfTake { badge("テイク終端", .yellow) }
+            if st.flashActive && model.showFlashIndicator { badge("フラッシュ低減中", .teal) }
         }
         .allowsHitTesting(false)
     }
@@ -116,21 +118,34 @@ struct StatusBadges: View {
 struct WelcomeView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        VStack(spacing: 18) {
-            Text("ReplayNES").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
-            Text("ミスしたら戻って録り直す。最後に通しのプレイ動画を書き出す。")
-                .foregroundStyle(.white.opacity(0.75))
-            HStack(spacing: 14) {
-                Button { model.newProject() } label: { Label("新規プロジェクト…", systemImage: "doc.badge.plus").frame(minWidth: 170) }
-                    .controlSize(.large).keyboardShortcut("n")
-                Button { model.openProjectPanel() } label: { Label("プロジェクトを開く…", systemImage: "folder").frame(minWidth: 170) }
-                    .controlSize(.large)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text("ReplayNES").font(.system(size: 30, weight: .bold))
+                Text("ミスしたら戻って録り直す。最後に通しのプレイ動画を書き出す。").foregroundStyle(.secondary)
+                Spacer()
             }
-            Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }
-                .buttonStyle(.link)
-            Text("ROMはプロジェクトにコピーされません（パスと SHA-256 のみ記録）。")
-                .font(.caption).foregroundStyle(.white.opacity(0.5))
+            HStack(spacing: 12) {
+                Button { model.newProject() } label: { Label("新規プロジェクト…", systemImage: "doc.badge.plus") }
+                    .keyboardShortcut("n")
+                Button { model.openProjectPanel() } label: { Label("プロジェクトを開く…", systemImage: "folder") }
+                Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.buttonStyle(.link)
+                Spacer()
+                Text("ROMはプロジェクトにコピーされません（パスと SHA-256 のみ記録）。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            LibraryView(library: model.library)
         }
+        .padding(24)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// Toolbar button opening the library window.
+struct LibraryToolbarButton: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button { openWindow(id: "library") } label: { Label("ライブラリ", systemImage: "books.vertical") }
+            .help("ライブラリ (⇧⌘L)")
     }
 }
 

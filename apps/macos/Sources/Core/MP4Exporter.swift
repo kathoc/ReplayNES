@@ -36,6 +36,9 @@ struct ExportSettings: Equatable {
     var endFrame: UInt64 = 0          // 0 = take end
     var audioBitrate = 192_000
     var videoBitsPerPixel = 0.25      // per frame; pixel art needs more than camera footage
+    /// Photosensitive flash reduction applied to the exported picture only (the renderer, its
+    /// hash and the project are unaffected). .off = the exact emulated frames.
+    var flashReduction: FlashLevel = .off
 
     func validate() throws {
         let ok = cropTop >= 0 && cropBottom >= 0 && cropLeft >= 0 && cropRight >= 0
@@ -186,6 +189,9 @@ final class MP4Exporter {
         else { throw ExportError.writer("audio format") }
 
         let cols = g.columnMap(), rows = g.rowMap()
+        // Frames are rendered strictly in order, so one filter instance sees a continuous sequence.
+        let flash = settings.flashReduction == .off ? nil : FlashFilter(level: settings.flashReduction)
+        var filtered = [UInt32](repeating: 0, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
         let startFrame = settings.startFrame
         let sampleBase = rn_audio_samples_before(startFrame)
         let frameBytes = Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT)
@@ -215,7 +221,12 @@ final class MP4Exporter {
             guard let video else { failure = ExportError.writer("no video"); return }
             // Video PTS = frame offset * 655171 / 39375000 s (exact rational).
             let pts = CMTime(value: CMTimeValue((f - startFrame) * UInt64(RN_FPS_DEN)), timescale: CMTimeScale(RN_FPS_NUM))
-            videoQueue.append((Array(UnsafeBufferPointer(start: video, count: frameBytes)), pts))
+            if let flash {
+                filtered.withUnsafeMutableBufferPointer { _ = flash.process(video, into: $0.baseAddress!) }
+                videoQueue.append((filtered, pts))
+            } else {
+                videoQueue.append((Array(UnsafeBufferPointer(start: video, count: frameBytes)), pts))
+            }
             if n > 0, let audio {
                 // Audio PTS from the absolute sample count at 48 kHz.
                 let apts = CMTime(value: CMTimeValue(rn_audio_samples_before(f) - sampleBase), timescale: CMTimeScale(RN_SAMPLE_RATE))

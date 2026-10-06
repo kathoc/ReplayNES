@@ -269,6 +269,39 @@ rn_status rn_renderer_next(rn_renderer* r, const uint32_t** video, const int16_t
 uint64_t rn_renderer_hash(const rn_renderer* r); /* running hash of output (compare with replay) */
 void rn_renderer_free(rn_renderer* r);
 
+/* ------------------------------------------------------------------ photosensitive flash reduction */
+/* Display-side filter that limits large-area luminance / saturated-red flashes (WCAG 2.x general
+ * and red flash thresholds) in the frames a frontend SHOWS (live view, exported video). It is a
+ * pure deterministic function of the frame sequence passed to it + its level; it never reads or
+ * changes a session, so recorded input, emulation and every verification hash are unaffected.
+ * Feed consecutive displayed frames; call rn_flash_filter_reset on discontinuities (seek, load,
+ * new session, take switch, start of a rewind or scrub) so unrelated pictures are not blended.
+ * It reduces flashes; it cannot guarantee that no seizure is triggered. Algorithm and parameters:
+ * docs/FLASH_REDUCTION.md. Not thread-safe per handle. */
+typedef struct rn_flash_filter rn_flash_filter;
+
+typedef enum rn_flash_level {
+  RN_FLASH_OFF = 0,      /* output == input */
+  RN_FLASH_LOW = 1,      /* "弱": WCAG thresholds as written, <= 3 flashes/s on >= 25% of the screen */
+  RN_FLASH_STANDARD = 2, /* "標準" (recommended default): earlier detection, <= 2 flashes/s, >= 20% */
+  RN_FLASH_HIGH = 3      /* "強": <= 1 flash/s, >= 15% of the screen, smaller residual flicker */
+} rn_flash_level;
+
+typedef struct rn_flash_info {
+  int altered;                  /* 1 if the output differs from the input this frame */
+  uint32_t altered_blocks;      /* 16x16 blocks changed (of 240) */
+  uint32_t event_area_permille; /* screen share of simultaneous same-direction transitions */
+  int large_area;               /* 1 if a large-area flash candidate was detected */
+} rn_flash_info;
+
+rn_flash_filter* rn_flash_filter_new(rn_flash_level level); /* NULL on invalid level */
+void rn_flash_filter_free(rn_flash_filter* f);
+void rn_flash_filter_reset(rn_flash_filter* f);
+rn_status rn_flash_filter_set_level(rn_flash_filter* f, rn_flash_level level); /* also resets */
+rn_flash_level rn_flash_filter_get_level(const rn_flash_filter* f);
+/* in/out: 256x240 BGRA8 like rn_video (in == out allowed). info may be NULL. */
+rn_status rn_flash_filter_process(rn_flash_filter* f, const uint32_t* in, uint32_t* out, rn_flash_info* info);
+
 #ifdef __cplusplus
 }
 #endif

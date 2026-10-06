@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
 
     let input = InputManager()
     let emu: EmulationController
+    let library = LibraryModel()
 
     @Published var status = EmuStatus()
     @Published var bookmarks: [BookmarkInfo] = []
@@ -49,6 +50,11 @@ final class AppModel: ObservableObject {
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume) } }
     @AppStorage("showSidebar") var showSidebar = true { didSet { objectWillChange.send() } }
+    /// Photosensitive flash reduction level (FlashLevel raw value). Default 標準 (on): safety first.
+    @AppStorage("flashReduction") var flashReduction = FlashLevel.standard.rawValue { didSet { pushPrefs(); objectWillChange.send() } }
+    @AppStorage("showFlashIndicator") var showFlashIndicator = true { didSet { objectWillChange.send() } }
+
+    var flashLevel: FlashLevel { FlashLevel(rawValue: flashReduction) ?? .standard }
 
     /// Set while a project is open; still set at next launch => the app did not quit cleanly.
     @AppStorage("openProjectPath") private var openProjectPath = ""
@@ -97,8 +103,8 @@ final class AppModel: ObservableObject {
     }
 
     private func pushPrefs() {
-        let par = pauseAfterRewind, auto = autosaveInterval
-        emu.perform { e in e.pauseAfterRewind = par; e.autosaveInterval = auto }
+        let par = pauseAfterRewind, auto = autosaveInterval, flash = flashLevel
+        emu.perform { e in e.pauseAfterRewind = par; e.autosaveInterval = auto; e.setFlashLevel(flash) }
     }
 
     // MARK: messages
@@ -236,14 +242,19 @@ final class AppModel: ObservableObject {
     }
 
     func createSession(rom: URL, projectDir: URL?, autoplay: Bool = false) {
+        let dirExisted = projectDir.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let s = try EngineSession.create(rom: rom, projectDir: projectDir)
                 DispatchQueue.main.async {
                     self.install(s, recovered: false)
                     if autoplay { self.setPaused(false) }
+                    if projectDir != nil { self.library.refresh() }
                 }
             } catch let e as RNError {
+                // A project folder this call created (e.g. a library project whose first save
+                // failed) is removed again; existing folders are never touched.
+                if let projectDir, !dirExisted { try? FileManager.default.removeItem(at: projectDir) }
                 DispatchQueue.main.async {
                     let hint = e.status == RN_ERR_ROM_INVALID ? "\nこのROMは読み込めません（未対応のマッパーまたは不正なファイル）。" : ""
                     self.showError("プロジェクトを作成できませんでした", e.message + hint)
@@ -252,6 +263,30 @@ final class AppModel: ObservableObject {
                 DispatchQueue.main.async { self.showError("プロジェクトを作成できませんでした", "\(error)") }
             }
         }
+    }
+
+    // MARK: library
+
+    /// Starts a new project for a library ROM right away, auto-saved as
+    /// Projects/<ROM名> <yyyy-MM-dd HHmm>.nesrec (no save panel). Returns false if cancelled.
+    @discardableResult
+    func playFromLibrary(_ rom: LibraryROM) -> Bool {
+        guard confirmDiscardIfNeeded() else { return false }
+        guard library.ensureFolders() else {
+            showError("ライブラリのフォルダを用意できません", library.folderError ?? "")
+            return false
+        }
+        let dir = LibraryScanner.newProjectURL(projectsDir: library.paths.projects, romName: rom.name, date: Date())
+        createSession(rom: rom.url, projectDir: dir)
+        return true
+    }
+
+    /// 「続きから」: opens a library project (the usual save prompt first).
+    @discardableResult
+    func continueProject(_ url: URL) -> Bool {
+        guard confirmDiscardIfNeeded() else { return false }
+        openProject(url)
+        return true
     }
 
     func openProjectPanel() {

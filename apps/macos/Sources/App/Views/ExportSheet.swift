@@ -12,6 +12,7 @@ struct ExportSheet: View {
     @State private var wholeTake = true
     @State private var startFrame = 0
     @State private var endFrame = 0
+    @State private var applyFlash = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -26,6 +27,7 @@ struct ExportSheet: View {
         .frame(width: 520)
         .onAppear {
             endFrame = Int(model.status.takeLength)
+            applyFlash = model.flashLevel != .off
         }
     }
 
@@ -48,6 +50,13 @@ struct ExportSheet: View {
             Picker("ピクセル比", selection: $settings.pixelAspect87) {
                 Text("1:1（正方形ピクセル）").tag(false)
                 Text("8:7（ブラウン管の見た目）").tag(true)
+            }
+            Toggle(isOn: $applyFlash) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("フラッシュ低減を適用")
+                    Text("激しい点滅を抑えた映像で書き出します（強さ: \(exportFlashLevel.label)。設定 → 表示・音声で変更）。オフにすると記録どおりの映像です。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Toggle("テイク全体", isOn: $wholeTake)
             if !wholeTake {
@@ -76,8 +85,12 @@ struct ExportSheet: View {
         }
     }
 
+    /// The current setting's level; 標準 when the setting is off but the export option is turned on.
+    private var exportFlashLevel: FlashLevel { model.flashLevel == .off ? .standard : model.flashLevel }
+
     private func chooseAndStart() {
         var s = settings
+        s.flashReduction = applyFlash ? exportFlashLevel : .off
         s.cropTop = cropOverscan ? 8 : 0
         s.cropBottom = cropOverscan ? 8 : 0
         if wholeTake {

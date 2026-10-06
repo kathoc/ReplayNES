@@ -87,6 +87,23 @@ rn_renderer_free(r);                                // cancel = stop calling + f
 On Windows use Media Foundation (H.264/AAC) or FFmpeg (libx264 + aac); on Linux FFmpeg/GStreamer.
 Timestamps must come from frame/sample counts, never from the wall clock.
 
+## Photosensitive flash reduction (display only)
+
+Run the frames you **show** (and, optionally, export) through the engine's flash filter; it never
+touches the session, so recorded input and every hash stay the same. Default to "standard".
+
+```c
+rn_flash_filter* ff = rn_flash_filter_new(RN_FLASH_STANDARD);   // OFF / LOW / STANDARD / HIGH
+rn_flash_info info;
+rn_flash_filter_process(ff, rn_video(s), display_copy, &info);  // 256x240 BGRA in -> out
+present(display_copy); show_indicator(info.altered);
+rn_flash_filter_reset(ff);   // on seek, scrub, bookmark/take jump, load, new session, rewind start
+```
+Feed one processed frame per *displayed* frame (fast-forward: only the shown one), and while
+paused re-process the current frame each display tick while `info.altered` so a held picture
+settles. For export use a fresh filter per export and process every rendered frame in order.
+Algorithm and limits: [FLASH_REDUCTION.md](FLASH_REDUCTION.md).
+
 ## Errors to handle in UI
 
 | Code | Meaning / action |

@@ -123,6 +123,18 @@ struct DisplayTab: View {
                 Toggle("オーバースキャンを隠す（上下 8px）", isOn: $model.hideOverscan)
                 Toggle("レイテンシ計測を表示", isOn: $model.showLatency)
             }
+            Section("フラッシュ低減（光の点滅への配慮）") {
+                Picker("フラッシュ低減", selection: $model.flashReduction) {
+                    ForEach(FlashLevel.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                Text(model.flashLevel.detail).font(.caption)
+                Text("画面全体が激しく点滅する場面（爆発・稲妻など）を検出し、表示だけを暗い側に抑えて明滅の回数を減らします（WCAG 2.x の一般閃光・赤色閃光の基準を目安にしています）。小さな点滅や通常のスクロールはそのまま表示します。記録される入力・ゲームの進行・再現性には影響しません。MP4 書き出しにも適用できます。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("注意: 光過敏性発作などを確実に防ぐものではありません。体調に異変を感じたら、すぐにプレイを中止してください。")
+                    .font(.caption).foregroundStyle(.orange)
+                Toggle("低減中は画面に「フラッシュ低減中」と表示する", isOn: $model.showFlashIndicator)
+            }
             Section("音声") {
                 Slider(value: $model.volume, in: 0...1) { Text("音量") }
                 Text("一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。").font(.caption).foregroundStyle(.secondary)
