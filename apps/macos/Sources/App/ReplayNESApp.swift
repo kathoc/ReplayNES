@@ -115,7 +115,7 @@ struct ReplayNESApp: App {
         }
         .defaultSize(width: 1100, height: 820)
         .commands {
-            AppCommands(model: AppModel.shared, stream: StreamOutputModel.shared)
+            AppCommands(model: AppModel.shared, menu: AppModel.shared.menu, stream: StreamOutputModel.shared)
         }
 
         Window("ライブラリ", id: "library") {
@@ -145,8 +145,10 @@ struct ReplayNESApp: App {
 /// Menu bar: ReplayNES / ファイル / 編集 (text fields only) / 再生 / 表示 / ウインドウ / ヘルプ.
 /// Default items that do nothing useful here are removed (see also AppDelegate.applicationWillFinishLaunching).
 struct AppCommands: Commands {
-    @ObservedObject var model: AppModel
-    @ObservedObject var stream: StreamOutputModel
+    // Not observed: AppModel publishes every frame, which would rebuild (and flicker) the menu bar.
+    let model: AppModel
+    @ObservedObject var menu: MenuState
+    let stream: StreamOutputModel
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
@@ -167,13 +169,13 @@ struct AppCommands: Commands {
             Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .saveItem) {
-            Button("保存") { model.saveSync() }.keyboardShortcut("s").disabled(!model.status.hasSession)
-            Button("別名で保存…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!model.status.hasSession)
+            Button("保存") { model.saveSync() }.keyboardShortcut("s").disabled(!menu.v.hasSession)
+            Button("別名で保存…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!menu.v.hasSession)
             Divider()
             Button("MP4に書き出す…") { model.showExport = true }.keyboardShortcut("e")
-                .disabled(!model.status.hasSession || model.status.takeLength == 0)
+                .disabled(!menu.v.hasSession || menu.v.takeEmpty)
             Divider()
-            Button("プロジェクトを閉じる") { model.closeProject() }.disabled(!model.status.hasSession)
+            Button("プロジェクトを閉じる") { model.closeProject() }.disabled(!menu.v.hasSession)
         }
         CommandGroup(replacing: .printItem) {}
         CommandGroup(replacing: .importExport) {}
@@ -185,7 +187,7 @@ struct AppCommands: Commands {
 
         // 再生
         CommandMenu("再生") {
-            let st = model.status
+            let st = menu.v
             let has = st.hasSession
             Button(st.paused ? "再開" : "一時停止") { model.togglePause() }.keyboardShortcut("p").disabled(!has)
             Button("コマ送り") { model.frameAdvance() }.keyboardShortcut(.rightArrow, modifiers: [.command]).disabled(!has)
@@ -194,19 +196,19 @@ struct AppCommands: Commands {
             Button("1秒進む（録画済みの範囲）") { model.jump(seconds: 1) }.keyboardShortcut("]", modifiers: [.command])
                 .disabled(!has || st.practicing)
             Button(st.practicing ? "Aへ戻る" : "先頭へ") { model.seek(to: 0) }.keyboardShortcut(.upArrow, modifiers: [.command]).disabled(!has)
-            Toggle("スロー（1/2）", isOn: Binding(get: { st.slow != .normal }, set: { model.setSlow($0 ? .half : .normal) }))
+            Toggle("スロー（1/2）", isOn: Binding(get: { st.slowOn }, set: { model.setSlow($0 ? .half : .normal) }))
                 .keyboardShortcut("2").disabled(!has)
             Divider()
             Toggle("録画モード", isOn: Binding(get: { st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
                 .keyboardShortcut("m", modifiers: [.command, .shift]).disabled(!has || st.practicing)
-            Button(st.practicing ? "練習をやめる" : (model.showPracticePanel ? "練習パネルを隠す" : "練習モード（A/B リピート）…")) {
+            Button(st.practicing ? "練習をやめる" : (st.showPracticePanel ? "練習パネルを隠す" : "練習モード（A/B リピート）…")) {
                 model.togglePracticePanel()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!has)
             Divider()
             Button("ブックマークを追加") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
             Button("前の試行へ戻す") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
-                .disabled(!has || st.undoDepth == 0 || st.practicing)
+                .disabled(!has || !st.undoAvailable || st.practicing)
             Menu("リセット・電源") {
                 Button("ソフトリセット") { model.softReset() }.keyboardShortcut("r")
                 Button("電源再投入") { model.powerCycle() }.keyboardShortcut("r", modifiers: [.command, .shift])
@@ -221,20 +223,20 @@ struct AppCommands: Commands {
             Divider()
         }
         CommandGroup(before: .sidebar) {
-            Picker("表示サイズ", selection: $model.integerScale) {
+            Picker("表示サイズ", selection: Binding(get: { menu.v.integerScale }, set: { model.integerScale = $0 })) {
                 Text("等倍（くっきり整数倍）").tag(true)
                 Text("FILL（ウインドウいっぱい）").tag(false)
             }
             Button("等倍 / FILL を切り替え") { model.integerScale.toggle() }.keyboardShortcut("f")
             Divider()
-            Toggle("サイドバー", isOn: $model.showSidebar).keyboardShortcut("s", modifiers: [.command, .option])
+            Toggle("サイドバー", isOn: Binding(get: { menu.v.showSidebar }, set: { model.showSidebar = $0 })).keyboardShortcut("s", modifiers: [.command, .option])
             Button("テイク一覧") { openWindow(id: "takes") }.keyboardShortcut("t", modifiers: [.command, .shift])
             Divider()
-            Picker("フラッシュ低減", selection: $model.flashReduction) {
+            Picker("フラッシュ低減", selection: Binding(get: { menu.v.flashReduction }, set: { model.flashReduction = $0 })) {
                 ForEach(FlashLevel.allCases) { Text($0.label).tag($0.rawValue) }
             }
-            Toggle("配信出力 (Syphon)", isOn: Binding(get: { stream.isOn }, set: { stream.setOn($0) }))
-            Toggle("レイテンシ表示", isOn: $model.showLatency).keyboardShortcut("l")
+            Toggle("配信出力 (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
+            Toggle("レイテンシ表示", isOn: Binding(get: { menu.v.showLatency }, set: { model.showLatency = $0 })).keyboardShortcut("l")
             Divider()
         }
 

@@ -1,6 +1,7 @@
 // App state, project lifecycle (new/open/save/recovery) and export jobs. Main thread only.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -76,6 +77,10 @@ final class AppModel: ObservableObject {
     private var statsTimer: Timer?
     private var activity: NSObjectProtocol?
     private var noticeWork: DispatchWorkItem?
+    /// What the menu bar observes (see MenuState.swift).
+    let menu = MenuState()
+    private var menuSubs: Set<AnyCancellable> = []
+    private var menuRefreshQueued = false
 
     private init() {
         emu = EmulationController(input: input)
@@ -104,6 +109,29 @@ final class AppModel: ObservableObject {
             guard let w = NSApp.keyWindow, w === self?.mainWindow else { return false }
             return !(w.firstResponder is NSText)
         }
+        // objectWillChange fires before the new value is stored: read it on the next turn.
+        objectWillChange.merge(with: StreamOutputModel.shared.objectWillChange)
+            .sink { [weak self] _ in self?.queueMenuRefresh() }
+            .store(in: &menuSubs)
+        refreshMenu()
+    }
+
+    private func queueMenuRefresh() {
+        guard !menuRefreshQueued else { return }
+        menuRefreshQueued = true
+        DispatchQueue.main.async { [weak self] in
+            self?.menuRefreshQueued = false
+            self?.refreshMenu()
+        }
+    }
+
+    private func refreshMenu() {
+        let st = status
+        menu.set(MenuValues(hasSession: st.hasSession, paused: st.paused, recording: st.recording,
+                            practicing: st.practicing, slowOn: st.slow != .normal, takeEmpty: st.takeLength == 0,
+                            undoAvailable: st.undoDepth > 0, showPracticePanel: showPracticePanel,
+                            integerScale: integerScale, showSidebar: showSidebar, flashReduction: flashReduction,
+                            showLatency: showLatency, streamOn: StreamOutputModel.shared.isOn))
     }
 
     func start() {

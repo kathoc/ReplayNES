@@ -9,6 +9,8 @@ final class MenuBarCleaner {
     static let shared = MenuBarCleaner()
     private var scheduled = false
     private var cleaning = false
+    /// Items added to the main menu since launch (diagnostics: stays flat while playing).
+    private(set) var mainMenuAdds = 0
 
     /// Edit-menu actions text fields need (rename practice slots / bookmarks).
     private static let editActions: Set<Selector> = [
@@ -19,6 +21,7 @@ final class MenuBarCleaner {
     func start() {
         NotificationCenter.default.addObserver(forName: NSMenu.didAddItemNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, !self.cleaning, let m = n.object as? NSMenu, self.belongsToMainMenu(m) else { return }
+            self.mainMenuAdds += 1
             self.schedule()
         }
         schedule()
