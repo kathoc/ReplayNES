@@ -68,7 +68,7 @@ struct PracticeOverlay: View {
             }
         }
         .padding(10)
-        .frame(width: 430)
+        .frame(width: 400)
         .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
         .foregroundStyle(.white)
         .transition(.opacity)
@@ -94,6 +94,7 @@ struct PracticeOverlay: View {
             }
             .buttonStyle(.borderless)
             .disabled(!slot.hasA)
+            .opacity(slot.hasA ? 1 : 0.3)
             .help(active ? "Aからやり直す" : "この区間を練習")
             Menu {
                 Button("この区間を練習") { model.practiceStart(slot.index) }.disabled(!slot.hasA)

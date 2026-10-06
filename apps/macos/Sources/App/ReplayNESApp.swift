@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MenuBarCleaner.shared.start()
         model.start()
         launched = true
         // Launch arguments (also used by scripted smoke tests):
@@ -214,7 +215,11 @@ struct AppCommands: Commands {
         }
 
         // 表示
-        CommandGroup(replacing: .toolbar) {}
+        CommandGroup(replacing: .toolbar) {
+            Button("フルスクリーン") { (NSApp.keyWindow ?? model.mainWindow)?.toggleFullScreen(nil) }
+                .keyboardShortcut("f", modifiers: [.command, .control])
+            Divider()
+        }
         CommandGroup(before: .sidebar) {
             Picker("表示サイズ", selection: $model.integerScale) {
                 Text("等倍（くっきり整数倍）").tag(true)

@@ -73,10 +73,23 @@ extension AppModel {
             "integerScale": integerScale, "showPracticePanel": showPracticePanel,
             "controllerHotkeys": InputCatalog.controllerHotkeys.map { "\($0.0)=\($0.1)" },
         ]
+        info["menus"] = NSApp.mainMenu.map { Self.describe($0) } ?? []
         info.merge(keyboardDiagnostics) { a, _ in a }
         if let data = try? JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: url.deletingPathExtension().appendingPathExtension("json"))
         }
     }
 
+
+    /// Menu bar structure for scripted checks: ["title", "  item ⌘k", ...].
+    private static func describe(_ menu: NSMenu, depth: Int = 0) -> [String] {
+        var out: [String] = []
+        for item in menu.items {
+            if item.isSeparatorItem || item.isHidden { continue }
+            let key = item.keyEquivalent.isEmpty ? "" : " [\(item.keyEquivalentModifierMask.contains(.shift) ? "⇧" : "")\(item.keyEquivalentModifierMask.contains(.option) ? "⌥" : "")⌘\(item.keyEquivalent)]"
+            out.append(String(repeating: "  ", count: depth) + item.title + key)
+            if let sub = item.submenu, depth < 2 { out += describe(sub, depth: depth + 1) }
+        }
+        return out
+    }
 }
