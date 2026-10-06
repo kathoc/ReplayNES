@@ -159,7 +159,9 @@ if [ "${NO_PUSH:-0}" = "1" ]; then
 fi
 git push -q -f origin gh-pages-publish:gh-pages
 if ! gh api "repos/$GH_REPO/pages" >/dev/null 2>&1; then
+  # GitHub may enable Pages by itself for a new gh-pages branch (then this answers 409).
   echo "==> enable GitHub Pages (gh-pages /)"
-  gh api -X POST "repos/$GH_REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null
+  gh api -X POST "repos/$GH_REPO/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/' >/dev/null 2>&1 ||
+    gh api "repos/$GH_REPO/pages" >/dev/null
 fi
 echo "==> pushed. $PAGES_URL (GitHub Pages deploys in a minute or two; the CDN caches ~10 min)"
