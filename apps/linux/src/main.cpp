@@ -308,6 +308,9 @@ void App::handleEvent(const SDL_Event& e, double now) {
   switch (e.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED: running_ = false; break;
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+      if (menuOpen_) focusMenu_ = true;  // (gamescope gives the focus after the first frames)
+      break;
     case SDL_EVENT_GAMEPAD_ADDED: {
       SDL_JoystickID id = e.gdevice.which;
       for (auto& p : pads_)
@@ -363,6 +366,9 @@ void App::handleEvent(const SDL_Event& e, double now) {
     case SDL_EVENT_KEY_UP: {
       if (e.key.repeat) break;
       bool down = e.type == SDL_EVENT_KEY_DOWN;
+      if (std::getenv("REPLAYNES_DEBUG_INPUT"))
+        std::fprintf(stderr, "key %d %s menu=%d navWindow=%s\n", int(e.key.scancode), down ? "down" : "up", int(menuOpen_),
+                     ImGui::GetCurrentContext() && ImGui::GetIO().NavActive ? "active" : "-");
       SDL_Scancode sc = e.key.scancode;
       if (down && (sc == SDL_SCANCODE_ESCAPE || sc == SDL_SCANCODE_F1)) { setMenu(!menuOpen_ || !emu_.session()); break; }
       if (down && sc == SDL_SCANCODE_F11) { applyFullscreen(!fullscreen_); break; }
@@ -422,11 +428,13 @@ void App::buildUI(double now) {
   ImVec2 size(std::min(760.0f, io.DisplaySize.x * 0.92f), std::min(700.0f, io.DisplaySize.y * 0.92f));
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
   ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+  bool focusFirst = focusMenu_;  // gamepad/keyboard nav starts on the first item
   if (focusMenu_) { ImGui::SetNextWindowFocus(); focusMenu_ = false; }
   ImGui::Begin("ReplayNES", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
   if (!error_.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", error_.c_str());
   if (s) {
     ImGui::Text("%s", emu_.romName().c_str());
+    if (focusFirst) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); focusFirst = false; }
     if (ImGui::Button("Resume")) setMenu(false);
     ImGui::SameLine();
     if (ImGui::Button(emu_.paused() ? "Play" : "Pause")) emu_.togglePause();
@@ -437,7 +445,9 @@ void App::buildUI(double now) {
   } else {
     ImGui::TextWrapped("Choose a ROM to start recording.");
     std::error_code ec;
-    if (sessionLocked_ && fs::exists(paths_.tempProject(), ec) && ImGui::Button("Resume last session")) {
+    bool canResume = sessionLocked_ && fs::exists(paths_.tempProject(), ec);
+    if (canResume && focusFirst) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); focusFirst = false; }
+    if (canResume && ImGui::Button("Resume last session")) {
       std::string err;
       if (emu_.resume(paths_.tempProject(), &err)) setMenu(false);
       else error_ = "Couldn't resume: " + err;
@@ -447,10 +457,13 @@ void App::buildUI(double now) {
   if (roms_.empty()) {
     ImGui::TextWrapped("No .nes files in %s", paths_.romDir.c_str());
   } else {
-    ImGui::BeginChild("roms", ImVec2(0, std::max(120.0f, size.y * 0.32f)), ImGuiChildFlags_Borders);
-    for (const auto& r : roms_) {
-      std::string label = fs::path(r).filename().string();
-      if (ImGui::Selectable(label.c_str())) openRom(r);
+    // NavFlattened: the D-pad moves straight into the list (no extra "enter child" press).
+    ImGui::BeginChild("roms", ImVec2(0, std::max(120.0f, size.y * 0.32f)), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
+    for (size_t i = 0; i < roms_.size(); ++i) {
+      std::string label = fs::path(roms_[i]).filename().string();
+      if (focusFirst) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); focusFirst = false; }
+      bool picked = ImGui::Selectable(label.c_str());
+      if (picked) openRom(roms_[i]);
     }
     ImGui::EndChild();
   }

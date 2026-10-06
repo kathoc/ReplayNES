@@ -7,7 +7,13 @@
 #   scripts/perf-smoke-deck.sh [seconds] [rom-on-deck]      (default 30 s, generated test ROM)
 #   ROM=smb ...           ~/Documents/ReplayNES/ROM/Super Mario Bros. (World).NES on the Deck
 #   SESSION=gaming        run inside Gaming Mode's gamescope (X11 on :0; the default when
-#                         gamescope-session is running), SESSION=desktop for Plasma (Wayland),
+#                         gamescope-session is running). A window started over ssh is not shown by
+#                         gamescope (Steam's UI keeps the focus, and presents of the hidden window
+#                         still "complete"), so the script gives it the focus for the run: the
+#                         window gets STEAM_GAME=769 and the root GAMESCOPECTRL_BASELAYER_WINDOW is
+#                         set to it (reset to 0 afterwards). A game launched from Steam (non-Steam
+#                         shortcut, docs/STEAM_DECK.md) is focused by Steam itself.
+#   SESSION=desktop       Plasma (Wayland),
 #   SESSION=nested        Desktop Mode, nested gamescope at 60 Hz (gamescope -r 60 -f --)
 #   BIN=dev               use ~/ReplayNES-dev/build-dev/replaynes-linux (DEV=1 build) inside the
 #                         installed app's sandbox (default: the installed Flatpak)
@@ -31,23 +37,43 @@ ARGS="$ARGS ${EXTRA_ARGS:-}"
 CMD="flatpak run $APP_ID"
 [ "${BIN:-}" = "dev" ] && CMD="flatpak run --filesystem=home ${FLATPAK_ARGS:-} --command=/home/deck/ReplayNES-dev/build-dev/replaynes-linux $APP_ID"
 
-ssh "$HOST" "bash -s" <<EOF
+VARS="$(printf 'APP_ID=%q ROMARG=%q CMD=%q ARGS=%q SESSION=%q DRIVER=%q' "$APP_ID" "$ROMARG" "$CMD" "$ARGS" "${SESSION:-}" "${DRIVER:-}")"
+ssh "$HOST" "$VARS bash -s" <<'EOF'
 set -e
 export XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
-SESSION="${SESSION:-}"
-if [ -z "\$SESSION" ]; then pgrep -x gamescope-wl >/dev/null || pgrep -x gamescope >/dev/null && SESSION=gaming || SESSION=desktop; fi
+if [ -z "$SESSION" ]; then
+  if pgrep -x gamescope >/dev/null || pgrep -x gamescope-wl >/dev/null; then SESSION=gaming; else SESSION=desktop; fi
+fi
 D=~/.var/app/$APP_ID/data/perf
-mkdir -p \$D ~/Documents/ReplayNES/perf
-[ -f ~/Documents/ReplayNES/perf/replaynes-test.nes ] || flatpak run --command=replaynes-cli $APP_ID make-test-rom ~/Documents/ReplayNES/perf/replaynes-test.nes >/dev/null
-rm -rf \$D/session
+mkdir -p "$D" ~/Documents/ReplayNES/perf
+[ -f ~/Documents/ReplayNES/perf/replaynes-test.nes ] ||
+  flatpak run --command=replaynes-cli "$APP_ID" make-test-rom ~/Documents/ReplayNES/perf/replaynes-test.nes >/dev/null
+rm -rf "$D/session"
 PRE=""
-case "\$SESSION" in
+case "$SESSION" in
   gaming)  export DISPLAY=:0 GAMESCOPE_WAYLAND_DISPLAY=gamescope-0 XDG_CURRENT_DESKTOP=gamescope ;;
   desktop) export WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XDG_CURRENT_DESKTOP=KDE ;;
   nested)  export WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XDG_CURRENT_DESKTOP=KDE; PRE="gamescope -W 1280 -H 800 -r 60 -f --" ;;
 esac
-[ -n "${DRIVER:-}" ] && export SDL_VIDEO_DRIVER=${DRIVER:-}
-echo "session: \$SESSION"
-\$PRE $CMD --rom "$ROMARG" --session-root \$D/session --stats-log \$D/stats.jsonl --frame-log \$D/frames-\$SESSION.csv $ARGS 2>&1 \
-  | grep -vE "^(Gtk|dbus|$)" | tail -25
+[ -n "$DRIVER" ] && export SDL_VIDEO_DRIVER="$DRIVER"
+echo "session: $SESSION"
+if [ "$SESSION" = gaming ]; then
+  # Give the (ssh-started) window gamescope's focus for the run; restored below.
+  ( for i in $(seq 1 60); do
+      W=$(xdotool search --name '^ReplayNES$' 2>/dev/null | head -1)
+      if [ -n "$W" ]; then
+        sleep 0.5
+        xprop -id "$W" -f STEAM_GAME 32c -set STEAM_GAME 769
+        xprop -root -f GAMESCOPECTRL_BASELAYER_WINDOW 32c -set GAMESCOPECTRL_BASELAYER_WINDOW "$W"
+        break
+      fi
+      sleep 0.2
+    done ) &
+fi
+eval "$PRE $CMD --rom \"\$ROMARG\" --session-root \"\$D/session\" --stats-log \"\$D/stats.jsonl\" --frame-log \"\$D/frames-\$SESSION.csv\" $ARGS" 2>&1 |
+  grep -vE "^(Gtk|dbus|$)" | tail -25
+if [ "$SESSION" = gaming ]; then
+  xprop -root -f GAMESCOPECTRL_BASELAYER_WINDOW 32c -set GAMESCOPECTRL_BASELAYER_WINDOW 0
+fi
+true
 EOF
