@@ -14,6 +14,7 @@ enum SlotColors {
 struct FilmstripTimeline: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var strip = FilmstripModel.shared
+    @ObservedObject private var clock = AppModel.shared.clock   // playhead / take length (AppModel.status)
 
     static let laneHeight: CGFloat = 16
     static let stripHeight: CGFloat = 40
@@ -39,7 +40,7 @@ struct FilmstripTimeline: View {
     var body: some View {
         GeometryReader { geo in
             let w = Double(geo.size.width)
-            let st = model.status
+            let st = clock.status
             let g = TimelineGeometry(width: w, length: st.takeLength)
             let ranges = TimelineEditing.visibleRanges(slots: model.practiceSlots, takes: model.takes,
                                                        activeTake: st.activeTake, takeLength: st.takeLength)

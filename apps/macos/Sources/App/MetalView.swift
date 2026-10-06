@@ -1,8 +1,13 @@
 // Metal game viewport: 256x240 BGRA texture, nearest-neighbour, optional integer scale,
 // 8:7 pixel aspect and overscan hiding, or the physical CRT model (CRTRenderer, nesterm port).
 // Presentation only: frame drops/dupes here never affect emulation.
+// Each emulated frame is rendered by a dedicated real-time present thread as soon as it is
+// published (never on the main thread, so SwiftUI / AppKit work cannot delay it) and scheduled to
+// appear at its tick's time plus an adaptive lead (PresentLead), so every frame stays on screen
+// equally long: 60 fps content on a 120 Hz ProMotion display shows each frame for two refreshes.
 // SPDX-License-Identifier: GPL-2.0-or-later
-import MetalKit
+import Metal
+import QuartzCore
 import SwiftUI
 
 struct DisplayOptions: Equatable {
@@ -11,15 +16,21 @@ struct DisplayOptions: Equatable {
     var hideOverscan = true
 }
 
-final class GameRenderer: NSObject, MTKViewDelegate {
-    private let device: MTLDevice
+/// Present thread only, except `options` (any thread).
+final class GameRenderer {
+    let device: MTLDevice
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let texture: MTLTexture
-    private let frames: FrameBuffer
+    let frames: FrameBuffer
     private let latency: LatencyMeter
     private var seenSeq: UInt64 = .max
-    var options = DisplayOptions()
+    private let optionsLock = NSLock()
+    private var options_ = DisplayOptions()
+    var options: DisplayOptions {
+        get { optionsLock.lock(); defer { optionsLock.unlock() }; return options_ }
+        set { optionsLock.lock(); options_ = newValue; optionsLock.unlock() }
+    }
 
     private static let shader = """
     #include <metal_stdlib>
@@ -38,7 +49,7 @@ final class GameRenderer: NSObject, MTKViewDelegate {
     }
     """
 
-    init?(view: MTKView, frames: FrameBuffer, latency: LatencyMeter) {
+    init?(frames: FrameBuffer, latency: LatencyMeter) {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
@@ -61,24 +72,7 @@ final class GameRenderer: NSObject, MTKViewDelegate {
         td.storageMode = .shared
         guard let tex = device.makeTexture(descriptor: td) else { return nil }
         texture = tex
-        super.init()
-        view.device = device
-        view.colorPixelFormat = .bgra8Unorm
-        view.framebufferOnly = true
-        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        view.preferredFramesPerSecond = 120
-        view.enableSetNeedsDisplay = false
-        view.isPaused = false
-        view.delegate = self
-        if let layer = view.layer as? CAMetalLayer {
-            // Double buffering: one drawable on screen, one being drawn. Lower latency than the
-            // default triple buffering; MTKView still paces on the display link.
-            layer.maximumDrawableCount = 2
-            layer.displaySyncEnabled = true
-        }
     }
-
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     /// Destination rectangle (pixels, origin bottom-left) and overscan crop (pixels hidden on every
     /// side) for a drawable size.
@@ -93,11 +87,38 @@ final class GameRenderer: NSObject, MTKViewDelegate {
         return (CGRect(x: x0, y: y0, width: dw, height: dh), crop)
     }
 
-    func draw(in view: MTKView) {
+    // What the last present showed (present thread).
+    private var shownSize = CGSize.zero
+    private var shownOptions: DisplayOptions?
+    private var shownCRT: CRTSettingsModel.Snapshot?
+    private var crtPending = false   // CRT on but its tube plan was not ready: try again shortly
+
+    // Present scheduling (PresentLead), fed by the presented handlers (any thread).
+    private let leadLock = NSLock()
+    private var leadControl = PresentLead()
+    private var lastPresented: (frame: UInt64, time: Double)?
+    private var presentLead: Double { leadLock.lock(); defer { leadLock.unlock() }; return leadControl.lead }
+
+    private func presented(frame: UInt64, at t: Double) {
+        leadLock.lock()
+        if let l = lastPresented, frame == l.frame + 1, t > l.time, t - l.time < FramePacing.continuityLimit {
+            leadControl.observe(interval: t - l.time)
+        }
+        lastPresented = (frame, t)
+        let lead = leadControl.lead
+        leadLock.unlock()
+        latency.recordPresentLead(lead)
+    }
+
+    /// Present thread: shows what is new (an emulated frame, a size / option / CRT change);
+    /// otherwise nothing is drawn and the layer keeps its picture.
+    func draw(layer: CAMetalLayer) {
+        let options = self.options
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
         let crtState = CRTSettingsModel.shared.snapshot
         let crtOn = crtState.enabled
+        let wanted = layer.drawableSize
         let store = crtFrame
         // CRT just switched on (e.g. while paused): fetch the current frame again for it.
         let refetch = crtOn && !store.valid
@@ -107,12 +128,21 @@ final class GameRenderer: NSObject, MTKViewDelegate {
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
         }
-        guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-              let cb = queue.makeCommandBuffer() else { return }
-        let size = view.drawableSize
+        guard newMeta != nil || crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT else { return }
+        guard let drawable = layer.nextDrawable(), let cb = queue.makeCommandBuffer() else { shownOptions = nil; return }
+        if let m = newMeta, m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
+        shownSize = wanted
+        shownOptions = options
+        shownCRT = crtState
+        let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        // Physical CRT model (nesterm port): every pass is encoded into THIS command buffer right
-        // before the present, so a new emulated frame reaches the next vsync like the plain path.
+        // Physical CRT model (nesterm port): every pass is encoded into THIS command buffer, so a
+        // new emulated frame is presented exactly like on the plain path.
         var crtShown = false, crtInfo = ""
         if crtOn, let crt = crtRenderer() {
             let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
@@ -131,6 +161,7 @@ final class GameRenderer: NSObject, MTKViewDelegate {
             crtRenderer_ = nil          // free the tube buffers when CRT is switched off
             store.valid = false
         }
+        crtPending = crtOn && !crtShown
         if !crtShown {
             guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
             let (r, crop) = Self.viewport(drawableSize: size, options: options)
@@ -149,8 +180,10 @@ final class GameRenderer: NSObject, MTKViewDelegate {
         if let meta = newMeta {
             let lat = latency
             if meta.emulatedTime != 0 {
-                drawable.addPresentedHandler { d in
-                    if d.presentedTime > 0 { lat.recordPresent(meta: meta, presentedSeconds: d.presentedTime) }
+                drawable.addPresentedHandler { [weak self] d in
+                    guard d.presentedTime > 0 else { return }
+                    lat.recordPresent(meta: meta, presentedSeconds: d.presentedTime)
+                    if meta.deadline != 0 { self?.presented(frame: meta.frame, at: d.presentedTime) }
                 }
             }
             let info = crtInfo
@@ -158,7 +191,14 @@ final class GameRenderer: NSObject, MTKViewDelegate {
                 if b.gpuEndTime > b.gpuStartTime { lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: info) }
             }
         }
-        cb.present(drawable)
+        // On the tick grid plus the lead; frames not made by a paced tick (seeks while paused,
+        // option changes) and frames already past their slot go out at once.
+        let target = newMeta.map { $0.deadline != 0 ? HostClock.seconds($0.deadline) + presentLead : 0 } ?? 0
+        if target > HostClock.seconds(HostClock.now()) {
+            cb.present(drawable, atTime: target)
+        } else {
+            cb.present(drawable)
+        }
         cb.commit()
     }
 
@@ -227,21 +267,136 @@ final class CRTFrameStore {
     }
 }
 
+/// The game viewport: a layer-backed view whose CAMetalLayer is drawn by its PresentThread.
+final class GameLayerView: NSView {
+    let renderer: GameRenderer?
+    private let metalLayer = CAMetalLayer()
+    private var presenter: PresentThread?
+
+    init(frames: FrameBuffer, latency: LatencyMeter) {
+        renderer = GameRenderer(frames: frames, latency: latency)
+        super.init(frame: NSRect(x: 0, y: 0, width: 512, height: 480))
+        metalLayer.device = renderer?.device
+        metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.framebufferOnly = true
+        metalLayer.isOpaque = true
+        metalLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
+        // One drawable on screen, up to two scheduled ahead (present(atTime:)).
+        metalLayer.maximumDrawableCount = 3
+        metalLayer.displaySyncEnabled = true
+        wantsLayer = true
+        layerContentsRedrawPolicy = .never
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    deinit { presenter?.stop() }
+
+    override func makeBackingLayer() -> CALayer { metalLayer }
+    override var isOpaque: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {}  // the present thread draws the contents
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateDrawableSize()
+        if window != nil { startRendering() } else { stopRendering() }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateDrawableSize()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateDrawableSize()
+    }
+
+    /// Main thread. The present thread takes its geometry from each drawable's texture.
+    private func updateDrawableSize() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let size = CGSize(width: max(1, (bounds.width * scale).rounded()), height: max(1, (bounds.height * scale).rounded()))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        metalLayer.contentsScale = scale
+        if metalLayer.drawableSize != size { metalLayer.drawableSize = size }
+        CATransaction.commit()
+        presenter?.wake()
+    }
+
+    /// Display options changed (main thread).
+    func setOptions(_ o: DisplayOptions) {
+        guard let renderer, renderer.options != o else { return }
+        renderer.options = o
+        presenter?.wake()
+    }
+
+    private func startRendering() {
+        guard presenter == nil, let renderer else { return }
+        presenter = PresentThread(renderer: renderer, layer: metalLayer)
+    }
+
+    func stopRendering() {
+        presenter?.stop()
+        presenter = nil
+    }
+}
+
+/// Real-time thread that renders and presents each new emulated frame as soon as it is published
+/// (woken by FrameBuffer), plus size / option changes; it sleeps otherwise.
+final class PresentThread {
+    private let wakeup = DispatchSemaphore(value: 0)
+    private let frames: FrameBuffer
+    private let lock = NSLock()
+    private var running = true
+
+    init(renderer: GameRenderer, layer: CAMetalLayer) {
+        frames = renderer.frames
+        let wakeup = self.wakeup
+        let t = Thread {  // retains self until the loop ends (stop())
+            // Woken once per emulated frame; ~0.3 ms of CPU each.
+            HostClock.makeCurrentThreadRealtime(period: FramePacing.period, computation: 0.002, constraint: 0.008)
+            while self.isRunning {
+                // The timeout re-checks a CRT tube plan still being built while nothing new arrives.
+                _ = wakeup.wait(timeout: .now() + 0.1)
+                guard self.isRunning else { break }
+                autoreleasepool { renderer.draw(layer: layer) }  // drawables are autoreleased
+            }
+        }
+        t.name = "ReplayNES.present"
+        t.qualityOfService = .userInteractive
+        frames.addPublishObserver(wakeup)
+        t.start()
+    }
+
+    private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
+
+    func wake() { wakeup.signal() }
+
+    func stop() {
+        frames.removePublishObserver(wakeup)
+        lock.lock(); running = false; lock.unlock()
+        wakeup.signal()
+    }
+}
+
 struct MetalGameView: NSViewRepresentable {
     let emu: EmulationController
     var options: DisplayOptions
 
-    final class Coordinator { var renderer: GameRenderer? }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> MTKView {
-        let v = MTKView(frame: NSRect(x: 0, y: 0, width: 512, height: 480))
-        context.coordinator.renderer = GameRenderer(view: v, frames: emu.frames, latency: emu.latency)
-        context.coordinator.renderer?.options = options
+    func makeNSView(context: Context) -> GameLayerView {
+        let v = GameLayerView(frames: emu.frames, latency: emu.latency)
+        v.setOptions(options)
         return v
     }
 
-    func updateNSView(_ nsView: MTKView, context: Context) {
-        context.coordinator.renderer?.options = options
+    func updateNSView(_ nsView: GameLayerView, context: Context) {
+        nsView.setOptions(options)
+    }
+
+    static func dismantleNSView(_ nsView: GameLayerView, coordinator: ()) {
+        nsView.stopRendering()
     }
 }

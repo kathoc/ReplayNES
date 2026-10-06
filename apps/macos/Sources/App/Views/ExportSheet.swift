@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ExportSheet: View {
+    @ObservedObject private var clock = AppModel.shared.clock   // take length while recording (AppModel.status)
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var settings = ExportSettings()

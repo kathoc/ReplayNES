@@ -101,9 +101,9 @@ Rules: only `core/` knows Nestopia; only `util/Fs.cpp` has OS calls; only `capi/
 
 | Thread | Owns | Notes |
 |---|---|---|
-| Emulation thread | `rn_session`, calls `rn_input_sample_game`, `rn_step`, seek/rewind, autosave | Paced by display link / host clock: decides only *when* to step. Copies video (245 KB) into a triple buffer, pushes PCM into an SPSC ring. |
+| Emulation thread | `rn_session`, calls `rn_input_sample_game`, `rn_step`, seek/rewind, autosave | Real-time (time-constraint) thread paced by the host clock: decides only *when* to step. Copies video (245 KB) into a mailbox stamped with the tick's scheduled time, pushes PCM into an SPSC ring. |
 | UI / main thread | windows, menus, device callbacks → `rn_input_set_pressed` (internally locked) | Sends transport commands (pause, rewind, take switch…) to the emulation thread via a queue. Never touches `rn_session`. |
-| Render thread (Metal) | latest video buffer | nearest-neighbour upscale, overscan crop, aspect. |
+| Present thread (Metal, real-time) | latest video buffer | Woken by each published frame (never the main thread): nearest-neighbour upscale / CRT, overscan crop, aspect; `present(atTime:)` = tick time + adaptive lead, so every frame stays on screen equally long (60.0988 Hz content on 60/120 Hz and ProMotion displays without judder). `scripts/perf-smoke.sh` measures it. |
 | Audio callback | SPSC ring consumer | Mute on pause/rewind/scrub/slow; underrun counter. Never feeds back into emulation. |
 | Export thread | `rn_renderer` (created on the emulation thread) | Independent core instance; AVAssetWriter; timestamps from frame/sample counts. |
 

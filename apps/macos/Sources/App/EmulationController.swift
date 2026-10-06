@@ -93,6 +93,7 @@ final class EmulationController {
     private var autosaveSoon = false
     private var lastFullSave: UInt64 = 0
     private var nextDeadline: UInt64 = 0
+    private var tickDeadline: UInt64 = 0    // scheduled start of the tick being run (stamped on frames)
     // Fast-forward (replays the recorded take only; never records).
     private var ff = FastForwardSession()
     private var ffBlocked = false           // hold started where nothing is recorded ahead
@@ -233,6 +234,7 @@ final class EmulationController {
     private func show(_ v: UnsafePointer<UInt32>, meta: FrameMeta) {
         // Raw PPU codes of the same picture for the CRT signal path (display only).
         var meta = meta
+        meta.deadline = tickDeadline
         let signal = session?.videoIndices
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
         if flashFilter.level == .off {
@@ -268,10 +270,16 @@ final class EmulationController {
     // MARK: thread loop
 
     private func threadMain() {
+        // Real-time: woken on its deadline even on an otherwise idle Mac (frames then reach the
+        // present thread on a steady grid; audio is pushed evenly). ~1 ms of CPU per frame.
+        HostClock.makeCurrentThreadRealtime(period: Double(RN_FPS_DEN) / Double(RN_FPS_NUM), computation: 0.004, constraint: 0.010)
         nextDeadline = HostClock.now()
         while running {
             let now = HostClock.now()
             if now < nextDeadline { mach_wait_until(nextDeadline) }
+            let woke = HostClock.now()
+            latency.recordTickWake(lateTicks: woke > nextDeadline ? woke - nextDeadline : 0)
+            tickDeadline = nextDeadline
             tick()
             nextDeadline &+= period
             let after = HostClock.now()

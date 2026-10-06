@@ -35,7 +35,7 @@ final class FilmstripModel: ObservableObject {
     @Published var selectedSlot = 0
 
     let cache: ThumbnailCache
-    private let queue = DispatchQueue(label: "ReplayNES.thumbnails", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "ReplayNES.thumbnails", qos: .utility)  // below emulation / display
     private let notifyLock = NSLock()
     private var notifyQueued = false
     private var job: ThumbnailJob?

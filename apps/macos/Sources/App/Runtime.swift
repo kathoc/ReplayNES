@@ -21,6 +21,7 @@ struct FrameMeta {
     var inputEventTime: UInt64 = 0  // last physical input change consumed by this frame (0 = none)
     var sampleTime: UInt64 = 0      // rn_input_sample_game
     var emulatedTime: UInt64 = 0    // rn_step returned
+    var deadline: UInt64 = 0        // scheduled start of the tick that made it (present scheduling; 0 = none)
     // CRT signal side channel (display only; see rn_video_indices).
     var hasCodes = false            // raw PPU codes published with this frame
     var burstPhase: UInt32 = 0      // core colour-burst phase of the frame (0..2)
@@ -44,14 +45,22 @@ final class FrameBuffer {
         if let c { codes.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: c, count: $0.count) } } else { m.hasCodes = false }
         meta = m
         seq &+= 1
+        for o in observers { o.signal() }
         lock.unlock()
     }
+
+    private var observers: [DispatchSemaphore] = []
+
+    /// `s` is signalled after every publish / clear (the viewport's present thread).
+    func addPublishObserver(_ s: DispatchSemaphore) { lock.lock(); observers.append(s); lock.unlock() }
+    func removePublishObserver(_ s: DispatchSemaphore) { lock.lock(); observers.removeAll { $0 === s }; lock.unlock() }
 
     func clear() {
         lock.lock()
         for i in pixels.indices { pixels[i] = 0xFF00_0000 }
         meta = FrameMeta()
         seq &+= 1
+        for o in observers { o.signal() }
         lock.unlock()
     }
 
@@ -95,6 +104,18 @@ final class LatencyMeter {
         var displayGPUMs = 0.0       // GPU time of the display command buffer for a new frame (EMA)
         var displayGPUMaxMs = 0.0    // max over the last second
         var crtInfo = ""             // "" = CRT off; else tube size / signal path
+        // Pacing (FramePacing.swift). Counters are cumulative; *Max* are over the last second.
+        var emulatedFPS = 0.0        // frames emulated per second (normal play: 60.0988)
+        var presentCount: UInt64 = 0
+        var presentHitches: UInt64 = 0     // new frame shown > 1.5 frame periods after the previous
+        var skippedFrames: UInt64 = 0      // emulated frames never shown
+        var presentIntervalMaxMs = 0.0
+        var drawCount: UInt64 = 0          // frames rendered by the present thread during play
+        var drawLate: UInt64 = 0           // rendered > 1.5 frame periods after the previous one
+        var drawGapMaxMs = 0.0
+        var presentLeadMs = 0.0            // PresentLead: frames appear this long after their tick
+        var tickWakeLate: UInt64 = 0       // emulation ticks that started > 4 ms after their deadline
+        var tickWakeMaxMs = 0.0
     }
 
     private let lock = NSLock()
@@ -102,12 +123,54 @@ final class LatencyMeter {
     private var presentCount = 0
     private var fpsWindowStart = HostClock.now()
     private var gpuMaxWindow = 0.0, gpuWindowStart = HostClock.now()
+    private var pacing = FramePacing()
+    private var draws = CallbackRegularity(lateAfter: 1.5 / 120)
+    private var stepCount = 0, stepWindowStart = HostClock.now()
+    private var tickWakeWindowMax = 0.0
+    private var pacingWindowStart = HostClock.now()
 
     private static func ema(_ old: Double, _ v: Double) -> Double { old == 0 ? v : old * 0.9 + v * 0.1 }
 
     func recordStep(sampleToEmulated: UInt64) {
+        let now = HostClock.now()
         lock.lock(); s.sampleToEmulatedMs = Self.ema(s.sampleToEmulatedMs, HostClock.seconds(sampleToEmulated) * 1000)
-        s.stepMs = s.sampleToEmulatedMs; lock.unlock()
+        s.stepMs = s.sampleToEmulatedMs
+        stepCount += 1
+        let dt = HostClock.seconds(now - stepWindowStart)
+        if dt >= 1 { s.emulatedFPS = Double(stepCount) / dt; stepCount = 0; stepWindowStart = now }
+        lock.unlock()
+    }
+
+    /// Emulation thread: how late the tick woke up relative to its deadline.
+    func recordTickWake(lateTicks: UInt64) {
+        let ms = HostClock.seconds(lateTicks) * 1000
+        lock.lock()
+        if ms > 4 { s.tickWakeLate &+= 1 }
+        tickWakeWindowMax = max(tickWakeWindowMax, ms)
+        lock.unlock()
+    }
+
+    /// A frame was rendered (present thread). `refresh` = the expected interval in seconds.
+    func recordDraw(refresh: Double) {
+        let t = HostClock.seconds(HostClock.now())
+        lock.lock()
+        draws.lateAfter = refresh * 1.5
+        draws.tick(at: t)
+        s.drawCount = draws.count
+        s.drawLate = draws.late
+        rollPacingWindow()
+        lock.unlock()
+    }
+
+    /// Once a second: publishes the window maxima (lock held).
+    private func rollPacingWindow() {
+        let now = HostClock.now()
+        guard HostClock.seconds(now - pacingWindowStart) >= 1 else { return }
+        pacingWindowStart = now
+        s.presentIntervalMaxMs = pacing.takeWindowMax() * 1000
+        s.drawGapMaxMs = draws.takeWindowMax() * 1000
+        s.tickWakeMaxMs = tickWakeWindowMax
+        tickWakeWindowMax = 0
     }
 
     func recordPresent(meta: FrameMeta, presentedSeconds: Double) {
@@ -125,6 +188,11 @@ final class LatencyMeter {
                 s.inputToPresentMs = Self.ema(s.inputToPresentMs, v)
             }
         }
+        pacing.present(frame: meta.frame, at: presentedSeconds)
+        s.presentCount = pacing.presents
+        s.presentHitches = pacing.hitches
+        s.skippedFrames = pacing.skipped
+        rollPacingWindow()
         presentCount += 1
         let now = HostClock.now()
         let dt = HostClock.seconds(now - fpsWindowStart)
@@ -139,6 +207,8 @@ final class LatencyMeter {
         let now = HostClock.now()
         if HostClock.seconds(now - gpuWindowStart) >= 1 { s.displayGPUMaxMs = gpuMaxWindow; gpuMaxWindow = 0; gpuWindowStart = now }
     }
+
+    func recordPresentLead(_ seconds: Double) { lock.lock(); s.presentLeadMs = seconds * 1000; lock.unlock() }
 
     func recordAutosave(ticks: UInt64) { lock.lock(); s.lastAutosaveMs = HostClock.seconds(ticks) * 1000; lock.unlock() }
     func recordLateTick() { lock.lock(); s.lateTicks += 1; lock.unlock() }
@@ -258,5 +328,25 @@ final class AudioOutput {
         var st = rn_audio_ring_stats()
         rn_ring_get_stats(ring, &st)
         return st
+    }
+}
+
+extension HostClock {
+    /// Makes the calling thread a time-constraint (real-time) thread, like Core Audio's IO threads:
+    /// it is woken on time and run on a performance core even when the machine is otherwise idle
+    /// (a lightly loaded Mac otherwise lets these periodic wakeups drift by several milliseconds,
+    /// which shows as uneven frame pacing). `computation` is the CPU time needed per `period`,
+    /// `constraint` the window it must finish in. The kernel demotes a thread that overruns.
+    static func makeCurrentThreadRealtime(period: Double, computation: Double, constraint: Double) {
+        var policy = thread_time_constraint_policy_data_t(
+            period: UInt32(ticks(seconds: period)), computation: UInt32(ticks(seconds: computation)),
+            constraint: UInt32(ticks(seconds: constraint)), preemptible: 1)
+        let count = mach_msg_type_number_t(MemoryLayout<thread_time_constraint_policy_data_t>.size / MemoryLayout<integer_t>.size)
+        let r = withUnsafeMutablePointer(to: &policy) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                thread_policy_set(pthread_mach_thread_np(pthread_self()), thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, count)
+            }
+        }
+        if r != KERN_SUCCESS { NSLog("ReplayNES: real-time thread policy not applied (\(r))") }
     }
 }

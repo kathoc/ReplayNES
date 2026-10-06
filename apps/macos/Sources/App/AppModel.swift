@@ -31,7 +31,14 @@ final class AppModel: ObservableObject {
     let emu: EmulationController
     let library = LibraryModel()
 
-    @Published var status = EmuStatus()
+    /// Latest emulation status (~20 updates a second while running). Views observing AppModel are
+    /// only invalidated when its coarse part changes (EmuStatus.coarse: not the frame counters);
+    /// views showing counters (timecodes, timeline) observe `clock` instead, so the whole window
+    /// (toolbar, menus, layout) is not rebuilt for every update.
+    var status = EmuStatus() {
+        willSet { if newValue.coarse != status.coarse { objectWillChange.send() } }
+    }
+    let clock = PlaybackClock()
     @Published var bookmarks: [BookmarkInfo] = []
     @Published var takes: [TakeInfo] = []
     @Published var controllers: [String] = []
@@ -103,7 +110,7 @@ final class AppModel: ObservableObject {
         inputConfig = input.config
         emu.onStatus = { [weak self] st in
             guard let self else { return }
-            if self.status != st { self.status = st }
+            if self.status != st { self.status = st; self.clock.status = st }
         }
         emu.onStructure = { [weak self] st in
             guard let self else { return }
@@ -886,5 +893,22 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+    }
+}
+
+/// The status for views that show frame counters (timecodes, timeline playhead, progress):
+/// published on every status update without invalidating everything that observes AppModel.
+final class PlaybackClock: ObservableObject {
+    @Published var status = EmuStatus()
+}
+
+extension EmuStatus {
+    /// Everything but the counters that advance every frame (whether the take is empty is kept).
+    var coarse: EmuStatus {
+        var c = self
+        c.frame = 0
+        c.takeLength = takeLength > 0 ? 1 : 0
+        c.practiceFrame = 0
+        return c
     }
 }

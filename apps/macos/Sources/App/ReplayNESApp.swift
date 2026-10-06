@@ -36,8 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //                       keep quick play in memory and never resume)
         //   --crt               enable the CRT display for this run (not saved)
         //   --inject-pad / --test-actions / --snapshot-at / --snapshot-windows   scripted checks (TestHooks.swift)
+        //   --stats-log <path>  append a JSON line of pacing counters every second (scripts/perf-smoke.sh)
         let args = ProcessInfo.processInfo.arguments
-        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows"].contains { args.contains($0) }
+        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows", "--stats-log"].contains { args.contains($0) }
         if !args.contains("--no-updater") && !scripted {
             UpdaterModel.shared.start(arguments: args)
         }
@@ -79,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let acts = arg("--test-actions") { model.scheduleTestActions(acts) }
         if let snaps = arg("--snapshot-at") { model.scheduleSnapshots(snaps) }
         if let snaps = arg("--snapshot-windows") { model.scheduleWindowSnapshots(snaps) }
+        if let log = arg("--stats-log") { model.startStatsLog(to: URL(fileURLWithPath: log)) }
         if let snap = arg("--snapshot") {
             let delay = Double(arg("--snapshot-delay") ?? "3") ?? 3
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {

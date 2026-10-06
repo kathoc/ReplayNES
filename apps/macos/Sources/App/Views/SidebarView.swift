@@ -15,8 +15,10 @@ struct SidebarView: View {
             Section("Take") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Current take #\(st.activeTake)").font(.headline)
-                    Text("Length \(Engine.timecode(forFrame: st.takeLength)) (\(st.takeLength) frames) · Takes: \(st.takeCount)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    ClockView { st in
+                        Text("Length \(Engine.timecode(forFrame: st.takeLength)) (\(st.takeLength) frames) · Takes: \(st.takeCount)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Button { model.undoTake() } label: { Label("Back to Previous Take", systemImage: "arrow.uturn.backward") }
                     .disabled(st.undoDepth == 0)

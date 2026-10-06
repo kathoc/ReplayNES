@@ -30,7 +30,7 @@ struct PracticeOverlay: View {
         HStack(spacing: 10) {
             Image(systemName: "repeat").foregroundStyle(.orange)
             Text(currentName(st)).lineLimit(1)
-            Text(progress(st)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            ClockView { Text(progress($0)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary) }
             if st.practiceLoops > 0 { Text("Loop \(st.practiceLoops + 1)").font(.caption).foregroundStyle(.secondary) }
             Button("Stop Practicing") { model.practiceStop() }.controlSize(.small)
         }
@@ -49,7 +49,7 @@ struct PracticeOverlay: View {
                 Image(systemName: "repeat").foregroundStyle(.orange)
                 Text(st.practicing ? String(localized: "Practicing: \(currentName(st))") : String(localized: "Practice (A/B Repeat)")).font(.system(size: 13, weight: .semibold))
                 if st.practicing {
-                    Text(progress(st)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                    ClockView { Text(progress($0)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary) }
                 }
                 Spacer(minLength: 8)
                 if st.practicing {

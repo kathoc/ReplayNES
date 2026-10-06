@@ -43,7 +43,6 @@ struct IconButton: View {
 /// The single record toggle: red glowing "Record" in record mode, gray in replay mode.
 struct RecordToggleButton: View {
     @EnvironmentObject var model: AppModel
-    @State private var pulse = false
 
     var body: some View {
         let st = model.status
@@ -59,12 +58,13 @@ struct RecordToggleButton: View {
                 RoundedRectangle(cornerRadius: 13)
                     .fill(on ? Color.red.opacity(0.85) : Color.secondary.opacity(0.15))
             )
-            .shadow(color: on ? Color.red.opacity(pulse ? 0.85 : 0.35) : .clear, radius: on ? (pulse ? 9 : 4) : 0)
+            // A steady glow: a forever-repeating pulse re-rendered the blurred shadow (and ran a
+            // SwiftUI transaction on the main thread) every display refresh.
+            .shadow(color: on ? Color.red.opacity(0.6) : .clear, radius: on ? 6 : 0)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(st.practicing)
-        .onAppear { withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true } }
         .help(on ? String(localized: "Record mode (click for playback mode: plays the recorded take)")
                  : String(localized: "Playback mode (click to return to record mode and continue recording from here)"))
     }
@@ -78,9 +78,9 @@ struct TransportBar: View {
         let st = model.status
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                Text(leftTime(st)).font(.system(.callout, design: .monospaced))
+                ClockView { Text(leftTime($0)).font(.system(.callout, design: .monospaced)) }
                 FilmstripTimeline()
-                Text(rightTime(st)).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                ClockView { Text(rightTime($0)).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary) }
                 TimelineSlotPicker()
             }
             HStack(spacing: 6) {
@@ -157,6 +157,13 @@ struct TransportBar: View {
         if st.practicing { return st.practiceLength > 0 ? Engine.timecode(forFrame: st.practiceLength) : "--:--.--" }
         return Engine.timecode(forFrame: st.takeLength) + (st.unsaved ? " •" : "")
     }
+}
+
+/// Content made from the per-frame status: observes AppModel.clock only (see AppModel.status).
+struct ClockView<Content: View>: View {
+    @ObservedObject private var clock = AppModel.shared.clock
+    @ViewBuilder let content: (EmuStatus) -> Content
+    var body: some View { content(clock.status) }
 }
 
 /// Pixel-perfect / FILL segmented control.

@@ -61,7 +61,10 @@ extension AppModel {
             "presentedFPS": s.presentedFPS, "emulatedToPresentMs": s.emulatedToPresentMs,
             "sampleToEmulatedMs": s.sampleToEmulatedMs, "audioUnderruns": s.audioUnderruns,
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,
-            "lateTicks": s.lateTicks,
+            "lateTicks": s.lateTicks, "emulatedFPS": s.emulatedFPS, "presentCount": s.presentCount,
+            "presentHitches": s.presentHitches, "skippedFrames": s.skippedFrames, "presentIntervalMaxMs": s.presentIntervalMaxMs,
+            "drawCount": s.drawCount, "drawLate": s.drawLate, "drawGapMaxMs": s.drawGapMaxMs,
+            "tickWakeLate": s.tickWakeLate, "tickWakeMaxMs": s.tickWakeMaxMs, "presentLeadMs": s.presentLeadMs,
             "displayGPUMs": s.displayGPUMs, "displayGPUMaxMs": s.displayGPUMaxMs, "crtInfo": s.crtInfo,
             "crtEnabled": CRTSettingsModel.shared.enabled,
             "flashReduction": flashLevel.label, "flashActive": status.flashActive,
@@ -83,6 +86,33 @@ extension AppModel {
         }
     }
 
+
+    /// `--stats-log <path>`: one JSON line of pacing / latency counters per second (perf smoke
+    /// test; much cheaper than a window snapshot, so it does not disturb what it measures).
+    func startStatsLog(to url: URL) {
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard let h = try? FileHandle(forWritingTo: url) else { NSLog("ReplayNES: cannot write \(url.path)"); return }
+        let start = HostClock.now()
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let s = self.emu.latency.snapshot(audio: self.emu.audio)
+            let row: [String: Any] = [
+                "t": HostClock.seconds(HostClock.now() - start), "frame": self.status.frame, "paused": self.status.paused,
+                "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "presentCount": s.presentCount,
+                "presentHitches": s.presentHitches, "skippedFrames": s.skippedFrames, "presentIntervalMaxMs": s.presentIntervalMaxMs,
+                "drawCount": s.drawCount, "drawLate": s.drawLate, "drawGapMaxMs": s.drawGapMaxMs,
+                "tickWakeLate": s.tickWakeLate, "tickWakeMaxMs": s.tickWakeMaxMs, "lateTicks": s.lateTicks,
+                "presentLeadMs": s.presentLeadMs,
+                "emulatedToPresentMs": s.emulatedToPresentMs, "audioUnderruns": s.audioUnderruns,
+                "fullScreen": self.mainWindow?.styleMask.contains(.fullScreen) ?? false,
+            ]
+            if var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
+                line.append(0x0A)
+                h.write(line)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+    }
 
     /// Menu bar structure for scripted checks: ["title", "  item ⌘k", ...].
     private static func describe(_ menu: NSMenu, depth: Int = 0) -> [String] {

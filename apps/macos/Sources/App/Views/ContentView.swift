@@ -35,11 +35,15 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, minHeight: 560)
         .background(WindowAccessor { w in
-            model.mainWindow = w
-            w.title = windowTitle
+            // Only real changes: setting these (even to the same value) makes AppKit redo the
+            // title bar, drag regions and cursor rects.
+            if model.mainWindow !== w { model.mainWindow = w }
+            let title = windowTitle
+            if w.title != title { w.title = title }
             let path = model.status.projectPath
-            w.representedURL = path.isEmpty || model.isTempSession(path) ? nil : URL(fileURLWithPath: path)
-            w.isDocumentEdited = model.status.unsaved
+            let url = path.isEmpty || model.isTempSession(path) ? nil : URL(fileURLWithPath: path)
+            if w.representedURL != url { w.representedURL = url }
+            if w.isDocumentEdited != model.status.unsaved { w.isDocumentEdited = model.status.unsaved }
         })
         .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
         // Scripted checks (--test-actions open:<window>, TestHooks.swift).
