@@ -273,6 +273,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## FFmpeg and x264 (MP4 export, Linux app)
+
+- FFmpeg (https://ffmpeg.org): `libavcodec`, `libavformat`, `libavutil` are used for MP4 export (H.264
+  video + FFmpeg's native AAC encoder) by `replaynes-linux` and `replaynes-export`. They are **not
+  bundled** in the ReplayNES Flatpak: the libraries come from the `org.freedesktop.Platform` 25.08
+  runtime (FFmpeg 7.1), and the H.264 encoders from its `org.freedesktop.Platform.codecs-extra`
+  extension, which Flatpak installs automatically with the runtime.
+- That FFmpeg build is LGPL-2.1-or-later; the codecs-extra build enables GPL parts, in particular
+  **x264** (`libx264`, https://www.videolan.org/developers/x264.html, GPL-2.0-or-later). Both licences
+  are compatible with ReplayNES's GPL-2.0-or-later. Hardware encoding (`h264_vaapi`) goes through the
+  runtime's libva / Mesa drivers.
+- H.264 / AAC may be covered by patents in some countries; whoever distributes the encoders (the
+  runtime extension) is responsible for that, ReplayNES only links to the runtime's libraries.
+- On macOS the exporter uses AVFoundation (system framework); the Linux exporter builds there too for
+  testing against Homebrew's FFmpeg, which is not distributed with the app.
+
 ## SDL3 and Vulkan loader (Linux app)
 
 - SDL 3 (zlib license, https://libsdl.org) and the Khronos Vulkan loader (Apache-2.0) are provided by the

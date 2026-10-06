@@ -1,0 +1,665 @@
+// Offline MP4 export (H.264 + AAC via FFmpeg libav*), see mp4_export.h.
+// Written against the libav* APIs present in both FFmpeg 7.1 (libavcodec 61, freedesktop 25.08)
+// and FFmpeg 8 (libavcodec 62): AVChannelLayout, send/receive, AVFrame.duration, AV_PROFILE_*.
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include "mp4_export.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/hwcontext.h>
+#include <libavutil/opt.h>
+}
+
+namespace rnl {
+
+rnf_export_settings defaultExportSettings() {
+  rnf_export_settings s{};
+  s.preset.kind = RNF_PRESET_CANVAS;
+  s.preset.width = 1280;
+  s.preset.height = 960;
+  s.crop_top = 8;
+  s.crop_bottom = 8;
+  return s;
+}
+
+namespace {
+
+constexpr int kFrameW = RN_VIDEO_WIDTH, kFrameH = RN_VIDEO_HEIGHT;
+const char* const kAutoEncoders[] = {"libx264", "h264_vaapi", "libopenh264"};
+
+std::string avError(int code) {
+  char buf[AV_ERROR_MAX_STRING_SIZE] = {};
+  av_strerror(code, buf, sizeof buf);
+  return buf;
+}
+
+// ------------------------------------------------------------------ BGRA -> BT.709 limited range
+// Exact integer conversion (16.16 fixed point, rounded). Coefficients are the BT.709 matrix scaled
+// to 219 (luma) / 224 (chroma) steps; each chroma row sums to 0 so greys get Cb = Cr = 128, and
+// white maps to Y 235, black to Y 16. Chroma is the mean of the 2x2 block (4:2:0, centred).
+struct Coeffs {
+  int yr, yg, yb, ur, ug, ub, vr, vg, vb;
+};
+constexpr int fix(double v) { return int(v * 65536.0 + (v < 0 ? -0.5 : 0.5)); }
+constexpr Coeffs makeCoeffs() {
+  const double kr = 0.2126, kb = 0.0722, kg = 1 - kr - kb, ys = 219.0 / 255.0, cs = 224.0 / 255.0;
+  Coeffs c{};
+  c.yr = fix(kr * ys);
+  c.yb = fix(kb * ys);
+  c.yg = fix(ys) - c.yr - c.yb;  // sum = 219/255 exactly as rounded
+  c.ur = fix(-kr / (2 * (1 - kb)) * cs);
+  c.ug = fix(-kg / (2 * (1 - kb)) * cs);
+  c.ub = -c.ur - c.ug;
+  c.vg = fix(-kg / (2 * (1 - kr)) * cs);
+  c.vb = fix(-kb / (2 * (1 - kr)) * cs);
+  c.vr = -c.vg - c.vb;
+  return c;
+}
+constexpr Coeffs kC = makeCoeffs();
+
+inline uint8_t lumaOf(uint32_t p) {
+  const int b = p & 0xFF, g = (p >> 8) & 0xFF, r = (p >> 16) & 0xFF;
+  return uint8_t((kC.yr * r + kC.yg * g + kC.yb * b + (16 << 16) + (1 << 15)) >> 16);
+}
+
+/// canvas (BGRA, w x h, both even) -> Y plane + either separate U/V planes (YUV420P) or one
+/// interleaved UV plane (NV12, v == nullptr).
+void convertToYuv(const uint8_t* canvas, size_t stride, int w, int h, uint8_t* y, int yStride, uint8_t* u, int uStride,
+                  uint8_t* v, int vStride) {
+  for (int row = 0; row < h; row += 2) {
+    const uint32_t* s0 = reinterpret_cast<const uint32_t*>(canvas + size_t(row) * stride);
+    const uint32_t* s1 = reinterpret_cast<const uint32_t*>(canvas + size_t(row + 1) * stride);
+    uint8_t* y0 = y + size_t(row) * yStride;
+    uint8_t* y1 = y0 + yStride;
+    uint8_t* uRow = u + size_t(row / 2) * uStride;
+    uint8_t* vRow = v ? v + size_t(row / 2) * vStride : nullptr;
+    // Identical row pair as the previous pair (the common case for scaled pixel art): copy.
+    if (row >= 2 && std::memcmp(s0, s0 - 2 * stride / 4, size_t(w) * 4) == 0 &&
+        std::memcmp(s1, s1 - 2 * stride / 4, size_t(w) * 4) == 0) {
+      std::memcpy(y0, y0 - 2 * size_t(yStride), size_t(w));
+      std::memcpy(y1, y1 - 2 * size_t(yStride), size_t(w));
+      std::memcpy(uRow, uRow - uStride, v ? size_t(w / 2) : size_t(w));
+      if (vRow) std::memcpy(vRow, vRow - vStride, size_t(w / 2));
+      continue;
+    }
+    for (int x = 0; x < w; x += 2) {
+      const uint32_t a = s0[x], b = s0[x + 1], c = s1[x], d = s1[x + 1];
+      y0[x] = lumaOf(a);
+      y0[x + 1] = lumaOf(b);
+      y1[x] = lumaOf(c);
+      y1[x + 1] = lumaOf(d);
+      const int bs = int(a & 0xFF) + int(b & 0xFF) + int(c & 0xFF) + int(d & 0xFF);
+      const int gs = int((a >> 8) & 0xFF) + int((b >> 8) & 0xFF) + int((c >> 8) & 0xFF) + int((d >> 8) & 0xFF);
+      const int rs = int((a >> 16) & 0xFF) + int((b >> 16) & 0xFF) + int((c >> 16) & 0xFF) + int((d >> 16) & 0xFF);
+      const uint8_t cb = uint8_t((kC.ur * rs + kC.ug * gs + kC.ub * bs + (128 << 18) + (1 << 17)) >> 18);
+      const uint8_t cr = uint8_t((kC.vr * rs + kC.vg * gs + kC.vb * bs + (128 << 18) + (1 << 17)) >> 18);
+      if (vRow) {
+        uRow[x / 2] = cb;
+        vRow[x / 2] = cr;
+      } else {
+        uRow[x] = cb;
+        uRow[x + 1] = cr;
+      }
+    }
+  }
+}
+
+// ------------------------------------------------------------------ nearest scaling (MP4Exporter.scale)
+/// BGRA 256x240 -> canvas with black borders. Rows are built once and copied for vertical repeats.
+void scaleNearest(const uint32_t* src, uint8_t* canvas, size_t stride, const rnf_export_geometry& g,
+                  const std::vector<int>& cols, const std::vector<int>& rows) {
+  const uint32_t black = 0xFF000000u;  // BGRA little-endian, A = 255
+  int lastSrcRow = -1;
+  const uint32_t* lastDstRow = nullptr;
+  for (int y = 0; y < g.canvas_height; ++y) {
+    uint32_t* row = reinterpret_cast<uint32_t*>(canvas + size_t(y) * stride);
+    const int dy = y - g.dst_y;
+    if (dy < 0 || dy >= g.dst_height) {
+      std::fill(row, row + g.canvas_width, black);
+      continue;
+    }
+    const int sy = rows[size_t(dy)];
+    if (sy == lastSrcRow && lastDstRow) {
+      std::memcpy(row, lastDstRow, size_t(g.canvas_width) * 4);
+      continue;
+    }
+    if (g.dst_x > 0) std::fill(row, row + g.dst_x, black);
+    const int right = g.dst_x + g.dst_width;
+    if (right < g.canvas_width) std::fill(row + right, row + g.canvas_width, black);
+    const uint32_t* srow = src + size_t(sy) * kFrameW;
+    uint32_t* out = row + g.dst_x;
+    for (int x = 0; x < g.dst_width; ++x) out[x] = srow[cols[size_t(x)]] | black;
+    lastSrcRow = sy;
+    lastDstRow = row;
+  }
+}
+
+// ------------------------------------------------------------------ libav state (RAII)
+struct AvState {
+  AVFormatContext* fmt = nullptr;
+  AVCodecContext* video = nullptr;
+  AVCodecContext* audio = nullptr;
+  AVBufferRef* hwDevice = nullptr;
+  AVStream* vStream = nullptr;
+  AVStream* aStream = nullptr;
+  AVFrame* vFrame = nullptr;  // YUV420P, or NV12 (software side of a VAAPI upload)
+  AVFrame* aFrame = nullptr;
+  AVPacket* pkt = nullptr;
+  bool vaapi = false;
+  bool fileOpen = false;
+
+  ~AvState() {
+    av_packet_free(&pkt);
+    av_frame_free(&vFrame);
+    av_frame_free(&aFrame);
+    avcodec_free_context(&video);
+    avcodec_free_context(&audio);
+    av_buffer_unref(&hwDevice);
+    if (fmt) {
+      if (fileOpen) avio_closep(&fmt->pb);
+      avformat_free_context(fmt);
+    }
+  }
+};
+
+bool openVideoEncoder(const std::string& name, const rnf_export_geometry& g, int64_t bitrate, bool globalHeader,
+                      AvState& av, std::string* why) {
+  const AVCodec* codec = avcodec_find_encoder_by_name(name.c_str());
+  if (!codec) {
+    *why = name + ": not in this FFmpeg build";
+    return false;
+  }
+  if (codec->id != AV_CODEC_ID_H264) {
+    *why = name + ": not an H.264 encoder";
+    return false;
+  }
+  AVCodecContext* c = avcodec_alloc_context3(codec);
+  if (!c) {
+    *why = "out of memory";
+    return false;
+  }
+  const bool vaapi = name.find("vaapi") != std::string::npos;
+  c->width = g.canvas_width;
+  c->height = g.canvas_height;
+  c->sample_aspect_ratio = AVRational{1, 1};
+  c->time_base = AVRational{RN_FPS_DEN, RN_FPS_NUM};  // one tick per frame
+  c->framerate = AVRational{RN_FPS_NUM, RN_FPS_DEN};
+  c->bit_rate = bitrate;
+  c->gop_size = 120;
+  c->color_primaries = AVCOL_PRI_BT709;
+  c->color_trc = AVCOL_TRC_BT709;
+  c->colorspace = AVCOL_SPC_BT709;
+  c->color_range = AVCOL_RANGE_MPEG;
+  c->chroma_sample_location = AVCHROMA_LOC_CENTER;  // chroma = mean of each 2x2 block
+  if (globalHeader) c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  if (name == "libx264") {
+    c->pix_fmt = AV_PIX_FMT_YUV420P;
+    c->profile = AV_PROFILE_H264_HIGH;
+    av_opt_set(c->priv_data, "profile", "high", 0);
+    av_opt_set(c->priv_data, "preset", "medium", 0);
+  } else if (vaapi) {
+    c->profile = AV_PROFILE_H264_HIGH;
+    c->rc_max_rate = bitrate * 2;  // VBR around the average rate
+    c->rc_buffer_size = int(std::min<int64_t>(bitrate * 2, INT32_MAX));
+    int r = av_hwdevice_ctx_create(&av.hwDevice, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0);
+    if (r < 0) {
+      *why = name + ": no VAAPI device (" + avError(r) + ")";
+      avcodec_free_context(&c);
+      return false;
+    }
+    AVBufferRef* frames = av_hwframe_ctx_alloc(av.hwDevice);
+    if (!frames) {
+      *why = "out of memory";
+      av_buffer_unref(&av.hwDevice);
+      avcodec_free_context(&c);
+      return false;
+    }
+    auto* fc = reinterpret_cast<AVHWFramesContext*>(frames->data);
+    fc->format = AV_PIX_FMT_VAAPI;
+    fc->sw_format = AV_PIX_FMT_NV12;
+    fc->width = g.canvas_width;
+    fc->height = g.canvas_height;
+    fc->initial_pool_size = 20;
+    r = av_hwframe_ctx_init(frames);
+    if (r < 0) {
+      *why = name + ": VAAPI frames (" + avError(r) + ")";
+      av_buffer_unref(&frames);
+      av_buffer_unref(&av.hwDevice);
+      avcodec_free_context(&c);
+      return false;
+    }
+    c->pix_fmt = AV_PIX_FMT_VAAPI;
+    c->hw_frames_ctx = frames;  // takes the reference
+  } else {
+    c->pix_fmt = AV_PIX_FMT_YUV420P;  // libopenh264 & co.: their default profile
+  }
+  int r = avcodec_open2(c, codec, nullptr);
+  if (r < 0) {
+    *why = name + ": " + avError(r);
+    avcodec_free_context(&c);
+    av_buffer_unref(&av.hwDevice);
+    return false;
+  }
+  av.video = c;
+  av.vaapi = vaapi;
+  return true;
+}
+
+bool openAudioEncoder(int bitrate, bool globalHeader, AvState& av, std::string* error) {
+  const AVCodec* codec = avcodec_find_encoder_by_name("aac");  // FFmpeg's native AAC encoder
+  if (!codec) {
+    *error = "The AAC encoder is missing from this FFmpeg build";
+    return false;
+  }
+  AVCodecContext* c = avcodec_alloc_context3(codec);
+  if (!c) {
+    *error = "out of memory";
+    return false;
+  }
+  c->sample_fmt = AV_SAMPLE_FMT_FLTP;
+  c->sample_rate = RN_SAMPLE_RATE;
+  av_channel_layout_default(&c->ch_layout, 1);
+  c->bit_rate = bitrate;
+  c->time_base = AVRational{1, RN_SAMPLE_RATE};
+  if (globalHeader) c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  int r = avcodec_open2(c, codec, nullptr);
+  if (r < 0) {
+    *error = "AAC encoder: " + avError(r);
+    avcodec_free_context(&c);
+    return false;
+  }
+  av.audio = c;
+  return true;
+}
+
+/// Sends `frame` (nullptr = flush) and writes every packet the encoder returns.
+bool encodeAndWrite(AvState& av, AVCodecContext* c, AVStream* st, AVFrame* frame, std::string* error) {
+  int r = avcodec_send_frame(c, frame);
+  if (r < 0 && !(frame == nullptr && r == AVERROR_EOF)) {
+    *error = std::string("encoder (") + c->codec->name + "): " + avError(r);
+    return false;
+  }
+  for (;;) {
+    r = avcodec_receive_packet(c, av.pkt);
+    if (r == AVERROR(EAGAIN) || r == AVERROR_EOF) return true;
+    if (r < 0) {
+      *error = std::string("encoder (") + c->codec->name + "): " + avError(r);
+      return false;
+    }
+    if (c == av.video && av.pkt->duration <= 0) av.pkt->duration = 1;  // one frame
+    av_packet_rescale_ts(av.pkt, c->time_base, st->time_base);
+    av.pkt->stream_index = st->index;
+    r = av_interleaved_write_frame(av.fmt, av.pkt);  // takes the packet's reference
+    if (r < 0) {
+      *error = "writing the file: " + avError(r);
+      return false;
+    }
+  }
+}
+
+}  // namespace
+
+std::string availableEncodersDescription() {
+  std::string out;
+  for (const char* n : kAutoEncoders) {
+    if (!out.empty()) out += ", ";
+    out += n;
+    out += avcodec_find_encoder_by_name(n) ? " (present)" : " (missing)";
+  }
+  out += avcodec_find_encoder_by_name("aac") ? "; aac (present)" : "; aac (missing)";
+  return out;
+}
+
+bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::string& outPath,
+                   const ExportProgressFn& progress, const ExportCancelFn& cancelled, ExportResult* result,
+                   std::string* error) {
+  std::string localError;
+  std::string& err = error ? *error : localError;
+  err.clear();
+  std::unique_ptr<rn_renderer, void (*)(rn_renderer*)> rend(renderer, rn_renderer_free);
+  if (!rend) {
+    err = "no renderer";
+    return false;
+  }
+
+  // ---- settings + geometry (shared frontend core)
+  char* message = nullptr;
+  if (rnf_export_validate(&opt.settings, &message) != RN_OK) {
+    err = message ? message : "invalid export settings";
+    rnf_string_free(message);
+    return false;
+  }
+  rnf_string_free(message);
+  const uint64_t total = rn_renderer_total_frames(rend.get());
+  if (total == 0) {
+    err = "There are no frames to export (the take is empty)";
+    return false;
+  }
+  rnf_export_geometry g{};
+  rnf_export_geometry_compute(&opt.settings, &g);
+  std::vector<int> cols(size_t(std::max(0, g.dst_width))), rows(size_t(std::max(0, g.dst_height)));
+  rnf_export_column_map(&g, cols.data());
+  rnf_export_row_map(&g, rows.data());
+  const int64_t bitrate = rnf_export_video_bitrate(&g, opt.videoBitsPerPixel);
+
+  // ---- optional processor (CRT), flash filter
+  std::unique_ptr<ExportVideoProcessor> processor;
+  if (opt.makeProcessor) {
+    std::string perr;
+    processor = opt.makeProcessor(&perr);
+    if (!processor) {
+      err = perr.empty() ? "The video effect could not be created" : perr;
+      return false;
+    }
+    if (!processor->begin(opt.settings, g, &perr)) {
+      err = perr.empty() ? "The video effect could not be started" : perr;
+      return false;
+    }
+  }
+  std::unique_ptr<rn_flash_filter, void (*)(rn_flash_filter*)> flash(
+      opt.flash == RN_FLASH_OFF ? nullptr : rn_flash_filter_new(opt.flash), rn_flash_filter_free);
+  if (opt.flash != RN_FLASH_OFF && !flash) {
+    err = "invalid flash reduction level";
+    return false;
+  }
+  std::vector<uint32_t> filtered(flash ? size_t(kFrameW) * kFrameH : 0);
+
+  // ---- muxer + encoders
+  AvState av;
+  bool fileCreated = false;
+  auto fail = [&](const std::string& m) {
+    err = m;
+    if (av.fileOpen) {
+      avio_closep(&av.fmt->pb);
+      av.fileOpen = false;
+    }
+    if (fileCreated) std::remove(outPath.c_str());
+    return false;
+  };
+
+  int r = avformat_alloc_output_context2(&av.fmt, nullptr, "mp4", outPath.c_str());
+  if (r < 0 || !av.fmt) return fail("MP4 muxer: " + avError(r));
+  const bool globalHeader = (av.fmt->oformat->flags & AVFMT_GLOBALHEADER) != 0;
+
+  std::string encName;
+  {
+    std::string tried;
+    std::vector<std::string> names;
+    if (opt.encoder.empty()) names.assign(std::begin(kAutoEncoders), std::end(kAutoEncoders));
+    else names.push_back(opt.encoder);
+    for (const auto& n : names) {
+      std::string why;
+      if (openVideoEncoder(n, g, bitrate, globalHeader, av, &why)) {
+        encName = n;
+        break;
+      }
+      tried += (tried.empty() ? "" : "; ") + why;
+    }
+    if (!av.video) return fail("No usable H.264 encoder (" + tried + ")");
+  }
+  if (!openAudioEncoder(opt.audioBitrate, globalHeader, av, &err)) return fail(err);
+
+  av.vStream = avformat_new_stream(av.fmt, nullptr);
+  av.aStream = avformat_new_stream(av.fmt, nullptr);
+  if (!av.vStream || !av.aStream) return fail("out of memory");
+  if (avcodec_parameters_from_context(av.vStream->codecpar, av.video) < 0 ||
+      avcodec_parameters_from_context(av.aStream->codecpar, av.audio) < 0)
+    return fail("codec parameters");
+  av.vStream->time_base = AVRational{1, RN_FPS_NUM};  // MP4 track timescale 39375000 (exact PTS)
+  av.vStream->avg_frame_rate = AVRational{RN_FPS_NUM, RN_FPS_DEN};
+  av.aStream->time_base = AVRational{1, RN_SAMPLE_RATE};
+
+  r = avio_open(&av.fmt->pb, outPath.c_str(), AVIO_FLAG_WRITE);
+  if (r < 0) return fail("Can't create " + outPath + ": " + avError(r));
+  av.fileOpen = true;
+  fileCreated = true;
+  AVDictionary* muxOpts = nullptr;
+  av_dict_set(&muxOpts, "video_track_timescale", std::to_string(RN_FPS_NUM).c_str(), 0);
+  av_dict_set(&muxOpts, "movie_timescale", std::to_string(RN_FPS_NUM).c_str(), 0);
+  r = avformat_write_header(av.fmt, &muxOpts);
+  av_dict_free(&muxOpts);
+  if (r < 0) return fail("MP4 header: " + avError(r));
+
+  // ---- frames
+  av.pkt = av_packet_alloc();
+  av.vFrame = av_frame_alloc();
+  av.aFrame = av_frame_alloc();
+  if (!av.pkt || !av.vFrame || !av.aFrame) return fail("out of memory");
+  av.vFrame->format = av.vaapi ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
+  av.vFrame->width = g.canvas_width;
+  av.vFrame->height = g.canvas_height;
+  if (av_frame_get_buffer(av.vFrame, 0) < 0) return fail("out of memory");
+  const int frameSize = av.audio->frame_size > 0 ? av.audio->frame_size : 1024;
+  av.aFrame->format = AV_SAMPLE_FMT_FLTP;
+  av.aFrame->sample_rate = RN_SAMPLE_RATE;
+  av.aFrame->nb_samples = frameSize;
+  av_channel_layout_default(&av.aFrame->ch_layout, 1);
+  if (av_frame_get_buffer(av.aFrame, 0) < 0) return fail("out of memory");
+  const bool smallLastFrame = (av.audio->codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME) != 0;
+
+  const size_t canvasStride = size_t(g.canvas_width) * 4;
+  std::vector<uint8_t> canvas(canvasStride * size_t(g.canvas_height));
+  const uint64_t startFrame = opt.settings.start_frame;
+  const uint64_t sampleBase = rn_audio_samples_before(startFrame);
+  std::vector<float> pending;  // PCM not yet in an AAC frame
+  pending.reserve(size_t(frameSize) * 4);
+  uint64_t samplesQueued = 0;  // samples appended to `pending` since the start (== next sample position)
+  uint64_t samplesEncoded = 0;
+  uint64_t framesWritten = 0;
+
+  auto sendAudio = [&](int count) -> bool {
+    if (av_frame_make_writable(av.aFrame) < 0) return fail("out of memory");
+    av.aFrame->nb_samples = count;
+    std::memcpy(av.aFrame->data[0], pending.data(), size_t(count) * sizeof(float));
+    if (count < frameSize && !smallLastFrame) {
+      std::memset(reinterpret_cast<float*>(av.aFrame->data[0]) + count, 0, size_t(frameSize - count) * sizeof(float));
+      av.aFrame->nb_samples = frameSize;
+    }
+    av.aFrame->pts = int64_t(samplesEncoded);
+    pending.erase(pending.begin(), pending.begin() + count);
+    samplesEncoded += uint64_t(count);
+    if (!encodeAndWrite(av, av.audio, av.aStream, av.aFrame, &err)) return fail(err);
+    return true;
+  };
+
+  for (;;) {
+    if (cancelled && cancelled()) return fail("cancelled");
+    const uint32_t* video = nullptr;
+    const int16_t* audio = nullptr;
+    size_t n = 0;
+    uint64_t f = 0;
+    rn_status st = rn_renderer_next(rend.get(), &video, &audio, &n, &f);
+    if (st == RN_ERR_END_OF_TAKE) break;
+    if (st != RN_OK) return fail(std::string(rn_status_name(st)) + ": " + rn_last_error());
+    if (!video) return fail("the renderer returned no picture");
+
+    // Flash reduction: frames strictly in order through one filter (display only).
+    const uint32_t* pixels = video;
+    bool altered = false;
+    if (flash) {
+      rn_flash_info info{};
+      if (rn_flash_filter_process(flash.get(), video, filtered.data(), &info) != RN_OK)
+        return fail(std::string("flash filter: ") + rn_last_error());
+      pixels = filtered.data();
+      altered = info.altered != 0;
+    }
+
+    if (processor) {
+      rn_video_indices_info info{};
+      ExportFrameSignal sig;
+      if (rn_renderer_video_indices(rend.get(), &info) == RN_OK && info.codes) {
+        sig.codes = info.codes;
+        sig.burstPhase = info.burst_phase;
+        sig.ordinal = info.frame;
+      } else {
+        sig.ordinal = f;
+      }
+      sig.flashAltered = altered;
+      std::string perr;
+      if (!processor->render(sig, pixels, canvas.data(), canvasStride, &perr))
+        return fail(perr.empty() ? "The video effect failed" : perr);
+    } else {
+      scaleNearest(pixels, canvas.data(), canvasStride, g, cols, rows);
+    }
+
+    if (av_frame_make_writable(av.vFrame) < 0) return fail("out of memory");
+    AVFrame* fr = av.vFrame;
+    if (av.vaapi) {
+      convertToYuv(canvas.data(), canvasStride, g.canvas_width, g.canvas_height, fr->data[0], fr->linesize[0],
+                   fr->data[1], fr->linesize[1], nullptr, 0);
+    } else {
+      convertToYuv(canvas.data(), canvasStride, g.canvas_width, g.canvas_height, fr->data[0], fr->linesize[0],
+                   fr->data[1], fr->linesize[1], fr->data[2], fr->linesize[2]);
+    }
+    // Video PTS = frame offset in ticks of 655171/39375000 s (exact rational).
+    const int64_t pts = int64_t(f - startFrame);
+    if (av.vaapi) {
+      AVFrame* hw = av_frame_alloc();
+      if (!hw) return fail("out of memory");
+      r = av_hwframe_get_buffer(av.video->hw_frames_ctx, hw, 0);
+      if (r >= 0) r = av_hwframe_transfer_data(hw, fr, 0);
+      if (r < 0) {
+        av_frame_free(&hw);
+        return fail("VAAPI upload: " + avError(r));
+      }
+      hw->pts = pts;
+      hw->duration = 1;
+      const bool ok = encodeAndWrite(av, av.video, av.vStream, hw, &err);
+      av_frame_free(&hw);
+      if (!ok) return fail(err);
+    } else {
+      fr->pts = pts;
+      fr->duration = 1;
+      if (!encodeAndWrite(av, av.video, av.vStream, fr, &err)) return fail(err);
+    }
+    ++framesWritten;
+
+    // Audio: sample position from the absolute count at 48 kHz. The renderer's PCM is contiguous;
+    // a gap would be filled with silence and an overlap dropped so A/V never drift.
+    if (n > 0 && audio) {
+      const uint64_t at = rn_audio_samples_before(f) - sampleBase;
+      size_t skip = 0;
+      if (at > samplesQueued) {
+        pending.insert(pending.end(), size_t(at - samplesQueued), 0.0f);
+        samplesQueued = at;
+      } else if (at < samplesQueued) {
+        skip = size_t(std::min<uint64_t>(samplesQueued - at, n));
+      }
+      for (size_t i = skip; i < n; ++i) pending.push_back(float(audio[i]) / 32768.0f);
+      samplesQueued += uint64_t(n - skip);
+      while (pending.size() >= size_t(frameSize))
+        if (!sendAudio(frameSize)) return false;
+    }
+    if (progress) progress(rn_renderer_frames_done(rend.get()), total);
+  }
+
+  // ---- flush
+  if (!pending.empty() && !sendAudio(int(pending.size()))) return false;
+  if (!encodeAndWrite(av, av.video, av.vStream, nullptr, &err)) return fail(err);
+  if (!encodeAndWrite(av, av.audio, av.aStream, nullptr, &err)) return fail(err);
+  r = av_write_trailer(av.fmt);
+  if (r < 0) return fail("finishing the file: " + avError(r));
+  r = avio_closep(&av.fmt->pb);
+  av.fileOpen = false;
+  if (r < 0) return fail("closing the file: " + avError(r));
+
+  if (result) {
+    result->frames = framesWritten;
+    result->audioSamples = samplesQueued;
+    result->rendererHash = rn_renderer_hash(rend.get());
+    result->duration = double(framesWritten) * RN_FPS_DEN / RN_FPS_NUM;
+    result->encoder = encName;
+  }
+  return true;
+}
+
+// ------------------------------------------------------------------ ExportJob
+ExportJob::~ExportJob() {
+  cancel_ = true;
+  if (worker_.joinable()) worker_.join();
+}
+
+bool ExportJob::start(rn_session* session, ExportOptions opt, std::string outPath) {
+  if (running_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    error_ = "An export is already running";
+    return false;
+  }
+  if (worker_.joinable()) worker_.join();
+  cancel_ = false;
+  finished_ = false;
+  ok_ = false;
+  done_ = 0;
+  total_ = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    result_ = ExportResult{};
+    error_.clear();
+  }
+  outPath_ = outPath;
+  rn_renderer* r = nullptr;
+  rn_status st = session ? rn_renderer_new(session, opt.settings.start_frame, opt.settings.end_frame, &r)
+                         : RN_ERR_INVALID_ARG;
+  if (st != RN_OK || !r) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    error_ = std::string(rn_status_name(st)) + ": " + (session ? rn_last_error() : "no session");
+    finished_ = true;
+    return false;
+  }
+  total_ = rn_renderer_total_frames(r);
+  running_ = true;
+  worker_ = std::thread([this, r, opt = std::move(opt), outPath = std::move(outPath)]() {
+    ExportResult res;
+    std::string err;
+    const bool ok = exportProject(
+        r, opt, outPath,
+        [this](uint64_t d, uint64_t t) {
+          done_ = d;
+          total_ = t;
+        },
+        [this]() { return cancel_.load(); }, &res, &err);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      result_ = res;
+      error_ = ok ? std::string() : err;
+    }
+    ok_ = ok;
+    finished_ = true;  // before running_ = false: never "neither running nor finished"
+    running_ = false;
+  });
+  return true;
+}
+
+void ExportJob::cancel() { cancel_ = true; }
+bool ExportJob::running() const { return running_.load(); }
+bool ExportJob::finished() const { return finished_.load(); }
+bool ExportJob::succeeded() const { return finished_.load() && ok_.load(); }
+bool ExportJob::wasCancelled() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return finished_.load() && error_ == "cancelled";
+}
+double ExportJob::progress() const {
+  const uint64_t t = total_.load();
+  return t ? std::min(1.0, double(done_.load()) / double(t)) : 0.0;
+}
+ExportResult ExportJob::result() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return result_;
+}
+std::string ExportJob::error() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return error_;
+}
+void ExportJob::wait() {
+  if (worker_.joinable()) worker_.join();
+}
+
+}  // namespace rnl
