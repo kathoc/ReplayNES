@@ -1,4 +1,4 @@
-// GPU pipeline of the nesterm physical CRT ("CRT（物理モデル・実験）"), ported from
+// GPU pipeline of the nesterm physical CRT ("CRT (physical model, experimental)"), ported from
 // web/physical-worker.mjs + vendor/crt/backends/*-webgl.mjs to Metal compute:
 //   PPU codes -> RF/IF (FFT overlap-save FIR, M3) -> receiver + AGC (M3b/M3c) -> [raster lines]
 //   -> [supply/ABL (M4c)] -> [horizontal spot (M4C-SPOT-H)] -> tube detector + scatter (M1/M4a)
@@ -15,10 +15,10 @@ final class CRTRenderer {
     /// physical-worker.mjs `effects` + `lines` (defaults as shipped in nesterm's web UI).
     struct Settings: Equatable {
         var lines = 240                 // 240 native, or 110...220 (reduced-line experiment)
-        var beamGrowth = true           // 明るい所ほど走査線が太る (M4a vertical + M4C-SPOT-H)
-        var persistence = true          // 蛍光体の残光 (M4b)
-        var supply = true               // 明るい画面で幅が広がり暗くなる (M4c)
-        var antennaDbuv = 65.0          // 電波の強さ 20...90 dBuV (M3-NOISE)
+        var beamGrowth = true           // scanlines get thicker where brighter (M4a vertical + M4C-SPOT-H)
+        var persistence = true          // phosphor persistence (M4b)
+        var supply = true               // bright screens widen and dim the picture (M4c)
+        var antennaDbuv = 65.0          // signal strength 20...90 dBuV (M3-NOISE)
         var ambientLux = 40.0           // fixed in nesterm's UI
 
         static func validLines(_ l: Int) -> Bool { l == 240 || (110...220).contains(l) }

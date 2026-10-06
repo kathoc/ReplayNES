@@ -23,10 +23,10 @@ enum ControllerFamily: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .nintendo: return "Nintendo（Proコン / Joy-Con）"
+        case .nintendo: return String(localized: "Nintendo (Pro Controller / Joy-Con)")
         case .xbox: return "Xbox"
         case .playStation: return "PlayStation"
-        case .generic: return "その他"
+        case .generic: return String(localized: "Other")
         }
     }
 
@@ -249,7 +249,7 @@ struct ControllerDiagramLayout {
         }
         elements = e
 
-        // Grouped badges ("移動") go below the group.
+        // Grouped badges ("Move") go below the group.
         groupAnchors = [
             "dpad": CGPoint(x: dpad.x, y: dpad.y + a * 1.5 + 4),
             "lstick": CGPoint(x: lStick.x, y: lStick.y + Self.stickRadius + 4),
@@ -273,35 +273,38 @@ enum ControllerAssignments {
         return InputCatalog.allActions.map(\.id).filter(bound.contains)
     }
 
-    /// Human name of an element on a family: "右ボタン（A）", "十字キー ↑", "ZL"...
+    /// Human name of an element on a family: "Right Button (A)", "D-pad ↑", "ZL"...
     static func title(element: String, family: ControllerFamily, labels: [String: String] = [:]) -> String {
         let label = labels[element] ?? family.label(element)
         let arrows = ["up": "↑", "down": "↓", "left": "←", "right": "→"]
         let parts = element.split(separator: ".").map(String.init)
         if parts.count == 2, let arrow = arrows[parts[1]] {
-            let base = ["dpad": "十字キー", "lstick": "左スティック", "rstick": "右スティック"][parts[0]] ?? parts[0]
+            let base = ["dpad": String(localized: "D-pad"), "lstick": String(localized: "Left Stick"), "rstick": String(localized: "Right Stick")][parts[0]] ?? parts[0]
             return base + " " + arrow
         }
-        let positional = ["face.south": "下ボタン", "face.east": "右ボタン", "face.west": "左ボタン", "face.north": "上ボタン",
-                          "leftThumb": "左スティック押し込み", "rightThumb": "右スティック押し込み"]
-        if let p = positional[element] { return label.isEmpty ? p : "\(p)（\(label)）" }
+        let positional = ["face.south": String(localized: "Bottom Button"), "face.east": String(localized: "Right Button"),
+                          "face.west": String(localized: "Left Button"), "face.north": String(localized: "Top Button"),
+                          "leftThumb": String(localized: "Left Stick Press"), "rightThumb": String(localized: "Right Stick Press")]
+        if let p = positional[element] { return label.isEmpty ? p : String(localized: "\(p) (\(label))") }
         return label.isEmpty ? element : label
     }
 
-    /// Compact label for a badge: "A", "連射A", "巻き戻し", "2P B"...
+    /// Compact label for a badge: "A", "Turbo A", "Rewind", "2P B"...
     static func shortLabel(_ action: String, slot: Int) -> String {
         let hk: [String: String] = [
-            "hk.rewind": "巻き戻し", "hk.fast_forward": "早送り", "hk.pause": "一時停止", "hk.slow": "スロー",
-            "hk.frame_advance": "コマ送り", "hk.step_back": "コマ戻し", "hk.toggle_mode": "録画/再生",
-            "hk.bookmark": "ブックマーク", "hk.undo_take": "前の試行", "hk.save": "保存",
-            "hk.soft_reset": "リセット", "hk.power_cycle": "電源",
+            "hk.rewind": String(localized: "Rewind"), "hk.fast_forward": String(localized: "Fast Fwd"),
+            "hk.pause": String(localized: "Pause"), "hk.slow": String(localized: "Slow"),
+            "hk.frame_advance": String(localized: "Advance"), "hk.step_back": String(localized: "Step Back"),
+            "hk.toggle_mode": String(localized: "Rec/Play"), "hk.bookmark": String(localized: "Bookmark"),
+            "hk.undo_take": String(localized: "Prev Take"), "hk.save": String(localized: "Save"),
+            "hk.soft_reset": String(localized: "Reset"), "hk.power_cycle": String(localized: "Power"),
         ]
         if let h = hk[action] { return h }
         let parts = action.split(separator: ".")
         guard parts.count == 2 else { return action }
         let game: [String: String] = [
             "a": "A", "b": "B", "select": "SELECT", "start": "START", "up": "↑", "down": "↓", "left": "←", "right": "→",
-            "turbo_a": "連射A", "turbo_b": "連射B",
+            "turbo_a": String(localized: "Turbo A"), "turbo_b": String(localized: "Turbo B"),
         ]
         let name = game[String(parts[1])] ?? String(parts[1])
         let player = parts[0] == "p2" ? 1 : 0
@@ -310,10 +313,10 @@ enum ControllerAssignments {
 
     static func badge(element: String, slot: Int, config: InputCatalog.Config) -> String? {
         let a = actions(element: element, slot: slot, config: config)
-        return a.isEmpty ? nil : a.map { shortLabel($0, slot: slot) }.joined(separator: "・")
+        return a.isEmpty ? nil : a.map { shortLabel($0, slot: slot) }.joined(separator: String(localized: " · "))
     }
 
-    /// For "dpad" / "lstick" / "rstick": "移動" (or "2P 移動") when the four directions map 1:1
+    /// For "dpad" / "lstick" / "rstick": "Move" (or "2P Move") when the four directions map 1:1
     /// to one player's directions, nil when nothing is bound. `.custom` otherwise.
     enum GroupSummary: Equatable { case none, movement(String), custom }
 
@@ -323,7 +326,7 @@ enum ControllerAssignments {
         if per.allSatisfy(\.isEmpty) { return .none }
         for p in ["p1", "p2"] where zip(dirs, per).allSatisfy({ $1 == ["\(p).\($0)"] }) {
             let player = p == "p2" ? 1 : 0
-            return .movement(player == slot ? "移動" : "\(player + 1)P 移動")
+            return .movement(player == slot ? String(localized: "Move") : String(localized: "\(player + 1)P Move"))
         }
         return .custom
     }

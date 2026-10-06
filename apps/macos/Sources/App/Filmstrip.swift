@@ -31,7 +31,7 @@ final class FilmstripModel: ObservableObject {
 
     /// Bumped (throttled, <= 10 Hz) when thumbnails change: the timeline redraws.
     @Published private(set) var version: UInt64 = 0
-    /// A/B slot edited on the timeline (drag to select, 「Aをここに」/「Bをここに」).
+    /// A/B slot edited on the timeline (drag to select, "Set A Here" / "Set B Here").
     @Published var selectedSlot = 0
 
     let cache: ThumbnailCache

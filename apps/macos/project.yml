@@ -9,6 +9,10 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+  # English is the development language; Japanese comes from the String Catalogs
+  # (Resources/Localizable.xcstrings, Resources/InfoPlist.xcstrings). The UI follows the system
+  # language: Japanese when it is preferred, English otherwise.
+  developmentLanguage: en
 packages:
   # Auto-update framework (MIT-style license; see THIRD_PARTY_NOTICES.md). Pinned for
   # reproducible release builds; its bin/ tools (generate_keys, sign_update) are used by
@@ -160,6 +164,8 @@ targets:
       - path: Sources/Core
       - path: Sources/App
       - path: Resources/Assets.xcassets
+      - path: Resources/Localizable.xcstrings
+      - path: Resources/InfoPlist.xcstrings
     dependencies:
       - target: Engine
       - package: Sparkle
@@ -173,14 +179,16 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.games
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
     info:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: ReplayNES
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        CFBundleDevelopmentRegion: ja
-        CFBundleLocalizations: [ja, en]
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ja]
         LSApplicationCategoryType: public.app-category.games
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "ReplayNES - GPL-2.0-or-later. Includes Nestopia UE (GPL-2.0-or-later)."

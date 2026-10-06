@@ -191,21 +191,21 @@ final class ControllerLayoutTests: XCTestCase {
         XCTAssertEqual(ControllerFamily.playStation.label("face.east"), "○")
         XCTAssertEqual(ControllerFamily.nintendo.label("leftTrigger"), "ZL")
         XCTAssertEqual(ControllerFamily.xbox.label("rightTrigger"), "RT")
-        XCTAssertEqual(ControllerAssignments.title(element: "face.east", family: .nintendo), "右ボタン（A）")
+        XCTAssertEqual(ControllerAssignments.title(element: "face.east", family: .nintendo), "Right Button (A)")
     }
 
     func testDiagramBadgesShowGameButtonsAndHotkeys() {
         let c = defaults
         XCTAssertEqual(ControllerAssignments.badge(element: "face.east", slot: 0, config: c), "A")
-        XCTAssertEqual(ControllerAssignments.badge(element: "face.north", slot: 0, config: c), "連射A")
-        XCTAssertEqual(ControllerAssignments.badge(element: "rightTrigger", slot: 0, config: c), "巻き戻し")
-        XCTAssertEqual(ControllerAssignments.badge(element: "leftTrigger", slot: 0, config: c), "早送り")
-        XCTAssertEqual(ControllerAssignments.badge(element: "leftShoulder", slot: 0, config: c), "スロー")
-        XCTAssertEqual(ControllerAssignments.badge(element: "rightShoulder", slot: 0, config: c), "一時停止")
+        XCTAssertEqual(ControllerAssignments.badge(element: "face.north", slot: 0, config: c), "Turbo A")
+        XCTAssertEqual(ControllerAssignments.badge(element: "rightTrigger", slot: 0, config: c), "Rewind")
+        XCTAssertEqual(ControllerAssignments.badge(element: "leftTrigger", slot: 0, config: c), "Fast Fwd")
+        XCTAssertEqual(ControllerAssignments.badge(element: "leftShoulder", slot: 0, config: c), "Slow")
+        XCTAssertEqual(ControllerAssignments.badge(element: "rightShoulder", slot: 0, config: c), "Pause")
         XCTAssertEqual(ControllerAssignments.badge(element: "menu", slot: 0, config: c), "START")
         XCTAssertNil(ControllerAssignments.badge(element: "home", slot: 0, config: c))
-        XCTAssertEqual(ControllerAssignments.group("dpad", slot: 0, config: c), .movement("移動"))
-        XCTAssertEqual(ControllerAssignments.group("lstick", slot: 0, config: c), .movement("移動"))
+        XCTAssertEqual(ControllerAssignments.group("dpad", slot: 0, config: c), .movement("Move"))
+        XCTAssertEqual(ControllerAssignments.group("lstick", slot: 0, config: c), .movement("Move"))
         XCTAssertEqual(ControllerAssignments.group("rstick", slot: 0, config: c), ControllerAssignments.GroupSummary.none)
         // Pad 2 drives player 2: no "2P" prefix there, hotkeys only on pad 1.
         XCTAssertEqual(ControllerAssignments.badge(element: "face.east", slot: 1, config: c), "A")

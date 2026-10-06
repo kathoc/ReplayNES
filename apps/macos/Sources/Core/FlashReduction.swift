@@ -9,18 +9,18 @@ enum FlashLevel: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var label: String {
         switch self {
-        case .off: return "オフ"
-        case .low: return "弱"
-        case .standard: return "標準"
-        case .high: return "強"
+        case .off: return String(localized: "Off")
+        case .low: return String(localized: "Low")
+        case .standard: return String(localized: "Standard")
+        case .high: return String(localized: "High")
         }
     }
     var detail: String {
         switch self {
-        case .off: return "画面をそのまま表示します。"
-        case .low: return "WCAG 2.x の基準どおり、画面の 25% 以上が 1 秒に 3 回を超えて明滅しないように抑えます。"
-        case .standard: return "基準より早めに検出し、画面の 20% 以上の明滅を 1 秒に 2 回までに抑えます（推奨）。"
-        case .high: return "画面の 15% 以上の明滅を 1 秒に 1 回までに抑え、残る小さなちらつきも弱めます。"
+        case .off: return String(localized: "Shows the screen as it is.")
+        case .low: return String(localized: "Follows the WCAG 2.x thresholds as written: areas of 25% or more of the screen flash no more than 3 times per second.")
+        case .standard: return String(localized: "Detects earlier than the thresholds and limits flashes of 20% or more of the screen to 2 per second (recommended).")
+        case .high: return String(localized: "Limits flashes of 15% or more of the screen to 1 per second and also softens the remaining small flicker.")
         }
     }
     var cValue: rn_flash_level { rn_flash_level(rawValue: UInt32(rawValue)) }

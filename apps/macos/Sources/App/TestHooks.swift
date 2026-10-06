@@ -12,8 +12,12 @@
 //   --test-actions "<sec>:<action>[:<n>],..."    UI actions: setA/setB/practice:<slot 0-7>, stopPractice,
 //                                                toggleRecord, togglePause, panel, fill, integer,
 //                                                quit (the ⌘Q path: persist + resume record),
-//                                                fullscreen, crtOn, crtOff.
+//                                                fullscreen, crtOn, crtOff, export (sheet), sidebar, latency,
+//                                                open:<library|takes|guide|settings>,
+//                                                settingsTab:<0-5> (selects a Settings tab).
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
+//   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
+//                                                <prefix>-<n>-<title>.png (localization checks).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 
@@ -73,6 +77,8 @@ extension AppModel {
         }
     }
 
+    static let testOpenWindow = Notification.Name("ReplayNESTestOpenWindow")
+
     func scheduleTestActions(_ spec: String) {
         for item in spec.split(separator: ",") {
             let parts = item.split(separator: ":").map(String.init)
@@ -94,6 +100,14 @@ extension AppModel {
                 case "fullscreen": self.mainWindow?.toggleFullScreen(nil)
                 case "crtOn": CRTSettingsModel.shared.launchOverride = true
                 case "crtOff": CRTSettingsModel.shared.enabled = false
+                case "export": self.showExport = true
+                case "sidebar": self.showSidebar.toggle()
+                case "latency": self.showLatency.toggle()
+                case "open" where parts.count > 2:
+                    NotificationCenter.default.post(name: Self.testOpenWindow, object: parts[2])
+                case "settingsTab":
+                    let tabs = ["controller", "game", "hotkey", "turbo", "display", "updates"]
+                    UserDefaults.standard.set(tabs[max(0, min(n, tabs.count - 1))], forKey: SettingsView.tabKey)
                 default: NSLog("ReplayNES: unknown test action \(parts[1])")
                 }
             }
@@ -107,6 +121,25 @@ extension AppModel {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
                 self?.writeSnapshot(to: URL(fileURLWithPath: path))
             }
+        }
+    }
+
+    func scheduleWindowSnapshots(_ spec: String) {
+        for item in spec.split(separator: ",") {
+            guard let colon = item.firstIndex(of: ":"), let t = Double(item[..<colon]) else { continue }
+            let prefix = String(item[item.index(after: colon)...])
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { Self.captureVisibleWindows(prefix: prefix) }
+        }
+    }
+
+    /// Every visible window and sheet through cacheDisplay (no Metal content; for UI text checks).
+    static func captureVisibleWindows(prefix: String) {
+        for (i, w) in NSApp.windows.enumerated() where w.isVisible {
+            guard let view = w.contentView?.superview ?? w.contentView,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let title = w.title.isEmpty ? "untitled" : w.title.replacingOccurrences(of: "/", with: "_")
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(prefix)-\(i)-\(title).png"))
         }
     }
 

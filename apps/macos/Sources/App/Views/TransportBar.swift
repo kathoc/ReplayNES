@@ -40,7 +40,7 @@ struct IconButton: View {
     }
 }
 
-/// The single record toggle: red glowing 「録画」 in record mode, gray in replay mode.
+/// The single record toggle: red glowing "Record" in record mode, gray in replay mode.
 struct RecordToggleButton: View {
     @EnvironmentObject var model: AppModel
     @State private var pulse = false
@@ -51,7 +51,7 @@ struct RecordToggleButton: View {
         Button { model.toggleRecord() } label: {
             HStack(spacing: 6) {
                 Circle().fill(on ? Color.red : Color.secondary.opacity(0.6)).frame(width: 9, height: 9)
-                Text("録画").font(.system(size: 13, weight: .semibold))
+                Text("Record").font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(on ? Color.white : Color.secondary)
             .frame(width: 78, height: 26)
@@ -65,8 +65,8 @@ struct RecordToggleButton: View {
         .buttonStyle(.plain)
         .disabled(st.practicing)
         .onAppear { withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true } }
-        .help(on ? "録画モード（クリックで再生モード：録画したテイクを再生します）"
-                 : "再生モード（クリックで録画モードに戻り、この位置から続きを録画します）")
+        .help(on ? String(localized: "Record mode (click for playback mode: plays the recorded take)")
+                 : String(localized: "Playback mode (click to return to record mode and continue recording from here)"))
     }
 }
 
@@ -86,64 +86,64 @@ struct TransportBar: View {
             HStack(spacing: 6) {
                 RecordToggleButton()
                 Divider().frame(height: 20).padding(.horizontal, 4)
-                IconButton(systemImage: "backward.end.fill", help: st.practicing ? "Aへ戻る" : "先頭へ") { model.seek(to: 0) }
-                HoldButton(systemImage: "backward.fill", help: "押している間 巻き戻し（R2 / Delete）") { model.setRewindHeld($0) }
-                IconButton(systemImage: "backward.frame.fill", help: "1コマ戻る（一時停止中: 十字キー← / ,）") { model.stepBack() }
+                IconButton(systemImage: "backward.end.fill", help: st.practicing ? String(localized: "Back to A") : String(localized: "Go to Start")) { model.seek(to: 0) }
+                HoldButton(systemImage: "backward.fill", help: String(localized: "Rewind while held (R2 / Delete)")) { model.setRewindHeld($0) }
+                IconButton(systemImage: "backward.frame.fill", help: String(localized: "Step back one frame (while paused: D-pad ← / ,)")) { model.stepBack() }
                     .opacity(st.paused ? 1 : 0).disabled(!st.paused)
-                IconButton(systemImage: st.paused ? "play.fill" : "pause.fill", help: "再開 / 一時停止（R / Space）", prominent: true) {
+                IconButton(systemImage: st.paused ? "play.fill" : "pause.fill", help: String(localized: "Resume / Pause (R / Space)"), prominent: true) {
                     model.togglePause()
                 }
-                IconButton(systemImage: "forward.frame.fill", help: "コマ送り（一時停止中: 十字キー→ / .）") { model.frameAdvance() }
+                IconButton(systemImage: "forward.frame.fill", help: String(localized: "Frame advance (while paused: D-pad → / .)")) { model.frameAdvance() }
                     .opacity(st.paused ? 1 : 0).disabled(!st.paused)
-                HoldButton(systemImage: "forward.fill", help: "押している間 早送り（L2 / Tab）。録画済みの範囲だけを再生し、終端で止まります") {
+                HoldButton(systemImage: "forward.fill", help: String(localized: "Fast-forward while held (L2 / Tab). Plays only the recorded range and stops at its end")) {
                     model.setFastForwardHeld($0)
                 }
                 .opacity(st.practicing ? 0.35 : 1).disabled(st.practicing)
                 Button { model.toggleSlow() } label: {
-                    Text(st.slow == .normal ? "スロー" : "スロー \(st.slow.label)")
+                    Text(st.slow == .normal ? String(localized: "Slow") : String(localized: "Slow \(st.slow.label)"))
                         .font(.system(size: 12, weight: .medium))
                         .frame(minWidth: 58, minHeight: 26)
                         .background(st.slow == .normal ? Color.secondary.opacity(0.12) : Color.purple.opacity(0.35),
                                     in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
-                .help("スロー 1/2 ⇔ 等速（L / L キー）")
+                .help("Slow 1/2 ⇔ normal speed (L / L key)")
 
                 Spacer(minLength: 8)
 
                 Button { model.togglePracticePanel() } label: {
-                    Label(st.practicing ? "練習をやめる" : "練習", systemImage: "repeat")
+                    Label(st.practicing ? String(localized: "Stop Practicing") : String(localized: "Practice"), systemImage: "repeat")
                         .font(.system(size: 12, weight: .medium))
                         .padding(.horizontal, 10).frame(height: 26)
                         .background(st.practicing || model.showPracticePanel ? Color.orange.opacity(0.4) : Color.secondary.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
-                .help("練習モード（A/B リピート）: 区間を何度でも練習できます。録画はされません（⇧⌘P）")
+                .help("Practice mode (A/B repeat): practice a section as often as you like. Nothing is recorded (⇧⌘P)")
 
                 ScaleToggle()
 
                 Menu {
-                    Button("ブックマークを追加") { model.addBookmark() }.disabled(st.practicing)
-                    Button("前の試行へ戻す") { model.undoTake() }.disabled(st.undoDepth == 0 || st.practicing)
-                    Button("テイク一覧…") { openWindow(id: "takes") }
+                    Button("Add Bookmark") { model.addBookmark() }.disabled(st.practicing)
+                    Button("Back to Previous Take") { model.undoTake() }.disabled(st.undoDepth == 0 || st.practicing)
+                    Button("Takes…") { openWindow(id: "takes") }
                     Divider()
-                    Menu("指定フレーム数だけ進める") {
-                        ForEach([5, 10, 30, 60], id: \.self) { n in Button("\(n) コマ") { model.frameAdvance(n) } }
+                    Menu("Advance by Frames") {
+                        ForEach([5, 10, 30, 60], id: \.self) { n in Button("\(n) frames") { model.frameAdvance(n) } }
                     }
                     Divider()
-                    Button("ソフトリセット") { model.softReset() }.disabled(!st.recording && !st.practicing)
-                    Button("電源再投入（パワーサイクル）") { model.powerCycle() }.disabled(!st.recording && !st.practicing)
+                    Button("Soft Reset") { model.softReset() }.disabled(!st.recording && !st.practicing)
+                    Button("Power Cycle (Off and On)") { model.powerCycle() }.disabled(!st.recording && !st.practicing)
                     Divider()
-                    Toggle("レイテンシ表示", isOn: $model.showLatency)
-                    Toggle("サイドバー", isOn: $model.showSidebar)
+                    Toggle("Show Latency", isOn: $model.showLatency)
+                    Toggle("Sidebar", isOn: $model.showSidebar)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .frame(width: 30)
-                .help("その他（ブックマーク・テイク・リセットなど）")
+                .help("More (bookmarks, takes, reset, …)")
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -159,15 +159,15 @@ struct TransportBar: View {
     }
 }
 
-/// 等倍 / FILL segmented control.
+/// Pixel-perfect / FILL segmented control.
 struct ScaleToggle: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         Picker("", selection: $model.integerScale) {
-            Text("等倍").tag(true)
+            Text("Integer").tag(true)
             Text("FILL").tag(false)
         }
         .pickerStyle(.segmented).labelsHidden().fixedSize()
-        .help("等倍: 収まる最大の整数倍（くっきり） / FILL: 縦横比を保ってウインドウいっぱいに表示（⌘F で切替）")
+        .help("Integer: largest integer scale that fits (sharp) / FILL: fill the window, aspect ratio kept (⌘F to toggle)")
     }
 }

@@ -184,7 +184,7 @@ final class SessionResumeTests: XCTestCase {
         XCTAssertEqual(s.stateHash(), hashes[59])
     }
 
-    /// 保存… on a temporary session: full save, close, move; it opens as a normal project and the
+    /// Save… on a temporary session: full save, close, move; it opens as a normal project and the
     /// temporary project is gone.
     func testSaveTempAsMovesProject() throws {
         do {

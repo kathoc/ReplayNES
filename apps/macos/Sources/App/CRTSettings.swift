@@ -1,4 +1,4 @@
-// 表示 → 「ブラウン管 (CRT)」: settings of the physical CRT display model ported from nesterm
+// Settings → "CRT Display": settings of the physical CRT display model ported from nesterm
 // (Sources/Core/CRT, docs/CRT_PORT.md). Display-only: never affects emulation, recording or hashes.
 // Parameters, ranges and defaults are nesterm's (web/index.html, web/app.mjs, physical-worker.mjs).
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -10,9 +10,9 @@ enum CRTSyphonMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .follow: return "表示に合わせる"
-        case .off: return "常にオリジナル（CRT なし）"
-        case .on: return "常にブラウン管 (CRT)"
+        case .follow: return String(localized: "Follow the display")
+        case .off: return String(localized: "Always original (no CRT)")
+        case .on: return String(localized: "Always CRT")
         }
     }
 }
@@ -72,44 +72,44 @@ final class CRTSettingsModel: ObservableObject {
     }
 }
 
-/// Settings section (表示・音声 tab).
+/// Settings section (Display & Audio tab).
 struct CRTSettingsSection: View {
     @ObservedObject var crt = CRTSettingsModel.shared
     var body: some View {
-        Section("ブラウン管 (CRT)") {
-            Toggle("ブラウン管 (CRT) 表示", isOn: Binding(get: { crt.enabled }, set: { crt.enabled = $0 }))
+        Section("CRT Display") {
+            Toggle("CRT display", isOn: Binding(get: { crt.enabled }, set: { crt.enabled = $0 }))
             Group {
-                Toggle("明るい所ほど走査線が太る", isOn: $crt.beamGrowth)
-                Toggle("蛍光体の残光", isOn: $crt.persistence)
-                Toggle("明るい画面で幅が広がり暗くなる", isOn: $crt.supply)
-                LabeledContent("電波の強さ（元の画像）") {
+                Toggle("Thicker scanlines where brighter", isOn: $crt.beamGrowth)
+                Toggle("Phosphor persistence", isOn: $crt.persistence)
+                Toggle("Bright screens widen and dim the picture", isOn: $crt.supply)
+                LabeledContent("Signal strength (source picture)") {
                     HStack {
                         Slider(value: $crt.antennaDbuv, in: 20...90, step: 1).frame(width: 180)
-                        Text("\(Int(crt.antennaDbuv)) dBµV").monospacedDigit().frame(width: 64, alignment: .trailing)
+                        Text(verbatim: "\(Int(crt.antennaDbuv)) dBµV").monospacedDigit().frame(width: 64, alignment: .trailing)
                     }
                 }
-                Picker("走査線", selection: Binding(get: { crt.reducedLines }, set: { crt.reducedLines = $0 })) {
-                    Text("標準：240本").tag(false)
-                    Text("低走査線の仮想実験").tag(true)
+                Picker("Scanlines", selection: Binding(get: { crt.reducedLines }, set: { crt.reducedLines = $0 })) {
+                    Text("Standard: 240 lines").tag(false)
+                    Text("Reduced-line experiment").tag(true)
                 }
                 if crt.reducedLines {
-                    LabeledContent("実験：110〜220本") {
+                    LabeledContent("Experiment: 110–220 lines") {
                         HStack {
                             Slider(value: Binding(get: { Double(crt.lines) }, set: { crt.lines = Int($0) }), in: 110...220, step: 1).frame(width: 180)
-                            Text("\(crt.lines)").monospacedDigit().frame(width: 40, alignment: .trailing)
+                            Text(verbatim: "\(crt.lines)").monospacedDigit().frame(width: 40, alignment: .trailing)
                         }
                     }
                 }
-                Picker("配信出力 (Syphon) の映像", selection: $crt.syphonModeRaw) {
+                Picker("Stream output (Syphon) picture", selection: $crt.syphonModeRaw) {
                     ForEach(CRTSyphonMode.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 HStack {
                     Spacer()
-                    Button("nesterm の既定値に戻す") { crt.resetToNestermDefaults() }.controlSize(.small)
+                    Button("Reset to nesterm Defaults") { crt.resetToNestermDefaults() }.controlSize(.small)
                 }
             }
             .disabled(!crt.enabled)
-            Text("nesterm の「CRT（物理モデル・実験）」を Metal に移植した表示です。NES の画素コード → RF/IF → 復調 → 管面（スロットマスク・散乱・残光）。未校正の実験モデルで、実在のテレビの再現ではありません。表示だけの処理で、記録・ゲームの進行・再現性には影響しません。画面は 4:3（ピクセル比の設定は使いません）、管面の内部解像度は最大 1600×1200 です。フラッシュ低減が画面を変更しているフレームは、低減後の RGB 画像から描画します。")
+            Text("A Metal port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used) and the screen’s internal resolution is up to 1600×1200. Frames changed by flash reduction are drawn from the reduced RGB image.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

@@ -59,7 +59,7 @@ struct FilmstripTimeline: View {
             }
         }
         .frame(height: Self.laneHeight + Self.stripHeight)
-        .help("タイムライン: ドラッグで移動（無音・一時停止）。上の帯をドラッグ（またはShift+ドラッグ）で選択中の区間のA/Bを設定、区間の端をドラッグで調整、区間をクリックで練習")
+        .help("Timeline: drag to move (muted, paused). Drag the top band (or Shift-drag) to set A/B of the selected section, drag a section edge to adjust it, click a section to practice it")
     }
 
     // MARK: drawing
@@ -295,18 +295,18 @@ struct TimelineSlotPicker: View {
         let sel = strip.selectedSlot
         let slots = model.practiceSlots
         Menu {
-            Picker("区間", selection: $strip.selectedSlot) {
+            Picker("Section", selection: $strip.selectedSlot) {
                 ForEach(slots) { s in
-                    Text("\(s.index + 1). " + (s.hasA ? s.displayName : "（未設定）")).tag(s.index)
+                    Text(verbatim: "\(s.index + 1). " + (s.hasA ? s.displayName : String(localized: "(not set)"))).tag(s.index)
                 }
             }
             .pickerStyle(.inline)
             Divider()
-            Button("Aをここに（再生位置）") { model.timelineMarkA() }.disabled(model.status.practicing)
-            Button("Bをここに（再生位置）") { model.timelineMarkB() }.disabled(model.status.practicing)
-            Button("この区間を練習") { model.practiceStart(sel) }
+            Button("Set A Here (Playhead)") { model.timelineMarkA() }.disabled(model.status.practicing)
+            Button("Set B Here (Playhead)") { model.timelineMarkB() }.disabled(model.status.practicing)
+            Button("Practice This Section") { model.practiceStart(sel) }
                 .disabled(sel >= slots.count || !slots[sel].hasA)
-            Button("この区間を消去", role: .destructive) { model.practiceClear(sel) }
+            Button("Clear This Section", role: .destructive) { model.practiceClear(sel) }
                 .disabled(sel >= slots.count || !slots[sel].hasA)
         } label: {
             HStack(spacing: 4) {
@@ -316,6 +316,6 @@ struct TimelineSlotPicker: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("タイムラインで編集する A/B 区間（1〜8）。上の帯をドラッグで範囲指定、⌥⌘I / ⌥⌘O で再生位置にA / B")
+        .help("A/B section (1–8) edited on the timeline. Drag the top band to set its range; ⌥⌘I / ⌥⌘O put A / B at the playhead")
     }
 }

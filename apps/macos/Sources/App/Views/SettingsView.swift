@@ -4,18 +4,18 @@
 import SwiftUI
 
 struct SettingsView: View {
-    /// Selected tab; the sidebar's 「ボタン配置…」 sets "controller" before opening Settings.
+    /// Selected tab; the sidebar's "Button Layout…" sets "controller" before opening Settings.
     @AppStorage(SettingsView.tabKey) private var tab = "controller"
     static let tabKey = "settingsTab"
 
     var body: some View {
         TabView(selection: $tab) {
-            ControllerTab().tabItem { Label("コントローラー", systemImage: "gamecontroller") }.tag("controller")
-            BindingsTab(groups: [.player1, .player2]).tabItem { Label("ゲーム入力", systemImage: "keyboard") }.tag("game")
-            BindingsTab(groups: [.hotkey]).tabItem { Label("ホットキー", systemImage: "command") }.tag("hotkey")
-            TurboTab().tabItem { Label("連射・同時押し", systemImage: "bolt") }.tag("turbo")
-            DisplayTab().tabItem { Label("表示・音声", systemImage: "display") }.tag("display")
-            UpdatesTab().tabItem { Label("アップデート", systemImage: "arrow.triangle.2.circlepath") }.tag("updates")
+            ControllerTab().tabItem { Label("Controller", systemImage: "gamecontroller") }.tag("controller")
+            BindingsTab(groups: [.player1, .player2]).tabItem { Label("Game Input", systemImage: "keyboard") }.tag("game")
+            BindingsTab(groups: [.hotkey]).tabItem { Label("Hotkeys", systemImage: "command") }.tag("hotkey")
+            TurboTab().tabItem { Label("Turbo & SOCD", systemImage: "bolt") }.tag("turbo")
+            DisplayTab().tabItem { Label("Display & Audio", systemImage: "display") }.tag("display")
+            UpdatesTab().tabItem { Label("Updates", systemImage: "arrow.triangle.2.circlepath") }.tag("updates")
         }
         .frame(width: 620, height: 520)
     }
@@ -45,13 +45,15 @@ private struct ControllerTabContent: View {
                 Picker("", selection: $slot) {
                     ForEach(0..<slotCount, id: \.self) { i in
                         let c = monitor.controllers.first { $0.slot == i }
-                        Text("パッド\(i + 1)（\(i == 0 ? "1P" : i == 1 ? "2P" : "—")）: \(c?.name ?? "未接続")").tag(i)
+                        let player = i == 0 ? "1P" : i == 1 ? "2P" : "—"
+                        let name = c?.name ?? String(localized: "Not Connected")
+                        Text("Pad \(i + 1) (\(player)): \(name)").tag(i)
                     }
                 }
                 .labelsHidden().frame(width: 300)
                 Spacer()
-                Picker("形", selection: $familyChoice) {
-                    Text("自動").tag("auto")
+                Picker("Layout", selection: $familyChoice) {
+                    Text("Automatic").tag("auto")
                     ForEach(ControllerFamily.allCases) { Text($0.title).tag($0.rawValue) }
                 }
                 .frame(width: 250)
@@ -64,16 +66,16 @@ private struct ControllerTabContent: View {
             }
             .frame(maxWidth: .infinity)
             HStack(spacing: 14) {
-                legend(.blue.opacity(0.85), "ゲームの入力（記録されます）")
-                legend(.orange, "ホットキー（記録されません）")
+                legend(.blue.opacity(0.85), "Game input (recorded)")
+                legend(.orange, "Hotkeys (not recorded)")
             }
             .font(.caption)
             Spacer(minLength: 0)
             HStack(alignment: .bottom) {
-                Text("キーやボタンを押して割り当てる方法は「ゲーム入力」「ホットキー」タブ")
+                Text("To assign by pressing a key or button, use the Game Input and Hotkeys tabs")
                     .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Button("パッド\(slot + 1)を初期設定に戻す") { model.input.resetController(slot: slot) }
+                Button("Reset Pad \(slot + 1) to Defaults") { model.input.resetController(slot: slot) }
             }
         }
         .padding()
@@ -83,13 +85,13 @@ private struct ControllerTabContent: View {
 
     private func statusText(_ info: ControllerInfo?) -> String {
         guard let info else {
-            return "未接続（接続すると、押したボタンが図の上で光ります）・図のボタンをクリックで割り当てを変更"
+            return String(localized: "Not connected (once connected, pressed buttons light up on the picture) · Click a button on the picture to change its assignment")
         }
         let kind = info.productCategory.isEmpty ? info.family.title : info.productCategory
-        return "\(info.name)（\(kind)）・押したボタンが光ります・図のボタンをクリックで割り当てを変更"
+        return String(localized: "\(info.name) (\(kind)) · Pressed buttons light up · Click a button on the picture to change its assignment")
     }
 
-    private func legend(_ color: Color, _ text: String) -> some View {
+    private func legend(_ color: Color, _ text: LocalizedStringKey) -> some View {
         HStack(spacing: 4) {
             Capsule().fill(color).frame(width: 18, height: 10)
             Text(text).foregroundStyle(.secondary)
@@ -107,34 +109,34 @@ struct BindingsTab: View {
         VStack(alignment: .leading, spacing: 8) {
             if groups.count > 1 {
                 Picker("", selection: Binding(get: { g }, set: { group = $0 })) {
-                    ForEach(groups, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(groups, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
             } else {
-                Text("ホットキーはゲーム入力とは別に処理され、記録されません。一時停止中も有効です。コントローラーは ReplayNES が前面にないとき（OBS 操作中など）も使えます。")
+                Text("Hotkeys are handled separately from game input and are not recorded. They also work while paused. Controllers work even when ReplayNES isn’t in front (for example while you operate OBS).")
                     .font(.caption).foregroundStyle(.secondary)
-                Toggle("一時停止中はコントローラーの十字キー ←/→ でコマ戻し / コマ送り（押し続けると連続）", isOn: $model.dpadStepWhenPaused)
+                Toggle("While paused, the controller’s D-pad ←/→ steps back / advances one frame (hold to repeat)", isOn: $model.dpadStepWhenPaused)
                     .font(.caption)
             }
             List {
                 ForEach(InputCatalog.allActions.filter { $0.group == g }) { action in
                     HStack(alignment: .firstTextBaseline) {
-                        Text(action.label).frame(width: 190, alignment: .leading)
+                        Text(action.label).frame(width: 200, alignment: .leading)
                         FlowChips(action: action)
                         Spacer()
                         if model.capturingAction == action.id {
-                            Text("キー/ボタンを押す… (Escで中止)").font(.caption).foregroundStyle(.orange)
+                            Text("Press a key/button… (Esc to cancel)").font(.caption).foregroundStyle(.orange)
                         } else {
-                            Button("追加…") { capture(action.id) }.controlSize(.small)
+                            Button("Add…") { capture(action.id) }.controlSize(.small)
                         }
                     }
                 }
             }
             HStack {
-                Text("設定ファイル: ~/Library/Application Support/ReplayNES/bindings.json")
+                Text("Settings file: ~/Library/Application Support/ReplayNES/bindings.json")
                     .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Button("初期設定に戻す") { model.input.resetToDefaults() }
+                Button("Reset to Defaults") { model.input.resetToDefaults() }
             }
         }
         .padding()
@@ -155,7 +157,7 @@ struct FlowChips: View {
     var body: some View {
         let ids = model.inputConfig.inputs(for: action.id).sorted()
         HStack(spacing: 4) {
-            if ids.isEmpty { Text("未割り当て").font(.caption).foregroundStyle(.secondary) }
+            if ids.isEmpty { Text("Unassigned").font(.caption).foregroundStyle(.secondary) }
             ForEach(ids, id: \.self) { id in
                 HStack(spacing: 2) {
                     Text(InputCatalog.displayName(id, controllers: model.input.controllerMonitor.controllers)).font(.caption)
@@ -174,22 +176,22 @@ struct TurboTab: View {
     var body: some View {
         let c = model.inputConfig
         Form {
-            Section("連射（Turbo A / B）") {
-                Stepper("周期: \(c.turboPeriod) フレーム", value: Binding(get: { c.turboPeriod }, set: { model.input.setTurbo(period: $0, duty: min(c.turboDuty, $0)) }), in: 2...30)
-                Stepper("押す長さ: \(c.turboDuty) フレーム", value: Binding(get: { c.turboDuty }, set: { model.input.setTurbo(period: c.turboPeriod, duty: $0) }), in: 1...max(1, c.turboPeriod - 1))
-                Text(String(format: "約 %.1f 回/秒。記録されるのは連射変換後のボタン状態なので、再生は設定に依存しません。", 60.0988 / Double(max(1, c.turboPeriod))))
+            Section("Turbo (Turbo A / B)") {
+                Stepper("Period: \(c.turboPeriod) frames", value: Binding(get: { c.turboPeriod }, set: { model.input.setTurbo(period: $0, duty: min(c.turboDuty, $0)) }), in: 2...30)
+                Stepper("Press length: \(c.turboDuty) frames", value: Binding(get: { c.turboDuty }, set: { model.input.setTurbo(period: c.turboPeriod, duty: $0) }), in: 1...max(1, c.turboPeriod - 1))
+                Text(String(format: String(localized: "About %.1f presses per second. The recording stores the button state after turbo is applied, so playback doesn’t depend on this setting."), 60.0988 / Double(max(1, c.turboPeriod))))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("左右・上下の同時押し（SOCD）") {
-                Picker("方針", selection: Binding(get: { c.socd }, set: { model.input.setSOCD($0) })) {
-                    Text("両方離す（ニュートラル）").tag("neutral")
-                    Text("後から押した方を優先").tag("last_wins")
-                    Text("両方押す（実機では不可能な入力）").tag("allow")
+            Section("Simultaneous Opposite Directions (SOCD)") {
+                Picker("Policy", selection: Binding(get: { c.socd }, set: { model.input.setSOCD($0) })) {
+                    Text("Release both (neutral)").tag("neutral")
+                    Text("Last pressed wins").tag("last_wins")
+                    Text("Press both (impossible on real hardware)").tag("allow")
                 }
             }
-            Section("アナログスティック") {
+            Section("Analog Stick") {
                 Slider(value: Binding(get: { c.analogThreshold }, set: { model.input.setAnalogThreshold($0) }), in: 0.2...0.9) {
-                    Text("十字キー判定のしきい値 \(String(format: "%.2f", c.analogThreshold))")
+                    Text("D-pad threshold \(String(format: "%.2f", c.analogThreshold))")
                 }
             }
         }
@@ -201,41 +203,41 @@ struct DisplayTab: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         Form {
-            Section("表示") {
-                Picker("表示サイズ", selection: $model.integerScale) {
-                    Text("等倍（収まる最大の整数倍・くっきり）").tag(true)
-                    Text("FILL（縦横比を保ってウインドウいっぱい）").tag(false)
+            Section("Display") {
+                Picker("Display Size", selection: $model.integerScale) {
+                    Text("Pixel-perfect (largest integer scale that fits)").tag(true)
+                    Text("FILL (fill the window, aspect ratio kept)").tag(false)
                 }
-                Toggle("ピクセル比 8:7（ブラウン管の見た目）", isOn: $model.displayPAR87)
-                Toggle("オーバースキャンを隠す（上下 8px）", isOn: $model.hideOverscan)
-                Toggle("レイテンシ計測を表示", isOn: $model.showLatency)
+                Toggle("8:7 pixel aspect ratio (as on a CRT TV)", isOn: $model.displayPAR87)
+                Toggle("Hide overscan (8 px top and bottom)", isOn: $model.hideOverscan)
+                Toggle("Show latency measurement", isOn: $model.showLatency)
             }
-            Section("フラッシュ低減（光の点滅への配慮）") {
-                Picker("フラッシュ低減", selection: $model.flashReduction) {
+            Section("Flash Reduction (Photosensitivity)") {
+                Picker("Flash Reduction", selection: $model.flashReduction) {
                     ForEach(FlashLevel.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 .pickerStyle(.segmented)
                 Text(model.flashLevel.detail).font(.caption)
-                Text("画面全体が激しく点滅する場面（爆発・稲妻など）を検出し、表示だけを暗い側に抑えて明滅の回数を減らします（WCAG 2.x の一般閃光・赤色閃光の基準を目安にしています）。小さな点滅や通常のスクロールはそのまま表示します。記録される入力・ゲームの進行・再現性には影響しません。MP4 書き出しにも適用できます。")
+                Text("Detects scenes where the whole screen flashes hard (explosions, lightning, …) and holds only the display toward the darker side to reduce the number of flashes (based on the WCAG 2.x general flash and red flash thresholds). Small flashes and normal scrolling are shown as they are. Recorded input, game progress and reproducibility are not affected. It can also be applied to MP4 exports.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("注意: 光過敏性発作などを確実に防ぐものではありません。体調に異変を感じたら、すぐにプレイを中止してください。")
+                Text("Caution: this does not reliably prevent photosensitive seizures. If you feel unwell, stop playing immediately.")
                     .font(.caption).foregroundStyle(.orange)
-                Toggle("低減中は画面に「フラッシュ低減中」と表示する", isOn: $model.showFlashIndicator)
+                Toggle("Show “Flash Reduction Active” on screen while reducing", isOn: $model.showFlashIndicator)
             }
             CRTSettingsSection()
             StreamOutputSection()
-            Section("音声") {
-                Slider(value: $model.volume, in: 0...1) { Text("音量") }
-                Text("一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。ReplayNES が前面になくても音は止まりません。").font(.caption).foregroundStyle(.secondary)
+            Section("Audio") {
+                Slider(value: $model.volume, in: 0...1) { Text("Volume") }
+                Text("Audio is muted while paused, rewinding, seeking, in slow motion or fast-forwarding. Sound keeps playing when ReplayNES isn’t in front.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("操作") {
-                Toggle("巻き戻し・早送りを離したら一時停止する", isOn: $model.pauseAfterRewind)
-                Picker("自動保存の間隔", selection: $model.autosaveInterval) {
-                    Text("2 秒").tag(2.0)
-                    Text("3 秒").tag(3.0)
-                    Text("5 秒").tag(5.0)
-                    Text("10 秒").tag(10.0)
-                    Text("30 秒").tag(30.0)
+            Section("Controls") {
+                Toggle("Pause when rewind / fast-forward is released", isOn: $model.pauseAfterRewind)
+                Picker("Autosave interval", selection: $model.autosaveInterval) {
+                    Text("2 s").tag(2.0)
+                    Text("3 s").tag(3.0)
+                    Text("5 s").tag(5.0)
+                    Text("10 s").tag(10.0)
+                    Text("30 s").tag(30.0)
                 }
             }
         }

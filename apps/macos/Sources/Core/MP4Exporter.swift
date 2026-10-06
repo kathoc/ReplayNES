@@ -22,7 +22,7 @@ struct ExportSettings: Equatable {
         var id: String { label }
         var label: String {
             switch self {
-            case .native(let n): return "原寸 ×\(n)"
+            case .native(let n): return String(localized: "Native ×\(n)")
             case .canvas(let w, let h): return "\(w)×\(h)"
             }
         }
@@ -40,15 +40,15 @@ struct ExportSettings: Equatable {
     /// Photosensitive flash reduction applied to the exported picture only (the renderer, its
     /// hash and the project are unaffected). .off = the exact emulated frames.
     var flashReduction: FlashLevel = .off
-    /// 「ブラウン管効果を適用」: the physical CRT model (same Metal pipeline as the live view),
+    /// "Apply CRT effect": the physical CRT model (same Metal pipeline as the live view),
     /// rendered offline frame by frame in order (deterministic for the frame sequence). nil = off.
     var crt: CRTRenderer.Settings?
 
     func validate() throws {
         let ok = cropTop >= 0 && cropBottom >= 0 && cropLeft >= 0 && cropRight >= 0
             && cropTop + cropBottom <= Int(RN_VIDEO_HEIGHT) - 16 && cropLeft + cropRight <= Int(RN_VIDEO_WIDTH) - 16
-        if !ok { throw ExportError.invalidSettings("オーバースキャンのクロップ量が大きすぎます") }
-        if endFrame != 0 && endFrame <= startFrame { throw ExportError.invalidSettings("書き出し範囲が空です") }
+        if !ok { throw ExportError.invalidSettings(String(localized: "The overscan crop is too large")) }
+        if endFrame != 0 && endFrame <= startFrame { throw ExportError.invalidSettings(String(localized: "The export range is empty")) }
     }
 }
 
@@ -97,8 +97,8 @@ enum ExportError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidSettings(let m): return m
-        case .writer(let m): return "エンコードに失敗しました: \(m)"
-        case .cancelled: return "書き出しをキャンセルしました"
+        case .writer(let m): return String(localized: "Encoding failed: \(m)")
+        case .cancelled: return String(localized: "Export was cancelled")
         case .engine(let e): return e.errorDescription
         }
     }
@@ -133,7 +133,7 @@ final class MP4Exporter {
     func run(progress: @escaping (UInt64, UInt64) -> Void, isCancelled: @escaping () -> Bool) throws -> ExportResult {
         try settings.validate()
         let total = rn_renderer_total_frames(renderer)
-        if total == 0 { throw ExportError.invalidSettings("書き出すフレームがありません (テイクが空です)") }
+        if total == 0 { throw ExportError.invalidSettings(String(localized: "There are no frames to export (the take is empty)")) }
 
         try? FileManager.default.removeItem(at: url)
         let writer: AVAssetWriter
@@ -175,7 +175,7 @@ final class MP4Exporter {
             AVEncoderBitRateKey: settings.audioBitrate,
         ])
         aIn.expectsMediaDataInRealTime = false
-        guard writer.canAdd(vIn), writer.canAdd(aIn) else { throw ExportError.writer("入力を追加できません") }
+        guard writer.canAdd(vIn), writer.canAdd(aIn) else { throw ExportError.writer(String(localized: "Can’t add the inputs")) }
         writer.add(vIn)
         writer.add(aIn)
         guard writer.startWriting() else { throw ExportError.writer(writer.error?.localizedDescription ?? "startWriting") }
@@ -408,7 +408,7 @@ final class CRTExportRenderer {
 
     init(settings: CRTRenderer.Settings, geometry g: ExportGeometry, crop: ExportSettings) throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
-            throw ExportError.writer("Metal を利用できません（ブラウン管効果）")
+            throw ExportError.writer(String(localized: "Metal isn’t available (CRT effect)"))
         }
         renderer = try CRTRenderer(device: device, targetPixelFormat: nil)
         self.queue = queue

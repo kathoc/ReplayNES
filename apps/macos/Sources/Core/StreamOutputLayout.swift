@@ -22,10 +22,11 @@ enum StreamOutputSize: String, CaseIterable, Identifiable {
 
     func label(par87: Bool) -> String {
         let c = StreamOutputLayout(size: self, par87: par87).canvas
+        let size = "\(c.width)×\(c.height)" // plain digits (no locale grouping)
         switch multiple {
-        case 1: return "原寸 \(c.width)×\(c.height)"
-        case let n?: return "\(n)倍 \(c.width)×\(c.height)"
-        case nil: return "\(c.width)×\(c.height)（4:3・黒帯あり）"
+        case 1: return String(localized: "Native \(size)")
+        case let n?: return String(localized: "\(n)× \(size)")
+        case nil: return String(localized: "\(size) (4:3, with black bars)")
         }
     }
 }

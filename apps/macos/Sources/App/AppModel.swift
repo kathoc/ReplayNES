@@ -51,7 +51,7 @@ final class AppModel: ObservableObject {
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
     @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs() } }
     @AppStorage("autosaveInterval") var autosaveInterval = 2.0 { didSet { pushPrefs() } }
-    /// 等倍 (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
+    /// Pixel-perfect (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
@@ -60,7 +60,7 @@ final class AppModel: ObservableObject {
     @AppStorage("sidebarVisible") var showSidebar = false { didSet { objectWillChange.send() } }
     /// While paused, controller D-pad ←/→ step one frame back/forward (not sent to the game).
     @AppStorage("dpadStepWhenPaused") var dpadStepWhenPaused = true { didSet { input.setPausedStepEnabled(dpadStepWhenPaused) } }
-    /// Photosensitive flash reduction level (FlashLevel raw value). Default 標準 (on): safety first.
+    /// Photosensitive flash reduction level (FlashLevel raw value). Default Standard (on): safety first.
     @AppStorage("flashReduction") var flashReduction = FlashLevel.standard.rawValue { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("showFlashIndicator") var showFlashIndicator = true { didSet { objectWillChange.send() } }
 
@@ -118,7 +118,7 @@ final class AppModel: ObservableObject {
         input.onDisconnect = { [weak self] name in
             guard let self else { return }
             self.emu.perform { emu in emu.paused = true }
-            self.flash("\(name) が切断されたため一時停止しました")
+            self.flash(String(localized: "Paused because \(name) was disconnected"))
         }
         input.onPausedStep = { [weak emu] dir, down in emu?.perform { e in e.pausedStep(dir, down: down) } }
         input.keyboardEnabled = { [weak self] in
@@ -256,17 +256,17 @@ final class AppModel: ObservableObject {
                 e.paused = true
                 e.markStructureDirty()
                 e.publishVideo()
-            } catch { e.reportError("ブックマークへ移動できませんでした", error) }
+            } catch { e.reportError(String(localized: "Couldn’t jump to the bookmark"), error) }
         }
     }
     func removeBookmark(_ id: UInt64) {
         emu.perform { e in
-            do { try e.session?.removeBookmark(id); e.markStructureDirty() } catch { e.reportError("ブックマークを削除できませんでした", error) }
+            do { try e.session?.removeBookmark(id); e.markStructureDirty() } catch { e.reportError(String(localized: "Couldn’t delete the bookmark"), error) }
         }
     }
     func renameBookmark(_ id: UInt64, _ name: String) {
         emu.perform { e in
-            do { try e.session?.renameBookmark(id, name: name); e.markStructureDirty() } catch { e.reportError("名前を変更できませんでした", error) }
+            do { try e.session?.renameBookmark(id, name: name); e.markStructureDirty() } catch { e.reportError(String(localized: "Couldn’t rename"), error) }
         }
     }
     func activateTake(_ id: UInt64) {
@@ -278,8 +278,8 @@ final class AppModel: ObservableObject {
                 e.paused = true
                 e.markStructureDirty()
                 e.publishVideo()
-                e.notice("テイク #\(id) に切り替えました")
-            } catch { e.reportError("テイクを切り替えられませんでした", error) }
+                e.notice(String(localized: "Switched to take #\(id)"))
+            } catch { e.reportError(String(localized: "Couldn’t switch takes"), error) }
         }
     }
 
@@ -287,7 +287,7 @@ final class AppModel: ObservableObject {
 
     /// Before another ROM / project replaces the current session (or it is closed): asks to save
     /// unsaved work. Returns false if the user cancelled. A temporary session with recorded content
-    /// asks 保存… (= Save As) / 保存しない (its temporary project is deleted when replaced).
+    /// asks Save… (= Save As) / Don’t Save (its temporary project is deleted when replaced).
     func confirmDiscardIfNeeded() -> Bool {
         let info = emu.sync(timeout: 10) { e -> (unsaved: Bool, dir: String, takeLength: UInt64, content: Bool)? in
             guard let s = e.session else { return nil }
@@ -297,11 +297,11 @@ final class AppModel: ObservableObject {
         if current?.isTemp == true {
             guard info.content else { return true }
             let a = NSAlert()
-            a.messageText = "保存しますか？"
-            a.informativeText = "このセッションはまだプロジェクトとして保存されていません（一時保存中）。保存しない場合、一時保存されたデータは破棄されます。"
-            a.addButton(withTitle: "保存…")
-            a.addButton(withTitle: "保存しない")
-            a.addButton(withTitle: "キャンセル")
+            a.messageText = String(localized: "Do you want to save?")
+            a.informativeText = String(localized: "This session hasn’t been saved as a project yet (it is stored temporarily). If you don’t save, the temporary data will be discarded.")
+            a.addButton(withTitle: String(localized: "Save…"))
+            a.addButton(withTitle: String(localized: "Don’t Save"))
+            a.addButton(withTitle: String(localized: "Cancel"))
             switch a.runModal() {
             case .alertFirstButtonReturn: return saveTempAs()
             case .alertSecondButtonReturn: return true
@@ -311,11 +311,11 @@ final class AppModel: ObservableObject {
         let inMemory = info.dir.isEmpty
         guard info.unsaved || (inMemory && info.takeLength > 0) else { return true }
         let a = NSAlert()
-        a.messageText = "現在のプロジェクトに保存されていない変更があります"
-        a.informativeText = "保存しますか？"
-        a.addButton(withTitle: "保存")
-        a.addButton(withTitle: "保存しない")
-        a.addButton(withTitle: "キャンセル")
+        a.messageText = String(localized: "The current project has unsaved changes")
+        a.informativeText = String(localized: "Do you want to save?")
+        a.addButton(withTitle: String(localized: "Save"))
+        a.addButton(withTitle: String(localized: "Don’t Save"))
+        a.addButton(withTitle: String(localized: "Cancel"))
         switch a.runModal() {
         case .alertFirstButtonReturn:
             return inMemory ? saveAs() : saveSync()
@@ -329,30 +329,30 @@ final class AppModel: ObservableObject {
     func newProject() {
         guard confirmDiscardIfNeeded() else { return }
         let open = NSOpenPanel()
-        open.title = "ROMを選択"
-        open.message = "新しいプロジェクトで使うNES ROM (.nes) を選んでください。ROMはプロジェクトにコピーされません。"
+        open.title = String(localized: "Choose a ROM")
+        open.message = String(localized: "Choose the NES ROM (.nes) for the new project. The ROM is not copied into the project.")
         open.allowedContentTypes = [.nesROM, .data]
         open.allowsMultipleSelection = false
         guard open.runModal() == .OK, let rom = open.url else { return }
         let save = NSSavePanel()
-        save.title = "プロジェクトの保存先"
+        save.title = String(localized: "Where to Save the Project")
         save.nameFieldStringValue = rom.deletingPathExtension().lastPathComponent + ".nesrec"
         save.allowedContentTypes = [.nesrec]
         save.canCreateDirectories = true
         guard save.runModal() == .OK, let dir = save.url else { return }
         if FileManager.default.fileExists(atPath: dir.path) {
             do { try FileManager.default.trashItem(at: dir, resultingItemURL: nil) } catch {
-                showError("既存のプロジェクトを置き換えられません", error.localizedDescription); return
+                showError(String(localized: "Couldn’t replace the existing project"), error.localizedDescription); return
             }
         }
         createSession(rom: rom, projectDir: dir)
     }
 
-    /// Plays a ROM without a project (in-memory; "別名で保存" writes it later).
+    /// Plays a ROM without a project (in-memory; "Save As" writes it later).
     func quickPlay() {
         guard confirmDiscardIfNeeded() else { return }
         let open = NSOpenPanel()
-        open.title = "ROMを開いて試す（プロジェクトなし・一時保存）"
+        open.title = String(localized: "Try a ROM (No Project, Stored Temporarily)")
         open.allowedContentTypes = [.nesROM, .data]
         guard open.runModal() == .OK, let rom = open.url else { return }
         createSession(rom: rom, projectDir: nil)
@@ -381,11 +381,11 @@ final class AppModel: ObservableObject {
                 // failed) is removed again; existing folders are never touched.
                 if let projectDir, !dirExisted { try? FileManager.default.removeItem(at: projectDir) }
                 DispatchQueue.main.async {
-                    let hint = e.status == RN_ERR_ROM_INVALID ? "\nこのROMは読み込めません（未対応のマッパーまたは不正なファイル）。" : ""
-                    self.showError("プロジェクトを作成できませんでした", e.message + hint)
+                    let hint = e.status == RN_ERR_ROM_INVALID ? "\n" + String(localized: "This ROM can’t be loaded (unsupported mapper or invalid file).") : ""
+                    self.showError(String(localized: "Couldn’t create the project"), e.message + hint)
                 }
             } catch {
-                DispatchQueue.main.async { self.showError("プロジェクトを作成できませんでした", "\(error)") }
+                DispatchQueue.main.async { self.showError(String(localized: "Couldn’t create the project"), "\(error)") }
             }
         }
     }
@@ -393,12 +393,12 @@ final class AppModel: ObservableObject {
     // MARK: library
 
     /// Starts a new project for a library ROM right away, auto-saved as
-    /// Projects/<ROM名> <yyyy-MM-dd HHmm>.nesrec (no save panel). Returns false if cancelled.
+    /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec (no save panel). Returns false if cancelled.
     @discardableResult
     func playFromLibrary(_ rom: LibraryROM) -> Bool {
         guard confirmDiscardIfNeeded() else { return false }
         guard library.ensureFolders() else {
-            showError("ライブラリのフォルダを用意できません", library.folderError ?? "")
+            showError(String(localized: "The library folder isn’t available"), library.folderError ?? "")
             return false
         }
         let dir = LibraryScanner.newProjectURL(projectsDir: library.paths.projects, romName: rom.name, date: Date())
@@ -406,7 +406,7 @@ final class AppModel: ObservableObject {
         return true
     }
 
-    /// 「続きから」: opens a library project (the usual save prompt first).
+    /// "Continue": opens a library project (the usual save prompt first).
     @discardableResult
     func continueProject(_ url: URL) -> Bool {
         guard confirmDiscardIfNeeded() else { return false }
@@ -417,7 +417,7 @@ final class AppModel: ObservableObject {
     func openProjectPanel() {
         guard confirmDiscardIfNeeded() else { return }
         let open = NSOpenPanel()
-        open.title = "プロジェクトを開く"
+        open.title = String(localized: "Open Project")
         open.allowedContentTypes = [.nesrec]
         open.canChooseDirectories = true
         open.treatsFilePackagesAsDirectories = false
@@ -445,7 +445,7 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.showError("プロジェクトを開けませんでした", "\(error)")
+                    self.showError(String(localized: "Couldn’t open the project"), "\(error)")
                     if let resume { self.resumeFailed(resume) }
                 }
             }
@@ -453,9 +453,9 @@ final class AppModel: ObservableObject {
     }
 
     private func reportDroppedPracticeSlots(_ mask: UInt32) {
-        let names = (0..<EngineSession.practiceSlotCount).filter { mask & (1 << UInt32($0)) != 0 }.map { "区間 \($0 + 1)" }
-        showError("壊れていた練習区間を破棄しました",
-                  "次の練習区間（A/B）は読み込めなかったため削除されました: \(names.joined(separator: "、"))\n\nテイク（録画）は影響を受けていません。必要ならAとBを設定し直してください。")
+        let names = (0..<EngineSession.practiceSlotCount).filter { mask & (1 << UInt32($0)) != 0 }.map { String(localized: "Section \($0 + 1)") }
+        showError(String(localized: "Discarded damaged practice sections"),
+                  String(localized: "These practice sections (A/B) couldn’t be loaded and were removed: \(names.joined(separator: String(localized: ", ")))\n\nYour takes (recordings) are not affected. Set A and B again if needed."))
     }
 
     /// RN_ERR_CORRUPT caused by an A/B practice slot ("practice slot N" in the engine message).
@@ -475,42 +475,42 @@ final class AppModel: ObservableObject {
         switch e.status {
         case RN_ERR_ROM_NOT_FOUND, RN_ERR_ROM_MISMATCH:
             if e.status == RN_ERR_ROM_NOT_FOUND {
-                a.messageText = "ROMが見つかりません"
-                a.informativeText = "このプロジェクトのROM「\(romName)」が元の場所にありません。\n元の場所: \(romPath)\n\n同じROM（SHA-256 が一致するファイル）を指定してください。\nSHA-256: \(romSHA)"
+                a.messageText = String(localized: "ROM not found")
+                a.informativeText = String(localized: "This project’s ROM “\(romName)” is no longer at its original location.\nOriginal location: \(romPath)\n\nPlease locate the same ROM (a file with a matching SHA-256).\nSHA-256: \(romSHA)")
             } else {
-                a.messageText = "ROMが一致しません"
-                a.informativeText = "指定したROMはこのプロジェクトで使われたROMと内容が異なります。\n必要なROM: \(romName)\nSHA-256: \(romSHA)\n\n詳細: \(e.message)"
+                a.messageText = String(localized: "ROM doesn’t match")
+                a.informativeText = String(localized: "The selected ROM differs from the one this project was recorded with.\nRequired ROM: \(romName)\nSHA-256: \(romSHA)\n\nDetails: \(e.message)")
             }
-            a.addButton(withTitle: "ROMを指定…")
-            a.addButton(withTitle: "キャンセル")
+            a.addButton(withTitle: String(localized: "Locate ROM…"))
+            a.addButton(withTitle: String(localized: "Cancel"))
             guard a.runModal() == .alertFirstButtonReturn else { return false }
             let open = NSOpenPanel()
-            open.title = "「\(romName)」の場所を指定"
+            open.title = String(localized: "Locate “\(romName)”")
             open.allowedContentTypes = [.nesROM, .data]
             guard open.runModal() == .OK, let newRom = open.url else { return false }
             openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice, resume: resume)
             return true
         case RN_ERR_CORE_MISMATCH:
             let projCore = manifest["coreCompatID"] as? String ?? "?"
-            a.messageText = "別のエミュレーションコアで記録されたプロジェクトです"
-            a.informativeText = "再現性を守るため、このバージョンでは開けません（自動変換は行いません）。\nプロジェクトのコア: \(projCore)\nこのアプリのコア: \(Engine.coreCompatID)\n\n記録したときのバージョンの ReplayNES で開いてください。詳細は docs/COMPATIBILITY.md を参照。"
+            a.messageText = String(localized: "This project was recorded with a different emulation core")
+            a.informativeText = String(localized: "To keep replays exact, this version can’t open it (no automatic conversion).\nProject core: \(projCore)\nThis app’s core: \(Engine.coreCompatID)\n\nOpen it with the version of ReplayNES it was recorded with. See docs/COMPATIBILITY.md for details.")
             a.runModal()
             return false
         case RN_ERR_CORRUPT where Self.isPracticeCorruption(e.message) && !dropCorruptPractice:
-            a.messageText = "練習区間（A/B）のデータが破損しています"
-            a.informativeText = e.message + "\n\n壊れた練習区間だけを破棄して開けます（その区間のA/Bは失われます）。テイク（録画）は変更されません。"
-            a.addButton(withTitle: "壊れた練習区間を破棄して開く")
-            a.addButton(withTitle: "キャンセル")
+            a.messageText = String(localized: "The practice section (A/B) data is damaged")
+            a.informativeText = e.message + "\n\n" + String(localized: "You can open it by discarding only the damaged practice sections (their A/B points are lost). Your takes (recordings) are not changed.")
+            a.addButton(withTitle: String(localized: "Discard Damaged Sections and Open"))
+            a.addButton(withTitle: String(localized: "Cancel"))
             guard a.runModal() == .alertFirstButtonReturn else { return false }
             openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true, resume: resume)
             return true
         case RN_ERR_CORRUPT:
-            a.messageText = "プロジェクトのファイルが破損しています"
+            a.messageText = String(localized: "The project files are damaged")
             a.informativeText = e.message
             if !dropCorrupt {
-                a.informativeText += "\n\nチェックポイント（高速化用のステート）の破損であれば、それらを破棄して開けます。入力履歴（正本）は変更されません。"
-                a.addButton(withTitle: "壊れたチェックポイントを破棄して開く")
-                a.addButton(withTitle: "キャンセル")
+                a.informativeText += "\n\n" + String(localized: "If only checkpoints (states kept for speed) are damaged, you can open the project by discarding them. The input history (the source of truth) is not changed.")
+                a.addButton(withTitle: String(localized: "Discard Damaged Checkpoints and Open"))
+                a.addButton(withTitle: String(localized: "Cancel"))
                 guard a.runModal() == .alertFirstButtonReturn else { return false }
                 openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice, resume: resume)
                 return true
@@ -518,12 +518,12 @@ final class AppModel: ObservableObject {
             a.runModal()
             return false
         case RN_ERR_UNSUPPORTED_FORMAT:
-            a.messageText = "新しいバージョンの ReplayNES で作られたプロジェクトです"
-            a.informativeText = "アプリを更新してください。\n\(e.message)"
+            a.messageText = String(localized: "This project was made with a newer version of ReplayNES")
+            a.informativeText = String(localized: "Please update the app.") + "\n\(e.message)"
             a.runModal()
             return false
         default:
-            a.messageText = "プロジェクトを開けませんでした"
+            a.messageText = String(localized: "Couldn’t open the project")
             a.informativeText = "\(e.statusName): \(e.message)"
             a.runModal()
             return false
@@ -535,7 +535,7 @@ final class AppModel: ObservableObject {
     private func install(_ s: EngineSession, recovered: Bool, resume: ResumeRecord? = nil, resumeNotice: Bool = true) {
         let dir = s.projectDir
         let isTemp = persistSessions && sessionPaths.isTempProject(dir)
-        // A temporary session being replaced was confirmed (saved elsewhere, or 保存しない / empty).
+        // A temporary session being replaced was confirmed (saved elsewhere, or Don’t Save / empty).
         if let p = current, p.isTemp, !isTemp { releaseSession(); removeTempProject() }
         // Read before the emulation thread owns the session.
         var record = ResumeRecord(projectPath: dir, isTemp: isTemp, romPath: s.romPath, romSHA256: s.romSHA256,
@@ -558,11 +558,11 @@ final class AppModel: ObservableObject {
         writeResume(dir.isEmpty ? nil : record)
         if !dir.isEmpty && !isTemp { NSDocumentController.shared.noteNewRecentDocumentURL(URL(fileURLWithPath: dir)) }
         if resume != nil {
-            if resumeNotice { flash("前回の続きから再開しました") }
+            if resumeNotice { flash(String(localized: "Resumed where you left off")) }
         } else if recovered {
             let a = NSAlert()
-            a.messageText = "未保存の作業を復元しました"
-            a.informativeText = "前回は正常に終了しなかったため、ジャーナルから最後の自動保存までの記録を復元しました。内容を確認して保存してください。"
+            a.messageText = String(localized: "Unsaved work was restored")
+            a.informativeText = String(localized: "ReplayNES didn’t quit normally last time, so the recording up to the last autosave was restored from the journal. Please review it and save.")
             a.runModal()
         }
     }
@@ -575,11 +575,11 @@ final class AppModel: ObservableObject {
         let ok = emu.sync(timeout: 60) { e -> Bool in
             guard let s = e.session else { return false }
             do { try s.save(); e.markStructureDirty(); return true } catch {
-                e.reportError("保存できませんでした（作業内容はメモリ上に保持されています）", error)
+                e.reportError(String(localized: "Couldn’t save (your work is still kept in memory)"), error)
                 return false
             }
         } ?? false
-        if ok { flash("保存しました") }
+        if ok { flash(String(localized: "Saved")) }
         return ok
     }
 
@@ -588,26 +588,26 @@ final class AppModel: ObservableObject {
         if current?.isTemp == true { return saveTempAs() }
         guard status.hasSession else { return false }
         let save = NSSavePanel()
-        save.title = "プロジェクトを保存"
+        save.title = String(localized: "Save Project")
         save.nameFieldStringValue = (URL(fileURLWithPath: status.romPath).deletingPathExtension().lastPathComponent) + ".nesrec"
         save.allowedContentTypes = [.nesrec]
         guard save.runModal() == .OK, let dir = save.url else { return false }
         if FileManager.default.fileExists(atPath: dir.path) {
             if (try? FileManager.default.trashItem(at: dir, resultingItemURL: nil)) == nil {
-                showError("保存できませんでした", "既存の項目を置き換えられません: \(dir.path)"); return false
+                showError(String(localized: "Couldn’t save"), String(localized: "Couldn’t replace the existing item: \(dir.path)")); return false
             }
         }
         let ok = emu.sync(timeout: 60) { e -> Bool in
             guard let s = e.session else { return false }
             do { try s.saveAs(dir); e.markStructureDirty(); return true } catch {
-                e.reportError("保存できませんでした", error)
+                e.reportError(String(localized: "Couldn’t save"), error)
                 return false
             }
         } ?? false
         if ok {
             if let c = current { current = SessionIdentity(projectPath: dir.path, isTemp: false, romSHA256: c.romSHA256) }
             lastResume = nil // rewritten with the new path on the next timer tick
-            flash("保存しました")
+            flash(String(localized: "Saved"))
         }
         return ok
     }
@@ -667,8 +667,8 @@ final class AppModel: ObservableObject {
             return
         case .projectMissing(let r):
             writeResume(nil)
-            showError("前回のプロジェクトが見つかりません",
-                      "「\(URL(fileURLWithPath: r.projectPath).lastPathComponent)」は移動または削除されたため、前回の続きから再開できませんでした。\n元の場所: \(r.projectPath)\n\nライブラリから選び直すか、「プロジェクトを開く…」で開いてください。")
+            showError(String(localized: "The last project can’t be found"),
+                      String(localized: "“\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” was moved or deleted, so ReplayNES couldn’t resume where you left off.\nOriginal location: \(r.projectPath)\n\nChoose it again from the library, or use “Open Project…”."))
         case .resume(let r):
             openProject(URL(fileURLWithPath: r.projectPath), resume: r)
         }
@@ -680,10 +680,10 @@ final class AppModel: ObservableObject {
     private func resumeFailed(_ r: ResumeRecord) {
         let a = NSAlert()
         a.alertStyle = .warning
-        a.messageText = "前回の続きから再開できませんでした"
+        a.messageText = String(localized: "Couldn’t resume where you left off")
         a.informativeText = r.isTemp
-            ? "保存されていない前回のセッションは削除せずに残してあります（次回の起動時にもう一度再開を試みます）。\n\nROMを元の場所に戻すか、ライブラリから選んでください。別のゲームを始めるときに、前回のセッションを保存するか破棄するかを選べます。\n一時保存の場所: \(sessionPaths.tempProject.path)"
-            : "プロジェクト「\(URL(fileURLWithPath: r.projectPath).lastPathComponent)」は変更されていません。ライブラリの「続きから」や「プロジェクトを開く…」からもう一度開けます。"
+            ? String(localized: "The unsaved previous session has been kept (ReplayNES will try to resume it again at the next launch).\n\nMove the ROM back to its original location, or choose it from the library. When you start another game, you can choose to save or discard the previous session.\nTemporary location: \(sessionPaths.tempProject.path)")
+            : String(localized: "The project “\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” has not been changed. You can open it again with “Continue” in the library or “Open Project…”.")
         a.runModal()
     }
 
@@ -694,16 +694,16 @@ final class AppModel: ObservableObject {
         guard persistSessions else { return confirmDiscardIfNeeded() }
         guard let c = current else { return true }
         let isTemp = c.isTemp
-        let err: String? = emu.sync(timeout: 60) { e in e.flushForResume(fullSave: isTemp) } ?? "保存処理が応答しませんでした"
+        let err: String? = emu.sync(timeout: 60) { e in e.flushForResume(fullSave: isTemp) } ?? String(localized: "Saving didn’t respond")
         updateResumeRecord()
         resumeQueue.sync {}
         guard let err else { return true }
         let a = NSAlert()
         a.alertStyle = .critical
-        a.messageText = "作業内容を保存できませんでした"
-        a.informativeText = "このまま終了すると、最後の自動保存より後の記録が失われる可能性があります。\n\n\(err)"
-        a.addButton(withTitle: "終了しない")
-        a.addButton(withTitle: "終了する")
+        a.messageText = String(localized: "Your work couldn’t be saved")
+        a.informativeText = String(localized: "If you quit now, anything recorded after the last autosave may be lost.") + "\n\n\(err)"
+        a.addButton(withTitle: String(localized: "Don’t Quit"))
+        a.addButton(withTitle: String(localized: "Quit Anyway"))
         return a.runModal() == .alertSecondButtonReturn
     }
 
@@ -745,7 +745,7 @@ final class AppModel: ObservableObject {
         do {
             if sessionPaths.tempProjectExists { try FileManager.default.removeItem(at: sessionPaths.tempProject) }
         } catch {
-            showError("一時保存を削除できませんでした", "\(sessionPaths.tempProject.path)\n\(error.localizedDescription)")
+            showError(String(localized: "Couldn’t delete the temporary data"), "\(sessionPaths.tempProject.path)\n\(error.localizedDescription)")
         }
         if lastResume?.isTemp == true { writeResume(nil) }
     }
@@ -770,17 +770,17 @@ final class AppModel: ObservableObject {
         let manifest = (try? Engine.manifestJSON(projectDir: sessionPaths.tempProject)) ?? [:]
         let romName = (manifest["rom"] as? [String: Any])?["name"] as? String ?? "?"
         let a = NSAlert()
-        a.messageText = "保存されていない前回のセッションが残っています"
-        a.informativeText = "前回のセッション（ROM: \(romName)）を保存しますか？保存しない場合は破棄されます。"
-        a.addButton(withTitle: "保存…")
-        a.addButton(withTitle: "保存しない")
-        a.addButton(withTitle: "キャンセル")
+        a.messageText = String(localized: "An unsaved previous session remains")
+        a.informativeText = String(localized: "Do you want to save the previous session (ROM: \(romName))? If you don’t save, it will be discarded.")
+        a.addButton(withTitle: String(localized: "Save…"))
+        a.addButton(withTitle: String(localized: "Don’t Save"))
+        a.addButton(withTitle: String(localized: "Cancel"))
         switch a.runModal() {
         case .alertFirstButtonReturn:
             let name = URL(fileURLWithPath: romName).deletingPathExtension().lastPathComponent
             guard let dest = askProjectDestination(name: name) else { return false }
             do { try SessionResume.moveTempProject(sessionPaths, to: dest) } catch {
-                showError("保存できませんでした", "\(dest.path)\n\(error.localizedDescription)")
+                showError(String(localized: "Couldn’t save"), "\(dest.path)\n\(error.localizedDescription)")
                 return false
             }
             library.refresh()
@@ -796,21 +796,21 @@ final class AppModel: ObservableObject {
     /// Save panel for a .nesrec; an existing item at the destination is moved to the Trash.
     private func askProjectDestination(name: String) -> URL? {
         let save = NSSavePanel()
-        save.title = "プロジェクトを保存"
+        save.title = String(localized: "Save Project")
         save.nameFieldStringValue = name + ".nesrec"
         save.allowedContentTypes = [.nesrec]
         save.canCreateDirectories = true
         guard save.runModal() == .OK, let dir = save.url else { return nil }
-        if sessionPaths.isTempProject(dir.path) { showError("保存できませんでした", "一時保存の場所には保存できません。"); return nil }
+        if sessionPaths.isTempProject(dir.path) { showError(String(localized: "Couldn’t save"), String(localized: "You can’t save to the temporary location.")); return nil }
         if FileManager.default.fileExists(atPath: dir.path) {
             if (try? FileManager.default.trashItem(at: dir, resultingItemURL: nil)) == nil {
-                showError("保存できませんでした", "既存の項目を置き換えられません: \(dir.path)"); return nil
+                showError(String(localized: "Couldn’t save"), String(localized: "Couldn’t replace the existing item: \(dir.path)")); return nil
             }
         }
         return dir
     }
 
-    /// 「保存」 of a temporary session = Save As: full save, close, move the temporary project to
+    /// "Save" of a temporary session = Save As: full save, close, move the temporary project to
     /// the chosen place and reopen it there (same take position). Returns false if cancelled / failed.
     @discardableResult
     func saveTempAs() -> Bool {
@@ -819,13 +819,13 @@ final class AppModel: ObservableObject {
         guard let dest = askProjectDestination(name: name) else { return false }
         let practicing = status.practicing
         let failure = emu.sync(timeout: 60) { e -> String? in
-            guard let s = e.session else { return "セッションがありません" }
+            guard let s = e.session else { return String(localized: "No session") }
             do { try s.save() } catch { return (error as? LocalizedError)?.errorDescription ?? "\(error)" }
             e.install(nil)
             return nil
-        } ?? "保存処理が応答しませんでした"
+        } ?? String(localized: "Saving didn’t respond")
         if let failure {
-            showError("保存できませんでした（作業内容は一時保存に残っています）", failure)
+            showError(String(localized: "Couldn’t save (your work is still in the temporary location)"), failure)
             return false
         }
         current = nil
@@ -842,14 +842,14 @@ final class AppModel: ObservableObject {
                                                               practiceSlot: practicing ? -1 : nil),
                     resumeNotice: false)
         } catch {
-            showError("プロジェクトを開けませんでした", "\(target.path)\n\((error as? LocalizedError)?.errorDescription ?? "\(error)")")
+            showError(String(localized: "Couldn’t open the project"), "\(target.path)\n\((error as? LocalizedError)?.errorDescription ?? "\(error)")")
         }
         if let moveError {
-            showError("保存できませんでした（作業内容は一時保存に残っています）", "\(dest.path)\n\(moveError.localizedDescription)")
+            showError(String(localized: "Couldn’t save (your work is still in the temporary location)"), "\(dest.path)\n\(moveError.localizedDescription)")
             return false
         }
         library.refresh()
-        flash("保存しました")
+        flash(String(localized: "Saved"))
         return true
     }
 

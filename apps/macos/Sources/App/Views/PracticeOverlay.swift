@@ -17,10 +17,10 @@ struct PracticeOverlay: View {
         }
         .environment(\.colorScheme, .dark)
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
-        .alert("区間の名前", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("名前", text: $renameText)
-            Button("変更") { if let r = renaming { model.practiceRename(r.index, renameText) }; renaming = nil }
-            Button("キャンセル", role: .cancel) { renaming = nil }
+        .alert("Section Name", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Rename") { if let r = renaming { model.practiceRename(r.index, renameText) }; renaming = nil }
+            Button("Cancel", role: .cancel) { renaming = nil }
         }
     }
 
@@ -31,8 +31,8 @@ struct PracticeOverlay: View {
             Image(systemName: "repeat").foregroundStyle(.orange)
             Text(currentName(st)).lineLimit(1)
             Text(progress(st)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-            if st.practiceLoops > 0 { Text("\(st.practiceLoops + 1)回目").font(.caption).foregroundStyle(.secondary) }
-            Button("練習をやめる") { model.practiceStop() }.controlSize(.small)
+            if st.practiceLoops > 0 { Text("Loop \(st.practiceLoops + 1)").font(.caption).foregroundStyle(.secondary) }
+            Button("Stop Practicing") { model.practiceStop() }.controlSize(.small)
         }
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(.white)
@@ -47,21 +47,21 @@ struct PracticeOverlay: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "repeat").foregroundStyle(.orange)
-                Text(st.practicing ? "練習中：\(currentName(st))" : "練習（A/B リピート）").font(.system(size: 13, weight: .semibold))
+                Text(st.practicing ? String(localized: "Practicing: \(currentName(st))") : String(localized: "Practice (A/B Repeat)")).font(.system(size: 13, weight: .semibold))
                 if st.practicing {
                     Text(progress(st)).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 if st.practicing {
-                    Button("練習をやめる") { model.practiceStop() }.controlSize(.small)
+                    Button("Stop Practicing") { model.practiceStop() }.controlSize(.small)
                 } else {
                     Button { model.showPracticePanel = false } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.borderless).help("閉じる")
+                        .buttonStyle(.borderless).help("Close")
                 }
             }
             Text(st.practicing
-                 ? "Bに着くと少し止まってAへ戻り、繰り返します。録画はされません。"
-                 : "A＝区間の始まり、B＝Aから続けてプレイした終わりの位置。設定した区間を何度でも練習できます（録画はされません）。")
+                 ? String(localized: "At B it pauses briefly, returns to A and repeats. Nothing is recorded.")
+                 : String(localized: "A = start of the section, B = the end you reach by playing on from A. Practice a section as often as you like (nothing is recorded)."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 2) {
                 ForEach(model.practiceSlots) { slot in row(slot, st) }
@@ -80,29 +80,29 @@ struct PracticeOverlay: View {
             Text("\(slot.index + 1)").font(.system(size: 12, weight: .bold, design: .monospaced))
                 .frame(width: 16)
                 .foregroundStyle(active ? .orange : .secondary)
-            Text(slot.hasA ? slot.displayName : "（未設定）")
+            Text(slot.hasA ? slot.displayName : String(localized: "(not set)"))
                 .font(.system(size: 12))
                 .foregroundStyle(slot.hasA ? .primary : .secondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(slot.hasA && slot.hasB ? Engine.timecode(forFrame: slot.length) : "--:--.--")
                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-            marker("A", set: slot.hasA, help: "Aを設定（いまの位置を区間の始まりにする）") { model.practiceSetA(slot.index) }
-            marker("B", set: slot.hasB, help: "Bを設定（Aから続けてプレイした、いまの位置を終わりにする）") { model.practiceSetB(slot.index) }
+            marker("A", set: slot.hasA, help: String(localized: "Set A (make the current position the start of the section)")) { model.practiceSetA(slot.index) }
+            marker("B", set: slot.hasB, help: String(localized: "Set B (make the current position, reached by playing on from A, the end)")) { model.practiceSetB(slot.index) }
             Button { model.practiceStart(slot.index) } label: {
                 Image(systemName: active ? "arrow.counterclockwise" : "play.fill").frame(width: 22, height: 18)
             }
             .buttonStyle(.borderless)
             .disabled(!slot.hasA)
             .opacity(slot.hasA ? 1 : 0.3)
-            .help(active ? "Aからやり直す" : "この区間を練習")
+            .help(active ? String(localized: "Restart from A") : String(localized: "Practice This Section"))
             Menu {
-                Button("この区間を練習") { model.practiceStart(slot.index) }.disabled(!slot.hasA)
-                Button("Aを設定") { model.practiceSetA(slot.index) }
-                Button("Bを設定") { model.practiceSetB(slot.index) }
+                Button("Practice This Section") { model.practiceStart(slot.index) }.disabled(!slot.hasA)
+                Button("Set A") { model.practiceSetA(slot.index) }
+                Button("Set B") { model.practiceSetB(slot.index) }
                 Divider()
-                Button("名前変更…") { renameText = slot.name; renaming = slot }.disabled(!slot.hasA)
-                Button("消去", role: .destructive) { model.practiceClear(slot.index) }.disabled(!slot.hasA)
+                Button("Rename…") { renameText = slot.name; renaming = slot }.disabled(!slot.hasA)
+                Button("Clear", role: .destructive) { model.practiceClear(slot.index) }.disabled(!slot.hasA)
             } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
         }
@@ -122,7 +122,7 @@ struct PracticeOverlay: View {
     }
 
     private func currentName(_ st: EmuStatus) -> String {
-        guard st.practiceSlot >= 0, st.practiceSlot < model.practiceSlots.count else { return "練習中" }
+        guard st.practiceSlot >= 0, st.practiceSlot < model.practiceSlots.count else { return String(localized: "Practicing") }
         return "\(st.practiceSlot + 1). " + model.practiceSlots[st.practiceSlot].displayName
     }
 

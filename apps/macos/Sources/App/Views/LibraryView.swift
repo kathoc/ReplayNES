@@ -1,5 +1,5 @@
 // ROM library: ROMs in ~/Documents/ReplayNES/ROM with their projects (matched by SHA-256).
-// Shown on the start screen and in the 「ライブラリ」 window (⇧⌘L).
+// Shown on the start screen and in the "Library" window (⇧⌘L).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -38,7 +38,7 @@ struct LibraryView: View {
             .background(Color(nsColor: .textBackgroundColor).opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
-            Text("ROM: \(displayPath(library.paths.roms))　プロジェクト（自動保存）: \(displayPath(library.paths.projects))")
+            Text("ROMs: \(displayPath(library.paths.roms))   Projects (autosaved): \(displayPath(library.paths.projects))")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 .textSelection(.enabled)
         }
@@ -51,12 +51,12 @@ struct LibraryView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("ライブラリ").font(.title2.bold())
+            Text("Library").font(.title2.bold())
             if library.scanning { ProgressView().controlSize(.small) }
             Spacer()
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("ROMを検索", text: $search).textFieldStyle(.plain).frame(width: 180)
+                TextField("Search ROMs", text: $search).textFieldStyle(.plain).frame(width: 180)
                 if !search.isEmpty {
                     Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless)
                 }
@@ -64,18 +64,18 @@ struct LibraryView: View {
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-            Button { library.refresh() } label: { Label("再読み込み", systemImage: "arrow.clockwise") }
-                .help("ROM フォルダを読み直す")
+            Button { library.refresh() } label: { Label("Reload", systemImage: "arrow.clockwise") }
+                .help("Rescan the ROM folder")
             Menu {
-                Button("ROM フォルダ") { library.revealROMFolder() }
-                Button("プロジェクトフォルダ") { library.revealProjectsFolder() }
+                Button("ROM Folder") { library.revealROMFolder() }
+                Button("Projects Folder") { library.revealProjectsFolder() }
             } label: {
-                Label("Finderで開く", systemImage: "folder")
+                Label("Open in Finder", systemImage: "folder")
             } primaryAction: {
                 library.revealROMFolder()
             }
             .fixedSize()
-            .help("ROM フォルダを Finder で開く（▾ でプロジェクトフォルダ）")
+            .help("Open the ROM folder in Finder (▾ for the projects folder)")
         }
     }
 
@@ -84,7 +84,7 @@ struct LibraryView: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             Text(text).font(.callout).textSelection(.enabled)
             Spacer()
-            if retry { Button("再試行") { library.start() } }
+            if retry { Button("Retry") { library.start() } }
         }
         .padding(8)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
@@ -94,10 +94,10 @@ struct LibraryView: View {
         if library.roms.isEmpty {
             VStack(spacing: 10) {
                 Image(systemName: "tray").font(.system(size: 30)).foregroundStyle(.secondary)
-                Text(library.scanning ? "読み込み中…" : "ROM がありません").font(.headline)
-                Text("ROM フォルダに .nes ファイルを入れると、ここに表示されます。").font(.caption).foregroundStyle(.secondary)
+                Text(library.scanning ? String(localized: "Loading…") : String(localized: "No ROMs")).font(.headline)
+                Text("Put .nes files in the ROM folder and they appear here.").font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button("ROM フォルダを Finder で開く") { library.revealROMFolder() }
+                Button("Open ROM Folder in Finder") { library.revealROMFolder() }
             }
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,16 +110,16 @@ struct LibraryView: View {
             .listStyle(.inset)
             .contextMenu(forSelectionType: LibraryROM.ID.self) { ids in
                 if let rom = rom(ids.first) {
-                    Button("プレイ（新しいプロジェクト）") { play(rom) }
-                    if let p = library.projects(for: rom).first { Button("続きから: \(p.name)") { resume(p) } }
+                    Button("Play (New Project)") { play(rom) }
+                    if let p = library.projects(for: rom).first { Button("Continue: \(p.name)") { resume(p) } }
                     Divider()
-                    Button("Finderで表示") { NSWorkspace.shared.activateFileViewerSelecting([rom.url]) }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([rom.url]) }
                 }
             } primaryAction: { ids in
                 if let rom = rom(ids.first) { play(rom) }  // double-click / Return
             }
             .overlay {
-                if filtered.isEmpty { Text("「\(search)」に一致する ROM はありません").foregroundStyle(.secondary) }
+                if filtered.isEmpty { Text("No ROMs match “\(search)”").foregroundStyle(.secondary) }
             }
         }
     }
@@ -133,16 +133,16 @@ struct LibraryView: View {
                 HStack {
                     Text(ByteCountFormatter.string(fromByteCount: rom.size, countStyle: .file))
                     if let sha = rom.sha256 { Text("SHA-256 \(sha.prefix(12))…").monospaced() }
-                    else { Text("SHA-256 を計算できません").foregroundStyle(.orange) }
+                    else { Text("Can’t compute SHA-256").foregroundStyle(.orange) }
                 }
                 .font(.caption).foregroundStyle(.secondary)
-                Button { play(rom) } label: { Label("プレイ", systemImage: "play.fill").frame(minWidth: 120) }
+                Button { play(rom) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 120) }
                     .controlSize(.large).buttonStyle(.borderedProminent)
-                    .help("新しいプロジェクトを作ってすぐに始めます（Projects フォルダに自動保存）")
+                    .help("Creates a new project and starts right away (autosaved in the Projects folder)")
                 Divider()
-                Text("このROMのプロジェクト").font(.headline)
+                Text("Projects for This ROM").font(.headline)
                 if projects.isEmpty {
-                    Text("まだありません。「プレイ」で始めると自動で保存されます。").font(.caption).foregroundStyle(.secondary)
+                    Text("None yet. Start with “Play” and it is saved automatically.").font(.caption).foregroundStyle(.secondary)
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 6) {
@@ -150,13 +150,13 @@ struct LibraryView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(p.name).lineLimit(1).truncationMode(.middle)
-                                        Text("最終保存 \(p.modified.formatted(date: .abbreviated, time: .shortened))")
+                                        Text("Last saved \(p.modified.formatted(date: .abbreviated, time: .shortened))")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Button("続きから") { resume(p) }
+                                    Button("Continue") { resume(p) }
                                     Button { NSWorkspace.shared.activateFileViewerSelecting([p.url]) } label: { Image(systemName: "folder") }
-                                        .buttonStyle(.borderless).help("Finderで表示")
+                                        .buttonStyle(.borderless).help("Show in Finder")
                                 }
                                 .padding(.vertical, 2)
                             }
@@ -169,8 +169,8 @@ struct LibraryView: View {
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "gamecontroller").font(.system(size: 30)).foregroundStyle(.secondary)
-                Text(library.roms.isEmpty ? "ROM を追加してください" : "ROM を選んでください").font(.headline)
-                Text("ダブルクリックまたは Return ですぐにプレイを始めます。\n以前のプロジェクトは右側の「続きから」で開けます。")
+                Text(library.roms.isEmpty ? String(localized: "Add some ROMs") : String(localized: "Choose a ROM")).font(.headline)
+                Text("Double-click or press Return to start playing right away.\nOpen earlier projects with “Continue” on the right.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -218,14 +218,14 @@ private struct ROMRow: View {
                 Text("\(projectCount)").font(.caption.monospacedDigit())
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Color.accentColor.opacity(0.2), in: Capsule())
-                    .help("プロジェクト \(projectCount) 件")
+                    .help("\(projectCount) projects")
             }
         }
         .padding(.vertical, 2)
     }
 }
 
-/// Content of the 「ライブラリ」 window.
+/// Content of the "Library" window.
 struct LibraryWindow: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismissWindow) private var dismissWindow

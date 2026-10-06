@@ -122,7 +122,7 @@ final class InputManager {
         stepLock.lock(); stepDirs = dirs; stepLock.unlock()
     }
 
-    /// Setting 「一時停止中は十字キー←→でコマ送り」.
+    /// Setting "While paused, the D-pad ←/→ steps frames".
     func setPausedStepEnabled(_ on: Bool) {
         stepLock.lock(); stepEnabled = on; stepLock.unlock()
     }
@@ -202,7 +202,7 @@ final class InputManager {
         persist()
     }
 
-    /// 「初期設定に戻す」 for one controller slot only (keyboard and other pads untouched).
+    /// "Reset to Defaults" for one controller slot only (keyboard and other pads untouched).
     func resetController(slot: Int) {
         apply(InputCatalog.controllerResetPlan(config, slot: slot))
         persist()
@@ -367,7 +367,7 @@ final class InputManager {
             m.valueChangedHandler = { [weak self] pad, _ in self?.update(micro: pad, prefix: prefix, face: face) }
         }
         NSLog("ReplayNES: controller \(slot + 1) \"\(c.vendorName ?? "?")\" category=\"\(category)\" family=\(family.rawValue) buttonA=\(face.a)")
-        infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? "コントローラー", productCategory: category, family: family, labels: labels)
+        infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? String(localized: "Controller"), productCategory: category, family: family, labels: labels)
         // Customised bindings saved with GameController names (layout 2) keep their meaning on
         // this controller.
         if apply(InputCatalog.legacyFaceTranslation(config, slot: slot, positions: positions)) { persist() }
@@ -390,11 +390,11 @@ final class InputManager {
             }
         }
         publishControllers()
-        onDisconnect?(c.vendorName ?? "コントローラー")
+        onDisconnect?(c.vendorName ?? String(localized: "Controller"))
     }
 
     private func publishControllers() {
-        let names = slots.enumerated().compactMap { i, c in c.map { "パッド\(i + 1): \($0.vendorName ?? "コントローラー")" } }
+        let names = slots.enumerated().compactMap { i, c in c.map { String(localized: "Pad \(i + 1): \($0.vendorName ?? String(localized: "Controller"))") } }
         controllerMonitor.controllers = infos.compactMap { $0 }
         onControllersChanged?(names)
     }

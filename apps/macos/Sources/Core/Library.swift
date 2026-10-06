@@ -1,6 +1,6 @@
 // ROM library in ~/Documents/ReplayNES (UI-free part, unit tested):
 //   ROM/       the user's .nes files (top level and one level of sub-folders)
-//   Projects/  projects started from the library, "<ROM名> <yyyy-MM-dd HHmm>.nesrec"
+//   Projects/  projects started from the library, "<ROM name> <yyyy-MM-dd HHmm>.nesrec"
 // Projects are matched to ROMs by the ROM SHA-256 stored in their manifest.json, not by name.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
@@ -40,9 +40,9 @@ enum LibraryError: Error, LocalizedError, Equatable {
     case cannotRead(String, String)
     var errorDescription: String? {
         switch self {
-        case .notADirectory(let p): return "フォルダの場所に同名のファイルがあります: \(p)"
-        case .cannotCreate(let p, let m): return "フォルダを作成できません: \(p)\n\(m)"
-        case .cannotRead(let p, let m): return "フォルダを読み込めません: \(p)\n\(m)"
+        case .notADirectory(let p): return String(localized: "A file with the same name is where the folder should be: \(p)")
+        case .cannotCreate(let p, let m): return String(localized: "Can’t create the folder: \(p)\n\(m)")
+        case .cannotRead(let p, let m): return String(localized: "Can’t read the folder: \(p)\n\(m)")
         }
     }
 }
@@ -140,7 +140,7 @@ enum LibraryScanner {
         return f.string(from: date)
     }
 
-    /// Projects/<ROM名> <yyyy-MM-dd HHmm>.nesrec, with " 2", " 3", ... appended if taken.
+    /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec, with " 2", " 3", ... appended if taken.
     static func newProjectURL(projectsDir: URL, romName: String, date: Date) -> URL {
         let base = sanitize(romName) + " " + timestamp(date)
         var n = 1

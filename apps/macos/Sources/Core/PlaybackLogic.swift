@@ -7,14 +7,14 @@ import Foundation
 enum SlowRate: Int, CaseIterable, Identifiable {
     case normal = 1, half = 2, quarter = 4
     var id: Int { rawValue }
-    var label: String { self == .normal ? "等速" : self == .half ? "1/2" : "1/4" }
+    var label: String { self == .normal ? String(localized: "Normal") : self == .half ? "1/2" : "1/4" }
     /// Slow hotkey (L): toggles 0.5x <-> normal (1/4 is only reachable from the menu, if ever).
     var toggled: SlowRate { self == .normal ? .half : .normal }
 }
 
 // MARK: - record / replay toggle
 
-/// The single 「録画」 toggle button.
+/// The single "Record" toggle button.
 ///  * record -> replay: the take actually plays. At the take end it jumps to the start first;
 ///    otherwise it plays from the current position (= the last seek/scrub position).
 ///  * replay -> record: back to record mode at the current position, paused; the next input

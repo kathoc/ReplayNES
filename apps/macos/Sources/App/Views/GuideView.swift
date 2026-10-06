@@ -1,46 +1,46 @@
-// 操作ガイド (ヘルプ menu): controller / keyboard layout, record toggle, practice mode.
+// Controls Guide (Help menu): controller / keyboard layout, record toggle, practice mode.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
 struct GuideView: View {
     private let pad: [(String, String)] = [
-        ("十字キー / 左スティック", "移動（一時停止中の十字キー ←/→ はコマ戻し / コマ送り）"),
-        ("右 / 下のボタン", "ファミコンの A / B（Proコン A / B・Xbox B / A・PS ○ / ✕）"),
-        ("上 / 左のボタン", "連射 A / 連射 B（Proコン X / Y・Xbox Y / X・PS △ / □）"),
-        ("+ / −（Menu / Options）", "START / SELECT"),
-        ("ZR / R2 / RT（押している間）", "巻き戻し"),
-        ("ZL / L2 / LT（押している間）", "早送り（録画済みの範囲だけ。終端で一時停止）"),
-        ("R", "一時停止 / 再開"),
-        ("L", "スロー 1/2 ⇔ 等速"),
+        (String(localized: "D-pad / Left Stick"), String(localized: "Move (while paused, D-pad ←/→ steps back / advances a frame)")),
+        (String(localized: "Right / Bottom button"), String(localized: "NES A / B (Pro Controller A / B, Xbox B / A, PS ○ / ✕)")),
+        (String(localized: "Top / Left button"), String(localized: "Turbo A / Turbo B (Pro Controller X / Y, Xbox Y / X, PS △ / □)")),
+        (String(localized: "+ / − (Menu / Options)"), "START / SELECT"),
+        (String(localized: "ZR / R2 / RT (hold)"), String(localized: "Rewind")),
+        (String(localized: "ZL / L2 / LT (hold)"), String(localized: "Fast-forward (recorded range only; pauses at the end)")),
+        ("R", String(localized: "Pause / Resume")),
+        ("L", String(localized: "Slow 1/2 ⇔ normal speed")),
     ]
     private let keys: [(String, String)] = [
-        ("矢印キー / X / Z", "移動 / A / B"),
-        ("Return / 右Shift・\\", "START / SELECT"),
-        ("Delete（押している間）", "巻き戻し"),
-        ("Tab（押している間）", "早送り"),
-        ("Space", "一時停止 / 再開"),
-        ("L", "スロー 1/2 ⇔ 等速"),
-        (", / .", "1コマ戻る / コマ送り"),
-        ("B", "ブックマーク追加"),
-        ("⇧⌘P", "練習パネル（練習中は練習をやめる）"),
-        ("⇧⌘M", "録画 / 再生 切替"),
-        ("⌘F", "等倍 / FILL 切替"),
+        (String(localized: "Arrow keys / X / Z"), String(localized: "Move / A / B")),
+        (String(localized: "Return / Right Shift, \\"), "START / SELECT"),
+        (String(localized: "Delete (hold)"), String(localized: "Rewind")),
+        (String(localized: "Tab (hold)"), String(localized: "Fast-forward")),
+        ("Space", String(localized: "Pause / Resume")),
+        ("L", String(localized: "Slow 1/2 ⇔ normal speed")),
+        (", / .", String(localized: "Step back / Frame advance")),
+        ("B", String(localized: "Add Bookmark")),
+        ("⇧⌘P", String(localized: "Practice panel (stops practicing while practicing)")),
+        ("⇧⌘M", String(localized: "Toggle record / playback")),
+        ("⌘F", String(localized: "Toggle Integer / FILL")),
     ]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("操作ガイド").font(.title2.bold())
-                section("コントローラー（初期設定・設定で変更可）", pad)
-                section("キーボード（ReplayNES が前面のときだけ）", keys)
+                Text("Controls Guide").font(.title2.bold())
+                section("Controller (defaults; can be changed in Settings)", pad)
+                section("Keyboard (only while ReplayNES is in front)", keys)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("録画ボタン").font(.headline)
-                    Text("赤く光っている「録画」は録画モード。クリックすると灰色の再生モードになり、録画したテイクを再生します（終端にいたら先頭から）。もう一度クリックすると、その位置から続きを録画できる状態（一時停止）に戻ります。巻き戻してからプレイすると自動で新しいテイクに分岐し、以前の続きも残ります。")
+                    Text("Record Button").font(.headline)
+                    Text("A glowing red “Record” means record mode. Click it to switch to gray playback mode, which plays the recorded take (from the start if you are at the end). Click again to return to a paused state where you can continue recording from that position. If you rewind and then play, a new take branches off automatically and the old continuation is kept.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("練習モード（A/B リピート）").font(.headline)
-                    Text("「練習」ボタンで区間パネルを開き、区間の始まりで「A」、Aから続けてプレイした終わりで「B」を押します。▶︎ でその区間を繰り返し練習できます。Bに着くと0.5秒止まり、巻き戻るようにAへ戻って再スタートします。練習中は何も録画されず、「練習をやめる」でテイクの元の位置に戻ります。区間はプロジェクトに8つまで保存されます。")
+                    Text("Practice Mode (A/B Repeat)").font(.headline)
+                    Text("Open the section panel with the “Practice” button, press “A” at the start of the section and “B” at the end you reach by playing on from A. Press ▶︎ to practice that section repeatedly. At B it pauses for 0.5 s, then rewinds to A and starts again. Nothing is recorded while practicing; “Stop Practicing” returns to the original position in the take. Up to 8 sections are saved in the project.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -49,7 +49,7 @@ struct GuideView: View {
         .frame(minWidth: 520, minHeight: 480)
     }
 
-    private func section(_ title: String, _ rows: [(String, String)]) -> some View {
+    private func section(_ title: LocalizedStringKey, _ rows: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.headline)
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {

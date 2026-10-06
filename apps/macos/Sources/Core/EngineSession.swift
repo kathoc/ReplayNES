@@ -80,7 +80,7 @@ struct PracticeSlotInfo: Identifiable, Equatable {
     var takeID: UInt64 = 0          // take active when A was set
     var bSettable = false
     var id: Int { index }
-    var displayName: String { name.isEmpty ? "区間 \(index + 1)" : name }
+    var displayName: String { name.isEmpty ? String(localized: "Section \(index + 1)") : name }
 }
 
 struct PracticeStatus: Equatable {

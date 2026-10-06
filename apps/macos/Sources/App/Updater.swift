@@ -3,7 +3,7 @@
 // Privacy: Sparkle only contacts the feed URL (Info.plist SUFeedURL) to check for updates and
 // the release asset URL to download one. No system profile is sent (SUEnableSystemProfiling is
 // left off). Automatic checks start only after the user agrees to Sparkle's standard permission
-// prompt (shown on the second launch) and can be turned off in Settings > アップデート.
+// prompt (shown on the second launch) and can be turned off in Settings > Updates.
 //
 // Installing never bypasses the app's quit path: Sparkle's installer asks the app to quit with a
 // normal Apple quit event, so AppDelegate.applicationShouldTerminate still persists the session
@@ -64,7 +64,7 @@ final class UpdaterModel: NSObject, ObservableObject, SPUUpdaterDelegate {
         }
     }
 
-    /// Menu: アップデートを確認… (Sparkle standard UI).
+    /// Menu: Check for Updates… (Sparkle standard UI).
     func checkForUpdates() { controller?.checkForUpdates(nil) }
 
     var lastCheck: Date? { updater?.lastUpdateCheckDate }
@@ -84,37 +84,37 @@ final class UpdaterModel: NSObject, ObservableObject, SPUUpdaterDelegate {
     }
 }
 
-/// App menu item: アップデートを確認…
+/// App menu item: Check for Updates…
 struct CheckForUpdatesCommand: View {
     @ObservedObject var updates: UpdaterModel
     var body: some View {
-        Button("アップデートを確認…") { updates.checkForUpdates() }
+        Button("Check for Updates…") { updates.checkForUpdates() }
             .disabled(!updates.canCheckForUpdates)
     }
 }
 
-/// Settings > アップデート
+/// Settings > Updates
 struct UpdatesTab: View {
     @ObservedObject var updates = UpdaterModel.shared
     var body: some View {
         Form {
-            Section("アップデート") {
-                Toggle("自動的にアップデートを確認", isOn: $updates.automaticallyChecks)
-                Toggle("アップデートを自動的にダウンロードしてインストール", isOn: $updates.automaticallyDownloads)
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updates.automaticallyChecks)
+                Toggle("Automatically download and install updates", isOn: $updates.automaticallyDownloads)
                     .disabled(!updates.automaticallyChecks)
                 HStack {
-                    Button("今すぐ確認…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
+                    Button("Check Now…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
                     Spacer()
                     if let d = updates.lastCheck {
-                        Text("最終確認: \(d.formatted(date: .abbreviated, time: .shortened))")
+                        Text("Last checked: \(d.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
-            Section("プライバシー") {
-                Text("アップデートの確認とダウンロードのために GitHub (github.com) にのみ接続します。送信されるのは通常のHTTPリクエストだけで、システム情報や使用状況は送信しません。自動確認をオフにすると、メニューから手動で確認したときだけ接続します。")
+            Section("Privacy") {
+                Text("ReplayNES connects only to GitHub (github.com) to check for and download updates. Only ordinary HTTP requests are sent; no system information or usage data. With automatic checks off, it connects only when you check manually from the menu.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("自動インストールされた更新は、次にアプリを終了したときに適用されます。未保存の変更がある場合は終了前に保存を確認します。")
+                Text("Automatically installed updates are applied the next time you quit the app. If there are unsaved changes, you are asked to save before quitting.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

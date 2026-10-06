@@ -250,7 +250,7 @@ final class EmulationController {
     func seekCommand(_ f: UInt64) {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE {
-            // The take cursor is frozen while practicing: 「先頭へ」 means back to A.
+            // The take cursor is frozen while practicing: "Go to Start" means back to A.
             if f == 0, let slot = practiceSlot { startPractice(slot) } else { notice(Self.practiceBlockedText) }
             return
         }
@@ -258,7 +258,7 @@ final class EmulationController {
         do {
             try s.seek(min(f, s.takeLength))
             endOfTake = false
-        } catch { reportError("移動できませんでした", error) }
+        } catch { reportError(String(localized: "Couldn’t move"), error) }
         paused = true
         audio.setMuted(true)
         publishVideo()
@@ -314,7 +314,7 @@ final class EmulationController {
             // Game input is not emulated while paused; say so once instead of silently ignoring it.
             if wasPaused && paused && edges == 0 && held == 0 && advanceRemaining == 0 && !pauseHintShown && !uiRewindHeld {
                 pauseHintShown = true
-                notice("一時停止中です。Space キー / コントローラーの R（または ▶︎ ボタン）で再開します")
+                notice(String(localized: "Paused. Press Space or R on the controller (or the ▶︎ button) to resume"))
             }
         }
 
@@ -339,7 +339,7 @@ final class EmulationController {
                     try s.rewind(n)
                     endOfTake = false
                     publishVideo(continuous: true)
-                } catch { reportError("巻き戻しに失敗しました", error); uiRewindHeld = false }
+                } catch { reportError(String(localized: "Rewind failed"), error); uiRewindHeld = false }
             }
             finishTick(s)
             return
@@ -403,16 +403,16 @@ final class EmulationController {
         pausedBeforeFF = paused
         ffBlocked = s.frame >= s.takeLength
         if ffBlocked {
-            notice(s.takeLength == 0 ? "まだ録画されていないため早送りできません" : "録画済みの終端です（早送りはここまで）")
+            notice(s.takeLength == 0 ? String(localized: "Nothing has been recorded yet, so there is nothing to fast-forward") : String(localized: "End of the recording (fast-forward stops here)"))
             return
         }
-        do { try ff.begin(s) } catch { reportError("早送りできませんでした", error); ffBlocked = true }
+        do { try ff.begin(s) } catch { reportError(String(localized: "Couldn’t fast-forward"), error); ffBlocked = true }
         endOfTake = false
     }
 
     func endFastForward(_ s: EngineSession) {
         let wasActive = ff.active
-        do { try ff.end(s) } catch { reportError("録画モードに戻せませんでした", error) }
+        do { try ff.end(s) } catch { reportError(String(localized: "Couldn’t return to record mode"), error) }
         fastForward = false
         statusDirty = true
         if wasActive {
@@ -432,18 +432,18 @@ final class EmulationController {
             if atEnd {
                 ffBlocked = true
                 paused = true
-                notice("録画済みの終端に着きました（ここで一時停止）")
+                notice(String(localized: "Reached the end of the recording (paused here)"))
             }
         } catch {
             ffBlocked = true
             paused = true
-            reportError("早送りできませんでした", error)
+            reportError(String(localized: "Couldn’t fast-forward"), error)
         }
     }
 
     // MARK: practice (emulation thread)
 
-    static let practiceBlockedText = "練習中は使えません。「練習をやめる」でテイクに戻ってから操作してください"
+    static let practiceBlockedText = String(localized: "Not available while practicing. Use “Stop Practicing” to return to the take first")
 
     var isPracticing: Bool { session?.mode == RN_MODE_PRACTICE }
 
@@ -490,21 +490,21 @@ final class EmulationController {
                 practiceSlot = nil
                 practiceLength = 0
                 structureDirty = true
-                notice("区間 \(slot + 1) のAが見つからないため、繰り返しを止めました")
+                notice(String(localized: "Point A of section \(slot + 1) can’t be found, so repeating stopped"))
             }
         }
     }
 
-    /// 「この区間を練習」: enters practice at the slot's A and autoplays (never records).
+    /// "Practice This Section": enters practice at the slot's A and autoplays (never records).
     func startPractice(_ slot: Int) {
         guard let s = session else { return }
         if fastForward { endFastForward(s); uiFastForwardHeld = false }
         let wasMode = s.mode
         do { try s.practiceGotoA(slot) } catch {
             if let e = error as? RNError, e.status == RN_ERR_NOT_FOUND {
-                notice("区間 \(slot + 1) にはまだAが設定されていません")
+                notice(String(localized: "Point A of section \(slot + 1) hasn’t been set yet"))
             } else {
-                reportError("練習を始められませんでした", error)
+                reportError(String(localized: "Couldn’t start practicing"), error)
             }
             return
         }
@@ -522,14 +522,14 @@ final class EmulationController {
         resetFlashFilter()
         publishVideo()
         structureDirty = true
-        notice(info.hasB ? "練習: \(info.displayName)（Bに着くとAへ戻って繰り返します。録画はされません）"
-                         : "練習: \(info.displayName)（Bが未設定のため繰り返しません。録画はされません）")
+        notice(info.hasB ? String(localized: "Practice: \(info.displayName) (returns to A at B and repeats; nothing is recorded)")
+                         : String(localized: "Practice: \(info.displayName) (B isn’t set, so it doesn’t repeat; nothing is recorded)"))
     }
 
-    /// 「練習をやめる」: back to the take exactly where practice was entered (paused).
+    /// "Stop Practicing": back to the take exactly where practice was entered (paused).
     func stopPractice() {
         guard let s = session, s.mode == RN_MODE_PRACTICE else { return }
-        do { try s.setMode(modeBeforePractice) } catch { reportError("練習を終了できませんでした", error); return }
+        do { try s.setMode(modeBeforePractice) } catch { reportError(String(localized: "Couldn’t stop practicing"), error); return }
         practiceSlot = nil
         practiceLength = 0
         practiceLoop.reset()
@@ -540,7 +540,7 @@ final class EmulationController {
         audio.setMuted(true)
         publishVideo()
         structureDirty = true
-        notice("練習をやめました（テイクは練習前のままです）")
+        notice(String(localized: "Stopped practicing (the take is unchanged)"))
     }
 
     private func refreshPracticeLength(_ s: EngineSession, _ slot: Int) {
@@ -557,8 +557,8 @@ final class EmulationController {
             if s.mode == RN_MODE_PRACTICE { practiceSlot = slot; practiceLoop.interrupt() }
             refreshPracticeLength(s, slot)
             structureDirty = true
-            notice("区間 \(slot + 1) のAを設定しました。続けてプレイして、終わりの位置でBを設定してください")
-        } catch { reportError("Aを設定できませんでした", error) }
+            notice(String(localized: "Set A of section \(slot + 1). Keep playing and set B where it should end"))
+        } catch { reportError(String(localized: "Couldn’t set A"), error) }
     }
 
     func practiceSetB(_ slot: Int) {
@@ -568,25 +568,25 @@ final class EmulationController {
             refreshPracticeLength(s, slot)
             structureDirty = true
             let len = s.practiceSlot(slot).length
-            notice("区間 \(slot + 1) のBを設定しました（長さ \(Engine.timecode(forFrame: len))）。「練習」で繰り返し練習できます")
+            notice(String(localized: "Set B of section \(slot + 1) (length \(Engine.timecode(forFrame: len))). Use “Practice” to repeat it"))
         } catch let e as RNError {
             switch e.status {
             case RN_ERR_DISCONTINUITY:
                 if practiceSetBFromTake(slot) { return } // A is on this take: B from take frames
-                notice("B地点はA地点から続けてプレイした位置で設定してください（Aの後に巻き戻し・移動・テイク切替をした場合は、Aからやり直すかAを設定し直します）")
+                notice(String(localized: "Set B at a point reached by playing on from A (if you rewound, jumped or switched takes after A, start again from A or set A again)"))
             case RN_ERR_NOT_FOUND:
-                notice("先に区間 \(slot + 1) のAを設定してください")
+                notice(String(localized: "Set A of section \(slot + 1) first"))
             case RN_ERR_INVALID_ARG:
-                notice("AとBが同じ位置です。少し進めてからBを設定してください")
+                notice(String(localized: "A and B are at the same position. Play a little further before setting B"))
             default:
-                reportError("Bを設定できませんでした", e)
+                reportError(String(localized: "Couldn’t set B"), e)
             }
-        } catch { reportError("Bを設定できませんでした", error) }
+        } catch { reportError(String(localized: "Couldn’t set B"), error) }
     }
 
     func practiceRename(_ slot: Int, _ name: String) {
         guard let s = session else { return }
-        do { try s.practiceRename(slot, name: name); structureDirty = true } catch { reportError("名前を変更できませんでした", error) }
+        do { try s.practiceRename(slot, name: name); structureDirty = true } catch { reportError(String(localized: "Couldn’t rename"), error) }
     }
 
     func practiceClear(_ slot: Int) {
@@ -595,7 +595,7 @@ final class EmulationController {
             try s.practiceClear(slot)
             refreshPracticeLength(s, slot)
             structureDirty = true
-        } catch { reportError("区間を消去できませんでした", error) }
+        } catch { reportError(String(localized: "Couldn’t clear the section"), error) }
     }
 
     // MARK: stepping / pause (emulation thread)
@@ -628,7 +628,7 @@ final class EmulationController {
                 try s.rewind(n)
                 audio.setMuted(true)
                 publishVideo()
-            } catch { reportError("戻れませんでした", error) }
+            } catch { reportError(String(localized: "Couldn’t go back"), error) }
             return
         }
         seekCommand(s.frame >= n ? s.frame - n : 0)
@@ -667,11 +667,11 @@ final class EmulationController {
         } catch {
             paused = true
             advanceRemaining = 0
-            reportError("フレームを進められませんでした", error)
+            reportError(String(localized: "Couldn’t advance the frame"), error)
             return false
         }
         if mode != RN_MODE_PRACTICE && info.end_of_take != 0 && info.frame == before {
-            if !endOfTake { notice("テイクの終端です（「録画」ボタンで、ここから続きを録画できます）") }
+            if !endOfTake { notice(String(localized: "End of the take (press “Record” to continue recording from here)")) }
             endOfTake = true
             paused = true
             advanceRemaining = 0
@@ -681,7 +681,7 @@ final class EmulationController {
         endOfTake = false
         if info.branched != 0 {
             structureDirty = true
-            notice("新しいテイクを作成しました。以前の続きは「前の試行へ戻す」で戻せます")
+            notice(String(localized: "Started a new take. Use “Back to Previous Take” to return to the old continuation"))
         }
         let tEmu = HostClock.now()
         if let v = s.video {
@@ -702,7 +702,7 @@ final class EmulationController {
         if on(RN_HK_PAUSE) { togglePause() }
         if on(RN_HK_FRAME_ADVANCE) { stepFrame(1, s) }
         if on(RN_HK_STEP_BACK) { stepFrame(-1, s) }
-        if on(RN_HK_SLOW) { slow = slow.toggled; notice(slow == .normal ? "等速" : "スロー 1/2") }
+        if on(RN_HK_SLOW) { slow = slow.toggled; notice(slow == .normal ? String(localized: "Normal Speed") : String(localized: "Slow 1/2")) }
         if on(RN_HK_BOOKMARK) { addBookmark(name: nil) }
         if on(RN_HK_SOFT_RESET) { requestEvent(UInt8(RN_EV_SOFT_RESET)) }
         if on(RN_HK_POWER_CYCLE) { requestEvent(UInt8(RN_EV_POWER_CYCLE)) }
@@ -716,13 +716,17 @@ final class EmulationController {
     func requestEvent(_ ev: UInt8) {
         guard let s = session else { return }
         if s.mode == RN_MODE_REPLAY {
-            notice("リセットは録画モード（または練習中）でのみ使えます")
+            notice(String(localized: "Reset is only available in record mode (or while practicing)"))
             return
         }
         pendingEvents |= ev
         if paused { advanceRemaining += 1 } // apply immediately so the user sees it
-        let what = ev == UInt8(RN_EV_POWER_CYCLE) ? "電源再投入" : "ソフトリセット"
-        notice(s.mode == RN_MODE_PRACTICE ? "\(what)（練習中: 記録されません）" : "\(what)を記録します")
+        let power = ev == UInt8(RN_EV_POWER_CYCLE)
+        if s.mode == RN_MODE_PRACTICE {
+            notice(power ? String(localized: "Power cycle (practicing: not recorded)") : String(localized: "Soft reset (practicing: not recorded)"))
+        } else {
+            notice(power ? String(localized: "Recording a power cycle") : String(localized: "Recording a soft reset"))
+        }
     }
 
     func setRecording(_ rec: Bool) {
@@ -732,26 +736,26 @@ final class EmulationController {
         do {
             try s.setMode(rec ? RN_MODE_RECORD : RN_MODE_REPLAY)
             endOfTake = false
-        } catch { reportError("モードを切り替えられませんでした", error) }
+        } catch { reportError(String(localized: "Couldn’t switch modes"), error) }
         statusDirty = true
     }
 
-    /// The 「録画」 toggle button (see RecordToggle). In practice it leaves practice first.
+    /// The "Record" toggle button (see RecordToggle). In practice it leaves practice first.
     func toggleRecord() {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice(); return }
         if fastForward { endFastForward(s) }
         let plan = RecordToggle.plan(recording: s.mode == RN_MODE_RECORD, frame: s.frame, takeLength: s.takeLength)
-        if !plan.record && s.takeLength == 0 { notice("まだ何も録画されていません"); return }
+        if !plan.record && s.takeLength == 0 { notice(String(localized: "Nothing has been recorded yet")); return }
         setRecording(plan.record)
         if let f = plan.seek { seekCommand(f) }
         advanceRemaining = 0
         paused = !plan.play
         if plan.play { audio.setMuted(true) } // unmuted by the next audible step
-        notice(plan.record ? "録画モード：次の入力から、この位置の続きを録画します" : "再生モード：録画したテイクを再生します（録画はされません）")
+        notice(plan.record ? String(localized: "Record mode: recording continues from here with your next input") : String(localized: "Playback mode: plays the recorded take (nothing is recorded)"))
     }
 
-    /// 「ここから録り直す」: record from the current frame (branches if before the take end).
+    /// "Re-record from Here": record from the current frame (branches if before the take end).
     func rerecordHere() {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice() }
@@ -762,14 +766,14 @@ final class EmulationController {
     func addBookmark(name: String?) {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
-        let n = name ?? "ブックマーク \(s.bookmarks().count + 1) (\(Engine.timecode(forFrame: s.frame)))"
-        do { try s.addBookmark(name: n); structureDirty = true } catch { reportError("ブックマークを追加できませんでした", error) }
+        let n = name ?? String(localized: "Bookmark \(s.bookmarks().count + 1) (\(Engine.timecode(forFrame: s.frame)))")
+        do { try s.addBookmark(name: n); structureDirty = true } catch { reportError(String(localized: "Couldn’t add the bookmark"), error) }
     }
 
     func undoTake() {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
-        if s.undoDepth == 0 { notice("戻せる試行はありません"); return }
+        if s.undoDepth == 0 { notice(String(localized: "There is no previous take to go back to")); return }
         do {
             try s.undoTakeSwitch()
             paused = true
@@ -777,15 +781,15 @@ final class EmulationController {
             audio.setMuted(true)
             publishVideo()
             structureDirty = true
-            notice("前の試行へ戻しました")
-        } catch { reportError("前の試行へ戻せませんでした", error) }
+            notice(String(localized: "Went back to the previous take"))
+        } catch { reportError(String(localized: "Couldn’t go back to the previous take"), error) }
     }
 
     func save(_ done: ((Bool) -> Void)?) {
         guard let s = session else { done.map { f in onMain { f(false) } }; return }
         if s.projectDir.isEmpty {
             onMain { done?(false) }
-            notice("このセッションはまだ保存先がありません。「別名で保存」を使ってください")
+            notice(String(localized: "This session has no save location yet. Use “Save As…”"))
             return
         }
         do {
@@ -794,7 +798,7 @@ final class EmulationController {
             statusDirty = true
             onMain { done?(true) }
         } catch {
-            reportError("保存できませんでした（作業内容はメモリ上に保持されています）", error)
+            reportError(String(localized: "Couldn’t save (your work is still kept in memory)"), error)
             onMain { done?(false) }
         }
     }
@@ -820,14 +824,14 @@ final class EmulationController {
             }
             autosaveFailed = false
         } catch {
-            if !autosaveFailed { reportError("自動保存に失敗しました（作業内容はメモリ上に保持されています）", error) }
+            if !autosaveFailed { reportError(String(localized: "Autosave failed (your work is still kept in memory)"), error) }
             autosaveFailed = true
         }
         latency.recordAutosave(ticks: HostClock.now() - now)
     }
 
     /// Persists now (quit, app in background): a full save for the temporary project, the autosave
-    /// journal for a normal project (its last full save stays what 「保存しない」 returns to).
+    /// journal for a normal project (its last full save stays what "Don’t Save" returns to).
     /// Returns an error message, nil on success.
     func flushForResume(fullSave: Bool) -> String? {
         guard let s = session, !s.projectDir.isEmpty, s.hasUnsavedChanges else { return nil }
@@ -845,7 +849,7 @@ final class EmulationController {
     /// After install(): back to the recorded take mode / position, paused.
     func applyResume(_ r: ResumeRecord) {
         guard let s = session else { return }
-        do { try SessionResume.apply(r, to: s) } catch { reportError("前回の位置へ移動できませんでした", error) }
+        do { try SessionResume.apply(r, to: s) } catch { reportError(String(localized: "Couldn’t move to the previous position"), error) }
         paused = true
         audio.setMuted(true)
         endOfTake = false

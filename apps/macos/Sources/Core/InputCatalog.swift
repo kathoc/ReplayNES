@@ -1,4 +1,4 @@
-// Action names, Japanese labels, default bindings and physical-id display names.
+// Action names, localized labels, default bindings and physical-id display names.
 // The binding table itself lives in the engine (rn_input JSON); this file only describes it.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
@@ -9,9 +9,15 @@ struct InputAction: Identifiable, Hashable {
     let group: Group
 
     enum Group: String, CaseIterable {
-        case player1 = "プレイヤー1"
-        case player2 = "プレイヤー2"
-        case hotkey = "ホットキー"
+        case player1, player2, hotkey
+
+        var title: String {
+            switch self {
+            case .player1: return String(localized: "Player 1")
+            case .player2: return String(localized: "Player 2")
+            case .hotkey: return String(localized: "Hotkeys")
+            }
+        }
     }
 }
 
@@ -20,34 +26,34 @@ enum InputCatalog {
         var out: [InputAction] = []
         for (p, g) in [("p1", InputAction.Group.player1), ("p2", .player2)] {
             out += [
-                InputAction(id: "\(p).up", label: "↑ 上", group: g),
-                InputAction(id: "\(p).down", label: "↓ 下", group: g),
-                InputAction(id: "\(p).left", label: "← 左", group: g),
-                InputAction(id: "\(p).right", label: "→ 右", group: g),
+                InputAction(id: "\(p).up", label: String(localized: "↑ Up"), group: g),
+                InputAction(id: "\(p).down", label: String(localized: "↓ Down"), group: g),
+                InputAction(id: "\(p).left", label: String(localized: "← Left"), group: g),
+                InputAction(id: "\(p).right", label: String(localized: "→ Right"), group: g),
                 InputAction(id: "\(p).a", label: "A", group: g),
                 InputAction(id: "\(p).b", label: "B", group: g),
                 InputAction(id: "\(p).select", label: "SELECT", group: g),
                 InputAction(id: "\(p).start", label: "START", group: g),
-                InputAction(id: "\(p).turbo_a", label: "連射 A", group: g),
-                InputAction(id: "\(p).turbo_b", label: "連射 B", group: g),
+                InputAction(id: "\(p).turbo_a", label: String(localized: "Turbo A"), group: g),
+                InputAction(id: "\(p).turbo_b", label: String(localized: "Turbo B"), group: g),
             ]
         }
         return out
     }()
 
     static let hotkeyActions: [InputAction] = [
-        InputAction(id: "hk.rewind", label: "巻き戻し（押している間）", group: .hotkey),
-        InputAction(id: "hk.fast_forward", label: "早送り（押している間・録画済みの範囲だけ）", group: .hotkey),
-        InputAction(id: "hk.pause", label: "一時停止 / 再開", group: .hotkey),
-        InputAction(id: "hk.slow", label: "スロー切替（等速 ⇔ 1/2）", group: .hotkey),
-        InputAction(id: "hk.frame_advance", label: "コマ送り", group: .hotkey),
-        InputAction(id: "hk.step_back", label: "1コマ戻る", group: .hotkey),
-        InputAction(id: "hk.toggle_mode", label: "録画 / 再生 切替（練習中は練習をやめる）", group: .hotkey),
-        InputAction(id: "hk.bookmark", label: "ブックマーク追加", group: .hotkey),
-        InputAction(id: "hk.undo_take", label: "前の試行へ戻す", group: .hotkey),
-        InputAction(id: "hk.save", label: "保存", group: .hotkey),
-        InputAction(id: "hk.soft_reset", label: "ソフトリセット", group: .hotkey),
-        InputAction(id: "hk.power_cycle", label: "電源再投入", group: .hotkey),
+        InputAction(id: "hk.rewind", label: String(localized: "Rewind (while held)"), group: .hotkey),
+        InputAction(id: "hk.fast_forward", label: String(localized: "Fast-forward (while held, recorded range only)"), group: .hotkey),
+        InputAction(id: "hk.pause", label: String(localized: "Pause / Resume"), group: .hotkey),
+        InputAction(id: "hk.slow", label: String(localized: "Slow motion (normal ⇔ 1/2)"), group: .hotkey),
+        InputAction(id: "hk.frame_advance", label: String(localized: "Frame Advance"), group: .hotkey),
+        InputAction(id: "hk.step_back", label: String(localized: "Step Back One Frame"), group: .hotkey),
+        InputAction(id: "hk.toggle_mode", label: String(localized: "Record / playback (ends practice)"), group: .hotkey),
+        InputAction(id: "hk.bookmark", label: String(localized: "Add Bookmark"), group: .hotkey),
+        InputAction(id: "hk.undo_take", label: String(localized: "Back to Previous Take"), group: .hotkey),
+        InputAction(id: "hk.save", label: String(localized: "Save"), group: .hotkey),
+        InputAction(id: "hk.soft_reset", label: String(localized: "Soft Reset"), group: .hotkey),
+        InputAction(id: "hk.power_cycle", label: String(localized: "Power Cycle"), group: .hotkey),
     ]
 
     static var allActions: [InputAction] { gameActions + hotkeyActions }
@@ -141,7 +147,7 @@ enum InputCatalog {
         return (unbind, bind)
     }
 
-    /// 「初期設定に戻す」 for one controller: every binding of `gc<slot>:` replaced by the defaults.
+    /// "Reset to Defaults" for one controller: every binding of `gc<slot>:` replaced by the defaults.
     static func controllerResetPlan(_ c: Config, slot: Int) -> (unbind: [(String, String)], bind: [(String, String)]) {
         let prefix = "gc\(slot):"
         return (c.bindings.filter { $0.input.hasPrefix(prefix) }.map { ($0.input, $0.action) },
@@ -212,17 +218,17 @@ enum InputCatalog {
         15: "R", 16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 24: "=", 25: "9", 26: "7", 27: "-",
         28: "8", 29: "0", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 36: "Return", 37: "L", 38: "J", 39: "'",
         40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".", 48: "Tab", 49: "Space", 50: "`",
-        51: "Delete", 53: "Esc", 54: "右⌘", 55: "⌘", 56: "左Shift", 57: "Caps", 58: "左Option", 59: "左Control",
-        60: "右Shift", 61: "右Option", 62: "右Control", 63: "fn", 65: "テンキー .", 67: "テンキー *", 69: "テンキー +",
-        71: "Clear", 75: "テンキー /", 76: "Enter", 78: "テンキー -", 81: "テンキー =", 82: "テンキー 0", 83: "テンキー 1",
-        84: "テンキー 2", 85: "テンキー 3", 86: "テンキー 4", 87: "テンキー 5", 88: "テンキー 6", 89: "テンキー 7",
-        91: "テンキー 8", 92: "テンキー 9", 96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9", 103: "F11",
+        51: "Delete", 53: "Esc", 54: String(localized: "Right ⌘"), 55: "⌘", 56: String(localized: "Left Shift"), 57: "Caps", 58: String(localized: "Left Option"), 59: String(localized: "Left Control"),
+        60: String(localized: "Right Shift"), 61: String(localized: "Right Option"), 62: String(localized: "Right Control"), 63: "fn", 65: String(localized: "Keypad ."), 67: String(localized: "Keypad *"), 69: String(localized: "Keypad +"),
+        71: "Clear", 75: String(localized: "Keypad /"), 76: "Enter", 78: String(localized: "Keypad -"), 81: String(localized: "Keypad ="), 82: String(localized: "Keypad 0"), 83: String(localized: "Keypad 1"),
+        84: String(localized: "Keypad 2"), 85: String(localized: "Keypad 3"), 86: String(localized: "Keypad 4"), 87: String(localized: "Keypad 5"), 88: String(localized: "Keypad 6"), 89: String(localized: "Keypad 7"),
+        91: String(localized: "Keypad 8"), 92: String(localized: "Keypad 9"), 96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9", 103: "F11",
         109: "F10", 111: "F12", 115: "Home", 116: "PageUp", 117: "⌦", 118: "F4", 119: "End", 120: "F2", 121: "PageDown",
-        122: "F1", 123: "←", 124: "→", 125: "↓", 126: "↑", 102: "英数", 104: "かな",
+        122: "F1", 123: "←", 124: "→", 125: "↓", 126: "↑", 102: String(localized: "Eisu"), 104: String(localized: "Kana"),
     ]
 
     /// `controllers`: connected controllers, used to add the printed label of face buttons
-    /// ("パッド1 右ボタン(A)").
+    /// ("Pad 1 Right Button(A)").
     static func displayName(_ physicalID: String, controllers: [ControllerInfo]) -> String {
         let base = displayName(physicalID)
         guard physicalID.hasPrefix("gc"), let colon = physicalID.firstIndex(of: ":"),
@@ -235,21 +241,21 @@ enum InputCatalog {
 
     static func displayName(_ physicalID: String) -> String {
         if physicalID.hasPrefix("kb:"), let code = UInt16(physicalID.dropFirst(3)) {
-            return "キー " + (keyNames[code] ?? "#\(code)")
+            return String(localized: "Key \(keyNames[code] ?? "#\(code)")")
         }
         if physicalID.hasPrefix("gc"), let colon = physicalID.firstIndex(of: ":") {
             let slot = Int(physicalID[physicalID.index(physicalID.startIndex, offsetBy: 2)..<colon]) ?? 0
             let name = String(physicalID[physicalID.index(after: colon)...])
             let pretty: [String: String] = [
-                "face.south": "下ボタン", "face.east": "右ボタン", "face.west": "左ボタン", "face.north": "上ボタン",
-                "buttonA": "A(旧設定)", "buttonB": "B(旧設定)", "buttonX": "X(旧設定)", "buttonY": "Y(旧設定)",
-                "dpad.up": "十字↑", "dpad.down": "十字↓", "dpad.left": "十字←", "dpad.right": "十字→",
-                "lstick.up": "左スティック↑", "lstick.down": "左スティック↓", "lstick.left": "左スティック←", "lstick.right": "左スティック→",
-                "rstick.up": "右スティック↑", "rstick.down": "右スティック↓", "rstick.left": "右スティック←", "rstick.right": "右スティック→",
+                "face.south": String(localized: "Bottom Button"), "face.east": String(localized: "Right Button"), "face.west": String(localized: "Left Button"), "face.north": String(localized: "Top Button"),
+                "buttonA": String(localized: "A (legacy)"), "buttonB": String(localized: "B (legacy)"), "buttonX": String(localized: "X (legacy)"), "buttonY": String(localized: "Y (legacy)"),
+                "dpad.up": String(localized: "D-pad ↑"), "dpad.down": String(localized: "D-pad ↓"), "dpad.left": String(localized: "D-pad ←"), "dpad.right": String(localized: "D-pad →"),
+                "lstick.up": String(localized: "L Stick ↑"), "lstick.down": String(localized: "L Stick ↓"), "lstick.left": String(localized: "L Stick ←"), "lstick.right": String(localized: "L Stick →"),
+                "rstick.up": String(localized: "R Stick ↑"), "rstick.down": String(localized: "R Stick ↓"), "rstick.left": String(localized: "R Stick ←"), "rstick.right": String(localized: "R Stick →"),
                 "leftShoulder": "L(L1/LB)", "rightShoulder": "R(R1/RB)", "leftTrigger": "ZL(L2/LT)", "rightTrigger": "ZR(R2/RT)",
                 "menu": "+(Menu)", "options": "−(Options)", "home": "Home", "leftThumb": "L3", "rightThumb": "R3",
             ]
-            return "パッド\(slot + 1) " + (pretty[name] ?? name)
+            return String(localized: "Pad \(slot + 1) \(pretty[name] ?? name)")
         }
         return physicalID
     }

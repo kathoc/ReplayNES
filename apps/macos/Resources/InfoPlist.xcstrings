@@ -1,0 +1,26 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NES ROM": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NES ROM"
+          }
+        }
+      }
+    },
+    "ReplayNES Project": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES プロジェクト"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

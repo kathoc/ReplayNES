@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openedAtLaunch = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Keep the menu bar compact: no "Show Tab Bar", no dictation / emoji items in 編集.
+        // Keep the menu bar compact: no "Show Tab Bar", no dictation / emoji items in Edit.
         NSWindow.allowsAutomaticWindowTabbing = false
         UserDefaults.standard.set(true, forKey: "NSDisabledDictationMenuItem")
         UserDefaults.standard.set(true, forKey: "NSDisabledCharacterPaletteMenuItem")
@@ -34,10 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --session-root <dir>  use <dir> instead of ~/Library/Application Support/ReplayNES/Session
         //                       for the temporary project + resume record (scripted runs without it
         //                       keep quick play in memory and never resume)
-        //   --crt               enable the ブラウン管 (CRT) display for this run (not saved)
-        //   --inject-pad / --test-actions / --snapshot-at   scripted checks (TestHooks.swift)
+        //   --crt               enable the CRT display for this run (not saved)
+        //   --inject-pad / --test-actions / --snapshot-at / --snapshot-windows   scripted checks (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
-        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at"].contains { args.contains($0) }
+        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows"].contains { args.contains($0) }
         if !args.contains("--no-updater") && !scripted {
             UpdaterModel.shared.start(arguments: args)
         }
@@ -54,8 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.setupSessionPersistence(root: sessionRoot.map { URL(fileURLWithPath: $0) }, enabled: !scripted || sessionRoot != nil)
         if let err = model.library.start() {
             DispatchQueue.main.async {
-                self.model.showError("ライブラリのフォルダを作成できませんでした",
-                                     err + "\n\n「書類」フォルダへのアクセスを許可しているか確認してください（システム設定 → プライバシーとセキュリティ → ファイルとフォルダ）。ライブラリ画面の「再試行」でもう一度作成できます。")
+                self.model.showError(String(localized: "Couldn’t create the library folder"),
+                                     err + "\n\n" + String(localized: "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” in the library window."))
             }
         }
         if let name = arg("--library-play") {
@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let pad = arg("--inject-pad") { model.scheduleInjectedPad(pad) }
         if let acts = arg("--test-actions") { model.scheduleTestActions(acts) }
         if let snaps = arg("--snapshot-at") { model.scheduleSnapshots(snaps) }
+        if let snaps = arg("--snapshot-windows") { model.scheduleWindowSnapshots(snaps) }
         if let snap = arg("--snapshot") {
             let delay = Double(arg("--snapshot-delay") ?? "3") ?? 3
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -132,19 +133,19 @@ struct ReplayNESApp: App {
             AppCommands(model: AppModel.shared, menu: AppModel.shared.menu, stream: StreamOutputModel.shared)
         }
 
-        Window("ライブラリ", id: "library") {
+        Window("Library", id: "library") {
             LibraryWindow().environmentObject(AppModel.shared)
         }
         .defaultSize(width: 860, height: 560)
         .commandsRemoved()
 
-        Window("テイク一覧", id: "takes") {
+        Window("Takes", id: "takes") {
             TakesPanel().environmentObject(AppModel.shared)
         }
         .defaultSize(width: 720, height: 420)
         .commandsRemoved()
 
-        Window("操作ガイド", id: "guide") {
+        Window("Controls Guide", id: "guide") {
             GuideView()
         }
         .defaultSize(width: 620, height: 640)
@@ -156,7 +157,7 @@ struct ReplayNESApp: App {
     }
 }
 
-/// Menu bar: ReplayNES / ファイル / 編集 (text fields only) / 再生 / 表示 / ウインドウ / ヘルプ.
+/// Menu bar: ReplayNES / File / Edit (text fields only) / Playback / View / Window / Help.
 /// Default items that do nothing useful here are removed (see also AppDelegate.applicationWillFinishLaunching).
 struct AppCommands: Commands {
     // Not observed: AppModel publishes every frame, which would rebuild (and flicker) the menu bar.
@@ -173,94 +174,94 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .systemServices) {}
         CommandGroup(replacing: .appVisibility) {}
 
-        // ファイル
+        // File
         CommandGroup(replacing: .newItem) {
             // ⌘L is the latency overlay; ⇧⌘L is free.
-            Button("ライブラリ…") { openWindow(id: "library") }.keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("Library…") { openWindow(id: "library") }.keyboardShortcut("l", modifiers: [.command, .shift])
             Divider()
-            Button("新規プロジェクト…") { model.newProject() }.keyboardShortcut("n")
-            Button("プロジェクトを開く…") { model.openProjectPanel() }.keyboardShortcut("o")
-            Button("ROMを開いて試す（プロジェクトなし）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("New Project…") { model.newProject() }.keyboardShortcut("n")
+            Button("Open Project…") { model.openProjectPanel() }.keyboardShortcut("o")
+            Button("Try a ROM (No Project)…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .saveItem) {
-            Button("保存") { model.saveSync() }.keyboardShortcut("s").disabled(!menu.v.hasSession)
-            Button("別名で保存…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!menu.v.hasSession)
+            Button("Save") { model.saveSync() }.keyboardShortcut("s").disabled(!menu.v.hasSession)
+            Button("Save As…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!menu.v.hasSession)
             Divider()
-            Button("MP4に書き出す…") { model.showExport = true }.keyboardShortcut("e")
+            Button("Export MP4…") { model.showExport = true }.keyboardShortcut("e")
                 .disabled(!menu.v.hasSession || menu.v.takeEmpty)
             Divider()
-            Button("プロジェクトを閉じる") { model.closeProject() }.disabled(!menu.v.hasSession)
+            Button("Close Project") { model.closeProject() }.disabled(!menu.v.hasSession)
         }
         CommandGroup(replacing: .printItem) {}
         CommandGroup(replacing: .importExport) {}
 
-        // 編集: only what text fields (names) need.
+        // Edit: only what text fields (names) need.
         CommandGroup(replacing: .undoRedo) {}
         CommandGroup(replacing: .textEditing) {}
         CommandGroup(replacing: .textFormatting) {}
 
-        // 再生
-        CommandMenu("再生") {
+        // Playback
+        CommandMenu("Playback") {
             let st = menu.v
             let has = st.hasSession
-            Button(st.paused ? "再開" : "一時停止") { model.togglePause() }.keyboardShortcut("p").disabled(!has)
-            Button("コマ送り") { model.frameAdvance() }.keyboardShortcut(.rightArrow, modifiers: [.command]).disabled(!has)
-            Button("1コマ戻る") { model.stepBack() }.keyboardShortcut(.leftArrow, modifiers: [.command]).disabled(!has)
-            Button("1秒戻る") { model.jump(seconds: -1) }.keyboardShortcut("[", modifiers: [.command]).disabled(!has)
-            Button("1秒進む（録画済みの範囲）") { model.jump(seconds: 1) }.keyboardShortcut("]", modifiers: [.command])
+            Button(st.paused ? String(localized: "Resume") : String(localized: "Pause")) { model.togglePause() }.keyboardShortcut("p").disabled(!has)
+            Button("Frame Advance") { model.frameAdvance() }.keyboardShortcut(.rightArrow, modifiers: [.command]).disabled(!has)
+            Button("Step Back One Frame") { model.stepBack() }.keyboardShortcut(.leftArrow, modifiers: [.command]).disabled(!has)
+            Button("Back 1 Second") { model.jump(seconds: -1) }.keyboardShortcut("[", modifiers: [.command]).disabled(!has)
+            Button("Forward 1 Second (Recorded Range)") { model.jump(seconds: 1) }.keyboardShortcut("]", modifiers: [.command])
                 .disabled(!has || st.practicing)
-            Button(st.practicing ? "Aへ戻る" : "先頭へ") { model.seek(to: 0) }.keyboardShortcut(.upArrow, modifiers: [.command]).disabled(!has)
-            Toggle("スロー（1/2）", isOn: Binding(get: { st.slowOn }, set: { model.setSlow($0 ? .half : .normal) }))
+            Button(st.practicing ? String(localized: "Back to A") : String(localized: "Go to Start")) { model.seek(to: 0) }.keyboardShortcut(.upArrow, modifiers: [.command]).disabled(!has)
+            Toggle("Slow Motion (1/2)", isOn: Binding(get: { st.slowOn }, set: { model.setSlow($0 ? .half : .normal) }))
                 .keyboardShortcut("2").disabled(!has)
             Divider()
-            Toggle("録画モード", isOn: Binding(get: { st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
+            Toggle("Record Mode", isOn: Binding(get: { st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
                 .keyboardShortcut("m", modifiers: [.command, .shift]).disabled(!has || st.practicing)
-            Button(st.practicing ? "練習をやめる" : (st.showPracticePanel ? "練習パネルを隠す" : "練習モード（A/B リピート）…")) {
+            Button(st.practicing ? String(localized: "Stop Practicing") : (st.showPracticePanel ? String(localized: "Hide Practice Panel") : String(localized: "Practice Mode (A/B Repeat)…"))) {
                 model.togglePracticePanel()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!has)
-            Button("選択中の区間のAをここに（タイムライン）") { model.timelineMarkA() }
+            Button("Set A of Selected Section Here (Timeline)") { model.timelineMarkA() }
                 .keyboardShortcut("i", modifiers: [.command, .option]).disabled(!has || st.practicing)
-            Button("選択中の区間のBをここに（タイムライン）") { model.timelineMarkB() }
+            Button("Set B of Selected Section Here (Timeline)") { model.timelineMarkB() }
                 .keyboardShortcut("o", modifiers: [.command, .option]).disabled(!has || st.practicing)
             Divider()
-            Button("ブックマークを追加") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
-            Button("前の試行へ戻す") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
+            Button("Add Bookmark") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
+            Button("Back to Previous Take") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
                 .disabled(!has || !st.undoAvailable || st.practicing)
-            Menu("リセット・電源") {
-                Button("ソフトリセット") { model.softReset() }.keyboardShortcut("r")
-                Button("電源再投入") { model.powerCycle() }.keyboardShortcut("r", modifiers: [.command, .shift])
+            Menu("Reset & Power") {
+                Button("Soft Reset") { model.softReset() }.keyboardShortcut("r")
+                Button("Power Cycle") { model.powerCycle() }.keyboardShortcut("r", modifiers: [.command, .shift])
             }
             .disabled(!has || (!st.recording && !st.practicing))
         }
 
-        // 表示
+        // View
         CommandGroup(replacing: .toolbar) {
-            Button("フルスクリーン") { (NSApp.keyWindow ?? model.mainWindow)?.toggleFullScreen(nil) }
+            Button("Full Screen") { (NSApp.keyWindow ?? model.mainWindow)?.toggleFullScreen(nil) }
                 .keyboardShortcut("f", modifiers: [.command, .control])
             Divider()
         }
         CommandGroup(before: .sidebar) {
-            Picker("表示サイズ", selection: Binding(get: { menu.v.integerScale }, set: { model.integerScale = $0 })) {
-                Text("等倍（くっきり整数倍）").tag(true)
-                Text("FILL（ウインドウいっぱい）").tag(false)
+            Picker("Display Size", selection: Binding(get: { menu.v.integerScale }, set: { model.integerScale = $0 })) {
+                Text("Pixel-Perfect (Integer Scale)").tag(true)
+                Text("FILL (Fit Window)").tag(false)
             }
-            Button("等倍 / FILL を切り替え") { model.integerScale.toggle() }.keyboardShortcut("f")
+            Button("Toggle Pixel-Perfect / FILL") { model.integerScale.toggle() }.keyboardShortcut("f")
             Divider()
-            Toggle("サイドバー", isOn: Binding(get: { menu.v.showSidebar }, set: { model.showSidebar = $0 })).keyboardShortcut("s", modifiers: [.command, .option])
-            Button("テイク一覧") { openWindow(id: "takes") }.keyboardShortcut("t", modifiers: [.command, .shift])
+            Toggle("Sidebar", isOn: Binding(get: { menu.v.showSidebar }, set: { model.showSidebar = $0 })).keyboardShortcut("s", modifiers: [.command, .option])
+            Button("Takes") { openWindow(id: "takes") }.keyboardShortcut("t", modifiers: [.command, .shift])
             Divider()
-            Picker("フラッシュ低減", selection: Binding(get: { menu.v.flashReduction }, set: { model.flashReduction = $0 })) {
+            Picker("Flash Reduction", selection: Binding(get: { menu.v.flashReduction }, set: { model.flashReduction = $0 })) {
                 ForEach(FlashLevel.allCases) { Text($0.label).tag($0.rawValue) }
             }
-            Toggle("配信出力 (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
-            Toggle("レイテンシ表示", isOn: Binding(get: { menu.v.showLatency }, set: { model.showLatency = $0 })).keyboardShortcut("l")
+            Toggle("Stream Output (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
+            Toggle("Show Latency", isOn: Binding(get: { menu.v.showLatency }, set: { model.showLatency = $0 })).keyboardShortcut("l")
             Divider()
         }
 
-        // ヘルプ
+        // Help
         CommandGroup(replacing: .help) {
-            Button("操作ガイド") { openWindow(id: "guide") }.keyboardShortcut("?", modifiers: [.command])
+            Button("Controls Guide") { openWindow(id: "guide") }.keyboardShortcut("?", modifiers: [.command])
         }
     }
 }

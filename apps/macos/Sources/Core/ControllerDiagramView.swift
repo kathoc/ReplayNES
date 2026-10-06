@@ -111,7 +111,7 @@ struct ControllerDiagramView: View {
             InputCatalog.allActions.first { $0.id == id }?.label ?? id
         }
         return ControllerAssignments.title(element: element, family: family, labels: self.labels) + ": "
-            + (labels.isEmpty ? "なし" : labels.joined(separator: " / "))
+            + (labels.isEmpty ? String(localized: "None") : labels.joined(separator: " / "))
     }
 
     private func arrow(_ element: String) -> Image {
@@ -182,7 +182,7 @@ struct ControllerBodyShape: Shape {
     }
 }
 
-/// Popover list: 「なし」 + every action, grouped; the current one(s) checked.
+/// Popover list: "None" + every action, grouped; the current one(s) checked.
 struct AssignmentPicker: View {
     let title: String
     let current: [String]
@@ -193,12 +193,12 @@ struct AssignmentPicker: View {
         let groups: [InputAction.Group] = slot == 1 ? [.player2, .player1, .hotkey] : [.player1, .player2, .hotkey]
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
-            Text("このボタンに割り当てる操作").font(.caption).foregroundStyle(.secondary)
+            Text("Action for this button").font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    row("なし", checked: current.isEmpty) { pick(nil) }
+                    row(String(localized: "None"), checked: current.isEmpty) { pick(nil) }
                     ForEach(groups, id: \.self) { g in
-                        Text(g.rawValue).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
+                        Text(g.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
                         ForEach(InputCatalog.allActions.filter { $0.group == g }) { a in
                             row(a.label, checked: current.contains(a.id)) { pick(a.id) }
                         }
@@ -207,7 +207,7 @@ struct AssignmentPicker: View {
             }
             .frame(width: 300, height: 340)
             if current.count > 1 {
-                Text("選ぶと、このボタンの割り当てはその操作だけになります。").font(.caption2).foregroundStyle(.secondary)
+                Text("Choosing one makes it the only action assigned to this button.").font(.caption2).foregroundStyle(.secondary)
             }
         }
         .padding(12)

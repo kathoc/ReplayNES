@@ -37,7 +37,7 @@ enum TimelineHit: Equatable {
     case none
 }
 
-/// What 「Aをここに」 / 「Bをここに」 at the playhead does.
+/// What "Set A Here" / "Set B Here" at the playhead does.
 enum TimelineMarkPlan: Equatable {
     case setRange(a: UInt64, b: UInt64)  // rn_practice_set_range
     case setAOnly                        // rn_practice_set_a at the cursor (B cleared)
@@ -94,17 +94,17 @@ enum TimelineEditing {
         }
     }
 
-    /// 「Aをここに」 at cursor f. `existing` = the slot as visible on the active take (nil if empty
+    /// "Set A Here" at cursor f. `existing` = the slot as visible on the active take (nil if empty
     /// or set elsewhere).
     static func markA(at f: UInt64, existing: TimelineRange?) -> TimelineMarkPlan {
         if let r = existing, let b = r.b, f < b { return .setRange(a: f, b: b) }
         return .setAOnly
     }
 
-    /// 「Bをここに」 at cursor f.
+    /// "Set B Here" at cursor f.
     static func markB(at f: UInt64, existing: TimelineRange?) -> TimelineMarkPlan {
-        guard let r = existing else { return .invalid("先にこの区間のAを設定してください") }
-        guard f > r.a else { return .invalid("BはAより後ろの位置で設定してください") }
+        guard let r = existing else { return .invalid(String(localized: "Set A of this section first")) }
+        guard f > r.a else { return .invalid(String(localized: "Set B at a position after A")) }
         return .setRange(a: r.a, b: f)
     }
 

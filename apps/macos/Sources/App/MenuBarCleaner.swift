@@ -1,6 +1,6 @@
 // Keeps the menu bar compact: AppKit / SwiftUI insert items that make no sense in a game
-// recorder (empty フォーマット menu, 作文ツール / 自動入力 in 編集). They are removed whenever menus
-// change. Menu order stays the standard one (ファイル 編集 表示 再生 ウインドウ ヘルプ): moving
+// recorder (empty Format menu, Writing Tools / AutoFill in Edit). They are removed whenever menus
+// change. Menu order stays the standard one (File Edit View Playback Window Help): moving
 // SwiftUI-managed menus breaks their updates. Only the main menu bar is touched.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
@@ -52,16 +52,16 @@ final class MenuBarCleaner {
         for item in bar.items.dropFirst() { // never the application menu
             guard let sub = item.submenu else { continue }
             if sub.items.contains(where: { $0.action == #selector(NSText.paste(_:)) }) {
-                // 編集: keep only cut/copy/paste/delete/select all.
+                // Edit: keep only cut/copy/paste/delete/select all.
                 for i in sub.items.reversed() where !i.isSeparatorItem && !(i.action.map(Self.editActions.contains) ?? false) {
                     sub.removeItem(i)
                 }
                 while let f = sub.items.first, f.isSeparatorItem { sub.removeItem(f) }
             }
         }
-        // The empty フォーマット menu (its only group is replaced with nothing). Other menus may be
+        // The empty Format menu (its only group is replaced with nothing). Other menus may be
         // populated lazily by SwiftUI, so only this one is removed, and only while empty.
-        for item in bar.items.dropFirst().reversed() where ["フォーマット", "Format"].contains(item.title) {
+        for item in bar.items.dropFirst().reversed() where ["Format", String(localized: "Format")].contains(item.title) {
             if let sub = item.submenu, !sub.items.contains(where: { !$0.isSeparatorItem && !$0.isHidden }) {
                 bar.removeItem(item)
             }

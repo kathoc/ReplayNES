@@ -272,7 +272,7 @@ final class PlaybackLogicTests: XCTestCase {
         try s.rewind(100)
         XCTAssertEqual(s.practiceFrame, 0)
 
-        try s.setMode(RN_MODE_RECORD) // 「練習をやめる」
+        try s.setMode(RN_MODE_RECORD) // "Stop Practicing"
         XCTAssertEqual(s.takeLength, takeLen)
         XCTAssertEqual(s.frame, frame)
         XCTAssertEqual(s.takes().count, takes)

@@ -30,8 +30,8 @@ final class StreamOutputTests: XCTestCase {
 
     func testDefaultAndLabels() {
         XCTAssertEqual(StreamOutputSize.default, .x4)
-        XCTAssertEqual(StreamOutputSize.x1.label(par87: false), "原寸 256×240")
-        XCTAssertEqual(StreamOutputSize.x4.label(par87: false), "4倍 1024×960")
+        XCTAssertEqual(StreamOutputSize.x1.label(par87: false), "Native 256×240")
+        XCTAssertEqual(StreamOutputSize.x4.label(par87: false), "4× 1024×960")
         XCTAssertTrue(StreamOutputSize.w1280.label(par87: true).hasPrefix("1280×960"))
         // Raw values are persisted in user defaults: keep them stable.
         XCTAssertEqual(StreamOutputSize.allCases.map(\.rawValue), ["x1", "x2", "x3", "x4", "w1280", "w1920"])

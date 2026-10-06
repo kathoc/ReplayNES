@@ -17,7 +17,7 @@ struct ExportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("MP4に書き出す").font(.title2.bold())
+            Text("Export to MP4").font(.title2.bold())
             if let job = model.exportJob {
                 ExportProgressView(job: job) { model.exportJob = nil; dismiss() }
             } else {
@@ -42,59 +42,60 @@ struct ExportSheet: View {
 
     @ViewBuilder private var form: some View {
         Form {
-            Picker("コーデック", selection: $settings.codec) {
+            Picker("Codec", selection: $settings.codec) {
                 ForEach(ExportSettings.Codec.allCases) { Text($0.label).tag($0) }
             }
-            Picker("サイズ", selection: $settings.preset) {
+            Picker("Size", selection: $settings.preset) {
                 ForEach(ExportSettings.SizePreset.all) { Text($0.label).tag($0) }
             }
-            Toggle("オーバースキャンを隠す（上下 8px をクロップ）", isOn: $cropOverscan)
-            Picker("ピクセル比", selection: $settings.pixelAspect87) {
-                Text("1:1（正方形ピクセル）").tag(false)
-                Text("8:7（ブラウン管の見た目）").tag(true)
+            Toggle("Hide overscan (crop 8 px top and bottom)", isOn: $cropOverscan)
+            Picker("Pixel Aspect Ratio", selection: $settings.pixelAspect87) {
+                Text("1:1 (square pixels)").tag(false)
+                Text("8:7 (as on a CRT TV)").tag(true)
             }
             Toggle(isOn: $applyFlash) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("フラッシュ低減を適用")
-                    Text("激しい点滅を抑えた映像で書き出します（強さ: \(exportFlashLevel.label)。設定 → 表示・音声で変更）。オフにすると記録どおりの映像です。")
+                    Text("Apply Flash Reduction")
+                    Text("Exports the video with intense flashing reduced (level: \(exportFlashLevel.label); change it in Settings → Display & Audio). When off, the video is exactly as recorded.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Toggle(isOn: $applyCRT) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ブラウン管効果を適用")
-                    Text("表示 → ブラウン管 (CRT) の設定で、同じ Metal パイプラインを使って 1 フレームずつ描画します（4:3・内部解像度は最大 1600×1200、1280×960 などの 4:3 サイズ向き）。書き出しは遅くなります。")
+                    Text("Apply CRT Effect")
+                    Text("Renders each frame with the CRT Display settings, using the same Metal pipeline (4:3, internal resolution up to 1600×1200; best with 4:3 sizes such as 1280×960). Exporting is slower.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Toggle("テイク全体", isOn: $wholeTake)
+            Toggle("Whole Take", isOn: $wholeTake)
             if !wholeTake {
                 HStack {
-                    TextField("開始フレーム", value: $startFrame, format: .number)
-                    TextField("終了フレーム", value: $endFrame, format: .number)
+                    TextField("Start Frame", value: $startFrame, format: .number)
+                    TextField("End Frame", value: $endFrame, format: .number)
                 }
             }
             let g = geometry
-            LabeledContent("出力") {
-                Text("\(g.canvasWidth)×\(g.canvasHeight)（画像 \(g.dstWidth)×\(g.dstHeight)、縦 \(g.verticalScale) 倍・最近傍）")
+            LabeledContent("Output") {
+                let canvas = "\(g.canvasWidth)×\(g.canvasHeight)", picture = "\(g.dstWidth)×\(g.dstHeight)"
+                Text("\(canvas) (picture \(picture), vertical ×\(g.verticalScale), nearest neighbor)")
                     .font(.caption)
             }
-            LabeledContent("長さ") {
+            LabeledContent("Length") {
                 let frames = wholeTake ? model.status.takeLength : UInt64(max(0, endFrame - startFrame))
-                Text("\(Engine.timecode(forFrame: frames))（\(frames) フレーム, 60.0988 fps, AAC 48 kHz）").font(.caption)
+                Text("\(Engine.timecode(forFrame: frames)) (\(frames) frames, 60.0988 fps, AAC 48 kHz)").font(.caption)
             }
         }
-        Text("書き出しは記録された入力を最初から別のエミュレーターで再実行して作ります。プロジェクトは変更されず、書き出し中もプレイを続けられます。")
+        Text("The export is made by re-running the recorded input from the start in a separate emulator. The project is not changed, and you can keep playing while it exports.")
             .font(.caption).foregroundStyle(.secondary)
         HStack {
             Spacer()
-            Button("キャンセル") { dismiss() }.keyboardShortcut(.cancelAction)
-            Button("書き出す…") { chooseAndStart() }.keyboardShortcut(.defaultAction)
+            Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+            Button("Export…") { chooseAndStart() }.keyboardShortcut(.defaultAction)
                 .disabled(model.status.takeLength == 0)
         }
     }
 
-    /// The current setting's level; 標準 when the setting is off but the export option is turned on.
+    /// The current setting's level; Standard when the setting is off but the export option is turned on.
     private var exportFlashLevel: FlashLevel { model.flashLevel == .off ? .standard : model.flashLevel }
 
     private func chooseAndStart() {
@@ -110,10 +111,10 @@ struct ExportSheet: View {
             s.endFrame = UInt64(max(0, min(endFrame, Int(model.status.takeLength))))
         }
         do { try s.validate() } catch {
-            model.showError("書き出せません", error.localizedDescription); return
+            model.showError(String(localized: "Can’t export"), error.localizedDescription); return
         }
         let panel = NSSavePanel()
-        panel.title = "MP4の保存先"
+        panel.title = String(localized: "Where to Save the MP4")
         panel.allowedContentTypes = [.mpeg4Movie]
         let base = model.status.projectPath.isEmpty ? model.status.romPath : model.status.projectPath
         panel.nameFieldStringValue = URL(fileURLWithPath: base).deletingPathExtension().lastPathComponent + ".mp4"
@@ -131,23 +132,23 @@ struct ExportProgressView: View {
             Text(job.url.lastPathComponent).font(.headline)
             if job.finished {
                 if let r = job.result {
-                    Label("書き出しが完了しました", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("\(r.frames) フレーム · \(String(format: "%.2f", r.duration)) 秒 · 音声 \(r.audioSamples) サンプル")
+                    Label("Export finished", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("\(r.frames) frames · \(String(format: "%.2f", r.duration)) s · \(r.audioSamples) audio samples")
                         .font(.caption)
-                    Text(String(format: "再生ハッシュ %016llx", r.rendererHash)).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Text(String(format: String(localized: "Replay hash %016llx"), r.rendererHash)).font(.caption.monospaced()).foregroundStyle(.secondary)
                     HStack {
-                        Button("Finderで表示") { NSWorkspace.shared.activateFileViewerSelecting([r.url]) }
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([r.url]) }
                         Spacer()
-                        Button("閉じる", action: close).keyboardShortcut(.defaultAction)
+                        Button("Close", action: close).keyboardShortcut(.defaultAction)
                     }
                 } else {
-                    Label(job.error ?? "失敗しました", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    HStack { Spacer(); Button("閉じる", action: close).keyboardShortcut(.defaultAction) }
+                    Label(job.error ?? String(localized: "Failed"), systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    HStack { Spacer(); Button("Close", action: close).keyboardShortcut(.defaultAction) }
                 }
             } else {
                 ProgressView(value: job.total == 0 ? 0 : Double(job.done) / Double(job.total))
-                Text("\(job.done) / \(job.total) フレーム").font(.caption.monospaced())
-                HStack { Spacer(); Button("キャンセル") { job.cancel() }.keyboardShortcut(.cancelAction) }
+                Text("\(job.done) / \(job.total) frames").font(.caption.monospaced())
+                HStack { Spacer(); Button("Cancel") { job.cancel() }.keyboardShortcut(.cancelAction) }
             }
         }
     }

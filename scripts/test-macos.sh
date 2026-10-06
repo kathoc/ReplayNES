@@ -2,6 +2,8 @@
 # Headless checks for the macOS frontend:
 #  1. XCTest bundle (exporter, geometry, audio ring, input config) - no UI, no host app.
 #  2. The H.264 smoke export written by the test is verified with ffprobe when available.
+#  3. Localization (scripts/check-l10n.py): no hard-coded Japanese in the Swift sources, every
+#     String Catalog entry translated, and catalog keys == strings extracted by this build.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPDIR="$ROOT/apps/macos"
@@ -16,6 +18,9 @@ TEST_RUNNER_RN_SMOKE_MP4="$SMOKE" xcodebuild -project "$APPDIR/ReplayNES.xcodepr
   -destination 'platform=macOS,arch=arm64' -derivedDataPath "$ROOT/build/DerivedData" test \
   | grep -E "Test Case .*(passed|failed)|error:|Executed|\*\* TEST" \
   || { echo "xcodebuild test failed"; exit 1; } # pipefail: xcodebuild's status (PIPESTATUS after "|| true" was always 0)
+
+echo "==> localization check"
+python3 "$ROOT/scripts/check-l10n.py" --stringsdata "$ROOT/build/DerivedData/Build/Intermediates.noindex/ReplayNES.build"
 
 [ -f "$SMOKE" ] || { echo "smoke export missing: $SMOKE"; exit 1; }
 if command -v ffprobe >/dev/null; then

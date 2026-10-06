@@ -1,6 +1,6 @@
 // Streaming output for OBS & co. via Syphon (OBS on macOS: "Syphon Client" source).
 // Publishes the game frame as displayed (after the flash reduction filter, before any UI; with the
-// CRT model when 表示 → ブラウン管 (CRT) → 配信出力 says so) from
+// CRT model when Settings → CRT Display → Stream Output says so) from
 // its own queue: it polls the shared FrameBuffer exactly like the on-screen renderer, so the
 // emulation thread is never waited on and a slow consumer only drops output frames.
 // Off unless enabled (settings, menu, or the --syphon launch argument for this run only).
@@ -56,7 +56,7 @@ final class SyphonPublisher {
     /// Throws (with a user-facing reason) when Metal or the Syphon server is unavailable.
     init(frames: FrameBuffer) throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
-            throw SyphonOutputError("Metal を利用できません")
+            throw SyphonOutputError(String(localized: "Metal isn’t available"))
         }
         let lib = try device.makeLibrary(source: Self.shader, options: nil)
         let d = MTLRenderPipelineDescriptor()
@@ -69,12 +69,12 @@ final class SyphonPublisher {
         td.usage = .shaderRead
         td.storageMode = .shared
         sources = try (0..<(Self.maxInFlight + 1)).map { _ in
-            guard let t = device.makeTexture(descriptor: td) else { throw SyphonOutputError("テクスチャを作成できません") }
+            guard let t = device.makeTexture(descriptor: td) else { throw SyphonOutputError(String(localized: "Can’t create the texture")) }
             return t
         }
         let server = SyphonMetalServer(name: Self.serverName, device: device, options: nil)
         // Imported as non-failable, but the Objective-C initializer returns nil on failure.
-        guard unsafeBitCast(server, to: UInt.self) != 0 else { throw SyphonOutputError("Syphon サーバーを開始できません") }
+        guard unsafeBitCast(server, to: UInt.self) != 0 else { throw SyphonOutputError(String(localized: "Can’t start the Syphon server")) }
         self.frames = frames
         self.device = device
         self.queue = queue
@@ -115,7 +115,7 @@ final class SyphonPublisher {
         // Nobody watching: do nothing and leave the frame unconsumed, so a client that connects
         // later (even while paused) gets the current frame on the next tick.
         guard timer != nil, inFlight < Self.maxInFlight, server.hasClients else { return }
-        // CRT picture (nesterm physical model) when chosen in 表示 → ブラウン管 (CRT). Its own
+        // CRT picture (nesterm physical model) when chosen in Settings → CRT Display. Its own
         // pipeline instance at the Syphon canvas size: deterministic for the same frame sequence.
         let crtState = CRTSettingsModel.shared.snapshot
         if crtState.syphonUsesCRT != usingCRT {
@@ -262,22 +262,22 @@ final class StreamOutputModel: ObservableObject {
 
 // MARK: UI hooks
 
-/// Settings section (表示・音声 tab).
+/// Settings section (Display & Audio tab).
 struct StreamOutputSection: View {
     @ObservedObject var stream = StreamOutputModel.shared
     var body: some View {
-        Section("配信出力 (Syphon)") {
-            Toggle("配信出力 (Syphon)", isOn: Binding(get: { stream.isOn }, set: { stream.setOn($0) }))
-            Picker("出力サイズ", selection: $stream.sizeRaw) {
+        Section("Stream Output (Syphon)") {
+            Toggle("Stream Output (Syphon)", isOn: Binding(get: { stream.isOn }, set: { stream.setOn($0) }))
+            Picker("Output Size", selection: $stream.sizeRaw) {
                 ForEach(StreamOutputSize.allCases) { Text($0.label(par87: stream.par87)).tag($0.rawValue) }
             }
-            Toggle("ピクセル比 8:7", isOn: $stream.par87)
+            Toggle("8:7 Pixel Aspect Ratio", isOn: $stream.par87)
             if let f = stream.failure {
-                Text("開始できませんでした: \(f)").font(.caption).foregroundStyle(.red)
+                Text("Couldn’t start: \(f)").font(.caption).foregroundStyle(.red)
             } else if stream.active {
-                Text("Syphon出力中（サーバー名「\(SyphonPublisher.serverName)」）").font(.caption).foregroundStyle(.green)
+                Text("Syphon output active (server name “\(SyphonPublisher.serverName)”)").font(.caption).foregroundStyle(.green)
             }
-            Text("OBS の「Syphon クライアント」ソースで「ReplayNES」を選ぶと、ゲーム画面だけ（フラッシュ低減後・UI なし・オーバースキャン込みの 256×240 全体）を最近傍補間で拡大して取り込めます（ブラウン管 (CRT) を使う設定のときは 4:3 の CRT 画像）。音声は OBS の「macOS 音声キャプチャ」（アプリケーション音声）で ReplayNES を選んでください。")
+            Text("Choose “ReplayNES” in an OBS “Syphon Client” source to capture just the game picture (after flash reduction, no UI, the full 256×240 frame including overscan), scaled up with nearest-neighbor filtering (a 4:3 CRT picture when set to use the CRT display). For audio, choose ReplayNES in OBS’s “macOS Audio Capture” (application audio).")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -288,7 +288,7 @@ struct StreamOutputBadge: View {
     @ObservedObject var stream = StreamOutputModel.shared
     var body: some View {
         if stream.active {
-            Text("Syphon出力中").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            Text("Syphon Live").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Color.indigo.opacity(0.6), in: RoundedRectangle(cornerRadius: 5))
         }

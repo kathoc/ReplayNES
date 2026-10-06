@@ -92,7 +92,7 @@ TEST_CASE("branching: rewind + re-record creates a branch, old take preserved, u
   expectB.insert(expectB.end(), b.begin(), b.end());
   CHECK(s->timeline().flattenActive() == expectB);
   CHECK_EQ(straightReplay(CoreKind::Nestopia, expectB).finalState, endB);
-  // Undo ("前の試行へ戻す") goes back to take A at the branch frame.
+  // Undo ("Back to Previous Take") goes back to take A at the branch frame.
   REQUIRE(s->undoTakeSwitch().ok());
   CHECK_EQ(s->activeTake(), takeA);
   CHECK_EQ(s->frame(), 300u);

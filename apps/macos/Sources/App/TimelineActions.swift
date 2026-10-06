@@ -39,12 +39,11 @@ extension EmulationController {
         do {
             try s.practiceSetRange(slot, a: a, b: b)
             markStructureDirty()
-            notice("区間 \(slot + 1): A \(Engine.timecode(forFrame: a)) → B \(Engine.timecode(forFrame: b))"
-                   + "（長さ \(Engine.timecode(forFrame: b - a))）。区間をクリックで練習できます")
-        } catch { reportError("区間を設定できませんでした", error) }
+            notice(String(localized: "Section \(slot + 1): A \(Engine.timecode(forFrame: a)) → B \(Engine.timecode(forFrame: b)) (length \(Engine.timecode(forFrame: b - a))). Click the section to practice it"))
+        } catch { reportError(String(localized: "Couldn’t set the section"), error) }
     }
 
-    /// 「Aをここに」: A at the playhead, keeping B when it is still after A.
+    /// "Set A Here": A at the playhead, keeping B when it is still after A.
     func timelineMarkA(_ slot: Int) {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
@@ -55,7 +54,7 @@ extension EmulationController {
         }
     }
 
-    /// 「Bをここに」: B at the playhead for a slot whose A is on this take (no need to have played
+    /// "Set B Here": B at the playhead for a slot whose A is on this take (no need to have played
     /// continuously from A).
     func timelineMarkB(_ slot: Int) {
         guard let s = session else { return }
@@ -67,7 +66,7 @@ extension EmulationController {
         }
     }
 
-    /// OSD 「Bを設定」 after a seek since A: falls back to the take frames when A lies on this take.
+    /// OSD "Set B" after a seek since A: falls back to the take frames when A lies on this take.
     func practiceSetBFromTake(_ slot: Int) -> Bool {
         guard let s = session, s.mode != RN_MODE_PRACTICE,
               case .setRange(let a, let b) = TimelineEditing.markB(at: s.frame, existing: timelineRange(s, slot))
