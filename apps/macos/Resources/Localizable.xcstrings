@@ -2491,6 +2491,16 @@
         }
       }
     },
+    "Left Alt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左Alt"
+          }
+        }
+      }
+    },
     "Left Button": {
       "localizations": {
         "ja": {
@@ -2547,6 +2557,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "左スティック押し込み"
+          }
+        }
+      }
+    },
+    "Left Super": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左Super"
           }
         }
       }
@@ -4081,6 +4101,16 @@
         }
       }
     },
+    "Right Alt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右Alt"
+          }
+        }
+      }
+    },
     "Right Button": {
       "localizations": {
         "ja": {
@@ -4137,6 +4167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "右スティック押し込み"
+          }
+        }
+      }
+    },
+    "Right Super": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右Super"
           }
         }
       }

@@ -1,12 +1,10 @@
 // Controller families, positional face-button ids and the geometry of the settings diagram.
 //
 // Face buttons are bound by POSITION ("gc<slot>:face.south/east/west/north"), never by label:
-// GameController.framework names Xbox / PlayStation / MFi face buttons by position (buttonA =
-// south, the diamond documented in GCExtendedGamepad.h) but Nintendo controllers by their printed
-// label (Switch Pro / Joy-Con pair: buttonA = the "A" button = east; SDL's SDL_mfijoystick.m
-// handles the same quirk via `has_nintendo_buttons`). InputManager converts with
-// `GCFaceMapping` so NES A is always the east button and NES B the south button - Nintendo's
-// own A/B and the usual emulator convention for Xbox / PlayStation pads.
+// GameController.framework names Xbox / PlayStation / MFi face buttons by position but Nintendo
+// controllers by their printed label. InputManager converts with `GCFaceMapping` so NES A is
+// always the east button and NES B the south button. The rules and the diagram geometry live in
+// the shared frontend core (frontend/src/input.cpp, diagram.cpp); this file adapts them.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import CoreGraphics
 import Foundation
@@ -15,111 +13,82 @@ enum FacePosition: String, CaseIterable {
     case south, east, west, north
     /// Physical element name (the part of the id after "gc<slot>:").
     var element: String { "face." + rawValue }
+
+    var cValue: rnf_face_position {
+        switch self {
+        case .south: return RNF_FACE_SOUTH
+        case .east: return RNF_FACE_EAST
+        case .west: return RNF_FACE_WEST
+        case .north: return RNF_FACE_NORTH
+        }
+    }
+
+    init?(_ c: Int32) {
+        switch rnf_face_position(rawValue: UInt32(bitPattern: c)) {
+        case RNF_FACE_SOUTH: self = .south
+        case RNF_FACE_EAST: self = .east
+        case RNF_FACE_WEST: self = .west
+        case RNF_FACE_NORTH: self = .north
+        default: return nil
+        }
+    }
 }
 
 enum ControllerFamily: String, CaseIterable, Identifiable {
     case nintendo, xbox, playStation, generic
     var id: String { rawValue }
 
-    var title: String {
+    var cValue: rnf_controller_family {
         switch self {
-        case .nintendo: return String(localized: "Nintendo (Pro Controller / Joy-Con)")
-        case .xbox: return "Xbox"
-        case .playStation: return "PlayStation"
-        case .generic: return String(localized: "Other")
+        case .nintendo: return RNF_FAMILY_NINTENDO
+        case .xbox: return RNF_FAMILY_XBOX
+        case .playStation: return RNF_FAMILY_PLAYSTATION
+        case .generic: return RNF_FAMILY_GENERIC
         }
     }
 
-    /// From GCDevice.productCategory (e.g. "Switch Pro Controller", "Nintendo Switch Joy-Con (L/R)",
-    /// "Xbox One", "DualSense", "DualShock 4") and vendorName as a fallback.
+    /// Families the macOS app knows (a Steam Deck is "Other" here).
+    init(_ c: rnf_controller_family) {
+        switch c {
+        case RNF_FAMILY_NINTENDO: self = .nintendo
+        case RNF_FAMILY_XBOX: self = .xbox
+        case RNF_FAMILY_PLAYSTATION: self = .playStation
+        default: self = .generic
+        }
+    }
+
+    var title: String { rnfString(rnf_controller_family_title(cValue)) }
+
+    /// From GCDevice.productCategory (e.g. "Switch Pro Controller", "Xbox One", "DualSense") and
+    /// vendorName as a fallback.
     static func from(productCategory: String, vendorName: String? = nil) -> ControllerFamily {
-        let s = (productCategory + " " + (vendorName ?? "")).lowercased()
-        if s.contains("switch") || s.contains("joy-con") || s.contains("nintendo") || s.contains("pro controller") { return .nintendo }
-        if s.contains("dualsense") || s.contains("dualshock") || s.contains("playstation") { return .playStation }
-        if s.contains("xbox") { return .xbox }
-        return .generic
+        ControllerFamily(rnf_controller_family_from(productCategory, vendorName))
     }
 
     /// The printed label of a physical element on this family (fallback when the device does not
     /// report one).
-    func label(_ element: String) -> String {
-        switch (self, element) {
-        case (.nintendo, "face.south"): return "B"
-        case (.nintendo, "face.east"): return "A"
-        case (.nintendo, "face.west"): return "Y"
-        case (.nintendo, "face.north"): return "X"
-        case (.playStation, "face.south"): return "✕"
-        case (.playStation, "face.east"): return "○"
-        case (.playStation, "face.west"): return "□"
-        case (.playStation, "face.north"): return "△"
-        case (_, "face.south"): return "A"
-        case (_, "face.east"): return "B"
-        case (_, "face.west"): return "X"
-        case (_, "face.north"): return "Y"
-        case (.nintendo, "leftShoulder"): return "L"
-        case (.nintendo, "rightShoulder"): return "R"
-        case (.nintendo, "leftTrigger"): return "ZL"
-        case (.nintendo, "rightTrigger"): return "ZR"
-        case (.nintendo, "menu"): return "+"
-        case (.nintendo, "options"): return "−"
-        case (.nintendo, "home"): return "HOME"
-        case (.xbox, "leftShoulder"): return "LB"
-        case (.xbox, "rightShoulder"): return "RB"
-        case (.xbox, "leftTrigger"): return "LT"
-        case (.xbox, "rightTrigger"): return "RT"
-        case (.xbox, "menu"): return "≡"
-        case (.xbox, "options"): return "View"
-        case (.xbox, "home"): return "Xbox"
-        case (.playStation, "menu"): return "OPTIONS"
-        case (.playStation, "options"): return "CREATE"
-        case (.playStation, "home"): return "PS"
-        case (_, "leftShoulder"): return "L1"
-        case (_, "rightShoulder"): return "R1"
-        case (_, "leftTrigger"): return "L2"
-        case (_, "rightTrigger"): return "R2"
-        case (_, "menu"): return "Menu"
-        case (_, "options"): return "Options"
-        case (_, "home"): return "Home"
-        case (.xbox, "leftThumb"): return "LS"
-        case (.xbox, "rightThumb"): return "RS"
-        case (_, "leftThumb"): return "L3"
-        case (_, "rightThumb"): return "R3"
-        default: return ""
-        }
-    }
+    func label(_ element: String) -> String { String(cString: rnf_controller_family_label(cValue, element)) }
 
-    /// Diagram arrangement: Nintendo / Xbox / generic put the left stick above the D-pad;
-    /// PlayStation has both sticks at the bottom.
-    var isSymmetric: Bool { self == .playStation }
+    /// Diagram arrangement: PlayStation has both sticks at the bottom.
+    var isSymmetric: Bool { rnf_controller_family_is_symmetric(cValue) != 0 }
 }
 
 /// Where GameController.framework's buttonA/B/X/Y physically are.
 enum GCFaceMapping {
+    static let buttons = ["buttonA", "buttonB", "buttonX", "buttonY"]
+
     /// `symbols`: GCControllerElement.sfSymbolsName per GameController button ("buttonA" ...).
-    /// Nintendo-layout pads are not reported consistently: a genuine Switch Pro Controller names
-    /// buttonA after its "A" label (east), while e.g. an 8BitDo Pro 3 in Switch mode reports the
-    /// same category but positionally (buttonA = south, glyph "b.circle"). The printed glyph is the
-    /// reliable part, and on a Nintendo layout the glyph fixes the position (A east, B south,
-    /// X north, Y west), so it wins whenever the device reports all four.
+    /// Nintendo-layout pads are placed by their printed glyph when the device reports all four.
     static func positions(productCategory: String, vendorName: String? = nil,
                           symbols: [String: String?] = [:]) -> [String: FacePosition] {
-        let cat = productCategory.lowercased()
-        // A single Joy-Con held sideways (SDL_mfijoystick.m: A = south, B = west, X = east, Y = north).
-        if cat.contains("joy-con") && (cat.hasSuffix("(l)") || cat.hasSuffix("(r)")) {
-            return ["buttonA": .south, "buttonB": .west, "buttonX": .east, "buttonY": .north]
+        var out: [Int32] = [0, 0, 0, 0]
+        withCStrings(buttons.map { (symbols[$0] ?? nil) ?? "" }) { c in
+            let syms: [UnsafePointer<CChar>?] = buttons.indices.map { ((symbols[buttons[$0]] ?? nil) == nil) ? nil : c[$0] }
+            rnf_gc_face_positions(productCategory, vendorName, syms, &out)
         }
-        if ControllerFamily.from(productCategory: productCategory, vendorName: vendorName) == .nintendo {
-            let byLabel: [String: FacePosition] = ["A": .east, "B": .south, "X": .north, "Y": .west]
-            var fromGlyphs: [String: FacePosition] = [:]
-            for button in ["buttonA", "buttonB", "buttonX", "buttonY"] {
-                if let l = label(fromSymbol: symbols[button] ?? nil), let pos = byLabel[l] { fromGlyphs[button] = pos }
-            }
-            if fromGlyphs.count == 4, Set(fromGlyphs.values).count == 4 { return fromGlyphs }
-            // No glyphs: assume named by label (A is the right (east) button, B the bottom one).
-            return ["buttonA": .east, "buttonB": .south, "buttonX": .north, "buttonY": .west]
-        }
-        // Apple's documented diamond (GCExtendedGamepad.h): A bottom, B right, X left, Y top.
-        return ["buttonA": .south, "buttonB": .east, "buttonX": .west, "buttonY": .north]
+        var m: [String: FacePosition] = [:]
+        for (i, b) in buttons.enumerated() { m[b] = FacePosition(out[i]) }
+        return m
     }
 
     /// Micro gamepads (Siri Remote and the like): A = primary, X = secondary.
@@ -127,16 +96,8 @@ enum GCFaceMapping {
 
     /// Text for a face-button glyph reported by the device (GCControllerElement.sfSymbolsName).
     static func label(fromSymbol name: String?) -> String? {
-        guard let name else { return nil }
-        let base = name.replacingOccurrences(of: ".fill", with: "").replacingOccurrences(of: ".circle", with: "")
-        switch base {
-        case "a", "b", "x", "y": return base.uppercased()
-        case "xmark": return "✕"
-        case "circle": return "○"
-        case "square": return "□"
-        case "triangle": return "△"
-        default: return nil
-        }
+        guard let name, let l = rnf_gc_label_from_symbol(name) else { return nil }
+        return String(cString: l)
     }
 }
 
@@ -166,30 +127,39 @@ struct DiagramElement: Identifiable, Equatable {
     let badgeSide: Side
     /// "dpad", "lstick", "rstick" for directional parts (their badges may be merged).
     var group: String? = nil
+    /// Point where the assignment badge is anchored (badge grows away from the element).
+    let badgeAnchor: CGPoint
     var id: String { element }
 
     var frame: CGRect { CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height) }
 
-    /// Point where the assignment badge is anchored (badge grows away from the element).
-    var badgeAnchor: CGPoint {
-        let gap: CGFloat = 4
-        if kind == .stickClick {
-            // Outside the stick well, below its left/right arrow badges.
-            let r = ControllerDiagramLayout.stickRadius
-            let dx = r + gap
-            return CGPoint(x: badgeSide == .left ? center.x - dx : center.x + dx, y: center.y + r - 6)
+    init(_ e: rnf_diagram_element) {
+        element = String(cString: e.element)
+        switch e.kind {
+        case RNF_DIAGRAM_FACE: kind = .face
+        case RNF_DIAGRAM_DPAD: kind = .dpad
+        case RNF_DIAGRAM_STICK_DIRECTION: kind = .stickDirection
+        case RNF_DIAGRAM_STICK_CLICK: kind = .stickClick
+        case RNF_DIAGRAM_SHOULDER: kind = .shoulder
+        case RNF_DIAGRAM_TRIGGER: kind = .trigger
+        case RNF_DIAGRAM_SMALL: kind = .small
+        default: kind = .home
         }
-        switch badgeSide {
-        case .left: return CGPoint(x: frame.minX - gap, y: center.y)
-        case .right: return CGPoint(x: frame.maxX + gap, y: center.y)
-        case .above: return CGPoint(x: center.x, y: frame.minY - gap)
-        case .below: return CGPoint(x: center.x, y: frame.maxY + gap)
+        center = CGPoint(x: e.cx, y: e.cy)
+        size = CGSize(width: e.width, height: e.height)
+        switch e.badge_side {
+        case RNF_SIDE_LEFT: badgeSide = .left
+        case RNF_SIDE_RIGHT: badgeSide = .right
+        case RNF_SIDE_ABOVE: badgeSide = .above
+        default: badgeSide = .below
         }
+        group = e.group.map { String(cString: $0) }
+        badgeAnchor = CGPoint(x: e.badge_x, y: e.badge_y)
     }
 }
 
 struct ControllerDiagramLayout {
-    static let canvas = CGSize(width: 560, height: 262)
+    static let canvas = CGSize(width: RNF_DIAGRAM_CANVAS_WIDTH, height: RNF_DIAGRAM_CANVAS_HEIGHT)
 
     let family: ControllerFamily
     let elements: [DiagramElement]
@@ -202,71 +172,29 @@ struct ControllerDiagramLayout {
     /// Grouped badge anchors (below the D-pad / sticks) used when a group has a standard mapping.
     let groupAnchors: [String: CGPoint]
 
-    static let stickRadius: CGFloat = 28
-    static let faceSpacing: CGFloat = 25
-    static let faceRadius: CGFloat = 12
-    static let dpadArm: CGFloat = 18
+    static let stickRadius = CGFloat(RNF_DIAGRAM_STICK_RADIUS)
+    static let faceSpacing = CGFloat(RNF_DIAGRAM_FACE_SPACING)
+    static let faceRadius = CGFloat(RNF_DIAGRAM_FACE_RADIUS)
+    static let dpadArm = CGFloat(RNF_DIAGRAM_DPAD_ARM)
 
     init(family: ControllerFamily) {
         self.family = family
-        let sym = family.isSymmetric
-        let lStick = sym ? CGPoint(x: 225, y: 188) : CGPoint(x: 165, y: 120)
-        let rStick = sym ? CGPoint(x: 335, y: 188) : CGPoint(x: 335, y: 182)
-        let dpad = sym ? CGPoint(x: 160, y: 128) : CGPoint(x: 225, y: 182)
-        let face = sym ? CGPoint(x: 400, y: 125) : CGPoint(x: 395, y: 120)
-        leftStick = (lStick, Self.stickRadius)
-        rightStick = (rStick, Self.stickRadius)
-        dpadCenter = dpad
-        faceCenter = face
-        touchpad = sym ? CGRect(x: 252, y: 84, width: 56, height: 44) : nil
-
-        var e: [DiagramElement] = []
-        // Triggers / shoulders.
-        e.append(DiagramElement(element: "leftTrigger", kind: .trigger, center: CGPoint(x: 150, y: 18), size: CGSize(width: 88, height: 22), badgeSide: .left))
-        e.append(DiagramElement(element: "rightTrigger", kind: .trigger, center: CGPoint(x: 410, y: 18), size: CGSize(width: 88, height: 22), badgeSide: .right))
-        e.append(DiagramElement(element: "leftShoulder", kind: .shoulder, center: CGPoint(x: 150, y: 48), size: CGSize(width: 108, height: 18), badgeSide: .left))
-        e.append(DiagramElement(element: "rightShoulder", kind: .shoulder, center: CGPoint(x: 410, y: 48), size: CGSize(width: 108, height: 18), badgeSide: .right))
-        // Face buttons (diamond).
-        let s = Self.faceSpacing, r = Self.faceRadius
-        let faceSize = CGSize(width: r * 2, height: r * 2)
-        e.append(DiagramElement(element: "face.north", kind: .face, center: CGPoint(x: face.x, y: face.y - s), size: faceSize, badgeSide: .above))
-        e.append(DiagramElement(element: "face.south", kind: .face, center: CGPoint(x: face.x, y: face.y + s), size: faceSize, badgeSide: .below))
-        e.append(DiagramElement(element: "face.west", kind: .face, center: CGPoint(x: face.x - s, y: face.y), size: faceSize, badgeSide: .left))
-        e.append(DiagramElement(element: "face.east", kind: .face, center: CGPoint(x: face.x + s, y: face.y), size: faceSize, badgeSide: .right))
-        // D-pad arms.
-        let a = Self.dpadArm, armSize = CGSize(width: a, height: a)
-        e.append(DiagramElement(element: "dpad.up", kind: .dpad, center: CGPoint(x: dpad.x, y: dpad.y - a), size: armSize, badgeSide: .above, group: "dpad"))
-        e.append(DiagramElement(element: "dpad.down", kind: .dpad, center: CGPoint(x: dpad.x, y: dpad.y + a), size: armSize, badgeSide: .below, group: "dpad"))
-        e.append(DiagramElement(element: "dpad.left", kind: .dpad, center: CGPoint(x: dpad.x - a, y: dpad.y), size: armSize, badgeSide: .left, group: "dpad"))
-        e.append(DiagramElement(element: "dpad.right", kind: .dpad, center: CGPoint(x: dpad.x + a, y: dpad.y), size: armSize, badgeSide: .right, group: "dpad"))
-        // Sticks: four direction arrows + click (the cap).
-        for (name, c, click) in [("lstick", lStick, "leftThumb"), ("rstick", rStick, "rightThumb")] {
-            let d = Self.stickRadius - 9, ds = CGSize(width: 15, height: 15)
-            e.append(DiagramElement(element: name + ".up", kind: .stickDirection, center: CGPoint(x: c.x, y: c.y - d), size: ds, badgeSide: .above, group: name))
-            e.append(DiagramElement(element: name + ".down", kind: .stickDirection, center: CGPoint(x: c.x, y: c.y + d), size: ds, badgeSide: .below, group: name))
-            e.append(DiagramElement(element: name + ".left", kind: .stickDirection, center: CGPoint(x: c.x - d, y: c.y), size: ds, badgeSide: .left, group: name))
-            e.append(DiagramElement(element: name + ".right", kind: .stickDirection, center: CGPoint(x: c.x + d, y: c.y), size: ds, badgeSide: .right, group: name))
-            // The click badge sits on the outer side of the pad (left stick: left, right stick: right).
-            e.append(DiagramElement(element: click, kind: .stickClick, center: c, size: CGSize(width: 22, height: 22),
-                                    badgeSide: name == "lstick" ? .left : .right))
+        let f = family.cValue
+        var i = rnf_diagram_info()
+        rnf_diagram_info_get(f, &i)
+        leftStick = (CGPoint(x: i.left_stick_x, y: i.left_stick_y), CGFloat(i.stick_radius))
+        rightStick = (CGPoint(x: i.right_stick_x, y: i.right_stick_y), CGFloat(i.stick_radius))
+        dpadCenter = CGPoint(x: i.dpad_x, y: i.dpad_y)
+        faceCenter = CGPoint(x: i.face_x, y: i.face_y)
+        touchpad = i.has_touchpad != 0 ? CGRect(x: i.touchpad_x, y: i.touchpad_y, width: i.touchpad_width, height: i.touchpad_height) : nil
+        elements = (0..<rnf_diagram_element_count(f)).compactMap { n in
+            var e = rnf_diagram_element()
+            return rnf_diagram_element_get(f, n, &e) != 0 ? DiagramElement(e) : nil
         }
-        // Small center buttons.
-        if sym {
-            e.append(DiagramElement(element: "options", kind: .small, center: CGPoint(x: 227, y: 90), size: CGSize(width: 34, height: 14), badgeSide: .above))
-            e.append(DiagramElement(element: "menu", kind: .small, center: CGPoint(x: 333, y: 90), size: CGSize(width: 34, height: 14), badgeSide: .above))
-            e.append(DiagramElement(element: "home", kind: .home, center: CGPoint(x: 280, y: 152), size: CGSize(width: 22, height: 22), badgeSide: .below))
-        } else {
-            e.append(DiagramElement(element: "options", kind: .small, center: CGPoint(x: 245, y: 104), size: CGSize(width: 30, height: 14), badgeSide: .above))
-            e.append(DiagramElement(element: "menu", kind: .small, center: CGPoint(x: 315, y: 104), size: CGSize(width: 30, height: 14), badgeSide: .above))
-            e.append(DiagramElement(element: "home", kind: .home, center: CGPoint(x: 280, y: 134), size: CGSize(width: 22, height: 22), badgeSide: .below))
-        }
-        elements = e
-
-        // Grouped badges ("Move") go below the group.
         groupAnchors = [
-            "dpad": CGPoint(x: dpad.x, y: dpad.y + a * 1.5 + 4),
-            "lstick": CGPoint(x: lStick.x, y: lStick.y + Self.stickRadius + 4),
-            "rstick": CGPoint(x: rStick.x, y: rStick.y + Self.stickRadius + 4),
+            "dpad": CGPoint(x: i.dpad_anchor_x, y: i.dpad_anchor_y),
+            "lstick": CGPoint(x: i.lstick_anchor_x, y: i.lstick_anchor_y),
+            "rstick": CGPoint(x: i.rstick_anchor_x, y: i.rstick_anchor_y),
         ]
     }
 
@@ -281,52 +209,21 @@ struct ControllerDiagramLayout {
 enum ControllerAssignments {
     /// Actions bound to `gc<slot>:<element>`, in catalog order.
     static func actions(element: String, slot: Int, config: InputCatalog.Config) -> [String] {
-        let id = "gc\(slot):\(element)"
-        let bound = Set(config.bindings.filter { $0.input == id }.map(\.action))
-        return InputCatalog.allActions.map(\.id).filter(bound.contains)
+        withBindings(config.bindings) { b, n in rnfPairs(rnf_input_element_actions(b, n, element, Int32(slot))).map(\.0) }
     }
 
     /// Human name of an element on a family: "Right Button (A)", "D-pad ↑", "ZL"...
     static func title(element: String, family: ControllerFamily, labels: [String: String] = [:]) -> String {
-        let label = labels[element] ?? family.label(element)
-        let arrows = ["up": "↑", "down": "↓", "left": "←", "right": "→"]
-        let parts = element.split(separator: ".").map(String.init)
-        if parts.count == 2, let arrow = arrows[parts[1]] {
-            let base = ["dpad": String(localized: "D-pad"), "lstick": String(localized: "Left Stick"), "rstick": String(localized: "Right Stick")][parts[0]] ?? parts[0]
-            return base + " " + arrow
-        }
-        let positional = ["face.south": String(localized: "Bottom Button"), "face.east": String(localized: "Right Button"),
-                          "face.west": String(localized: "Left Button"), "face.north": String(localized: "Top Button"),
-                          "leftThumb": String(localized: "Left Stick Press"), "rightThumb": String(localized: "Right Stick Press")]
-        if let p = positional[element] { return label.isEmpty ? p : String(localized: "\(p) (\(label))") }
-        return label.isEmpty ? element : label
+        rnfString(rnf_input_element_title(element, family.cValue, labels[element]))
     }
 
     /// Compact label for a badge: "A", "Turbo A", "Rewind", "2P B"...
     static func shortLabel(_ action: String, slot: Int) -> String {
-        let hk: [String: String] = [
-            "hk.rewind": String(localized: "Rewind"), "hk.fast_forward": String(localized: "Fast Fwd"),
-            "hk.pause": String(localized: "Pause"), "hk.slow": String(localized: "Slow"),
-            "hk.frame_advance": String(localized: "Advance"), "hk.step_back": String(localized: "Step Back"),
-            "hk.toggle_mode": String(localized: "Rec/Play"), "hk.bookmark": String(localized: "Bookmark"),
-            "hk.undo_take": String(localized: "Prev Take"), "hk.save": String(localized: "Save"),
-            "hk.soft_reset": String(localized: "Reset"), "hk.power_cycle": String(localized: "Power"),
-        ]
-        if let h = hk[action] { return h }
-        let parts = action.split(separator: ".")
-        guard parts.count == 2 else { return action }
-        let game: [String: String] = [
-            "a": "A", "b": "B", "select": "SELECT", "start": "START", "up": "↑", "down": "↓", "left": "←", "right": "→",
-            "turbo_a": String(localized: "Turbo A"), "turbo_b": String(localized: "Turbo B"),
-        ]
-        let name = game[String(parts[1])] ?? String(parts[1])
-        let player = parts[0] == "p2" ? 1 : 0
-        return player == slot ? name : "\(player + 1)P \(name)"
+        rnfString(rnf_input_action_short_label(action, Int32(slot)))
     }
 
     static func badge(element: String, slot: Int, config: InputCatalog.Config) -> String? {
-        let a = actions(element: element, slot: slot, config: config)
-        return a.isEmpty ? nil : a.map { shortLabel($0, slot: slot) }.joined(separator: String(localized: " · "))
+        withBindings(config.bindings) { b, n in rnfTake(rnf_input_element_badge(b, n, element, Int32(slot))) }
     }
 
     /// For "dpad" / "lstick" / "rstick": "Move" (or "2P Move") when the four directions map 1:1
@@ -334,13 +231,13 @@ enum ControllerAssignments {
     enum GroupSummary: Equatable { case none, movement(String), custom }
 
     static func group(_ group: String, slot: Int, config: InputCatalog.Config) -> GroupSummary {
-        let dirs = ["up", "down", "left", "right"]
-        let per = dirs.map { actions(element: "\(group).\($0)", slot: slot, config: config) }
-        if per.allSatisfy(\.isEmpty) { return .none }
-        for p in ["p1", "p2"] where zip(dirs, per).allSatisfy({ $1 == ["\(p).\($0)"] }) {
-            let player = p == "p2" ? 1 : 0
-            return .movement(player == slot ? String(localized: "Move") : String(localized: "\(player + 1)P Move"))
+        withBindings(config.bindings) { b, n in
+            var text: UnsafeMutablePointer<CChar>?
+            switch rnf_input_group_summary(b, n, group, Int32(slot), &text) {
+            case RNF_GROUP_MOVEMENT: return .movement(rnfString(text))
+            case RNF_GROUP_CUSTOM: return .custom
+            default: return GroupSummary.none
+            }
         }
-        return .custom
     }
 }

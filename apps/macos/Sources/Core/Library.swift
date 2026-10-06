@@ -1,14 +1,16 @@
-// ROM library in ~/Documents/ReplayNES (UI-free part, unit tested):
+// ROM library in ~/Documents/ReplayNES:
 //   ROM/       the user's .nes files (top level and one level of sub-folders)
 //   Projects/  projects started from the library, "<ROM name> <yyyy-MM-dd HHmm>.nesrec"
 // Projects are matched to ROMs by the ROM SHA-256 stored in their manifest.json, not by name.
+// Scanning, matching and naming live in the shared frontend core (frontend/src/library.cpp);
+// this file adds the macOS folder, Finder-style name collation and Foundation error texts.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
 struct LibraryPaths: Equatable {
     let root: URL
-    var roms: URL { root.appendingPathComponent("ROM", isDirectory: true) }
-    var projects: URL { root.appendingPathComponent("Projects", isDirectory: true) }
+    var roms: URL { root.appendingPathComponent(RNF_LIBRARY_ROM_DIR, isDirectory: true) }
+    var projects: URL { root.appendingPathComponent(RNF_LIBRARY_PROJECTS_DIR, isDirectory: true) }
 
     /// ~/Documents/ReplayNES
     static var standard: LibraryPaths {
@@ -19,17 +21,23 @@ struct LibraryPaths: Equatable {
 
     /// Creates ROM/ and Projects/ if missing. Throws a user-readable error otherwise (no fallback).
     func ensure() throws {
-        for dir in [roms, projects] {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir) {
-                if !isDir.boolValue { throw LibraryError.notADirectory(dir.path) }
-                continue
-            }
+        var failed: UnsafeMutablePointer<CChar>?
+        let st = rnf_library_ensure(root.path, &failed)
+        let path = rnfString(failed)
+        switch st {
+        case RN_OK: return
+        case RN_ERR_ALREADY_EXISTS: throw LibraryError.notADirectory(path)
+        default:
+            // The system's own wording for why the folder could not be created.
+            let message = String(cString: rnf_last_error())
             do {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: URL(fileURLWithPath: path, isDirectory: true),
+                                                        withIntermediateDirectories: true)
             } catch {
-                throw LibraryError.cannotCreate(dir.path, (error as NSError).localizedDescription)
+                throw LibraryError.cannotCreate(path, (error as NSError).localizedDescription)
             }
+            if rnf_library_ensure(root.path, nil) == RN_OK { return }  // created meanwhile
+            throw LibraryError.cannotCreate(path, message)
         }
     }
 }
@@ -44,6 +52,17 @@ enum LibraryError: Error, LocalizedError, Equatable {
         case .cannotCreate(let p, let m): return String(localized: "Can’t create the folder: \(p)\n\(m)")
         case .cannotRead(let p, let m): return String(localized: "Can’t read the folder: \(p)\n\(m)")
         }
+    }
+
+    /// The folder could not be listed: the system's wording for why.
+    static func unreadable(_ dir: URL) -> LibraryError {
+        let fallback = String(cString: rnf_last_error())
+        do {
+            _ = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        } catch {
+            return .cannotRead(dir.path, (error as NSError).localizedDescription)
+        }
+        return .cannotRead(dir.path, fallback)
     }
 }
 
@@ -67,105 +86,66 @@ struct LibraryProject: Identifiable, Hashable {
 }
 
 enum LibraryScanner {
+    /// Finder order (localizedStandardCompare) for ROM names.
+    private static let finderOrder: rnf_name_compare = { a, b, _ in
+        switch String(cString: a!).localizedStandardCompare(String(cString: b!)) {
+        case .orderedAscending: return -1
+        case .orderedSame: return 0
+        case .orderedDescending: return 1
+        }
+    }
+
     /// .nes files (case-insensitive) in `dir` and its immediate sub-folders, sorted by name.
     static func scanROMs(in dir: URL) throws -> [LibraryROM] {
-        let fm = FileManager.default
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        func list(_ d: URL) throws -> [URL] {
-            do {
-                return try fm.contentsOfDirectory(at: d, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
-            } catch {
-                throw LibraryError.cannotRead(d.path, (error as NSError).localizedDescription)
-            }
-        }
-        var out: [LibraryROM] = []
-        func add(_ url: URL, relative: String) {
-            guard url.pathExtension.lowercased() == "nes" else { return }
-            let v = try? url.resourceValues(forKeys: Set(keys))
-            guard v?.isRegularFile ?? false else { return }
-            out.append(LibraryROM(url: url, name: url.deletingPathExtension().lastPathComponent, relativePath: relative,
-                                  size: Int64(v?.fileSize ?? 0), modified: v?.contentModificationDate ?? .distantPast, sha256: nil))
-        }
-        for url in try list(dir) {
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            if isDir {
-                // One level of sub-folders; an unreadable sub-folder is skipped, not fatal.
-                for sub in (try? list(url)) ?? [] { add(sub, relative: url.lastPathComponent + "/" + sub.lastPathComponent) }
-            } else {
-                add(url, relative: url.lastPathComponent)
-            }
-        }
-        return out.sorted {
-            let c = $0.name.localizedStandardCompare($1.name)
-            return c == .orderedSame ? $0.relativePath < $1.relativePath : c == .orderedAscending
+        var l: OpaquePointer?
+        guard rnf_library_scan_roms(dir.path, finderOrder, nil, &l) == RN_OK, let l else { throw LibraryError.unreadable(dir) }
+        defer { rnf_rom_list_free(l) }
+        return (0..<rnf_rom_list_count(l)).compactMap { i in
+            var e = rnf_rom_entry()
+            guard rnf_rom_list_get(l, i, &e) != 0 else { return nil }
+            return LibraryROM(url: URL(fileURLWithPath: String(cString: e.path), isDirectory: false), name: String(cString: e.name),
+                              relativePath: String(cString: e.relative_path), size: e.size,
+                              modified: Date(timeIntervalSince1970: e.modified), sha256: nil)
         }
     }
 
     /// *.nesrec packages directly in `dir` with a readable manifest, newest first.
     static func scanProjects(in dir: URL) throws -> [LibraryProject] {
-        let urls: [URL]
-        do {
-            urls = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
-                                                               options: [.skipsHiddenFiles])
-        } catch {
-            throw LibraryError.cannotRead(dir.path, (error as NSError).localizedDescription)
+        var l: OpaquePointer?
+        guard rnf_library_scan_projects(dir.path, &l) == RN_OK, let l else { throw LibraryError.unreadable(dir) }
+        defer { rnf_project_list_free(l) }
+        return (0..<rnf_project_list_count(l)).compactMap { i in
+            var e = rnf_project_entry()
+            guard rnf_project_list_get(l, i, &e) != 0 else { return nil }
+            return LibraryProject(url: URL(fileURLWithPath: String(cString: e.path), isDirectory: true),
+                                  name: String(cString: e.name), romSHA256: String(cString: e.rom_sha256),
+                                  romName: String(cString: e.rom_name), modified: Date(timeIntervalSince1970: e.modified))
         }
-        var out: [LibraryProject] = []
-        for url in urls where url.pathExtension.lowercased() == "nesrec" {
-            guard let manifest = try? Engine.manifestJSON(projectDir: url),
-                  let rom = manifest["rom"] as? [String: Any], let sha = rom["sha256"] as? String else { continue }
-            // The manifest is rewritten on every save: its date is the project's last save.
-            let mdate = (try? url.appendingPathComponent("manifest.json").resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
-            let date = mdate ?? (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            out.append(LibraryProject(url: url, name: url.deletingPathExtension().lastPathComponent, romSHA256: sha.lowercased(),
-                                      romName: rom["name"] as? String ?? "", modified: date))
-        }
-        return out.sorted { $0.modified > $1.modified }
     }
 
-    /// File-name-safe ROM name (no path separators / colons, trimmed).
-    static func sanitize(_ name: String) -> String {
-        let bad = CharacterSet(charactersIn: "/:\\").union(.controlCharacters)
-        let cleaned = name.components(separatedBy: bad).joined(separator: "_").trimmingCharacters(in: .whitespaces)
-        let trimmed = cleaned.hasPrefix(".") ? "_" + cleaned.dropFirst() : cleaned
-        return trimmed.isEmpty ? "ROM" : trimmed
-    }
+    /// File-name-safe ROM name (no path separators / colons / control characters, trimmed).
+    static func sanitize(_ name: String) -> String { rnfString(rnf_library_sanitize(name)) }
 
-    static func timestamp(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.calendar = Calendar(identifier: .gregorian)
-        f.dateFormat = "yyyy-MM-dd HHmm"
-        return f.string(from: date)
-    }
+    /// "yyyy-MM-dd HHmm" in local time.
+    static func timestamp(_ date: Date) -> String { rnfString(rnf_library_timestamp(date.timeIntervalSince1970)) }
 
     /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec, with " 2", " 3", ... appended if taken.
     static func newProjectURL(projectsDir: URL, romName: String, date: Date) -> URL {
-        let base = sanitize(romName) + " " + timestamp(date)
-        var n = 1
-        while true {
-            let name = n == 1 ? base : "\(base) \(n)"
-            let url = projectsDir.appendingPathComponent(name + ".nesrec", isDirectory: true)
-            if !FileManager.default.fileExists(atPath: url.path) { return url }
-            n += 1
-        }
+        URL(fileURLWithPath: rnfString(rnf_library_new_project_path(projectsDir.path, romName, date.timeIntervalSince1970)),
+            isDirectory: true)
     }
 }
 
 /// SHA-256 of ROM files, cached by path + size + modification date. Thread-safe.
 final class ROMHashCache {
-    private struct Key: Hashable { let path: String; let size: Int64; let modified: Date }
-    private var cache: [Key: String] = [:]
-    private let lock = NSLock()
+    private let handle: OpaquePointer = rnf_rom_hash_cache_new()!
+
+    deinit { rnf_rom_hash_cache_free(handle) }
 
     func sha256(of rom: LibraryROM) -> String? {
-        let key = Key(path: rom.url.path, size: rom.size, modified: rom.modified)
-        lock.lock()
-        if let h = cache[key] { lock.unlock(); return h }
-        lock.unlock()
-        guard let h = try? Engine.sha256(of: rom.url) else { return nil }
-        lock.lock(); cache[key] = h.lowercased(); lock.unlock()
-        return h.lowercased()
+        var hex = [CChar](repeating: 0, count: 65)
+        guard rnf_rom_hash_cache_sha256(handle, rom.url.path, rom.size, rom.modified.timeIntervalSince1970, &hex) == RN_OK
+        else { return nil }
+        return String(cString: hex)
     }
 }

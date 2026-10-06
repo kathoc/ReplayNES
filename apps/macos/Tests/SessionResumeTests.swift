@@ -113,17 +113,6 @@ final class SessionResumeTests: XCTestCase {
         XCTAssertNotNil(SessionLock(url: paths.lockFile), "released with its owner (or the process)")
     }
 
-    func testTargetFrameClamps() {
-        let r = ResumeRecord(projectPath: "/p", isTemp: true, frame: 500)
-        XCTAssertEqual(SessionResume.targetFrame(r, takeLength: 300), 300)
-        XCTAssertEqual(SessionResume.targetFrame(r, takeLength: 900), 500)
-        XCTAssertNil(SessionResume.targetFrame(ResumeRecord(projectPath: "/p", isTemp: true), takeLength: 9))
-        // Recording at the take end: the end of what was persisted, even past the recorded frame.
-        let end = ResumeRecord(projectPath: "/p", isTemp: true, frame: 716, atTakeEnd: true, mode: .record)
-        XCTAssertEqual(SessionResume.targetFrame(end, takeLength: 727), 727)
-        XCTAssertEqual(SessionResume.targetFrame(end, takeLength: 600), 600)
-    }
-
     /// Force quit while recording: the take survives up to the last autosave and the session
     /// resumes there (resume.json may be newer than the journal: clamped).
     func testForceQuitResumesNearLastAutosave() throws {

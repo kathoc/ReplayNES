@@ -1,8 +1,10 @@
 # Writing a frontend (Windows / Linux / other) on the ReplayNES engine
 
-The engine (`engine/`) is portable C++17 with no UI or OS media APIs. Frontends use only the C API
-in `engine/include/replaynes/replaynes.h`. The macOS app (Swift) is one such frontend; an
-SDL2/Qt/Win32 frontend follows the same pattern.
+The engine (`engine/`) is portable C++17 with no UI or OS media APIs. Frontends use the C API
+in `engine/include/replaynes/replaynes.h` plus the shared frontend core (`frontend/`, C API
+`frontend/include/replaynes/frontend.h`) for everything a frontend decides that is not
+platform-specific. The macOS app (Swift) is one such frontend; the Linux (SDL3 + Vulkan) frontend
+and future Windows / iOS frontends follow the same pattern.
 
 ## Build
 
@@ -18,6 +20,52 @@ Link `replaynes_engine` + `nestopia_core` (both static) and the platform thread 
 `target_link_libraries(myfrontend PRIVATE replaynes_engine)`. Options: `REPLAYNES_BUILD_TESTS`,
 `REPLAYNES_BUILD_CLI`. OS-specific code lives only in `engine/src/util/Fs.cpp`
 (`fsync`/`_commit`, directory sync, `std::filesystem` rename); paths are UTF-8 everywhere.
+
+## Shared frontend core (`frontend/`)
+
+`replaynes_frontend` is a static C++17 library (no windowing, graphics, audio, controller or
+media APIs) built by the top-level CMake on every platform (`-DREPLAYNES_BUILD_FRONTEND=OFF` to
+skip it). It links `replaynes_engine`; `target_link_libraries(myfrontend PRIVATE
+replaynes_frontend)` is enough. Building it needs `python3` (the localization table is
+generated). Its C API (`rnf_*`) follows the engine's conventions: `rn_status` codes, no C++
+exception crosses the boundary, `rnf_last_error()` is thread-local, opaque handles,
+`char*` results freed with `rnf_string_free`, sized outputs with the two-call pattern
+(`n = f(..., NULL, 0)`, then `f(..., buf, n)`). Handles are not thread-safe (one owner thread)
+except `rnf_thumb_cache` and `rnf_rom_hash_cache`; free functions are pure.
+
+What lives where:
+
+| Area | Core (`frontend/src`) | Stays in each frontend |
+|---|---|---|
+| Display pacing | cadence (`rnf_cadence`: which refresh starts a frame, locked k-th refresh / free), just-in-time input deadline, direct-vs-composited present path, backlog-drain policy, CRT build-ahead decision, audio DRC ratio, Hermite resampler, judder / callback counters | display link / vsync callback, clocks, present / GPU timing, audio device |
+| Input | action catalog + labels, default bindings (`RNF_KEYBOARD_MACOS` kVK codes, `RNF_KEYBOARD_SDL` scancodes; controllers identical), saved-layout migrations (as unbind/bind plans, `rnf_input_apply_plan`), paused D-pad step map, display names, controller families + printed labels (incl. Steam Deck), face positions by family + glyph (Apple GameController), SDL3 button / axis / type / label and XInput mappings, controller diagram geometry + badge texts | device enumeration and events (`rn_input_set_pressed` / `set_axis`), drawing the diagram |
+| Session | resume record (`resume.json`), launch decision, single-instance lock, `rnf_resume_apply`, "has content" | the folder (`~/Library/Application Support/...`, `$XDG_DATA_HOME/ReplayNES/Session`), prompts |
+| Timeline | frame <-> x mapping, A/B drag / hit test / "Set A/B Here", take lineage, visible A/B ranges, filmstrip grid (fixed 5 s * 2^k scale, tiles, targets), thumbnail cache policy (thread-safe, opaque retained payloads), 2x2 box downscaler | thumbnail images / textures, rendering threads |
+| Library | `ROM/` + `Projects/` folders, ROM scan (frontend may pass its collation; default natural order), project scan + SHA-256 matching, ROM hash cache, project / backup names | the root folder, file watching, Trash |
+| Transport | record toggle plan, slow toggle, step repeater, practice A/B loop (hold -> rewind animation -> restart), frame history, audio fade tail, fast-forward over the take | wall clock, presenting the animation |
+| Export / streaming | export presets, validation, geometry + nearest-neighbour column/row maps, bit rate; streaming canvas sizes | encoders (AVFoundation, FFmpeg), Syphon / PipeWire |
+| Text | localization table + `rnf_format` (Apple-style `%@`, `%lld`, positional `%1$@`), language rule (`rnf_ui_language_choose`: Japanese if the first preferred language is Japanese), flash level texts | widgets |
+
+Localization: `apps/macos/Resources/Localizable.xcstrings` stays the single source of truth.
+`frontend/tools/gen_l10n.py` turns it into the compiled table (and
+`build/.../frontend/generated/l10n.json` for tooling) at build time. Display strings returned by
+the core use the language set with `rnf_l10n_set_language("ja" | "en")` (call once at startup);
+a frontend's own UI strings use `rnf_l10n_lookup(key)` / `rnf_l10n_format(key, args, n)` with
+the English source text as key. Strings used by the core are marked `RNF_L("...")` in
+`frontend/src`; `scripts/check-l10n.py` counts them as used catalog keys. New UI strings of any
+frontend are added to the String Catalog with a Japanese translation.
+
+Determinism of the math: the core is compiled with `-ffp-contract=off` (no FMA contraction), so
+the pacing and geometry decisions are the same on every platform and identical to the original
+Swift code. Tests: `tests/test_frontend_*.cpp` (ctest).
+
+A new frontend typically: sets the language, loads bindings (`rn_input_load_json`, or
+`rnf_input_default_config_json(scheme)` on first run) and applies the migrations, maps device
+buttons to positional ids (`gc<slot>:face.south` ... via `rnf_sdl_button_element` /
+`rnf_gc_face_positions`), drives `rnf_cadence_refresh` from its vsync callback and
+`rnf_input_deadline_*` around input sampling, feeds audio through `rnf_audio_rate_update` +
+`rnf_resampler_process`, keeps a `rnf_thumb_cache` for the filmstrip, and uses the resume record,
+lock and library functions with its own folders.
 
 ## Main loop (emulation thread)
 
@@ -106,9 +154,12 @@ rn_set_mode(s, RN_MODE_RECORD);      // leave practice: take exactly as before
 
 ## Input ids
 
-Physical ids are opaque, stable strings chosen by the frontend, e.g. `kb:<scancode>`,
-`pad0:a`, `pad0:dpad.up`, analog sticks via `rn_input_set_axis(in, "pad0:lstick", x, y)` which
-derives `pad0:lstick.left/right/up/down` with the configured threshold. Bind with
+Physical ids are opaque, stable strings chosen by the frontend. The shared core's catalog and
+defaults use `kb:<code>` (macOS virtual key code or SDL scancode, see `rnf_keyboard_scheme`) and
+`gc<slot>:<element>` with POSITIONAL elements (`face.south/east/west/north`, `dpad.up`,
+`leftShoulder`, `menu`, `options`, ...: NES A = east, NES B = south on every pad). Analog sticks via
+`rn_input_set_axis(in, "gc0:lstick", x, y)` derive `gc0:lstick.left/right/up/down` with the
+configured threshold. Bind with
 `rn_input_bind(in, id, "p1.a")`; action names are listed in `replaynes.h`. Hotkeys (`hk.*`) never
 reach the game bitfields.
 

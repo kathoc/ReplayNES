@@ -21,12 +21,25 @@ struct ExportSettings: Equatable {
         case canvas(Int, Int)    // fixed canvas, integer vertical scale, centered, black borders
         var id: String { label }
         var label: String {
+            var p = cValue
+            return rnfString(rnf_export_preset_label(&p))
+        }
+        static let all: [SizePreset] = (0..<rnf_export_preset_count()).compactMap { i in
+            var p = rnf_export_preset()
+            return rnf_export_preset_get(i, &p) != 0 ? SizePreset(p) : nil
+        }
+
+        var cValue: rnf_export_preset {
             switch self {
-            case .native(let n): return String(localized: "Native ×\(n)")
-            case .canvas(let w, let h): return "\(w)×\(h)"
+            case .native(let n): return rnf_export_preset(kind: RNF_PRESET_NATIVE, scale: Int32(clamping: n), width: 0, height: 0)
+            case .canvas(let w, let h):
+                return rnf_export_preset(kind: RNF_PRESET_CANVAS, scale: 0, width: Int32(clamping: w), height: Int32(clamping: h))
             }
         }
-        static let all: [SizePreset] = [.native(1), .native(2), .native(3), .native(4), .canvas(1280, 960), .canvas(1920, 1440), .canvas(1920, 1080)]
+
+        init(_ p: rnf_export_preset) {
+            self = p.kind == RNF_PRESET_NATIVE ? .native(Int(p.scale)) : .canvas(Int(p.width), Int(p.height))
+        }
     }
 
     var codec: Codec = .h264
@@ -45,14 +58,21 @@ struct ExportSettings: Equatable {
     var crt: CRTRenderer.Settings?
 
     func validate() throws {
-        let ok = cropTop >= 0 && cropBottom >= 0 && cropLeft >= 0 && cropRight >= 0
-            && cropTop + cropBottom <= Int(RN_VIDEO_HEIGHT) - 16 && cropLeft + cropRight <= Int(RN_VIDEO_WIDTH) - 16
-        if !ok { throw ExportError.invalidSettings(String(localized: "The overscan crop is too large")) }
-        if endFrame != 0 && endFrame <= startFrame { throw ExportError.invalidSettings(String(localized: "The export range is empty")) }
+        var c = cValue
+        var message: UnsafeMutablePointer<CChar>?
+        if rnf_export_validate(&c, &message) != RN_OK { throw ExportError.invalidSettings(rnfString(message)) }
+    }
+
+    /// The geometry-relevant part, as the shared frontend core sees it.
+    var cValue: rnf_export_settings {
+        rnf_export_settings(preset: preset.cValue, crop_top: Int32(clamping: cropTop), crop_bottom: Int32(clamping: cropBottom),
+                            crop_left: Int32(clamping: cropLeft), crop_right: Int32(clamping: cropRight),
+                            pixel_aspect_87: pixelAspect87 ? 1 : 0, start_frame: startFrame, end_frame: endFrame)
     }
 }
 
-/// Nearest-neighbour mapping from the cropped 256x240 source into the output canvas.
+/// Nearest-neighbour mapping from the cropped 256x240 source into the output canvas
+/// (computed by the shared frontend core, rnf_export_geometry_compute).
 struct ExportGeometry: Equatable {
     var canvasWidth: Int, canvasHeight: Int
     var dstX: Int, dstY: Int, dstWidth: Int, dstHeight: Int
@@ -60,33 +80,42 @@ struct ExportGeometry: Equatable {
     var verticalScale: Int
 
     init(_ s: ExportSettings) {
-        let sw = Int(RN_VIDEO_WIDTH) - s.cropLeft - s.cropRight
-        let sh = Int(RN_VIDEO_HEIGHT) - s.cropTop - s.cropBottom
-        let par = s.pixelAspect87 ? 8.0 / 7.0 : 1.0
-        func even(_ v: Int) -> Int { v + (v & 1) }
-        func width(_ scale: Int) -> Int { Int((Double(sw * scale) * par).rounded()) }
-        var k: Int, dw: Int, dh: Int, cw: Int, ch: Int
-        switch s.preset {
-        case .native(let n):
-            k = max(1, n)
-            dw = even(width(k)); dh = sh * k
-            cw = dw; ch = even(dh)
-        case .canvas(let w, let h):
-            k = max(1, h / sh)
-            while k > 1 && width(k) > w { k -= 1 }
-            dh = min(h, sh * k); dw = min(w, width(k))
-            cw = even(w); ch = even(h)
-        }
-        srcX = s.cropLeft; srcY = s.cropTop; srcWidth = sw; srcHeight = sh
-        verticalScale = k
-        canvasWidth = cw; canvasHeight = ch; dstWidth = dw; dstHeight = dh
-        dstX = (cw - dw) / 2
-        dstY = (ch - dh) / 2
+        var c = s.cValue
+        var g = rnf_export_geometry()
+        rnf_export_geometry_compute(&c, &g)
+        canvasWidth = Int(g.canvas_width); canvasHeight = Int(g.canvas_height)
+        dstX = Int(g.dst_x); dstY = Int(g.dst_y); dstWidth = Int(g.dst_width); dstHeight = Int(g.dst_height)
+        srcX = Int(g.src_x); srcY = Int(g.src_y); srcWidth = Int(g.src_width); srcHeight = Int(g.src_height)
+        verticalScale = Int(g.vertical_scale)
+    }
+
+    var cValue: rnf_export_geometry {
+        rnf_export_geometry(canvas_width: Int32(canvasWidth), canvas_height: Int32(canvasHeight), dst_x: Int32(dstX),
+                            dst_y: Int32(dstY), dst_width: Int32(dstWidth), dst_height: Int32(dstHeight), src_x: Int32(srcX),
+                            src_y: Int32(srcY), src_width: Int32(srcWidth), src_height: Int32(srcHeight),
+                            vertical_scale: Int32(verticalScale))
     }
 
     /// Source column for every destination column (exact integer repeat for 1:1).
-    func columnMap() -> [Int] { (0..<dstWidth).map { srcX + ($0 * srcWidth) / dstWidth } }
-    func rowMap() -> [Int] { (0..<dstHeight).map { srcY + ($0 * srcHeight) / dstHeight } }
+    func columnMap() -> [Int] {
+        var g = cValue
+        var out = [Int32](repeating: 0, count: max(0, dstWidth))
+        rnf_export_column_map(&g, &out)
+        return out.map(Int.init)
+    }
+
+    func rowMap() -> [Int] {
+        var g = cValue
+        var out = [Int32](repeating: 0, count: max(0, dstHeight))
+        rnf_export_row_map(&g, &out)
+        return out.map(Int.init)
+    }
+
+    /// Average video bit rate for `bitsPerPixel` per frame (at least 2 Mbit/s).
+    func videoBitrate(bitsPerPixel: Double) -> Int {
+        var g = cValue
+        return Int(rnf_export_video_bitrate(&g, bitsPerPixel))
+    }
 }
 
 enum ExportError: Error, LocalizedError {
@@ -141,8 +170,7 @@ final class MP4Exporter {
         writer.movieTimeScale = CMTimeScale(RN_FPS_NUM)
 
         let g = geometry
-        let pixels = Double(g.canvasWidth * g.canvasHeight)
-        let bitrate = max(2_000_000, Int(pixels * 60.0 * settings.videoBitsPerPixel))
+        let bitrate = g.videoBitrate(bitsPerPixel: settings.videoBitsPerPixel)
         var compression: [String: Any] = [
             AVVideoAverageBitRateKey: bitrate,
             AVVideoExpectedSourceFrameRateKey: 60,

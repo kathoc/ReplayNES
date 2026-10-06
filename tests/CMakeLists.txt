@@ -5,8 +5,12 @@ set(RN_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
 file(MAKE_DIRECTORY ${RN_TEST_TMP})
 
 function(rn_add_test name)
+  set(libs ${ARGN})
+  if(NOT libs)
+    set(libs replaynes_engine)
+  endif()
   add_executable(${name} ${name}.cpp)
-  target_link_libraries(${name} PRIVATE replaynes_engine rn_test_main)
+  target_link_libraries(${name} PRIVATE ${libs} rn_test_main)
   target_compile_definitions(${name} PRIVATE RN_TEST_TMP="${RN_TEST_TMP}")
   add_test(NAME ${name} COMMAND ${name})
   # macOS malloc fills new allocations with garbage: uninitialised core state cannot hide.
@@ -32,3 +36,18 @@ target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOUR
 # Display-side photosensitive flash reduction (synthetic frames; local ROMs when present).
 rn_add_test(test_flash_filter)
 target_compile_definitions(test_flash_filter PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")
+
+# Shared frontend core (frontend/: C API replaynes/frontend.h). Ported from the macOS XCTests of the
+# logic that moved there; they run on every platform.
+if(TARGET replaynes_frontend)
+  function(rn_add_frontend_test name)
+    rn_add_test(${name} replaynes_frontend)  # brings replaynes_engine
+  endfunction()
+  rn_add_frontend_test(test_frontend_pacing)
+  rn_add_frontend_test(test_frontend_input)
+  rn_add_frontend_test(test_frontend_timeline)
+  rn_add_frontend_test(test_frontend_resume)
+  rn_add_frontend_test(test_frontend_library)
+  rn_add_frontend_test(test_frontend_playback)
+  rn_add_frontend_test(test_frontend_export)
+endif()

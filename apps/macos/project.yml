@@ -1,8 +1,8 @@
 # XcodeGen spec for the ReplayNES macOS frontend.
 #   cd apps/macos && xcodegen generate   (scripts/build-macos.sh does this for you)
-# The engine is NOT compiled here: the "Engine" aggregate target runs CMake on the same
-# source list as every other platform (single source of truth) and the app links the
-# resulting static libraries.
+# The engine and the shared frontend core are NOT compiled here: the "Engine" aggregate target
+# runs CMake on the same source lists as every other platform (single source of truth) and the
+# app links the resulting static libraries (replaynes_engine, replaynes_frontend).
 name: ReplayNES
 options:
   bundleIdPrefix: io.github.replaynes
@@ -35,22 +35,25 @@ settings:
     RN_ENGINE_BUILD_DIR: "$(SRCROOT)/../../build/xcode-engine"
     HEADER_SEARCH_PATHS:
       - "$(SRCROOT)/../../engine/include/replaynes"
+      - "$(SRCROOT)/../../frontend/include/replaynes"
       - "$(SRCROOT)/Sources/Core/C"
     SWIFT_OBJC_BRIDGING_HEADER: "Sources/Core/C/Bridging.h"
     LIBRARY_SEARCH_PATHS:
       - "$(RN_ENGINE_BUILD_DIR)"
       - "$(RN_ENGINE_BUILD_DIR)/engine"
-    OTHER_LDFLAGS: ["-lreplaynes_engine", "-lnestopia_core", "-lc++"]
+      - "$(RN_ENGINE_BUILD_DIR)/frontend"
+    OTHER_LDFLAGS: ["-lreplaynes_frontend", "-lreplaynes_engine", "-lnestopia_core", "-lc++"]
     GCC_C_LANGUAGE_STANDARD: c11
 
 aggregateTargets:
   Engine:
     buildScripts:
-      - name: Build ReplayNES engine (CMake)
+      - name: Build ReplayNES engine + frontend core (CMake)
         script: '"$SRCROOT/Scripts/build-engine.sh"'
         basedOnDependencyAnalysis: false
         outputFiles:
           - "$(RN_ENGINE_BUILD_DIR)/engine/libreplaynes_engine.a"
+          - "$(RN_ENGINE_BUILD_DIR)/frontend/libreplaynes_frontend.a"
           - "$(RN_ENGINE_BUILD_DIR)/libnestopia_core.a"
 
 targets:
