@@ -12,6 +12,8 @@
 #     and process
 #   scripts/perf-smoke.sh [app] [seconds] [rom]     (defaults: build/ReplayNES.app, 60, generated test ROM)
 #   FULLSCREEN=1 ...       full screen (FILL; the chrome auto-hides while playing)
+#   CRT=1 ...              with the CRT model (default: off whatever the user's setting is; its
+#                          GPU passes take ~8 ms per frame at 1080p on M1 Max, docs/FRAME_PACING.md)
 #   STRICT=1 ...           exit 1 when a threshold is missed (see below)
 #   ACTIVATE=1 ...         bring the app to the front (default: it runs behind the front app;
 #                          an occluded window is not presented at all)
@@ -19,6 +21,8 @@
 #   INPUT=1 ...            inject key presses (event -> display latency)
 #   EXTRA_ARGS="-filmstripThumbnails NO" ...  any launch arguments (e.g. -frameWorkgroup NO,
 #                          -fullScreenAutoHide NO, -flashReduction 0)
+#   ACTIONS="10:dumpLayers" ...  more --test-actions (TestHooks.swift; dumpLayers logs the window
+#                          and layer tree to app.log)
 #   LABEL=name ...         label for the JSON summary line
 # Everything goes to build/perf-smoke (library / session roots, logs); the user's preferences
 # are only overridden through the volatile argument domain (-integerScale NO ...).
@@ -38,8 +42,10 @@ if [ -z "$ROM" ]; then
   ROM="$WORK/test.nes"
   "$CLI" make-test-rom "$ROM" >/dev/null
 fi
-ACTS="1:fill"
+# The window goes to the menu-bar screen first (it would open on the screen of the key window).
+ACTS="0.5:screen:0,1:fill"
 [ "${FULLSCREEN:-0}" = "1" ] && ACTS="$ACTS,2:fullscreen"
+[ -n "${ACTIONS:-}" ] && ACTS="$ACTS,$ACTIONS"
 KEYS=()
 if [ "${INPUT:-0}" = "1" ]; then
   # Z (B button) down/up every 0.25 s for the whole run.
@@ -52,7 +58,8 @@ fi
 # shellcheck disable=SC2086
 "$BIN" --rom "$ROM" --autoplay --library-root "$WORK/library" --session-root "$WORK/session" --no-updater \
   --stats-log "$WORK/stats.jsonl" --frame-log "$WORK/frames.csv" --test-actions "$ACTS" ${KEYS[@]+"${KEYS[@]}"} \
-  -integerScale NO -sidebarVisible NO -showLatency NO -ApplePersistenceIgnoreState YES ${EXTRA_ARGS:-} >"$WORK/app.log" 2>&1 &
+  -integerScale NO -sidebarVisible NO -showLatency NO -crtEnabled "$([ "${CRT:-0}" = "1" ] && echo YES || echo NO)" \
+  -ApplePersistenceIgnoreState YES ${EXTRA_ARGS:-} >"$WORK/app.log" 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null || true' EXIT
 sleep 1
@@ -71,9 +78,9 @@ wait $PID 2>/dev/null || true
 trap - EXIT
 sleep 1
 
-python3 - "$WORK" "$WARMUP" "${LABEL:-run}" <<'PY'
+python3 - "$WORK" "$WARMUP" "${LABEL:-run}" "${CRT:-0}" <<'PY'
 import csv, json, os, statistics, sys
-work, warm, label = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+work, warm, label, crt = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
 rows = [json.loads(l) for l in open(os.path.join(work, "stats.jsonl")) if l.strip()]
 rows = [r for r in rows if r["t"] >= warm and not r["paused"]]
 if len(rows) < 3: print("not enough samples (app paused or not running?)"); sys.exit(1)
@@ -119,7 +126,8 @@ own = {int(r["frame"]) for r in fr}
 late_pictures = sum(1 for f in first if f not in own)   # own present dropped, shown by a repeat
 cpu = lambda k: d(k) / dt * 100
 summary = {
-    "label": label, "fullscreen": b["fullScreen"], "chromeHidden": b.get("chromeHidden", False), "pacing": b.get("pacing", "?"),
+    "label": label, "crt": crt, "fullscreen": b["fullScreen"], "chromeHidden": b.get("chromeHidden", False),
+    "chromeHiddenPct": 100 * sum(1 for r in rows if r.get("chromeHidden")) / len(rows), "pacing": b.get("pacing", "?"),
     "seconds": round(dt), "emulatedFPS": statistics.fmean(r["emulatedFPS"] for r in rows[1:]),
     "presentedFPS": d("presentCount") / dt, "steadyIntervalMs": ms(steady),
     "judderPerMin": off / mins, "neverShownPerMin": skipped / mins, "shownByRepeatPerMin": late_pictures / mins, "missedRefreshes": d("missedRefreshes"), "droppedFrames": d("droppedFrames"), "foreignCallbacks": d("foreignCallbacks"),
@@ -130,7 +138,7 @@ summary = {
     "gpuMs": statistics.fmean(r.get("displayGPUMs", 0) for r in rows), "inputLeadMs": b.get("inputLeadMs", 0),
     "stages": {k: stat(k, v) for k, v in stages.items()},
 }
-print(f"{label}: {summary['pacing']}  fullscreen={summary['fullscreen']} chromeHidden={summary['chromeHidden']}  window {dt:.0f}s  frames {a['frame']}->{b['frame']}")
+print(f"{label}: {summary['pacing']}  crt={crt}  fullscreen={summary['fullscreen']} chromeHidden={summary['chromeHiddenPct']:.0f}%  window {dt:.0f}s  frames {a['frame']}->{b['frame']}")
 print(f"emulated fps        {summary['emulatedFPS']:8.3f}   presented fps {summary['presentedFPS']:.3f}   steady interval {ms(steady):.2f} ms")
 print(f"{'stage (ms)':28s} {'mean':>7s} {'p50':>7s} {'p95':>7s} {'p99':>7s} {'max':>7s}  n")
 for k, s in summary["stages"].items():

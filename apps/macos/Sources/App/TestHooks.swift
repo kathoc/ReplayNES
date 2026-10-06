@@ -16,7 +16,9 @@
 //                                                open:<library|takes|guide|settings>,
 //                                                settingsTab:<0-5> (selects a Settings tab),
 //                                                seek:<frame>, bookmark, undoTake,
-//                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>.
+//                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
+//                                                screen:<n> (moves the main window to NSScreen.screens[n]),
+//                                                dumpLayers (logs the app's windows and the main window's layer tree).
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
@@ -116,6 +118,13 @@ extension AppModel {
                 case "resetPrompt": self.resetProjectPrompt()
                 case "windowWidth":
                     if let w = self.mainWindow { var f = w.frame; f.size.width = CGFloat(n); w.setFrame(f, display: true) }
+                case "dumpLayers": Self.dumpWindowLayers()
+                case "screen":   // move the main window to NSScreen.screens[n] (0: the menu-bar screen)
+                    let screens = NSScreen.screens
+                    if let w = self.mainWindow, !screens.isEmpty {
+                        let f = screens[max(0, min(n, screens.count - 1))].visibleFrame
+                        w.setFrame(NSRect(x: f.minX + 40, y: f.maxY - 40 - w.frame.height, width: w.frame.width, height: w.frame.height), display: true)
+                    }
                 case "settingsTab":
                     let tabs = ["controller", "game", "hotkey", "turbo", "display", "updates"]
                     UserDefaults.standard.set(tabs[max(0, min(n, tabs.count - 1))], forKey: SettingsView.tabKey)
@@ -123,6 +132,28 @@ extension AppModel {
                 }
             }
         }
+    }
+
+    /// Logs every window of the app and the main window's layer tree (direct-to-display checks:
+    /// anything visible above or beside the game layer makes the window server composite it).
+    static func dumpWindowLayers() {
+        var out = "ReplayNES layers:\n"
+        for w in NSApp.windows {
+            out += "window \(type(of: w)) #\(w.windowNumber) frame \(w.frame) level \(w.level.rawValue) visible \(w.isVisible) alpha \(w.alphaValue) opaque \(w.isOpaque) key \(w.isKeyWindow) screen \(w.screen?.frame ?? .zero)\n"
+        }
+        func walk(_ l: CALayer, _ depth: Int, _ root: CALayer) {
+            let f = l.convert(l.bounds, to: root)
+            let pad = String(repeating: "  ", count: depth)
+            out += "\(pad)\(type(of: l)) \(l.name ?? "") frame \(f) hidden \(l.isHidden) opacity \(l.opacity) opaque \(l.isOpaque) contents \(l.contents != nil) bg \(l.backgroundColor.map { "\($0.alpha)" } ?? "-") mask \(l.mask != nil) clips \(l.masksToBounds) corner \(l.cornerRadius) filters \(l.filters?.count ?? 0)/\(l.backgroundFilters?.count ?? 0) comp \(String(describing: l.compositingFilter)) transform \(CATransform3DIsIdentity(l.transform)) delegate \(l.delegate.map { "\(type(of: $0))" } ?? "-")\n"
+            for s in l.sublayers ?? [] { walk(s, depth + 1, root) }
+        }
+        for w in NSApp.windows where w.isVisible {
+            if let root = w.contentView?.superview?.layer ?? w.contentView?.layer {
+                out += "-- tree of #\(w.windowNumber)\n"
+                walk(root, 0, root)
+            }
+        }
+        NSLog("%@", out)
     }
 
     func scheduleSnapshots(_ spec: String) {
