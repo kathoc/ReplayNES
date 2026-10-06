@@ -14,8 +14,8 @@ rm -f "$SMOKE"
 # TEST_RUNNER_ prefixed variables are forwarded to the test process.
 TEST_RUNNER_RN_SMOKE_MP4="$SMOKE" xcodebuild -project "$APPDIR/ReplayNES.xcodeproj" -scheme ReplayNES \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath "$ROOT/build/DerivedData" test \
-  | grep -E "Test Case .*(passed|failed)|error:|Executed|\*\* TEST" || true
-test "${PIPESTATUS[0]}" -eq 0 || { echo "xcodebuild test failed"; exit 1; }
+  | grep -E "Test Case .*(passed|failed)|error:|Executed|\*\* TEST" \
+  || { echo "xcodebuild test failed"; exit 1; } # pipefail: xcodebuild's status (PIPESTATUS after "|| true" was always 0)
 
 [ -f "$SMOKE" ] || { echo "smoke export missing: $SMOKE"; exit 1; }
 if command -v ffprobe >/dev/null; then

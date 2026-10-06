@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel.shared
     private var pendingOpen: [URL] = []
     private var launched = false
+    /// Something was opened by the launch itself (arguments / documents): no resume.
+    private var openedAtLaunch = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Keep the menu bar compact: no "Show Tab Bar", no dictation / emoji items in 編集.
@@ -29,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --library-root <dir>  use <dir> instead of ~/Documents/ReplayNES for the ROM library
         //   --library-play <name> start a new library project for that ROM (TestHooks.swift)
         //   --syphon            enable the Syphon streaming output for this run (not saved)
+        //   --session-root <dir>  use <dir> instead of ~/Library/Application Support/ReplayNES/Session
+        //                       for the temporary project + resume record (scripted runs without it
+        //                       keep quick play in memory and never resume)
         //   --inject-pad / --test-actions / --snapshot-at   scripted checks (TestHooks.swift)
         let args = ProcessInfo.processInfo.arguments
         let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at"].contains { args.contains($0) }
@@ -43,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // silently replaced by another location.
         StreamOutputModel.shared.start(frames: model.emu.frames, forceEnable: args.contains("--syphon"))
         if let root = arg("--library-root") { model.library.setRoot(URL(fileURLWithPath: root)) }
+        let sessionRoot = arg("--session-root")
+        model.setupSessionPersistence(root: sessionRoot.map { URL(fileURLWithPath: $0) }, enabled: !scripted || sessionRoot != nil)
         if let err = model.library.start() {
             DispatchQueue.main.async {
                 self.model.showError("ライブラリのフォルダを作成できませんでした",
@@ -50,15 +57,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if let name = arg("--library-play") {
+            openedAtLaunch = true
             model.scheduleLibraryPlay(name)
         } else if let rom = arg("--rom") {
+            openedAtLaunch = true
             model.createSession(rom: URL(fileURLWithPath: rom), projectDir: nil, autoplay: args.contains("--autoplay"))
         } else if let p = arg("--project") {
+            openedAtLaunch = true
             model.openProject(URL(fileURLWithPath: p))
         } else if !pendingOpen.isEmpty {
             open(pendingOpen)
         } else {
-            DispatchQueue.main.async { self.model.checkCrashRecovery() }
+            // Next turn: a document open event delivered right after launch wins over the resume.
+            DispatchQueue.main.async { self.model.resumeLastSession(explicitOpen: self.openedAtLaunch) }
         }
         pendingOpen = []
         if let keys = arg("--inject-keys") { model.scheduleInjectedKeys(keys) }
@@ -85,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func open(_ urls: [URL]) {
         guard let url = urls.first else { return }
+        openedAtLaunch = true
         guard model.confirmDiscardIfNeeded() else { return }
         if url.pathExtension.lowercased() == "nesrec" {
             model.openProject(url)
@@ -93,11 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Also the path Sparkle uses before installing an update (it sends a normal quit event):
-    /// unsaved changes are offered for saving (the user may cancel, postponing the update) and
-    /// the emulation thread is stopped before the bundle is replaced.
+    /// Also the path Sparkle uses before installing an update (it sends a normal quit event).
+    /// No save prompt: the session is persisted (temporary project / autosave journal) and
+    /// resumed at the next launch; the emulation thread is stopped before the bundle is replaced.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if !model.confirmDiscardIfNeeded() { return .terminateCancel }
+        if !model.prepareForQuit() { return .terminateCancel }
         model.shutdown()
         return .terminateNow
     }
@@ -166,7 +178,7 @@ struct AppCommands: Commands {
             Divider()
             Button("新規プロジェクト…") { model.newProject() }.keyboardShortcut("n")
             Button("プロジェクトを開く…") { model.openProjectPanel() }.keyboardShortcut("o")
-            Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("ROMを開いて試す（プロジェクトなし）…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .saveItem) {
             Button("保存") { model.saveSync() }.keyboardShortcut("s").disabled(!menu.v.hasSession)

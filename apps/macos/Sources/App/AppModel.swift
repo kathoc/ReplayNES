@@ -50,7 +50,7 @@ final class AppModel: ObservableObject {
     // Preferences
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
     @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs() } }
-    @AppStorage("autosaveInterval") var autosaveInterval = 5.0 { didSet { pushPrefs() } }
+    @AppStorage("autosaveInterval") var autosaveInterval = 2.0 { didSet { pushPrefs() } }
     /// 等倍 (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
@@ -66,8 +66,24 @@ final class AppModel: ObservableObject {
 
     var flashLevel: FlashLevel { FlashLevel(rawValue: flashReduction) ?? .standard }
 
-    /// Set while a project is open; still set at next launch => the app did not quit cleanly.
+    /// Crash marker of versions before resume.json (read once at launch, see resumeLastSession).
     @AppStorage("openProjectPath") private var openProjectPath = ""
+
+    // Session persistence (SessionResume.swift): every session is on disk and resumed at launch.
+    private(set) var sessionPaths = SessionPaths.standard
+    private var sessionLock: SessionLock?
+    /// false: second instance, scripted run without --session-root, or the folder is unusable.
+    /// Then quick play stays in memory and nothing is resumed (the behaviour before 0.3).
+    private(set) var persistSessions = false
+    private struct SessionIdentity { let projectPath: String; let isTemp: Bool; let romSHA256: String }
+    /// The installed session (main-thread view of what the emulation thread owns).
+    private var current: SessionIdentity?
+    private var lastResume: ResumeRecord?
+    private var resumeTimer: Timer?
+    private let resumeQueue = DispatchQueue(label: "replaynes.resume", qos: .utility)
+
+    /// The temporary project of a session without a project (window title, menus).
+    func isTempSession(_ projectPath: String) -> Bool { persistSessions && sessionPaths.isTempProject(projectPath) }
 
     var displayOptions: DisplayOptions {
         DisplayOptions(integerScale: integerScale, pixelAspect87: displayPAR87, hideOverscan: hideOverscan)
@@ -269,15 +285,31 @@ final class AppModel: ObservableObject {
 
     // MARK: project lifecycle
 
-    /// Asks to save unsaved work. Returns false if the user cancelled.
+    /// Before another ROM / project replaces the current session (or it is closed): asks to save
+    /// unsaved work. Returns false if the user cancelled. A temporary session with recorded content
+    /// asks 保存… (= Save As) / 保存しない (its temporary project is deleted when replaced).
     func confirmDiscardIfNeeded() -> Bool {
-        let info = emu.sync(timeout: 10) { e -> (Bool, Bool, UInt64)? in
+        let info = emu.sync(timeout: 10) { e -> (unsaved: Bool, dir: String, takeLength: UInt64, content: Bool)? in
             guard let s = e.session else { return nil }
-            return (s.hasUnsavedChanges, s.projectDir.isEmpty, s.takeLength)
+            return (s.hasUnsavedChanges, s.projectDir, s.takeLength, SessionResume.hasRecordedContent(s))
         } ?? nil
         guard let info else { return true }
-        let inMemory = info.1
-        guard info.0 || (inMemory && info.2 > 0) else { return true }
+        if current?.isTemp == true {
+            guard info.content else { return true }
+            let a = NSAlert()
+            a.messageText = "保存しますか？"
+            a.informativeText = "このセッションはまだプロジェクトとして保存されていません（一時保存中）。保存しない場合、一時保存されたデータは破棄されます。"
+            a.addButton(withTitle: "保存…")
+            a.addButton(withTitle: "保存しない")
+            a.addButton(withTitle: "キャンセル")
+            switch a.runModal() {
+            case .alertFirstButtonReturn: return saveTempAs()
+            case .alertSecondButtonReturn: return true
+            default: return false
+            }
+        }
+        let inMemory = info.dir.isEmpty
+        guard info.unsaved || (inMemory && info.takeLength > 0) else { return true }
         let a = NSAlert()
         a.messageText = "現在のプロジェクトに保存されていない変更があります"
         a.informativeText = "保存しますか？"
@@ -320,21 +352,29 @@ final class AppModel: ObservableObject {
     func quickPlay() {
         guard confirmDiscardIfNeeded() else { return }
         let open = NSOpenPanel()
-        open.title = "ROMを開いて試す（未保存）"
+        open.title = "ROMを開いて試す（プロジェクトなし・一時保存）"
         open.allowedContentTypes = [.nesROM, .data]
         guard open.runModal() == .OK, let rom = open.url else { return }
         createSession(rom: rom, projectDir: nil)
     }
 
-    func createSession(rom: URL, projectDir: URL?, autoplay: Bool = false) {
+    /// projectDir == nil: a session without a project; with session persistence it lives in the
+    /// temporary project (SessionResume.swift), otherwise in memory.
+    func createSession(rom: URL, projectDir requestedDir: URL?, autoplay: Bool = false) {
+        var projectDir = requestedDir
+        if projectDir == nil && persistSessions {
+            guard prepareTempSlot() else { return }
+            projectDir = sessionPaths.tempProject
+        }
         let dirExisted = projectDir.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
+        let isTemp = requestedDir == nil
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let s = try EngineSession.create(rom: rom, projectDir: projectDir)
                 DispatchQueue.main.async {
                     self.install(s, recovered: false)
                     if autoplay { self.setPaused(false) }
-                    if projectDir != nil { self.library.refresh() }
+                    if projectDir != nil && !isTemp { self.library.refresh() }
                 }
             } catch let e as RNError {
                 // A project folder this call created (e.g. a library project whose first save
@@ -385,22 +425,29 @@ final class AppModel: ObservableObject {
         openProject(url)
     }
 
-    func openProject(_ url: URL, romOverride: URL? = nil, dropCorrupt: Bool = false, dropCorruptPractice: Bool = false) {
+    /// `resume`: reopening the last session at launch (position restored, paused, no recovery alert).
+    func openProject(_ url: URL, romOverride: URL? = nil, dropCorrupt: Bool = false, dropCorruptPractice: Bool = false,
+                     resume: ResumeRecord? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let s = try EngineSession.open(projectDir: url, romOverride: romOverride, dropCorruptStates: dropCorrupt,
                                                dropCorruptPractice: dropCorruptPractice)
                 let dropped = s.droppedPracticeSlots
                 DispatchQueue.main.async {
-                    self.install(s, recovered: s.recovered)
+                    self.install(s, recovered: s.recovered, resume: resume)
                     if dropped != 0 { self.reportDroppedPracticeSlots(dropped) }
                 }
             } catch let e as RNError {
                 DispatchQueue.main.async {
-                    self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice)
+                    let retrying = self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt,
+                                                        dropCorruptPractice: dropCorruptPractice, resume: resume)
+                    if !retrying, let resume { self.resumeFailed(resume) }
                 }
             } catch {
-                DispatchQueue.main.async { self.showError("プロジェクトを開けませんでした", "\(error)") }
+                DispatchQueue.main.async {
+                    self.showError("プロジェクトを開けませんでした", "\(error)")
+                    if let resume { self.resumeFailed(resume) }
+                }
             }
         }
     }
@@ -414,7 +461,10 @@ final class AppModel: ObservableObject {
     /// RN_ERR_CORRUPT caused by an A/B practice slot ("practice slot N" in the engine message).
     static func isPracticeCorruption(_ message: String) -> Bool { message.lowercased().contains("practice") }
 
-    private func handleOpenError(_ e: RNError, url: URL, romOverride: URL?, dropCorrupt: Bool, dropCorruptPractice: Bool = false) {
+    /// Explains an open failure and offers the fix where there is one. Returns true if the open is retried.
+    @discardableResult
+    private func handleOpenError(_ e: RNError, url: URL, romOverride: URL?, dropCorrupt: Bool, dropCorruptPractice: Bool = false,
+                                 resume: ResumeRecord? = nil) -> Bool {
         let manifest = (try? Engine.manifestJSON(projectDir: url)) ?? [:]
         let rom = manifest["rom"] as? [String: Any] ?? [:]
         let romName = rom["name"] as? String ?? "?"
@@ -433,25 +483,27 @@ final class AppModel: ObservableObject {
             }
             a.addButton(withTitle: "ROMを指定…")
             a.addButton(withTitle: "キャンセル")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
+            guard a.runModal() == .alertFirstButtonReturn else { return false }
             let open = NSOpenPanel()
             open.title = "「\(romName)」の場所を指定"
             open.allowedContentTypes = [.nesROM, .data]
-            guard open.runModal() == .OK, let newRom = open.url else { return }
-            openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice)
+            guard open.runModal() == .OK, let newRom = open.url else { return false }
+            openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice, resume: resume)
+            return true
         case RN_ERR_CORE_MISMATCH:
             let projCore = manifest["coreCompatID"] as? String ?? "?"
             a.messageText = "別のエミュレーションコアで記録されたプロジェクトです"
             a.informativeText = "再現性を守るため、このバージョンでは開けません（自動変換は行いません）。\nプロジェクトのコア: \(projCore)\nこのアプリのコア: \(Engine.coreCompatID)\n\n記録したときのバージョンの ReplayNES で開いてください。詳細は docs/COMPATIBILITY.md を参照。"
             a.runModal()
+            return false
         case RN_ERR_CORRUPT where Self.isPracticeCorruption(e.message) && !dropCorruptPractice:
             a.messageText = "練習区間（A/B）のデータが破損しています"
             a.informativeText = e.message + "\n\n壊れた練習区間だけを破棄して開けます（その区間のA/Bは失われます）。テイク（録画）は変更されません。"
             a.addButton(withTitle: "壊れた練習区間を破棄して開く")
             a.addButton(withTitle: "キャンセル")
-            if a.runModal() == .alertFirstButtonReturn {
-                openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true)
-            }
+            guard a.runModal() == .alertFirstButtonReturn else { return false }
+            openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true, resume: resume)
+            return true
         case RN_ERR_CORRUPT:
             a.messageText = "プロジェクトのファイルが破損しています"
             a.informativeText = e.message
@@ -459,30 +511,55 @@ final class AppModel: ObservableObject {
                 a.informativeText += "\n\nチェックポイント（高速化用のステート）の破損であれば、それらを破棄して開けます。入力履歴（正本）は変更されません。"
                 a.addButton(withTitle: "壊れたチェックポイントを破棄して開く")
                 a.addButton(withTitle: "キャンセル")
-                if a.runModal() == .alertFirstButtonReturn {
-                    openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice)
-                }
-            } else {
-                a.runModal()
+                guard a.runModal() == .alertFirstButtonReturn else { return false }
+                openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice, resume: resume)
+                return true
             }
+            a.runModal()
+            return false
         case RN_ERR_UNSUPPORTED_FORMAT:
             a.messageText = "新しいバージョンの ReplayNES で作られたプロジェクトです"
             a.informativeText = "アプリを更新してください。\n\(e.message)"
             a.runModal()
+            return false
         default:
             a.messageText = "プロジェクトを開けませんでした"
             a.informativeText = "\(e.statusName): \(e.message)"
             a.runModal()
+            return false
         }
     }
 
-    private func install(_ s: EngineSession, recovered: Bool) {
+    /// `resume`: restore that take mode / position (paused) and the practice panel; `resumeNotice`
+    /// says so (false when Save As reopens the moved temporary project).
+    private func install(_ s: EngineSession, recovered: Bool, resume: ResumeRecord? = nil, resumeNotice: Bool = true) {
         let dir = s.projectDir
-        showPracticePanel = false
-        emu.perform { e in e.install(s) }
-        openProjectPath = dir
-        if !dir.isEmpty { NSDocumentController.shared.noteNewRecentDocumentURL(URL(fileURLWithPath: dir)) }
-        if recovered {
+        let isTemp = persistSessions && sessionPaths.isTempProject(dir)
+        // A temporary session being replaced was confirmed (saved elsewhere, or 保存しない / empty).
+        if let p = current, p.isTemp, !isTemp { releaseSession(); removeTempProject() }
+        // Read before the emulation thread owns the session.
+        var record = ResumeRecord(projectPath: dir, isTemp: isTemp, romPath: s.romPath, romSHA256: s.romSHA256,
+                                  frame: s.frame, atTakeEnd: s.frame >= s.takeLength,
+                                  mode: s.mode == RN_MODE_REPLAY ? .replay : .record,
+                                  hasContent: SessionResume.hasRecordedContent(s))
+        if let resume {
+            record.frame = SessionResume.targetFrame(resume, takeLength: s.takeLength) ?? record.frame
+            record.atTakeEnd = record.frame == s.takeLength
+            record.mode = resume.mode ?? record.mode
+            record.practiceSlot = resume.practiceSlot
+        }
+        current = SessionIdentity(projectPath: dir, isTemp: isTemp, romSHA256: record.romSHA256)
+        showPracticePanel = resume?.practiceSlot != nil
+        emu.perform { e in
+            e.tempSession = isTemp
+            e.install(s)
+            if let resume { e.applyResume(resume) }
+        }
+        writeResume(dir.isEmpty ? nil : record)
+        if !dir.isEmpty && !isTemp { NSDocumentController.shared.noteNewRecentDocumentURL(URL(fileURLWithPath: dir)) }
+        if resume != nil {
+            if resumeNotice { flash("前回の続きから再開しました") }
+        } else if recovered {
             let a = NSAlert()
             a.messageText = "未保存の作業を復元しました"
             a.informativeText = "前回は正常に終了しなかったため、ジャーナルから最後の自動保存までの記録を復元しました。内容を確認して保存してください。"
@@ -492,6 +569,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func saveSync() -> Bool {
+        if current?.isTemp == true { return saveTempAs() }
         let inMemory = emu.sync { e in e.session?.projectDir.isEmpty ?? true } ?? true
         if inMemory { return saveAs() }
         let ok = emu.sync(timeout: 60) { e -> Bool in
@@ -507,6 +585,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func saveAs() -> Bool {
+        if current?.isTemp == true { return saveTempAs() }
         guard status.hasSession else { return false }
         let save = NSSavePanel()
         save.title = "プロジェクトを保存"
@@ -525,37 +604,253 @@ final class AppModel: ObservableObject {
                 return false
             }
         } ?? false
-        if ok { openProjectPath = dir.path; flash("保存しました") }
+        if ok {
+            if let c = current { current = SessionIdentity(projectPath: dir.path, isTemp: false, romSHA256: c.romSHA256) }
+            lastResume = nil // rewritten with the new path on the next timer tick
+            flash("保存しました")
+        }
         return ok
     }
 
-    /// Clean shutdown: stop the emulation thread and clear the crash marker.
+    /// Clean shutdown: stop the emulation thread (call prepareForQuit first).
     func shutdown() {
+        resumeTimer?.invalidate()
         StreamOutputModel.shared.stop()
         emu.shutdown()
-        openProjectPath = ""
+        resumeQueue.sync {} // pending resume.json writes
     }
 
     func closeProject() {
         guard confirmDiscardIfNeeded() else { return }
-        emu.perform { e in e.install(nil) }
-        openProjectPath = ""
+        let wasTemp = current?.isTemp == true
+        releaseSession()
+        if wasTemp { removeTempProject() }
+        writeResume(nil)
     }
 
-    /// Called at launch: offers to reopen a project that was open when the app last died.
-    func checkCrashRecovery() {
-        let path = openProjectPath
-        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { openProjectPath = ""; return }
-        let a = NSAlert()
-        a.messageText = "前回 ReplayNES は正常に終了しませんでした"
-        a.informativeText = "プロジェクト「\(URL(fileURLWithPath: path).lastPathComponent)」を開いて、自動保存された作業を復元しますか？"
-        a.addButton(withTitle: "開いて復元")
-        a.addButton(withTitle: "開かない")
-        if a.runModal() == .alertFirstButtonReturn {
-            openProject(URL(fileURLWithPath: path))
-        } else {
-            openProjectPath = ""
+    /// Stops the emulation thread from using the installed session and closes it (files released).
+    private func releaseSession() {
+        _ = emu.sync(timeout: 30) { e in e.install(nil) }
+        current = nil
+    }
+
+    // MARK: session persistence / resume (SessionResume.swift)
+
+    /// Called once at launch, before anything is opened. `root` overrides the folder (tests);
+    /// `enabled` false keeps quick play in memory and never resumes.
+    func setupSessionPersistence(root: URL?, enabled: Bool) {
+        if let root { sessionPaths = SessionPaths(root: root) }
+        guard enabled else { return }
+        do { try sessionPaths.ensure() } catch {
+            NSLog("ReplayNES: session folder unavailable (\(error)); sessions are not persisted")
+            return
         }
+        guard let lock = SessionLock(url: sessionPaths.lockFile) else {
+            NSLog("ReplayNES: another instance owns \(sessionPaths.root.path); this one does not resume")
+            return
+        }
+        sessionLock = lock
+        persistSessions = true
+        resumeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateResumeRecord() }
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.persistNow()
+        }
+    }
+
+    /// Launch: reopens the last session where it was, paused (unless the launch opens something).
+    func resumeLastSession(explicitOpen: Bool) {
+        let legacy = openProjectPath
+        openProjectPath = ""
+        guard persistSessions else { return }
+        switch SessionResume.decide(paths: sessionPaths, explicitOpen: explicitOpen, legacyProjectPath: legacy) {
+        case .none:
+            return
+        case .projectMissing(let r):
+            writeResume(nil)
+            showError("前回のプロジェクトが見つかりません",
+                      "「\(URL(fileURLWithPath: r.projectPath).lastPathComponent)」は移動または削除されたため、前回の続きから再開できませんでした。\n元の場所: \(r.projectPath)\n\nライブラリから選び直すか、「プロジェクトを開く…」で開いてください。")
+        case .resume(let r):
+            openProject(URL(fileURLWithPath: r.projectPath), resume: r)
+        }
+    }
+
+    /// The last session could not be reopened (the reason was already shown). Nothing is deleted:
+    /// resume.json and the temporary project stay, so the next launch tries again until the user
+    /// starts something else (and decides about the temporary data then).
+    private func resumeFailed(_ r: ResumeRecord) {
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = "前回の続きから再開できませんでした"
+        a.informativeText = r.isTemp
+            ? "保存されていない前回のセッションは削除せずに残してあります（次回の起動時にもう一度再開を試みます）。\n\nROMを元の場所に戻すか、ライブラリから選んでください。別のゲームを始めるときに、前回のセッションを保存するか破棄するかを選べます。\n一時保存の場所: \(sessionPaths.tempProject.path)"
+            : "プロジェクト「\(URL(fileURLWithPath: r.projectPath).lastPathComponent)」は変更されていません。ライブラリの「続きから」や「プロジェクトを開く…」からもう一度開けます。"
+        a.runModal()
+    }
+
+    /// ⌘Q / window close / Sparkle relaunch: no save prompt. Everything is persisted (temporary
+    /// project: full save; project: autosave journal) and resume.json is final. Returns false if
+    /// persisting failed and the user chose not to quit.
+    func prepareForQuit() -> Bool {
+        guard persistSessions else { return confirmDiscardIfNeeded() }
+        guard let c = current else { return true }
+        let isTemp = c.isTemp
+        let err: String? = emu.sync(timeout: 60) { e in e.flushForResume(fullSave: isTemp) } ?? "保存処理が応答しませんでした"
+        updateResumeRecord()
+        resumeQueue.sync {}
+        guard let err else { return true }
+        let a = NSAlert()
+        a.alertStyle = .critical
+        a.messageText = "作業内容を保存できませんでした"
+        a.informativeText = "このまま終了すると、最後の自動保存より後の記録が失われる可能性があります。\n\n\(err)"
+        a.addButton(withTitle: "終了しない")
+        a.addButton(withTitle: "終了する")
+        return a.runModal() == .alertSecondButtonReturn
+    }
+
+    /// App sent to the background: persist without waiting for the next autosave tick.
+    private func persistNow() {
+        guard persistSessions, current != nil else { return }
+        emu.perform { e in _ = e.flushForResume(fullSave: false) }
+        updateResumeRecord()
+    }
+
+    /// Main-thread timer (1 s) and quit: writes resume.json when what would be resumed changed.
+    private func updateResumeRecord() {
+        guard persistSessions, let c = current, status.hasSession, !c.projectPath.isEmpty,
+              status.projectPath == c.projectPath else { return }
+        let content = takes.contains { $0.length > 0 } || !bookmarks.isEmpty || practiceSlots.contains { $0.hasA }
+        let r = ResumeRecord(projectPath: c.projectPath, isTemp: c.isTemp, romPath: status.romPath, romSHA256: c.romSHA256,
+                             frame: status.frame, atTakeEnd: status.frame >= status.takeLength,
+                             mode: status.practicing ? nil : (status.recording ? .record : .replay),
+                             practiceSlot: status.practicing ? status.practiceSlot : nil, hasContent: content)
+        if let last = lastResume, last.sameState(as: r) { return }
+        writeResume(r)
+    }
+
+    /// nil clears the record. Writes are serialized off the main thread.
+    private func writeResume(_ r: ResumeRecord?) {
+        guard persistSessions else { return }
+        lastResume = r
+        let url = sessionPaths.resumeFile
+        resumeQueue.async {
+            if let r {
+                do { try ResumeStore.write(r, to: url) } catch { NSLog("ReplayNES: cannot write \(url.path): \(error)") }
+            } else {
+                ResumeStore.clear(url)
+            }
+        }
+    }
+
+    private func removeTempProject() {
+        do {
+            if sessionPaths.tempProjectExists { try FileManager.default.removeItem(at: sessionPaths.tempProject) }
+        } catch {
+            showError("一時保存を削除できませんでした", "\(sessionPaths.tempProject.path)\n\(error.localizedDescription)")
+        }
+        if lastResume?.isTemp == true { writeResume(nil) }
+    }
+
+    /// Makes room for a new temporary project. The installed temporary session was already
+    /// confirmed (confirmDiscardIfNeeded); one left from an earlier run that was never reopened
+    /// (resume failed or skipped) is offered for saving first. Returns false if cancelled.
+    private func prepareTempSlot() -> Bool {
+        if current?.isTemp == true {
+            releaseSession()
+            removeTempProject()
+            return true
+        }
+        guard sessionPaths.tempProjectExists else { return true }
+        let record = try? ResumeStore.read(sessionPaths.resumeFile)
+        let pointsHere = record?.isTemp == true
+        if let record, pointsHere, !record.hasContent {
+            removeTempProject()
+            writeResume(nil)
+            return true
+        }
+        let manifest = (try? Engine.manifestJSON(projectDir: sessionPaths.tempProject)) ?? [:]
+        let romName = (manifest["rom"] as? [String: Any])?["name"] as? String ?? "?"
+        let a = NSAlert()
+        a.messageText = "保存されていない前回のセッションが残っています"
+        a.informativeText = "前回のセッション（ROM: \(romName)）を保存しますか？保存しない場合は破棄されます。"
+        a.addButton(withTitle: "保存…")
+        a.addButton(withTitle: "保存しない")
+        a.addButton(withTitle: "キャンセル")
+        switch a.runModal() {
+        case .alertFirstButtonReturn:
+            let name = URL(fileURLWithPath: romName).deletingPathExtension().lastPathComponent
+            guard let dest = askProjectDestination(name: name) else { return false }
+            do { try SessionResume.moveTempProject(sessionPaths, to: dest) } catch {
+                showError("保存できませんでした", "\(dest.path)\n\(error.localizedDescription)")
+                return false
+            }
+            library.refresh()
+        case .alertSecondButtonReturn:
+            removeTempProject()
+        default:
+            return false
+        }
+        if pointsHere { writeResume(nil) }
+        return true
+    }
+
+    /// Save panel for a .nesrec; an existing item at the destination is moved to the Trash.
+    private func askProjectDestination(name: String) -> URL? {
+        let save = NSSavePanel()
+        save.title = "プロジェクトを保存"
+        save.nameFieldStringValue = name + ".nesrec"
+        save.allowedContentTypes = [.nesrec]
+        save.canCreateDirectories = true
+        guard save.runModal() == .OK, let dir = save.url else { return nil }
+        if sessionPaths.isTempProject(dir.path) { showError("保存できませんでした", "一時保存の場所には保存できません。"); return nil }
+        if FileManager.default.fileExists(atPath: dir.path) {
+            if (try? FileManager.default.trashItem(at: dir, resultingItemURL: nil)) == nil {
+                showError("保存できませんでした", "既存の項目を置き換えられません: \(dir.path)"); return nil
+            }
+        }
+        return dir
+    }
+
+    /// 「保存」 of a temporary session = Save As: full save, close, move the temporary project to
+    /// the chosen place and reopen it there (same take position). Returns false if cancelled / failed.
+    @discardableResult
+    func saveTempAs() -> Bool {
+        guard current?.isTemp == true else { return false }
+        let name = URL(fileURLWithPath: status.romPath).deletingPathExtension().lastPathComponent
+        guard let dest = askProjectDestination(name: name) else { return false }
+        let practicing = status.practicing
+        let failure = emu.sync(timeout: 60) { e -> String? in
+            guard let s = e.session else { return "セッションがありません" }
+            do { try s.save() } catch { return (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+            e.install(nil)
+            return nil
+        } ?? "保存処理が応答しませんでした"
+        if let failure {
+            showError("保存できませんでした（作業内容は一時保存に残っています）", failure)
+            return false
+        }
+        current = nil
+        var target = dest
+        var moveError: Error?
+        do { try SessionResume.moveTempProject(sessionPaths, to: dest) } catch {
+            moveError = error
+            target = sessionPaths.tempProject
+        }
+        // The full save above wrote the cursor and take mode: the project reopens where it was.
+        do {
+            let s = try EngineSession.open(projectDir: target, romOverride: nil, dropCorruptStates: false)
+            install(s, recovered: false, resume: ResumeRecord(projectPath: target.path, isTemp: moveError != nil,
+                                                              practiceSlot: practicing ? -1 : nil),
+                    resumeNotice: false)
+        } catch {
+            showError("プロジェクトを開けませんでした", "\(target.path)\n\((error as? LocalizedError)?.errorDescription ?? "\(error)")")
+        }
+        if let moveError {
+            showError("保存できませんでした（作業内容は一時保存に残っています）", "\(dest.path)\n\(moveError.localizedDescription)")
+            return false
+        }
+        library.refresh()
+        flash("保存しました")
+        return true
     }
 
     // MARK: export

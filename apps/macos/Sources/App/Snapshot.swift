@@ -69,6 +69,7 @@ extension AppModel {
             "practiceLooping": status.practiceLooping, "practiceLoops": status.practiceLoops,
             "practiceSlots": practiceSlots.filter { $0.hasA }.map { ["slot": $0.index, "hasB": $0.hasB, "length": $0.length, "name": $0.name] },
             "takeCount": status.takeCount, "activeTake": status.activeTake, "unsaved": status.unsaved,
+            "projectPath": status.projectPath, "tempSession": isTempSession(status.projectPath),
             "fastForward": status.fastForward, "slow": status.slow.label, "endOfTake": status.endOfTake,
             "integerScale": integerScale, "menuItemAdds": MenuBarCleaner.shared.mainMenuAdds, "showPracticePanel": showPracticePanel,
             "controllerHotkeys": InputCatalog.controllerHotkeys.map { "\($0.0)=\($0.1)" },

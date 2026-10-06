@@ -35,7 +35,8 @@ struct ContentView: View {
         .background(WindowAccessor { w in
             model.mainWindow = w
             w.title = windowTitle
-            w.representedURL = model.status.projectPath.isEmpty ? nil : URL(fileURLWithPath: model.status.projectPath)
+            let path = model.status.projectPath
+            w.representedURL = path.isEmpty || model.isTempSession(path) ? nil : URL(fileURLWithPath: path)
             w.isDocumentEdited = model.status.unsaved
         })
         .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
@@ -55,7 +56,8 @@ struct ContentView: View {
     }
 
     private var windowTitle: String {
-        if !model.status.projectPath.isEmpty { return URL(fileURLWithPath: model.status.projectPath).lastPathComponent }
+        let path = model.status.projectPath
+        if !path.isEmpty && !model.isTempSession(path) { return URL(fileURLWithPath: path).lastPathComponent }
         if model.status.hasSession { return URL(fileURLWithPath: model.status.romPath).lastPathComponent + "（未保存）" }
         return "ReplayNES"
     }
@@ -132,7 +134,7 @@ struct WelcomeView: View {
                 Button { model.newProject() } label: { Label("新規プロジェクト…", systemImage: "doc.badge.plus") }
                     .keyboardShortcut("n")
                 Button { model.openProjectPanel() } label: { Label("プロジェクトを開く…", systemImage: "folder") }
-                Button("ROMを開いて試す（保存しない）…") { model.quickPlay() }.buttonStyle(.link)
+                Button("ROMを開いて試す（プロジェクトなし）…") { model.quickPlay() }.buttonStyle(.link)
                 Spacer()
                 Text("ROMはプロジェクトにコピーされません（パスと SHA-256 のみ記録）。")
                     .font(.caption).foregroundStyle(.secondary)

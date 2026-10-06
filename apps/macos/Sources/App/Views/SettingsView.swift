@@ -230,6 +230,7 @@ struct DisplayTab: View {
             Section("操作") {
                 Toggle("巻き戻し・早送りを離したら一時停止する", isOn: $model.pauseAfterRewind)
                 Picker("自動保存の間隔", selection: $model.autosaveInterval) {
+                    Text("2 秒").tag(2.0)
                     Text("3 秒").tag(3.0)
                     Text("5 秒").tag(5.0)
                     Text("10 秒").tag(10.0)
