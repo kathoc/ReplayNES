@@ -21,9 +21,9 @@ foreach(sh ${CRT_SHADERS})
   list(APPEND CRT_SPV ${out})
 endforeach()
 
-add_library(rnl_render STATIC crt_model.cpp crt_renderer.cpp headless_vulkan.cpp ${CRT_SPV})
+add_library(rnl_render STATIC crt_model.cpp crt_renderer.cpp headless_vulkan.cpp crt_display.cpp ${CRT_SPV})
 target_include_directories(rnl_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/.. PRIVATE ${CRT_SHADER_OUT})
-target_link_libraries(rnl_render PUBLIC Vulkan::Vulkan Threads::Threads)
+target_link_libraries(rnl_render PUBLIC replaynes_frontend Vulkan::Vulkan Threads::Threads)
 target_compile_options(rnl_render PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 
 add_executable(replaynes-crt-test crt_test.cpp)
@@ -32,3 +32,9 @@ target_compile_definitions(replaynes-crt-test PRIVATE
   RN_CRT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tests/fixtures/crt/reference.json")
 add_test(NAME crt_conformance COMMAND replaynes-crt-test)
 set_tests_properties(crt_conformance PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+
+# "Apply CRT effect" for the MP4 export (offline, window-less device) + the export CLI's --crt.
+add_library(rnl_crt_export STATIC crt_export.cpp)
+target_link_libraries(rnl_crt_export PUBLIC rnl_render rnl_export)
+target_link_libraries(replaynes-export PRIVATE rnl_crt_export)
+target_compile_definitions(replaynes-export PRIVATE RNL_EXPORT_CRT=1)

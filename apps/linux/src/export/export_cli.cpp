@@ -16,6 +16,9 @@
 #include <vector>
 
 #include "mp4_export.h"
+#ifdef RNL_EXPORT_CRT
+#include "render/crt_export.h"
+#endif
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -75,6 +78,7 @@ int usage() {
                "  replaynes-export --project DIR --out FILE.mp4 [--start N] [--end N] [--preset INDEX]\n"
                "                   [--flash 0-3] [--par87] [--no-crop] [--encoder NAME] [--bpp X]\n"
                "                   [--verify-hash] [--quiet]\n"
+               "                   [--crt [--crt-lines N] [--crt-dbuv X] [--crt-no-growth|-persistence|-supply]]\n"
                "  replaynes-export --self-test DIR [--frames N] [--encoder NAME]\n"
                "  replaynes-export --list-presets | --encoders\n");
   return 2;
@@ -474,6 +478,18 @@ int exportCmd(const Args& a) {
   if (a.has("--no-crop")) opt.settings.crop_top = opt.settings.crop_bottom = 0;
   if (const char* e = a.get("--encoder")) opt.encoder = e;
   if (const char* b = a.get("--bpp")) opt.videoBitsPerPixel = std::atof(b);
+#ifdef RNL_EXPORT_CRT
+  if (a.has("--crt")) {
+    // "Apply CRT effect" (nesterm physical model, offline on a window-less Vulkan device).
+    rnl::CrtSettings cs;
+    if (const char* l = a.get("--crt-lines")) cs.lines = std::atoi(l);
+    if (const char* d = a.get("--crt-dbuv")) cs.antennaDbuv = std::atof(d);
+    if (a.has("--crt-no-growth")) cs.beamGrowth = false;
+    if (a.has("--crt-no-persistence")) cs.persistence = false;
+    if (a.has("--crt-no-supply")) cs.supply = false;
+    opt.makeProcessor = rnl::crtExportProcessorFactory(cs);
+  }
+#endif
 
   rn_session_options so;
   rn_session_options_init(&so);
