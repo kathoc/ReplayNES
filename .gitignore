@@ -45,3 +45,8 @@ xcuserdata/
 
 # Claude Code local state (agent worktrees etc.)
 /.claude/
+
+# Linux Flatpak build trees (scripts/build-linux-flatpak.sh builds on the Deck; these appear on Linux hosts)
+/.flatpak-builder/
+/build-flatpak/
+/repo/

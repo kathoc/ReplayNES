@@ -1,0 +1,132 @@
+// Minimal Vulkan presenter: FIFO swapchain, the 256x240 BGRA frame drawn nearest-neighbour into a
+// destination rectangle (integer / FILL scale, 8:7 pixel aspect and the overscan crop are computed
+// by the caller), Dear ImGui on top, and present ids + VK_KHR_present_wait so the frame loop knows
+// when each picture reached the screen (docs/FRAME_PACING.md, "Linux X11 / Vulkan").
+// SPDX-License-Identifier: GPL-2.0-or-later
+#pragma once
+
+#include <SDL3/SDL.h>
+#include <vulkan/vulkan.h>
+
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+struct ImDrawData;
+
+namespace rnl {
+
+struct PresentDone {
+  uint64_t id = 0;
+  double time = 0;  // CLOCK_MONOTONIC s when vkWaitForPresentKHR returned (just after the flip)
+  bool ok = false;  // false: never confirmed (timeout, swapchain recreated, hidden window)
+  int result = 0;   // last VkResult of vkWaitForPresentKHR
+};
+
+struct GameRect {
+  bool visible = false;
+  float x = 0, y = 0, w = 0, h = 0;  // pixels, origin top-left
+  int crop = 0;                      // source pixels hidden on every side
+};
+
+/// Destination rectangle of the game picture in a drawable (MetalView.viewport on macOS).
+GameRect computeGameRect(int width, int height, bool integerScale, bool par87, bool hideOverscan);
+
+class VkRenderer {
+ public:
+  bool init(SDL_Window* window, std::string* error);
+  void shutdown();
+  bool initImGui();
+
+  bool presentWait() const { return presentWait_; }
+  const std::string& description() const { return description_; }
+  VkExtent2D extent() const { return extent_; }
+  uint32_t imageCount() const { return uint32_t(images_.size()); }
+
+  /// Draws (newPicture: upload it first; nullptr keeps the last one) and presents. Returns the
+  /// present id (0 when nothing was presented, e.g. a minimised window).
+  uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui);
+
+  /// Presents confirmed on screen since the last call, in present order. A waiter thread calls
+  /// vkWaitForPresentKHR for every present id (the frame loop never blocks on it, so the input
+  /// lead may exceed one refresh).
+  std::vector<PresentDone> takeCompleted();
+  /// Waits for the GPU to finish the last submitted frame (fallback without present wait).
+  void waitLastSubmit();
+  /// Seconds the last drawAndPresent spent waiting for its slot fence + the swapchain image.
+  double lastAcquireWait() const { return lastAcquireWait_; }
+
+ private:
+  void waiterLoop();
+  bool createDevice(std::string* error);
+  bool createSwapchain();
+  void destroySwapchain();
+  bool createPipeline();
+  bool createGameTexture();
+  uint32_t findMemory(uint32_t typeBits, VkMemoryPropertyFlags props);
+
+  SDL_Window* window_ = nullptr;
+  VkInstance instance_ = VK_NULL_HANDLE;
+  VkSurfaceKHR surface_ = VK_NULL_HANDLE;
+  VkPhysicalDevice phys_ = VK_NULL_HANDLE;
+  VkDevice device_ = VK_NULL_HANDLE;
+  uint32_t queueFamily_ = 0;
+  VkQueue queue_ = VK_NULL_HANDLE;
+  uint32_t apiVersion_ = VK_API_VERSION_1_1;
+  bool presentWait_ = false;
+  std::string description_;
+
+  VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
+  VkFormat format_ = VK_FORMAT_B8G8R8A8_UNORM;
+  VkExtent2D extent_{0, 0};
+  std::vector<VkImage> images_;
+  std::vector<VkImageView> views_;
+  std::vector<VkFramebuffer> framebuffers_;
+  std::vector<VkSemaphore> renderDone_;  // per swapchain image
+  VkRenderPass renderPass_ = VK_NULL_HANDLE;
+  bool needRecreate_ = false;
+  uint64_t presentId_ = 0;
+  // Present-wait thread: ids to wait for (id, swapchain generation) and the results.
+  std::thread waiter_;
+  std::mutex queueMutex_;
+  std::condition_variable queueCv_;
+  std::deque<std::pair<uint64_t, uint64_t>> toWait_;
+  std::vector<PresentDone> done_;
+  std::atomic<bool> stopWaiter_{false};
+  std::mutex swapMutex_;  // swapchain_ replacement vs. the waiter's vkWaitForPresentKHR
+  uint64_t swapGen_ = 0;
+
+  static constexpr int kSlots = 2;
+  struct Slot {
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    VkSemaphore acquired = VK_NULL_HANDLE;
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMem = VK_NULL_HANDLE;
+    void* stagingPtr = nullptr;
+  };
+  Slot slots_[kSlots];
+  int slot_ = 0;
+  VkCommandPool pool_ = VK_NULL_HANDLE;
+
+  VkImage gameImage_ = VK_NULL_HANDLE;
+  VkDeviceMemory gameMem_ = VK_NULL_HANDLE;
+  VkImageView gameView_ = VK_NULL_HANDLE;
+  VkSampler sampler_ = VK_NULL_HANDLE;
+  bool hasPicture_ = false;
+  VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
+  VkDescriptorPool descPool_ = VK_NULL_HANDLE;
+  VkDescriptorSet set_ = VK_NULL_HANDLE;
+  VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
+  VkPipeline pipeline_ = VK_NULL_HANDLE;
+  bool imguiReady_ = false;
+  double lastAcquireWait_ = 0;
+};
+
+}  // namespace rnl

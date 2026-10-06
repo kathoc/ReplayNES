@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.replaynes.ReplayNES</id>
+  <name>ReplayNES</name>
+  <summary>Record, rewind and replay NES play</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <description>
+    <p>ReplayNES records NES play frame by frame: rewind, fast-forward, slow motion and frame
+    stepping never change what was recorded. Built on the Nestopia UE core with
+    display-locked, low-latency pacing.</p>
+  </description>
+  <launchable type="desktop-id">io.github.replaynes.ReplayNES.desktop</launchable>
+  <url type="homepage">https://github.com/kathoc/ReplayNES</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>gamepad</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="0.2.0" date="2026-10-07"/>
+  </releases>
+</component>

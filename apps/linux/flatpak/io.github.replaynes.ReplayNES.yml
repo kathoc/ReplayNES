@@ -1,0 +1,47 @@
+# ReplayNES for Linux / Steam Deck (Flatpak). Build + install (on the Deck or any x86_64 Linux):
+#   scripts/build-linux-flatpak.sh            (from a Mac or Linux checkout: syncs to the Deck, builds there)
+#   flatpak run org.flatpak.Builder --user --install --force-clean build-flatpak \
+#       apps/linux/flatpak/io.github.replaynes.ReplayNES.yml            (directly on a Linux host)
+# SDL3, Vulkan loader/headers and glslc come from the freedesktop 25.08 runtime / SDK.
+id: io.github.replaynes.ReplayNES
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: replaynes-linux
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Controllers: /dev/input (evdev, Steam Input virtual pads) and /dev/hidraw* (Steam Deck
+  # built-in controls via SDL's HIDAPI driver when Steam Input is not in charge).
+  - --device=all
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+  # ROM library and projects: ~/Documents/ReplayNES/{ROM,Projects}
+  - --filesystem=xdg-documents/ReplayNES:create
+modules:
+  - name: replaynes
+    buildsystem: cmake-ninja
+    subdir: apps/linux
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - .git
+          - roms
+          - dist
+          - build
+          - build-flatpak
+          - .flatpak-builder
+          - .claude
+          - third_party/nestopia
+          - third_party/syphon
+      # Nestopia UE core at the pinned commit (cmake/NestopiaCore.cmake checks the pin).
+      - type: git
+        url: https://github.com/0ldsk00l/nestopia.git
+        commit: 7b5c87d8dc3c817211545449683d1fcd897324ca
+        dest: third_party/nestopia

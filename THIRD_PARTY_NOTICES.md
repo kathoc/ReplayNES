@@ -243,6 +243,41 @@ SOFTWARE.
 - The model cites published measurements and papers for its assumed values (NESdev NTSC video levels,
   Kuhn 2002 phosphor decay fits, etc.); no third-party code from those sources is included.
 
+## Dear ImGui (user interface, Linux app)
+
+- Project: https://github.com/ocornut/imgui
+- Version: 1.92.9b (vendored unmodified in `third_party/imgui`: core files and the SDL3 / Vulkan backends)
+- License: MIT
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2014-2026 Omar Cornut
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## SDL3 and Vulkan loader (Linux app)
+
+- SDL 3 (zlib license, https://libsdl.org) and the Khronos Vulkan loader (Apache-2.0) are provided by the
+  `org.freedesktop.Platform` 25.08 Flatpak runtime; they are not bundled in the ReplayNES Flatpak.
+
 ## Apple frameworks
 
 SwiftUI, Metal, AVFoundation, GameController (system frameworks, not redistributed).

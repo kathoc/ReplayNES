@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ReplayNES
+GenericName=NES recorder and player
+Comment=Record, rewind and replay NES play with frame-exact timelines
+Comment[ja]=NES のプレイをフレーム単位で記録・巻き戻し・再生
+Exec=replaynes-linux
+Icon=io.github.replaynes.ReplayNES
+Terminal=false
+Categories=Game;Emulator;
+Keywords=NES;Famicom;emulator;TAS;replay;
+StartupWMClass=io.github.replaynes.ReplayNES
