@@ -1,17 +1,17 @@
 # 13 RELEASE
 
 # Prompt Pack
-Codex CLI / Claude Code等で段階的に実装するためのプロンプトです。00から順に一つずつ実行してください。一度に全プロンプトを渡さないでください。
+These are prompts for implementing the app step by step with Codex CLI, Claude Code, or similar tools. Run them one at a time, in order starting from 00. Do not hand over all the prompts at once.
 
-各prompt共通ルール:
-- 最初にrepo、README、MASTER_SPEC、既存testを読む。
-- 作業前に変更範囲/変更しない範囲/test方法を短く提示。
-- 今回のscope外を先回りして大量実装しない。
-- build/testを必ず実行。
-- errorを隠すfallback禁止。
-- host時刻、非決定RNG、raceをemulation結果へ混入させない。
-- ROM/著作権物をrepoへ追加しない。
-- 完了時に変更内容、test結果、残課題を報告。
+Common rules for every prompt:
+- First read the repo, README, MASTER_SPEC, and the existing tests.
+- Before starting, briefly state what will change, what will not change, and how it will be tested.
+- Do not implement large amounts of out-of-scope work ahead of time.
+- Always run the build and tests.
+- No fallbacks that hide errors.
+- Do not let host time, nondeterministic RNG, or races leak into emulation results.
+- Do not add ROMs or copyrighted material to the repo.
+- On completion, report what changed, the test results, and remaining issues.
 
-## 今回のタスク
-配布準備。Apple Silicon優先のRelease build、署名/notarization手順、third-party notices、license遵守、privacy/network不要ならその明記、sample projectは著作権ROMを含めずtest ROMで作る。READMEに基本操作、巻き戻し、翌日再開、MP4 export、core互換性注意を記載。既知の制限を隠さない。
+## Task for This Step
+Prepare for distribution. An Apple Silicon-first Release build, signing/notarization steps, third-party notices, license compliance, a statement that no network or privacy-sensitive access is needed if that is the case, and a sample project built with test ROMs without copyrighted ROMs. In the README, document basic operation, rewinding, resuming the next day, MP4 export, and the note on core compatibility. Do not hide known limitations.

@@ -203,7 +203,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## nesterm physical CRT model (ブラウン管 (CRT) display, macOS app)
+## nesterm physical CRT model (CRT Display, macOS app)
 
 - Project: nesterm by kathoc (Web version, `web/physical-*.mjs` and `vendor/crt/`). Its `vendor/crt/` modules
   were exported from the same author's research project **crt-physical-model**

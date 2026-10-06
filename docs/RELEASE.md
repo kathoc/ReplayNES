@@ -19,7 +19,7 @@
      --repo kathoc/ReplayNES --title "ReplayNES <version>" --notes-file <notes>
    ```
 6. Check: `curl -sL https://github.com/kathoc/ReplayNES/releases/latest/download/appcast.xml` shows the
-   new version, and an installed previous version finds it via 「アップデートを確認…」.
+   new version, and an installed previous version finds it via "Check for Updates…".
 
 ## Automatic updates (Sparkle 2)
 

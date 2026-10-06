@@ -1,17 +1,17 @@
 # 03 DETERMINISM
 
 # Prompt Pack
-Codex CLI / Claude Code等で段階的に実装するためのプロンプトです。00から順に一つずつ実行してください。一度に全プロンプトを渡さないでください。
+These are prompts for implementing the app step by step with Codex CLI, Claude Code, or similar tools. Run them one at a time, in order starting from 00. Do not hand over all the prompts at once.
 
-各prompt共通ルール:
-- 最初にrepo、README、MASTER_SPEC、既存testを読む。
-- 作業前に変更範囲/変更しない範囲/test方法を短く提示。
-- 今回のscope外を先回りして大量実装しない。
-- build/testを必ず実行。
-- errorを隠すfallback禁止。
-- host時刻、非決定RNG、raceをemulation結果へ混入させない。
-- ROM/著作権物をrepoへ追加しない。
-- 完了時に変更内容、test結果、残課題を報告。
+Common rules for every prompt:
+- First read the repo, README, MASTER_SPEC, and the existing tests.
+- Before starting, briefly state what will change, what will not change, and how it will be tested.
+- Do not implement large amounts of out-of-scope work ahead of time.
+- Always run the build and tests.
+- No fallbacks that hide errors.
+- Do not let host time, nondeterministic RNG, or races leak into emulation results.
+- Do not add ROMs or copyrighted material to the repo.
+- On completion, report what changed, the test results, and remaining issues.
 
-## 今回のタスク
-UI追加より先にdeterminism harnessを作る。入力scriptをframe単位で与え、複数runのmachine state/video/audio hashを一定間隔で比較。途中savestateから再開したrunと先頭からのrunも比較。不一致時は最初にdivergeしたframeとcomponentを報告。最低10000frame規模を自動test可能にする。host clock/RNG/thread依存を洗い出して排除。
+## Task for This Step
+Build the determinism harness before adding any UI. Feed an input script frame by frame, and compare machine state / video / audio hashes across multiple runs at regular intervals. Also compare a run resumed from a mid-point savestate against a run from the start. On a mismatch, report the first frame and component that diverged. Make it possible to run a scale of at least 10,000 frames as an automated test. Identify and eliminate dependencies on host clock, RNG, and threads.

@@ -1,17 +1,17 @@
 # 06 PERSISTENCE
 
 # Prompt Pack
-Codex CLI / Claude Code等で段階的に実装するためのプロンプトです。00から順に一つずつ実行してください。一度に全プロンプトを渡さないでください。
+These are prompts for implementing the app step by step with Codex CLI, Claude Code, or similar tools. Run them one at a time, in order starting from 00. Do not hand over all the prompts at once.
 
-各prompt共通ルール:
-- 最初にrepo、README、MASTER_SPEC、既存testを読む。
-- 作業前に変更範囲/変更しない範囲/test方法を短く提示。
-- 今回のscope外を先回りして大量実装しない。
-- build/testを必ず実行。
-- errorを隠すfallback禁止。
-- host時刻、非決定RNG、raceをemulation結果へ混入させない。
-- ROM/著作権物をrepoへ追加しない。
-- 完了時に変更内容、test結果、残課題を報告。
+Common rules for every prompt:
+- First read the repo, README, MASTER_SPEC, and the existing tests.
+- Before starting, briefly state what will change, what will not change, and how it will be tested.
+- Do not implement large amounts of out-of-scope work ahead of time.
+- Always run the build and tests.
+- No fallbacks that hide errors.
+- Do not let host time, nondeterministic RNG, or races leak into emulation results.
+- Do not add ROMs or copyrighted material to the repo.
+- On completion, report what changed, the test results, and remaining issues.
 
-## 今回のタスク
-`.nesrec` package保存を実装。manifest、timeline segments/index、states、bookmarks、journal。formatVersion、ROM SHA-256、core compatibility ID/build、serialization versionを保存。atomic temp-write+rename、checksum、autosave、crash recoveryを実装。アプリ終了→再起動→翌日相当の再open→active head復元→さらに過去へrewindできるintegration testを作る。ROM本体は保存しない。
+## Task for This Step
+Implement saving of the `.nesrec` package: manifest, timeline segments/index, states, bookmarks, and journal. Store formatVersion, ROM SHA-256, core compatibility ID/build, and serialization version. Implement atomic temp-write + rename, checksums, autosave, and crash recovery. Write an integration test that quits the app -> relaunches -> reopens as if a day later -> restores the active head -> and can rewind further into the past. Do not save the ROM itself.

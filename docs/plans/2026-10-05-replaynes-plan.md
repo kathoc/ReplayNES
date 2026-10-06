@@ -33,7 +33,7 @@ Spec: `docs/spec/MASTER_SPEC.md`, `docs/spec/DATA_FORMAT_NOTES.md`, step prompts
             via remappable binding table (JSON serializable); analog→D-pad threshold helper; SOCD policy (neutral/last-wins/allow);
             turbo with frame period/duty; hotkeys separated from game input. Output = final p1/p2 bitfields (this is what gets recorded).
 - `timeline/` FrameInputLog (per-frame {p1,p2,events}; on-disk: run-length records `varint runLength, p1, p2, events`), Segment DAG
-            (immutable segments: id, parentId, startFrame, records), active head, take list, undo history of head switches ("前の試行へ戻す").
+            (immutable segments: id, parentId, startFrame, records), active head, take list, undo history of head switches ("Back to Previous Take").
 - `checkpoint/` CheckpointStore: dense recent (e.g. every 30f, bounded) + sparse permanent (e.g. every 600f) + bookmark states;
             metadata {stateID, frameIndex, segmentID, coreCompatID, stateFormatVersion, checksum}. Validity: checkpoint at frame f in
             segment S is valid for a path that contains S with f ≤ (start of S's child on that path).
@@ -72,7 +72,7 @@ rn_core_compat_id(), rn_version(), rn_sha256_file(path, out65)
 Emulation thread (owns rn_session, paced by host clock only for *when* to step, never *what*), Metal MTKView nearest-neighbor
 display, AVAudioEngine source node fed from SPSC ring (mute on pause/rewind/scrub/slow), GameController.framework + keyboard
 (NSEvent) → rn_input; controller disconnect → pause. Transport: pause, frame advance, N-frame advance, slow 1/2 1/4, hold-to-rewind,
-scrubber, bookmarks, soft reset, power cycle, record/replay, takes ("ここまで戻る" / "ここから録り直す" / "前の試行へ戻す"),
+scrubber, bookmarks, soft reset, power cycle, record/replay, takes ("Rewind to Here" / "Re-record from Here" / "Back to Previous Take"),
 export sheet (AVAssetWriter H.264/HEVC + AAC, presets 256x240×N / 1280x960 / 1920x1440(4:3), overscan crop, pixel aspect 1:1 or 8:7),
 settings (key/controller remap, hotkeys, turbo, SOCD). Latency instrumentation (input sample → frame emulated → present) shown in debug overlay.
 Autosave + crash recovery on launch. Japanese+English UI strings (Japanese primary is fine).

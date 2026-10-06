@@ -1,17 +1,17 @@
 # 10 EXPORT MP4
 
 # Prompt Pack
-Codex CLI / Claude Code等で段階的に実装するためのプロンプトです。00から順に一つずつ実行してください。一度に全プロンプトを渡さないでください。
+These are prompts for implementing the app step by step with Codex CLI, Claude Code, or similar tools. Run them one at a time, in order starting from 00. Do not hand over all the prompts at once.
 
-各prompt共通ルール:
-- 最初にrepo、README、MASTER_SPEC、既存testを読む。
-- 作業前に変更範囲/変更しない範囲/test方法を短く提示。
-- 今回のscope外を先回りして大量実装しない。
-- build/testを必ず実行。
-- errorを隠すfallback禁止。
-- host時刻、非決定RNG、raceをemulation結果へ混入させない。
-- ROM/著作権物をrepoへ追加しない。
-- 完了時に変更内容、test結果、残課題を報告。
+Common rules for every prompt:
+- First read the repo, README, MASTER_SPEC, and the existing tests.
+- Before starting, briefly state what will change, what will not change, and how it will be tested.
+- Do not implement large amounts of out-of-scope work ahead of time.
+- Always run the build and tests.
+- No fallbacks that hide errors.
+- Do not let host time, nondeterministic RNG, or races leak into emulation results.
+- Do not add ROMs or copyrighted material to the repo.
+- On completion, report what changed, the test results, and remaining issues.
 
-## 今回のタスク
-active takeのoffline rendererを作る。fresh coreで初期状態からinput/event logを正規速度論理時間で再実行し、video framesとPCMを生成。AVAssetWriterでH.264/HEVC + AAC MP4へ。timestampはframe/sample count由来。nearest-neighbor、1280x960等preset、overscan/pixel aspect設定を用意。export前後でproject/timelineを変更しない。export runのhashが通常replayと一致するtestを作る。
+## Task for This Step
+Build an offline renderer for the active take. Using a fresh core, re-run the input/event log from the initial state in normal-speed logical time, producing video frames and PCM. Write an H.264/HEVC + AAC MP4 with AVAssetWriter. Timestamps derive from frame/sample counts. Provide nearest-neighbor scaling, presets such as 1280x960, and overscan / pixel aspect settings. Do not modify the project/timeline before or after export. Write a test that the hashes of the export run match a normal replay.

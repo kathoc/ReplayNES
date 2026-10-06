@@ -1,239 +1,234 @@
+English | [日本語](README.ja.md)
+
 # ReplayNES
 
-**ミスしたら戻って録り直す。最後に残るのは「ノーミスの通しプレイ」。**
+**Made a mistake? Go back and record it again. What you end up with is a flawless, no-miss run.**
 
-ReplayNES は macOS 用のファミコン / NES エミュレーターです。プレイを動画ではなく
-「入力の履歴」として記録するので、いつでも好きな場面まで巻き戻してそこから録り直せます。
-録り終えたテイクを最初から再生すると、失敗した部分が消えたひと続きのプレイになります。
-そのまま音声付き MP4 に書き出せます。
+ReplayNES is an NES / Famicom emulator for macOS. It records your play not as video but as
+a history of inputs, so you can rewind to any moment you like and re-record from there.
+When you play the finished take from the beginning, the failed parts are gone and it plays as one continuous run.
+You can export it as-is to an MP4 with audio.
 
-> English summary: ReplayNES is a macOS NES/Famicom emulator that records *deterministic input history*
-> instead of video. Rewind to any frame, re-record from there, and the final take plays back as one
-> flawless run that can be exported to MP4 (H.264/HEVC + AAC). A ROM library in
-> `~/Documents/ReplayNES` starts and resumes auto-saved projects in one click, and a photosensitive
-> flash reduction filter (on by default, display/export only) limits large-area flashing.
-> Windows/Linux frontends are planned; the engine is portable C++ with a C API.
+![ReplayNES (running a homemade test ROM)](docs/images/screenshot.png)
 
-![ReplayNES（自作テストROMを実行中）](docs/images/screenshot.png)
+## Features
 
-## 特徴
+- **ROM Library**: ROMs placed in `~/Documents/ReplayNES/ROM` are listed, and you can start playing just by picking one. Projects are saved automatically to `~/Documents/ReplayNES/Projects`, and you can resume each ROM with "Continue".
+- **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
+- **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
+- **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
+- **Controller-only operation**: R2 rewinds, L2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
+- **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
+- **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
+- **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
+- **Pick up the next day**: If you save the project (`.nesrec`), you can open it later and still rewind even further into the past. Autosave and crash recovery are supported, and even if you quit the app (including a force quit), it automatically picks up where you left off at the next launch.
+- **MP4 export**: The video is redrawn offline based on in-game time, so dropped frames during play do not affect it. Pixels are scaled up with nearest-neighbor, and you can specify overscan cropping and the pixel aspect ratio (1:1 / 8:7).
+- **Low latency**: Rendering uses Metal, and the audio buffer is kept small. There is also a latency measurement display (⌘L).
+- **Automatic updates**: New versions are checked from GitHub Releases, and the signature (EdDSA) is verified before updating (using [Sparkle](https://sparkle-project.org)). You can also check from the menu via "ReplayNES → Check for Updates…".
 
-- **ROM ライブラリ**: `~/Documents/ReplayNES/ROM` に置いた ROM を一覧表示し、選ぶだけですぐに遊べます。プロジェクトは `~/Documents/ReplayNES/Projects` に自動で保存され、ROM ごとに「続きから」で再開できます。
-- **フラッシュ低減（光の点滅への配慮）**: 画面全体が激しく点滅する場面を検出して、表示だけを抑えます（初期設定でオン）。ゲームの進行や記録には影響しません。
-- **巻き戻しと録り直し**: どのフレームにも戻れます。そこから操作すると新しい試行（テイク）になり、前の試行も消えずに残ります。
-- **練習モード（A/B リピート）**: 苦手な区間に A と B を付けて、録画せずに何度でも繰り返し練習できます。区間はプロジェクトごとに 8 つまで保存されます。
-- **コントローラーだけで操作**: R2 で巻き戻し、L2 で早送り、R で一時停止、L でスロー、一時停止中は十字キーでコマ送り。ReplayNES が前面になくても（OBS を操作中でも）コントローラーが効きます。
-- **テトリスのような乱数も完全に再現**: 再生は「ゲーム機の状態 + 毎フレームの入力」から計算し直すので、録画時とまったく同じ結果になります。
-- **制作補助**: 一時停止、コマ送り、N コマ送り、1/2 スロー、タイムラインのシーク、ブックマーク、ソフトリセット、電源の入れ直し。どれも最終テイクの時間には含まれず、再生は常に正規速度です。
-- **連射**: A/B の連射を周期と押下時間をフレーム単位で設定できます。記録されるのは連射を反映した後の入力です。
-- **翌日に続きから**: プロジェクト（`.nesrec`）を保存すれば、後日開いたあとでもさらに過去へ巻き戻せます。自動保存とクラッシュからの復旧にも対応し、アプリを終了（強制終了を含む）しても次の起動時に自動で続きから再開します。
-- **MP4 書き出し**: ゲーム内の時間を基準にオフラインで描き直すので、プレイ中のコマ落ちは動画に影響しません。ドットはニアレストネイバーで拡大し、オーバースキャンの切り取りとピクセル比（1:1 / 8:7）を指定できます。
-- **低遅延**: Metal で表示し、オーディオのバッファは小さめです。遅延の計測表示（⌘L）もあります。
-- **自動アップデート**: 新しいバージョンを GitHub Releases から確認し、署名（EdDSA）を検証してから更新します（[Sparkle](https://sparkle-project.org) を使用）。メニューの「ReplayNES → アップデートを確認…」からも確認できます。
+## System Requirements
 
-## 動作環境
+- macOS 14 or later, Apple Silicon (arm64)
+- A keyboard, or a game controller that macOS recognizes (GameController.framework supported)
+- Game ROM files (`.nes`) are not included. Please use ones you have legally prepared from games you own.
 
-- macOS 14 以降、Apple Silicon（arm64）
-- キーボード、または macOS が認識するゲームコントローラー（GameController.framework 対応）
-- ゲームの ROM ファイル（`.nes`）は付属しません。ご自身が所有するソフトから合法的に用意したものを使ってください。
+## Installation
 
-## インストール
+1. Download `ReplayNES-<version>-macOS-arm64.zip` from [Releases](https://github.com/kathoc/ReplayNES/releases) and unzip it.
+2. Move `ReplayNES.app` to the "Applications" folder.
+3. Because it has not been notarized, launch it the first time with **right-click → "Open"**. If it still will not open, choose "Open Anyway" in "System Settings → Privacy & Security".
+4. On the second launch you will be asked "Automatically check for updates?". After that, updates can be done inside the app (0.1.2 and later; from 0.1.1 or earlier, replace the app manually). In the "Updates" tab of Settings, you can turn automatic checking and automatic installation on or off at any time.
 
-1. [Releases](https://github.com/kathoc/ReplayNES/releases) から `ReplayNES-<version>-macOS-arm64.zip` をダウンロードして展開します。
-2. `ReplayNES.app` を「アプリケーション」フォルダへ移します。
-3. 公証（notarization）を受けていないため、初回は **右クリック →「開く」** で起動してください。それでも開けない場合は「システム設定 → プライバシーとセキュリティ」で「このまま開く」を選びます。
-4. 2 回目の起動時に「アップデートを自動的に確認しますか？」と尋ねられます。以降の更新はアプリ内で行えます（0.1.2 以降。0.1.1 以前からは手動で入れ替えてください）。設定の「アップデート」タブで、自動確認と自動インストールをいつでもオン／オフできます。
+## Usage
 
-## 使い方
+### Getting Started
 
-### はじめる
+- **Library (start screen / ⇧⌘L)**: The easiest way to start (see "Library" below).
+- **New Project (⌘N)**: Choose a ROM and decide where to save the `.nesrec` project. Recording starts right away.
+- **Try a ROM (No Project) (⇧⌘N)**: Use this to play without creating a project (your work is stored temporarily and resumes where you left off at the next launch).
+- **Open Project (⌘O) / Save (⌘S)**: An opened project is shown paused. Resume with Space / R on the controller (or the ▶︎ button).
 
-- **ライブラリ（起動画面 / ⇧⌘L）**: いちばん手軽な始め方です（下の「ライブラリ」を参照）。
-- **新規プロジェクト（⌘N）**: ROM を選び、`.nesrec` プロジェクトの保存先を決めます。すぐに録画が始まります。
-- **ROM を開いて試す（⇧⌘N）**: プロジェクトを作らずに遊ぶときに使います（作業は一時保存され、次の起動時に続きから再開します）。
-- **プロジェクトを開く（⌘O）／保存（⌘S）**: 開いたプロジェクトは一時停止した状態で表示されます。Space / コントローラーの R（または ▶︎ ボタン）で再開します。
+### The Screen
 
-### 画面
+- The bottom bar is a simple layout of just the "Record" button, go to start, rewind (while held), pause / resume, fast-forward (while held), slow, the timeline, "Practice", and the display size. While paused, step back / frame advance buttons appear. Bookmarks, the takes list, advance by N frames, reset, and so on are in the "…" menu and the menu bar.
+- **Display Size**: "Integer" is the largest integer scale that fits on the screen, and the pixels line up crisply. "FILL" expands to fill the window while keeping the aspect ratio (4:3, or pixel aspect 8:7). You can choose it at the right end of the bottom bar or from the "View" menu (⌘F toggles), and the setting is saved.
+- **Timeline (filmstrip)**: Like video editing software, screenshots of the whole take are lined up. Dragging moves to that position (silent, paused). The playhead (red while recording, white while playing, orange while practicing), bookmarks (yellow), and A/B sections (numbered colored bands) are overlaid. Thumbnails are generated on a separate core from the game processing, so operation stays light even with a one-hour take (for long takes, thumbnails are replaced with the correct pictures from left to right, and until then a nearby thumbnail is shown). Each thumbnail is pinned to its time within the take, so as the take grows while recording, the whole strip shrinks smoothly, and the rightmost thumbnail gradually appears from partway into view.
+- The sidebar (takes, bookmarks, controllers) is hidden by default. You can show it with the button at the right end of the toolbar or with ⌥⌘S.
+- "Help → Controls Guide" (⌘?) has a list of controller and keyboard controls.
 
-- 下のバーは「録画」ボタン、先頭へ、巻き戻し（押している間）、一時停止 / 再開、早送り（押している間）、スロー、タイムライン、「練習」、表示サイズだけのシンプルな構成です。一時停止中はコマ戻し / コマ送りのボタンが現れます。ブックマーク・テイク一覧・N コマ送り・リセットなどは「…」メニューとメニューバーにあります。
-- **表示サイズ**: 「等倍」は画面に収まる最大の整数倍で、ドットがくっきり揃います。「FILL」は縦横比（4:3、またはピクセル比 8:7）を保ったままウインドウいっぱいに広げます。下のバー右端か、メニュー「表示」（⌘F で切り替え）で選べ、設定は保存されます。
-- **タイムライン（フィルムストリップ）**: 動画編集ソフトのように、テイク全体のスクリーンショットが並びます。ドラッグでその位置へ移動（無音・一時停止）。再生位置（録画中は赤、再生中は白、練習中はオレンジ）、ブックマーク（黄）、A/B 区間（番号付きの色の帯）が重ねて表示されます。サムネイルはゲームの処理とは別のコアで作られるので、1 時間のテイクでも操作は重くなりません（長いテイクでは左から順に正しい絵に置き換わり、それまでは近い位置のサムネイルが表示されます）。各サムネイルはテイク上の時刻に固定されているので、録画でテイクが伸びるとストリップ全体がなめらかに縮み、右端のサムネイルは途中まで見えた状態から徐々に現れます。
-- サイドバー（テイク・ブックマーク・コントローラー）は初期状態では隠れています。ツールバー右端のボタンか ⌥⌘S で表示できます。
-- メニュー「ヘルプ → 操作ガイド」（⌘?）に、コントローラーとキーボードの操作一覧があります。
+### Record Button (Record / Playback)
 
-### 録画ボタン（録画 / 再生）
+- A glowing red "Record" means record mode. Click it and it turns gray, switching to **playback mode**, which plays the recorded take. If you were at the end of the take, playback starts automatically from the beginning; otherwise it starts from the current position (the last place you sought to).
+- In playback mode, click the gray "Record" to return to record mode paused at that position. The next input you make continues the recording (if you are partway through, it branches into a new take, and the original continuation is kept too).
+- In playback mode, it pauses when it reaches the end. Press ▶︎ again to play from the beginning.
 
-- 赤く光っている「録画」が録画モードです。クリックすると灰色になり、**再生モード**として録画済みのテイクを再生します。テイクの終端にいたときは先頭から、そうでなければいまの位置（最後にシークした位置）から自動で再生が始まります。
-- 再生モードで灰色の「録画」をクリックすると、その位置で一時停止した録画モードに戻ります。次に操作した入力から続きが録画されます（途中の位置なら新しいテイクに分岐し、元の続きも残ります）。
-- 再生モードで終端に着くと一時停止します。もう一度 ▶︎ を押すと先頭から再生します。
+### Library
 
-### ライブラリ
+ReplayNES creates the following folders at launch (it shows an error if it cannot create them). The first time, macOS asks for permission to access the Documents folder, so choose "Allow".
 
-ReplayNES は起動時に次のフォルダを作ります（作れない場合はエラーを表示します）。初回は macOS が「書類」フォルダへのアクセス許可を求めるので、「許可」を選んでください。
-
-| フォルダ | 中身 |
+| Folder | Contents |
 |---|---|
-| `~/Documents/ReplayNES/ROM` | ご自身の ROM（`.nes`）を入れる場所。1 階層下のサブフォルダも読み込みます |
-| `~/Documents/ReplayNES/Projects` | ライブラリから始めたプロジェクト（`<ROM名> <yyyy-MM-dd HHmm>.nesrec`）の保存先 |
+| `~/Documents/ReplayNES/ROM` | Where you put your own ROMs (`.nes`). Subfolders one level down are also loaded |
+| `~/Documents/ReplayNES/Projects` | Where projects started from the Library (`<ROM name> <yyyy-MM-dd HHmm>.nesrec`) are saved |
 
-1. ROM フォルダに `.nes` ファイルを入れます（「Finderで開く」ボタンでフォルダを開けます）。追加・削除は自動で反映されます（「再読み込み」でも更新できます）。
-2. 起動画面（またはメニュー「ファイル → ライブラリ…」/ ⇧⌘L）で ROM を選び、**ダブルクリック / Return / 「プレイ」**。保存先を聞かれずに新しいプロジェクトが作られ、すぐにゲームが始まります。作業は自動保存されます。
-3. 右側の「このROMのプロジェクト」に、その ROM で作ったプロジェクトが並びます。**「続きから」**で前回の続きを開けます。プロジェクトと ROM の対応は ROM の中身（SHA-256）で判定するので、ROM のファイル名を変えても対応は保たれます。
-4. 遊んでいる途中で別の ROM を選ぶと、保存していない変更があれば通常どおり保存するか確認します（一時保存中のセッションなら「保存しますか？」と聞きます。下の「再開」を参照）。ROM を読み込めなかった場合はエラーの内容を表示します。
+1. Put `.nes` files in the ROM folder (you can open the folder with the "Open in Finder" button). Additions and deletions are picked up automatically (you can also refresh with "Reload").
+2. On the start screen (or the menu "File → Library…" / ⇧⌘L), choose a ROM and **double-click / press Return / click "Play"**. A new project is created without asking where to save it, and the game starts right away. Your work is autosaved.
+3. On the right, "Projects for This ROM" lists the projects made with that ROM. **"Continue"** opens where you left off. Projects are matched to ROMs by the ROM's contents (SHA-256), so the match is kept even if you rename the ROM file.
+4. If you choose a different ROM while playing, you are asked whether to save in the usual way if there are unsaved changes (for a temporarily stored session, it asks "Do you want to save?". See "Resume" below). If a ROM could not be loaded, the error is shown.
 
-検索欄で ROM 名を絞り込めます。これまでどおり ⌘N（保存先を選んで新規作成）や ⌘O（任意の場所のプロジェクトを開く）も使えます。
+You can narrow down ROM names with the search field. As before, ⌘N (choose where to save and create a new project) and ⌘O (open a project from anywhere) are also available.
 
-### フラッシュ低減（光の点滅への配慮）
+### Flash Reduction (care for flashing lights)
 
-爆発や稲妻などで**画面の広い範囲が激しく点滅する場面**を検出し、表示する映像だけを抑えます（明滅の回数を減らし、暗い側で保ちます）。WCAG 2.x の一般閃光・赤色閃光の基準（画面の約 25% 以上が 1 秒に 3 回を超えて明滅しない）を目安にしています。
+It detects scenes such as explosions and lightning where **a wide area of the screen flashes intensely** and tones down only the displayed picture (it reduces the number of flashes and keeps the darker side). It uses the WCAG 2.x general flash and red flash thresholds (no more than 3 flashes per second over about 25% or more of the screen) as a guide.
 
-- 設定 → 「表示・音声」→「フラッシュ低減」で **オフ / 弱 / 標準 / 強** を選べます。初期設定は **標準（オン）** です。
-  - 弱: WCAG の基準どおり（1 秒に 3 回まで）
-  - 標準: 早めに検出し、1 秒に 2 回まで（推奨）
-  - 強: 1 秒に 1 回まで。小さな残りのちらつきも弱めます
-- 小さな点滅（キャラクターの点滅など）や通常のスクロールはそのまま表示します。抑えている間は画面左上に「フラッシュ低減中」と表示されます（設定で非表示にできます）。
-- 記録される入力・ゲームの進行・再現性（ハッシュ）には一切影響しません。表示だけの処理です。
-- MP4 書き出しでは「フラッシュ低減を適用」を選ぶと、書き出す映像にも適用できます（初期値は現在の設定に従います）。
+- In Settings → "Display & Audio" → "Flash Reduction" you can choose **Off / Low / Standard / High**. The default is **Standard (on)**.
+  - Low: exactly the WCAG threshold (up to 3 times per second)
+  - Standard: detects early, up to 2 times per second (recommended)
+  - High: up to 1 time per second. It also weakens small remaining flicker
+- Small flashes (such as a character blinking) and normal scrolling are shown as they are. While it is reducing, "Flash Reduction Active" is shown at the top left of the screen (you can hide it in Settings).
+- It has no effect at all on recorded input, game progress, or reproducibility (hashes). It is display-only processing.
+- When exporting to MP4, choosing "Apply Flash Reduction" applies it to the exported video as well (the initial value follows the current setting).
 
-> **注意**: この機能は光過敏性発作などを確実に防ぐものではありません。点滅に敏感な方は十分に注意し、体調に異変を感じたらすぐにプレイを中止してください。仕組みと限界は [docs/FLASH_REDUCTION.md](docs/FLASH_REDUCTION.md) を参照してください。
+> **Note**: This feature does not reliably prevent photosensitive seizures or the like. If you are sensitive to flashing, please take sufficient care, and stop playing immediately if you feel anything unusual. See [docs/FLASH_REDUCTION.md](docs/FLASH_REDUCTION.md) for how it works and its limits.
 
-### コントローラーとキーの割り当て（設定画面で変更可能）
+### Controller and Key Assignments (changeable in Settings)
 
-コントローラーのボタンは**位置**で割り当てています（右のボタン = ファミコンの A、下のボタン = B）。Nintendo のコントローラーでは印字どおり A = A、B = B になります。
+Controller buttons are assigned by **position** (right button = Famicom A, bottom button = B). On Nintendo controllers, A = A and B = B as printed.
 
-| 操作 | コントローラー（位置） | Proコン / Joy-Con | Xbox | PlayStation | キーボード |
+| Action | Controller (position) | Pro Controller / Joy-Con | Xbox | PlayStation | Keyboard |
 |---|---|---|---|---|---|
-| 十字キー | 十字キー / 左スティック | | | | ← ↑ → ↓ |
-| A / B | 右 / 下のボタン | A / B | B / A | ○ / ✕ | X / Z |
-| 連射 A / 連射 B | 上 / 左のボタン | X / Y | Y / X | △ / □ | S / A |
-| START / SELECT | Menu / Options | + / − | ≡ / View | OPTIONS / CREATE | Return / 右 Shift（または `\`） |
-| 巻き戻し（押している間） | **右トリガー** | ZR | RT | R2 | Delete |
-| 早送り（押している間） | **左トリガー** | ZL | LT | L2 | Tab |
-| 一時停止 / 再開 | **右ショルダー** | R | RB | R1 | Space |
-| スロー 1/2 ⇔ 等速 | **左ショルダー** | L | LB | L1 | L |
-| 一時停止中のコマ戻し / コマ送り | **十字キー ← / →**（押し続けると連続） | `,` / `.` |
-| ブックマーク | — | B |
+| D-pad | D-pad / Left Stick | | | | ← ↑ → ↓ |
+| A / B | Right / bottom button | A / B | B / A | ○ / ✕ | X / Z |
+| Turbo A / Turbo B | Top / left button | X / Y | Y / X | △ / □ | S / A |
+| START / SELECT | Menu / Options | + / − | ≡ / View | OPTIONS / CREATE | Return / Right Shift (or `\`) |
+| Rewind (while held) | **Right Trigger** | ZR | RT | R2 | Delete |
+| Fast-forward (while held) | **Left Trigger** | ZL | LT | L2 | Tab |
+| Pause / Resume | **Right Shoulder** | R | RB | R1 | Space |
+| Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
+| Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | `,` / `.` |
+| Bookmark | — | B |
 
-- 巻き戻し・早送り・一時停止・スロー・コマ送りは「ホットキー」で、ゲームへの入力として記録されることはありません。一時停止中の十字キー ← / → もゲームには送られません（設定 → ホットキーでオフにできます）。
-- **早送り**は録画済みのテイクを高速で再生するだけで、何も録画しません。録画済みの終端（一時停止した位置）まで来ると、そこで止まって一時停止します。
-- 巻き戻したあと録画モードでプレイを続けると、その位置から自動で新しいテイクに分岐して録画が続きます。
-- **バックグラウンド入力**: コントローラーが接続されていれば、ReplayNES が前面にないとき（OBS を操作中など）も入力を受け付け、自動で一時停止もしません。音も鳴り続けます。キーボードは ReplayNES が前面のときだけ有効です。
-- コントローラーが外れると自動で一時停止します。
-- 0.1.x からアップデートした場合、コントローラーのホットキーが旧初期設定（L1 巻き戻し / R1 早送り / L2・R2 コマ送り）のままなら、自動で上の新しい割り当てに切り替わります。自分で変更していた場合はそのまま残ります。
-- **ボタン配置の図**: 設定 →「コントローラー」（またはサイドバーの「ボタン配置…」）に、接続中のコントローラーの図（Nintendo / Xbox / PlayStation / その他の形）と各ボタンの割り当てが表示されます。ボタンを押すと図の上で光るので、どのボタンがどれか確かめられます。図のボタンをクリックすると、割り当てる操作（ファミコンのボタン・連射・巻き戻しなどのホットキー・なし）を選べます。「パッドNを初期設定に戻す」はそのコントローラーだけを初期設定に戻します。キーやボタンを押して割り当てる従来の方法は「ゲーム入力」「ホットキー」タブにあります。
-- 0.2.0 までは Nintendo のコントローラー（Proコン・Joy-Con）で A / B と X / Y が逆になっていました。顔ボタンの割り当てを初期設定のまま使っていた場合は、アップデート後に自動で正しい配置になります。自分で変更していた場合は、そのコントローラーを接続したときに、変更前と同じボタンが同じ操作になるよう引き継がれます。
+- Rewind, fast-forward, pause, slow, and frame advance are "hotkeys" and are never recorded as game input. The D-pad ← / → while paused is not sent to the game either (you can turn this off in Settings → Hotkeys).
+- **Fast-forward** just plays the recorded take at high speed and records nothing. When it reaches the end of what is recorded (the paused position), it stops there and pauses.
+- If you keep playing in record mode after rewinding, it automatically branches into a new take from that position and recording continues.
+- **Background input**: While a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and it does not pause automatically. Sound also keeps playing. The keyboard works only while ReplayNES is in front.
+- If the controller is disconnected, it pauses automatically.
+- If you update from 0.1.x and the controller hotkeys are still the old defaults (L1 rewind / R1 fast-forward / L2 and R2 frame advance), they are automatically switched to the new assignments above. If you had changed them yourself, they are left as they are.
+- **Button layout diagram**: In Settings → "Controllers" (or "Button Layout…" in the sidebar), a diagram of the connected controller (Nintendo / Xbox / PlayStation / other shapes) and the assignment of each button are shown. Pressing a button lights it up on the diagram, so you can check which button is which. Clicking a button in the diagram lets you choose the action to assign (Famicom button, turbo, hotkeys such as rewind, or none). "Reset Pad N to Defaults" resets only that controller to its defaults. The traditional method of assigning by pressing a key or button is in the "Game Input" and "Hotkeys" tabs.
+- Up to 0.2.0, A / B and X / Y were swapped on Nintendo controllers (Pro Controller, Joy-Con). If you were using the face button assignments at their defaults, they automatically become the correct layout after the update. If you had changed them yourself, they are carried over when you connect that controller, so the same buttons perform the same actions as before.
 
-### 巻き戻しと録り直し
+### Rewind and Re-record
 
-1. ミスしたら **R2（または Delete）を押し続けて巻き戻す**か、タイムラインのバーをドラッグして戻ります。
-2. 戻った位置からプレイを再開すると、その位置から新しい試行の録画が始まります。それより後にあった元のプレイは消えずに残ります。
-3. 前の試行のほうが良かった場合は **「前の試行へ戻す」（⌥⌘Z）** で戻せます。すべての試行は「テイク一覧」（⇧⌘T）で確認できます。
-4. 再生モード（灰色の「録画」ボタン）では記録済みのテイクを再生します。手を加えたくなったら「録画」ボタンを押して録画モードに戻してください。
+1. If you make a mistake, **hold R2 (or Delete) to rewind**, or drag the timeline bar to go back.
+2. If you resume play from the position you went back to, recording of a new take starts from that position. The original play that came after it is kept rather than erased.
+3. If the previous take was better, you can go back with **"Back to Previous Take" (⌥⌘Z)**. All takes can be checked in "Takes" (⇧⌘T).
+4. In playback mode (the gray "Record" button), the recorded take is played. If you want to make changes, press the "Record" button to return to record mode.
 
-ブックマーク（B / ⌘D）を付けておくと、その位置へすぐ移動できます。
+If you add a bookmark (B / ⌘D), you can jump straight to that position.
 
-### 制作補助
+### Production Aids
 
-- 一時停止（R / Space / ⌘P）、コマ送り（一時停止中の十字キー → / `.` / ⌘→）、指定した数だけコマ送り（「…」メニュー →「指定フレーム数だけ進める」）
-- スロー: 1/2 ⇔ 等速（L / ⌘2）。スローや一時停止は最終テイクの時間に含まれません。
-- ソフトリセット（⌘R）と電源の入れ直し（⇧⌘R）は、どのフレームで行ったかが記録され、再生時にも同じフレームで再現されます。
-- 一時停止中、巻き戻し中、シーク中、スロー中、早送り中は音が出ません。
+- Pause (R / Space / ⌘P), frame advance (D-pad → while paused / `.` / ⌘→), advance a specified number of frames ("…" menu → "Advance by Frames")
+- Slow: 1/2 ⇔ normal speed (L / ⌘2). Slow motion and pausing are not counted in the final take's duration.
+- Soft reset (⌘R) and power cycle (⇧⌘R) record which frame they were done on, and are reproduced on the same frame during playback.
+- No sound is produced while paused, rewinding, seeking, in slow motion, or fast-forwarding.
 
-### 練習モード（A/B リピート）
+### Practice Mode (A/B Repeat)
 
-苦手な区間だけを、録画せずに何度でも繰り返し練習できます。
+Practice only the tricky section over and over without recording.
 
-1. 下のバーの「練習」（⇧⌘P）を押すと、ゲーム画面の上に 8 つの区間パネルが出ます。
-2. 区間の始まりで「**A**」、そこから続けてプレイして終わりの位置で「**B**」を押します（一時停止中でも設定できます）。各区間には長さ（分:秒.フレーム）が表示され、「…」から名前の変更や消去ができます。
-3. ▶︎（この区間を練習）を押すと A から自動でプレイが始まります。**B に着くと 0.5 秒その画面のまま止まり（音は自然に消えます）、巻き戻るように A へ戻って、また自動で始まります**。
-4. 練習中も R2 の巻き戻し（A まで）、R の一時停止、L のスロー、一時停止中の十字キーのコマ送り / コマ戻しが使えます。
-5. 「**練習をやめる**」（パネル / 下のバー / ⇧⌘P）で、練習を始める前のテイクの位置に正確に戻ります。
+1. Press "Practice" (⇧⌘P) in the bottom bar and 8 section panels appear over the game screen.
+2. At the start of a section press "**A**", then keep playing from there and press "**B**" at the end position (you can also set them while paused). Each section shows its length (minutes:seconds.frames), and from "…" you can rename or clear it.
+3. Press ▶︎ (Practice This Section) and play starts automatically from A. **When you reach B, the screen holds still for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again automatically**.
+4. While practicing you can also use R2 rewind (up to A), R pause, L slow, and D-pad frame advance / step back while paused.
+5. "**Stop Practicing**" (in the panel / in the bottom bar / ⇧⌘P) returns you exactly to the position in the take from before you started practicing.
 
-- 練習中は何も録画されません。テイクの長さや内容は変わりません。
-- B は「A から続けてプレイした位置」で設定してください。A の後に巻き戻し・タイムライン移動・テイク切り替えをした場合は、その旨が表示されます（A からやり直すか、A を設定し直してください）。
-- 区間はプロジェクトに保存されます（自動保存にも含まれます）。区間のデータが壊れていた場合は、開くときに「壊れた練習区間を破棄して開く」を選べます（破棄された区間は表示されます。テイクは影響を受けません）。
-- 練習中はプレイ動画のプレイヤー操作（タイムラインのシーク、ブックマーク、テイク切り替え）は使えません。
+- Nothing is recorded during practice. The length and contents of the take do not change.
+- Set B at a position you reached by "playing on from A". If you rewound, moved on the timeline, or switched takes after A, a message to that effect is shown (start over from A, or set A again).
+- Sections are saved in the project (they are included in autosave too). If a section's data is damaged, you can choose "Discard Damaged Sections and Open" when opening (the discarded sections are shown. Takes are not affected).
+- During practice, the player controls for play video (timeline seeking, bookmarks, take switching) are unavailable.
 
-#### タイムラインで A/B を指定する
+#### Specifying A/B on the Timeline
 
-録画済みのテイクなら、プレイし直さずにタイムライン上で区間を決められます。
+For a recorded take, you can define sections on the timeline without playing again.
 
-- タイムライン右の「**A/B 1**」で編集する区間（1〜8、色分け）を選びます。
-- タイムライン上の帯（サムネイルの上の細い段）を**ドラッグ**すると、その範囲が選択中の区間の A→B になります（サムネイル上では **Shift+ドラッグ**）。
-- 区間の**両端をドラッグ**すると A / B を調整できます。**区間をクリック**するとその区間の練習が始まります。
-- 再生位置で「**A をここに**」（⌥⌘I）/「**B をここに**」（⌥⌘O）。メニュー「再生」と「A/B」メニューにもあります。B をここに は、A がこのテイク上にあれば、A から続けてプレイしていなくても設定できます（練習パネルの「B」も同様）。
-- 表示されるのは、いまのテイク上にある区間だけです（別のテイクで作った区間や、練習中に設定した A は帯には出ません）。区間の設定は練習中にはできません。
+- Use "**A/B 1**" at the right of the timeline to choose which section (1 to 8, color-coded) to edit.
+- **Dragging** on the band on the timeline (the thin row above the thumbnails) makes that range the A→B of the selected section (on the thumbnails, **Shift+drag**).
+- **Dragging either end** of a section adjusts A / B. **Clicking a section** starts practicing that section.
+- "**Set A Here (Playhead)**" (⌥⌘I) / "**Set B Here (Playhead)**" (⌥⌘O) at the playhead. They are also in the "Playback" menu and the "A/B" menu. Set B Here can be used even if you have not played on from A, as long as A is on this take (the "B" in the Practice panel works the same way).
+- Only sections on the current take are shown (sections made on a different take, and an A set during practice, do not appear on the band). Sections cannot be set while practicing.
 
-### 翌日に続きから
+### Pick Up the Next Day
 
-`⌘S` で保存し、後日 `⌘O` で開くと、最後に使っていたテイクの続きから再開できます。そこからさらに過去へ巻き戻すこともできます。
-作業中は自動保存されます（初期設定は 2 秒ごと。一時停止したときとアプリが裏に回ったときにもすぐ保存します）。プロジェクトを開いたときに前回の異常終了が見つかった場合は、最後の自動保存まで復旧され、その旨が表示されます。
+Save with `⌘S` and open it later with `⌘O` to resume from where the last-used take left off. From there you can also rewind even further into the past.
+Your work is autosaved while you work (every 2 seconds by default; it also saves immediately when you pause and when the app goes to the background). If a previous abnormal exit is found when you open a project, it is recovered up to the last autosave and a message says so.
 
-### 再開（終了しても続きから）
+### Resume (Pick Up Where You Left Off, Even After Quitting)
 
-- **自動で続きから**: ⌘Q やウインドウを閉じて終了するときに「保存しますか？」とは聞かれません。作業中の内容はそのまま保存され、次に起動すると前回のプロジェクト（またはプロジェクトなしで遊んでいたセッション）が**前回の位置・モードで一時停止した状態**で開き、「前回の続きから再開しました」と表示されます。練習中だった場合は練習パネルも開きます。強制終了や停電の場合も、最後の自動保存（数秒以内）の位置から再開します。
-- **プロジェクトの場合**: 終了時はプロジェクトの自動保存（ジャーナル）に書き込むだけで、⌘S で保存した内容は変わりません。別のプロジェクトや ROM に切り替えるときは、これまでどおり保存するか確認します（「保存しない」を選ぶと最後に保存した状態に戻ります）。
-- **一時保存の場所**: プロジェクトを作らずに遊んでいるとき（「ROM を開いて試す」、ROM ファイルを直接開いたとき）の作業は `~/Library/Application Support/ReplayNES/Session/current.nesrec` に一時保存されます（再開情報は同じフォルダの `resume.json`）。一時保存はライブラリの「続きから」には表示されません。⌘S（保存）で好きな場所に保存すると、通常のプロジェクトになります。
-- **破棄されるタイミング**: 一時保存中に録画した内容があるまま別の ROM / プロジェクトを開こうとすると（ライブラリ、⌘N、⌘O、ROM を開いて試す、ファイルを開く）「保存しますか？」と聞かれます。「保存…」で保存先を選ぶとプロジェクトとして残り、「保存しない」を選ぶと一時保存は破棄されます（「プロジェクトを閉じる」も同様）。何も録画していない一時保存は聞かずに破棄されます。
-- **再開できなかったとき**: ROM が移動・削除された、別のコアで記録された、ファイルが壊れているなどの理由で再開できない場合は、理由を表示して起動画面（ライブラリ）に戻ります。ROM を指定し直せる場合はその場で指定できます。一時保存は**削除せずに残し**、次の起動時にもう一度再開を試みます。別の ROM を始めるときに、残っている前回の一時保存を保存するか破棄するかを選べます。
-- ReplayNES を 2 つ同時に起動した場合、あとから起動した方は再開せず、一時保存にも触れません。
+- **Automatic continuation**: When you quit with ⌘Q or by closing the window, you are not asked "Do you want to save?". Your work in progress is saved as it is, and at the next launch the previous project (or the session you were playing without a project) opens **paused at the previous position and mode**, and "Resumed where you left off" is shown. If you were practicing, the Practice panel opens too. After a force quit or power outage, it resumes from the position of the last autosave (within a few seconds).
+- **For projects**: On quit, it only writes to the project's autosave (journal), and what you saved with ⌘S does not change. When switching to another project or ROM, you are asked whether to save, as before (choosing "Don't Save" returns to the last saved state).
+- **Where temporary storage lives**: Work done while playing without a project ("Try a ROM (No Project)", or when you open a ROM file directly) is stored temporarily at `~/Library/Application Support/ReplayNES/Session/current.nesrec` (the resume information is `resume.json` in the same folder). Temporary storage does not appear under "Continue" in the Library. If you save it anywhere you like with ⌘S (Save), it becomes a normal project.
+- **When it is discarded**: If you try to open another ROM / project while the temporary storage holds recorded content (Library, ⌘N, ⌘O, Try a ROM, opening a file), you are asked "Do you want to save?". Choosing a destination with "Save…" keeps it as a project, and choosing "Don't Save" discards the temporary storage (the same applies to "Close Project"). Temporary storage with nothing recorded is discarded without asking.
+- **When resuming fails**: If it cannot resume because the ROM was moved or deleted, it was recorded with a different core, or the file is damaged, it shows the reason and returns to the start screen (Library). If the ROM can be specified again, you can specify it right there. The temporary storage is **kept rather than deleted**, and resuming is tried again at the next launch. When you start a different ROM, you can choose to save or discard the leftover previous temporary storage.
+- If you launch two copies of ReplayNES at the same time, the one launched later does not resume and does not touch the temporary storage.
 
-ROM ファイルの場所を移した場合は、開くときに ROM を指定し直してください。SHA-256 で同じ ROM であることを確認します。
-**ROM 本体はプロジェクトには保存されません。**
+If you moved the location of the ROM file, specify the ROM again when opening. It is confirmed to be the same ROM by SHA-256.
+**The ROM itself is not stored in the project.**
 
-### MP4 に書き出す（⌘E）
+### Export to MP4 (⌘E)
 
-- 形式: H.264 または HEVC と AAC（48 kHz）
-- サイズ: 256×240 の整数倍、1280×960、1920×1440 など
-- オーバースキャンの切り取りと、ピクセル比 1:1 / 8:7 を選べます。
-- 「フラッシュ低減を適用」で、激しい点滅を抑えた映像にできます（上の「フラッシュ低減」を参照）。
-- 書き出しは別のエミュレーターで最初から計算し直します。書き出しによってプロジェクトが変わることはなく、書き出し中も作業を続けられます。
+- Format: H.264 or HEVC with AAC (48 kHz)
+- Size: integer multiples of 256×240, 1280×960, 1920×1440, and so on
+- You can choose overscan cropping and the pixel aspect ratio 1:1 / 8:7.
+- With "Apply Flash Reduction", you can get a video with intense flashing toned down (see "Flash Reduction" above).
+- Export recomputes everything from the beginning in a separate emulator. Exporting never changes the project, and you can keep working during export.
 
-### 配信 (OBS)
+### Streaming (OBS)
 
-ゲーム画面を [Syphon](https://syphon.github.io) で出力し、OBS などの配信ソフトに直接取り込めます（仮想カメラではありません）。
+The game screen is output via [Syphon](https://syphon.github.io) and can be brought directly into streaming software such as OBS (this is not a virtual camera).
 
-1. ReplayNES で「設定 → 表示・音声 → 配信出力 (Syphon)」をオンにします（メニュー「表示 → 配信出力 (Syphon)」でも切り替えられます）。オンの間はゲーム画面の左上に「Syphon出力中」と表示されます。
-2. OBS（macOS 版）で「ソース → ＋ → Syphon クライアント」を追加し、サーバーに「[ReplayNES] ReplayNES」を選びます。
-3. 音声は OBS の「macOS 音声キャプチャ」ソース（アプリケーションの音声をキャプチャ）を追加し、ReplayNES を選びます。ReplayNES 側の設定は不要です。
+1. In ReplayNES, turn on "Settings → Display & Audio → Stream Output (Syphon)" (you can also toggle it from the menu "View → Stream Output (Syphon)"). While it is on, "Syphon Live" is shown at the top left of the game screen.
+2. In OBS (macOS version), add "Source → ＋ → Syphon Client" and choose "[ReplayNES] ReplayNES" as the server.
+3. For audio, add OBS's "macOS Audio Capture" source (captures an application's audio) and choose ReplayNES. No setting is needed on the ReplayNES side.
 
-- 出力されるのはゲーム画面だけです（UI やバッジは含みません）。フラッシュ低減は表示と同じく適用済みで、オーバースキャン部分も含む 256×240 全体を最近傍補間で拡大します。
-- 出力サイズ: 原寸 256×240、2〜4 倍（既定は 4 倍 1024×960）、1280×960 / 1920×1440（4:3・左右に黒帯）。ピクセル比 8:7 も選べます（表示設定とは別）。
-- 出力はエミュレーションとは別のスレッドで行い、受け取る側がいないときは描画もしません。OBS 側で数フレーム程度の遅延が出ることがあります。
-- 一時停止中は最後の画面が表示され続けます。
-- コントローラーは ReplayNES が前面になくても効くので、OBS を操作しながらでもそのままプレイできます。
+- Only the game screen is output (the UI and badges are not included). Flash reduction is already applied just as in the display, and the entire 256×240 including the overscan area is enlarged with nearest-neighbor interpolation.
+- Output size: native 256×240, 2x to 4x (default is 4x, 1024×960), 1280×960 / 1920×1440 (4:3, black bars on the left and right). The 8:7 pixel aspect ratio can also be chosen (separate from the display setting).
+- Output runs on a separate thread from emulation, and nothing is drawn when there is no receiver. A delay of a few frames may appear on the OBS side.
+- While paused, the last picture keeps being shown.
+- The controller works even when ReplayNES is not in front, so you can keep playing while operating OBS.
 
-## コアの互換性について（重要）
+## About Core Compatibility (Important)
 
-録画データは「どのエミュレーターコアで再生するか」に強く依存します。コアのバージョンが少しでも違うと、同じ入力でも結果がずれることがあります。
-そのため各プロジェクトには、作成したときのコア互換 ID（例: `nestopia-ue@7b5c87d8dc3c+p2+adapter1+ntsc`）が記録されています。
+Recorded data depends strongly on "which emulator core plays it back". If the core version differs even slightly, the same inputs can give shifted results.
+For that reason, each project records the core compatibility ID from when it was created (example: `nestopia-ue@7b5c87d8dc3c+p2+adapter1+ntsc`).
 
-- 互換 ID が違うプロジェクトは、**警告なしには開きません**。黙って変換することもありません。
-- 将来のバージョンで互換 ID が変わった場合は、旧コアを同梱するか、明示的に移行する手順を用意します（[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)）。
-- 大事なプロジェクトは、作成に使ったバージョンの ReplayNES と一緒に保管することをおすすめします。
+- A project with a different compatibility ID **will not open without a warning**. It will not be silently converted either.
+- If the compatibility ID changes in a future version, we will either bundle the old core or provide an explicit migration procedure ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)).
+- For important projects, we recommend keeping them together with the version of ReplayNES used to create them.
 
-## プライバシー
+## Privacy
 
-ReplayNES がネットワークに接続するのは、アップデートの確認とダウンロードのために GitHub（github.com とそのダウンロード用サーバー）へアクセスするときだけです。
-送るのは更新情報（`appcast.xml`）と更新ファイルを取得する通常の HTTPS リクエストだけで、システム情報・使用状況・ROM やプロジェクトの内容は一切送信しません。テレメトリもありません。
+ReplayNES connects to the network only when it accesses GitHub (github.com and its download servers) to check for and download updates.
+All it sends are ordinary HTTPS requests to fetch the update information (`appcast.xml`) and the update file; it sends no system information, usage data, or the contents of ROMs or projects. There is no telemetry either.
 
-- 自動確認は、2 回目の起動時に表示される確認で許可した場合だけ有効になります。
-- 設定の「アップデート」タブで「自動的にアップデートを確認」をオフにすると、メニューから手動で確認したとき以外は接続しません。
+- Automatic checking is enabled only if you allowed it in the prompt shown at the second launch.
+- If you turn off "Automatically check for updates" in the "Updates" tab of Settings, it does not connect except when you check manually from the menu.
 
-読み書きするのは、指定した ROM とプロジェクト、ライブラリのフォルダ（`~/Documents/ReplayNES`）、設定ファイル、それにアップデート用のキャッシュだけです。
+What it reads and writes is limited to the ROMs and projects you specify, the Library folder (`~/Documents/ReplayNES`), settings files, and the update cache.
 
-## 既知の制限
+## Known Limitations
 
-- 対応しているのは NTSC（日本 / 北米）のタイミングだけです。PAL とディスクシステム（FDS）は検証していません。
-- 決定論テスト（同じ入力から同じ結果になるか）は、付属の自作テスト ROM で行っています。市販ソフトで使われる多くのマッパーは個別には検証していません。問題に気づいたらお知らせください。
-- 自動保存は、エミュレーションのフレームの合間に実行されます。遅いディスクではまれに 1 フレーム遅れることがあります。
-- 音声はタイマーとオーディオクロックのずれを、サンプルを間引いて吸収しています。まれにプチッとノイズが入ることがあります。スロー中と早送り中は音が出ません。書き出す音声はモノラルです。
-- 画素がぴったり揃った整数倍の拡大になるのは、ピクセル比 1:1 のときだけです。8:7 では横方向の拡大幅が均一になりません。
-- UI は日本語だけです。動作確認は Apple Silicon でしか行っていません。実機のゲームコントローラーでの確認は限られています。
-- 公証を受けていないため、初回の起動に手順が必要です（[インストール](#インストール)を参照）。
-- Windows / Linux 版はまだありません（予定しています）。
+- Only NTSC (Japan / North America) timing is supported. PAL and the Famicom Disk System (FDS) have not been verified.
+- Determinism tests (whether the same input gives the same result) are done with the bundled homemade test ROMs. Many of the mappers used by commercial games have not been verified individually. If you notice a problem, please let us know.
+- Autosave runs between emulation frames. On a slow disk it may rarely be delayed by one frame.
+- Audio absorbs the drift between the timer and the audio clock by dropping samples. A faint pop of noise may rarely occur. No sound is produced during slow motion and fast-forward. The exported audio is mono.
+- Pixel-perfect integer scaling happens only at a 1:1 pixel aspect ratio. At 8:7, the horizontal scaling width is not uniform.
+- The UI is available in English and Japanese. It has been tested only on Apple Silicon. Testing with physical game controllers has been limited.
+- Because it has not been notarized, the first launch requires some steps (see [Installation](#installation)).
+- There is no Windows / Linux version yet (planned).
 
-## ソースからビルド
+## Build from Source
 
 ```bash
 git clone --recursive https://github.com/kathoc/ReplayNES.git
@@ -243,19 +238,19 @@ git clone --recursive https://github.com/kathoc/ReplayNES.git
 cd ReplayNES && scripts/build-macos.sh
 ```
 
-必要なもの: Xcode 16 以降、CMake、Ninja、XcodeGen（`brew install cmake ninja xcodegen`）。初回のビルドで Swift Package Manager が Sparkle を取得します。Syphon はサブモジュール `third_party/syphon` からソースでビルドされます（Metal Toolchain の追加ダウンロードは不要）。`scripts/check-syphon-macos.sh` で配信出力を OBS なしで確認できます。
+Requirements: Xcode 16 or later, CMake, Ninja, XcodeGen (`brew install cmake ninja xcodegen`). On the first build, Swift Package Manager fetches Sparkle. Syphon is built from source from the submodule `third_party/syphon` (no extra download of the Metal Toolchain is needed). You can check stream output without OBS using `scripts/check-syphon-macos.sh`.
 
-エンジンとテスト（macOS / Linux / Windows 共通）は次のとおりです。
+The engine and tests (common to macOS / Linux / Windows) are as follows.
 
 ```bash
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && ninja -C build && ctest --test-dir build
 ```
 
-コマンドラインツール `replaynes-cli` で、決定論の検証（`determinism`）、プロジェクトの検証（`verify`）、テスト ROM の生成（`make-test-rom`）などができます。
+With the command-line tool `replaynes-cli`, you can verify determinism (`determinism`), verify projects (`verify`), generate test ROMs (`make-test-rom`), and more.
 
-設計については [docs/ARCHITECTURE_DECISION.md](docs/ARCHITECTURE_DECISION.md)、ファイル形式は [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md)、他の OS への移植は [docs/PORTING.md](docs/PORTING.md) を参照してください。
+For the design, see [docs/ARCHITECTURE_DECISION.md](docs/ARCHITECTURE_DECISION.md); for the file format, [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md); and for porting to other OSes, [docs/PORTING.md](docs/PORTING.md).
 
-## ライセンス
+## License
 
-GPL-2.0-or-later です。NES コアには [Nestopia UE](https://github.com/0ldsk00l/nestopia)（GPL-2.0-or-later）を使っています。詳しくは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
-ReplayNES はゲームソフトを含みません。配布もしません。
+GPL-2.0-or-later. The NES core uses [Nestopia UE](https://github.com/0ldsk00l/nestopia) (GPL-2.0-or-later). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+ReplayNES does not include game software, and does not distribute any.

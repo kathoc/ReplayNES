@@ -1,4 +1,4 @@
-# Photosensitive flash reduction (フラッシュ低減)
+# Photosensitive flash reduction (Flash Reduction)
 
 ReplayNES can limit large-area flashing in the picture it **displays** (and, optionally, in
 exported video), to reduce the risk for people sensitive to flashing light.
@@ -60,26 +60,26 @@ Relative luminance `L = 0.2126 R + 0.7152 G + 0.0722 B` with sRGB-linearised cha
 
 | Level | Transition threshold (L / red ×320) | Darker < 0.8 / red saturation required | Budget per 61 frames | Large area | Hold / rate (L) |
 |---|---|---|---|---|---|
-| オフ (Off) | – | – | – | – | output = input |
-| 弱 (Low) | 0.10 / 20 (WCAG) | yes / yes (WCAG) | 6 transitions (3 flashes) | 25 % | 0.06 / 0.02 |
-| **標準 (Standard, default)** | 0.08 / 16 | no / no | 4 (2 flashes) | 20 % | 0.04 / 0.01 |
-| 強 (High) | 0.06 / 12 | no / no | 2 (1 flash) | 15 % | 0.02 / 0.005 |
+| Off | – | – | – | – | output = input |
+| Low | 0.10 / 20 (WCAG) | yes / yes (WCAG) | 6 transitions (3 flashes) | 25 % | 0.06 / 0.02 |
+| **Standard (default)** | 0.08 / 16 | no / no | 4 (2 flashes) | 20 % | 0.04 / 0.01 |
+| High | 0.06 / 12 | no / no | 2 (1 flash) | 15 % | 0.02 / 0.005 |
 
-The default is 標準 (on): safety first. Low follows WCAG literally; Standard and High detect
+The default is Standard (on): safety first. Low follows WCAG literally; Standard and High detect
 earlier and allow fewer flashes than WCAG permits.
 
 ## Use in the macOS app
 
-* Settings → 表示・音声 → 「フラッシュ低減」: オフ / 弱 / 標準 / 強, with an explanation and the
-  disclaimer; optional viewport indicator 「フラッシュ低減中」 while the picture is being altered.
+* Settings → Display & Audio → "Flash Reduction": Off / Low / Standard / High, with an explanation and the
+  disclaimer; optional viewport indicator "Flash Reduction Active" while the picture is being altered.
 * Live display: frames are filtered on the emulation thread before they are handed to Metal.
   Only frames that are actually shown are processed (fast-forward: the last of each tick), so the
   1-second window is wall-clock based. While paused / in slow motion, a frame that is being held
   back is re-filtered every display tick so it settles on the real frame within the budget.
-* Reset on: new session / project load, seek, scrub, bookmark jump, take switch, 「前の試行へ戻す」,
+* Reset on: new session / project load, seek, scrub, bookmark jump, take switch, "Back to Previous Take",
   1-frame step back, start of a rewind (a rewind itself is a continuous, filtered sequence).
-* Export sheet: 「フラッシュ低減を適用」 (default = on when the setting is not オフ) applies the
-  current level (標準 if the setting is オフ) to the exported video only, with a fresh filter.
+* Export sheet: "Apply Flash Reduction" (default = on when the setting is not Off) applies the
+  current level (Standard if the setting is Off) to the exported video only, with a fresh filter.
 
 ## Verification
 
@@ -108,6 +108,6 @@ screen in any 60-frame window):
 * Patterns (stripes, checkerboards) and their motion, and rapid colour changes other than
   saturated red, are not analysed.
 * A held picture can lag behind the game by up to about one second after a flash burst.
-* At 強, quick sequences of large scene changes (e.g. boot screens) may be shown with a delay.
+* At High, quick sequences of large scene changes (e.g. boot screens) may be shown with a delay.
 * The thresholds assume the picture fills the view; on a very large or very close display the
   real visual angle of the flashing area is larger.

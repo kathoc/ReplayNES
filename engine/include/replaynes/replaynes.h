@@ -283,7 +283,7 @@ size_t rn_take_count(const rn_session* s);
 rn_status rn_take_get(const rn_session* s, size_t index, rn_take_info* out); /* ordered by id */
 uint64_t rn_active_take(const rn_session* s); /* 0 = nothing recorded yet */
 rn_status rn_take_activate(rn_session* s, uint64_t take_id); /* keeps cursor if possible; undoable */
-/* "前の試行へ戻す": returns to the take active before the last branch/switch, at that frame. */
+/* "Back to Previous Take": returns to the take active before the last branch/switch, at that frame. */
 rn_status rn_undo_take_switch(rn_session* s);
 size_t rn_undo_depth(const rn_session* s);
 
@@ -365,9 +365,9 @@ typedef struct rn_flash_filter rn_flash_filter;
 
 typedef enum rn_flash_level {
   RN_FLASH_OFF = 0,      /* output == input */
-  RN_FLASH_LOW = 1,      /* "弱": WCAG thresholds as written, <= 3 flashes/s on >= 25% of the screen */
-  RN_FLASH_STANDARD = 2, /* "標準" (recommended default): earlier detection, <= 2 flashes/s, >= 20% */
-  RN_FLASH_HIGH = 3      /* "強": <= 1 flash/s, >= 15% of the screen, smaller residual flicker */
+  RN_FLASH_LOW = 1,      /* "Low": WCAG thresholds as written, <= 3 flashes/s on >= 25% of the screen */
+  RN_FLASH_STANDARD = 2, /* "Standard" (recommended default): earlier detection, <= 2 flashes/s, >= 20% */
+  RN_FLASH_HIGH = 3      /* "High": <= 1 flash/s, >= 15% of the screen, smaller residual flicker */
 } rn_flash_level;
 
 typedef struct rn_flash_info {

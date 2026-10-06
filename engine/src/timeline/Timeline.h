@@ -73,7 +73,7 @@ class Timeline {
   std::vector<PathEntry> pathFor(uint64_t leaf) const;
   size_t childCount(uint64_t segId) const;
 
-  // Undo of head switches ("前の試行へ戻す").
+  // Undo of head switches ("Back to Previous Take").
   std::vector<UndoEntry>& undo() { return undo_; }
   const std::vector<UndoEntry>& undo() const { return undo_; }
 
