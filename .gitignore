@@ -42,3 +42,6 @@ xcuserdata/
 *.[nN][eE][sS]
 *.[fF][dD][sS]
 *.[uU][nN][iI][fF]
+
+# Claude Code local state (agent worktrees etc.)
+/.claude/
