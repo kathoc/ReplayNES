@@ -331,6 +331,26 @@
         }
       }
     },
+    "A new version of ReplayNES is available (menu: Update).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES の新しいバージョンがあります（メニュー: アップデート）。"
+          }
+        }
+      }
+    },
+    "A new version of ReplayNES is available.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES の新しいバージョンがあります。"
+          }
+        }
+      }
+    },
     "A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used).": {
       "localizations": {
         "ja": {
@@ -927,6 +947,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "ボタン配置…"
+          }
+        }
+      }
+    },
+    "Check now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ確認"
+          }
+        }
+      }
+    },
+    "Checking for updates…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認しています…"
           }
         }
       }
@@ -1891,6 +1931,16 @@
         }
       }
     },
+    "Downloading the update… %lld%%": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートをダウンロードしています… %lld%%"
+          }
+        }
+      }
+    },
     "Each time you re-record, a new take is created and the old continuation is kept. Usually “Back to Previous Take” is all you need.": {
       "localizations": {
         "ja": {
@@ -2521,6 +2571,16 @@
         }
       }
     },
+    "It downloads in the background: you can keep playing, then restart when it is installed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドでダウンロードします。そのまま遊び続けて、インストールが終わったら再起動してください。"
+          }
+        }
+      }
+    },
     "Japanese (follows the system language)": {
       "localizations": {
         "ja": {
@@ -2847,6 +2907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "レイテンシ計測"
+          }
+        }
+      }
+    },
+    "Later": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "後で"
           }
         }
       }
@@ -4261,12 +4331,32 @@
         }
       }
     },
+    "ReplayNES %@ is installed. Restart to use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES %@ をインストールしました。再起動すると使えます。"
+          }
+        }
+      }
+    },
     "ReplayNES is already in Steam with its artwork.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ReplayNES はアートワーク付きで Steam に追加済みです。"
+          }
+        }
+      }
+    },
+    "ReplayNES is up to date.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES は最新です。"
           }
         }
       }
@@ -4287,6 +4377,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "ReplayNES を Steam に追加しました。Steam を起動（または再起動）すると表示されます。"
+          }
+        }
+      }
+    },
+    "Restart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再起動"
+          }
+        }
+      }
+    },
+    "Restart now? The session is saved first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ再起動しますか？ セッションは先に保存されます。"
+          }
+        }
+      }
+    },
+    "Restart to Update": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再起動してアップデート"
           }
         }
       }
@@ -5931,12 +6051,52 @@
         }
       }
     },
+    "The system could not ask for permission to update (Gaming Mode). Update once in Desktop Mode, or allow it with this command in Konsole: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムがアップデートの許可を確認できませんでした（ゲームモード）。デスクトップモードで一度アップデートするか、Konsole で次のコマンドを実行して許可してください: %@"
+          }
+        }
+      }
+    },
     "The unsaved previous session has been kept (ReplayNES will try to resume it again at the next launch).\n\nMove the ROM back to its original location, or choose it from the library. When you start another game, you can choose to save or discard the previous session.\nTemporary location: %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "保存されていない前回のセッションは削除せずに残してあります（次回の起動時にもう一度再開を試みます）。\n\nROMを元の場所に戻すか、ライブラリから選んでください。別のゲームを始めるときに、前回のセッションを保存するか破棄するかを選べます。\n一時保存の場所: %@"
+          }
+        }
+      }
+    },
+    "The update failed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートに失敗しました。"
+          }
+        }
+      }
+    },
+    "The update is installed. Restart ReplayNES to use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートをインストールしました。ReplayNES を再起動すると使えます。"
+          }
+        }
+      }
+    },
+    "The update repository could not be reached. Check the network connection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートのリポジトリに接続できませんでした。ネットワーク接続を確認してください。"
           }
         }
       }
@@ -6047,6 +6207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "このセッションはプロジェクトとして保存されていないため、バックアップは作成されません。"
+          }
+        }
+      }
+    },
+    "This update needs new permissions. Update in Desktop Mode (Discover) or with: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアップデートには新しい権限が必要です。デスクトップモード（Discover）か次のコマンドでアップデートしてください: %@"
           }
         }
       }
@@ -6271,12 +6441,102 @@
         }
       }
     },
+    "Update": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート"
+          }
+        }
+      }
+    },
+    "Update Available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートがあります"
+          }
+        }
+      }
+    },
+    "Update Installed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートをインストールしました"
+          }
+        }
+      }
+    },
     "Updates": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "アップデート"
+          }
+        }
+      }
+    },
+    "Updates unavailable (installed without a repository)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートは利用できません（リポジトリなしでインストールされています）"
+          }
+        }
+      }
+    },
+    "Updates unavailable (no Flatpak portal)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートは利用できません（Flatpak ポータルがありません）"
+          }
+        }
+      }
+    },
+    "Updates unavailable (not running as a Flatpak)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートは利用できません（Flatpak として実行されていません）"
+          }
+        }
+      }
+    },
+    "Updating ReplayNES is not allowed on this system. Allow it once with this command (Desktop Mode, Konsole): %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このシステムでは ReplayNES のアップデートが許可されていません。次のコマンドで一度許可してください（デスクトップモードの Konsole）: %@"
+          }
+        }
+      }
+    },
+    "Updating… %lld%%": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート中… %lld%%"
+          }
+        }
+      }
+    },
+    "Version %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン %@"
           }
         }
       }
@@ -6357,6 +6617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "一時停止中はコントローラーの十字キー ←/→ でコマ戻し / コマ送り（押し続けると連続）"
+          }
+        }
+      }
+    },
+    "While ReplayNES runs, the system checks its repository about every 30 minutes and shows a notice on the library. Check now looks right away and installs the update when there is one; restart ReplayNES to use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES の実行中は、システムが約 30 分ごとにリポジトリを確認し、アップデートがあればライブラリにお知らせを表示します。「今すぐ確認」はすぐに確認し、アップデートがあればインストールします。使うには ReplayNES を再起動してください。"
           }
         }
       }

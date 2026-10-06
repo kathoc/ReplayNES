@@ -30,6 +30,8 @@ struct Settings {
   bool pauseAfterRewind = true;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
+  // System
+  bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
   // Input layout version of the saved bindings (RNF_CONTROLLER_LAYOUT_VERSION; 0 = never saved).
   int controllerLayoutVersion = 0;
   // UI state worth keeping

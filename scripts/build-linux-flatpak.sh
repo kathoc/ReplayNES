@@ -11,6 +11,8 @@
 # flatpak + network; org.freedesktop.Sdk//25.08 and org.flatpak.Builder are installed --user if
 # missing (nothing is installed into the read-only SteamOS root).
 # Env: REMOTE_DIR (default ReplayNES-dev, relative to the host's home), NO_BUNDLE=1, NO_INSTALL=1.
+# The bundle made here has no repository (no --repo-url): fine for testing, but it never gets updates.
+# Releases use scripts/publish-flatpak-repo.sh (signed repository on GitHub Pages + an updatable bundle).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="${HOST:-${1:-deck@steamdeck.local}}"

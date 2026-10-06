@@ -60,6 +60,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "pauseAfterRewind") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
+    else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
     else if (k == "controllerLayoutVersion" && num && d >= 0 && d <= 1000) s.controllerLayoutVersion = int(d);
     else if (k == "diagramSlot" && num && d >= 0 && d <= 3) s.diagramSlot = int(d);
     else if (k == "diagramFamily" && (v == "auto" || (num && d >= 0 && d <= 4))) s.diagramFamily = v;
@@ -93,6 +94,7 @@ std::string Settings::serialize() const {
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";
+  o << "checkForUpdates=" << int(checkForUpdates) << "\n";
   o << "controllerLayoutVersion=" << controllerLayoutVersion << "\n";
   o << "diagramSlot=" << diagramSlot << "\n";
   o << "diagramFamily=" << diagramFamily << "\n";

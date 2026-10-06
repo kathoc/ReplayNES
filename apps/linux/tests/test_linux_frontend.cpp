@@ -30,6 +30,7 @@
 #include "thumbnails.h"
 #include "trash.h"
 #include "ui_logic.h"
+#include "update_model.h"
 
 namespace fs = std::filesystem;
 using namespace rnl;
@@ -151,7 +152,10 @@ TEST_CASE("settings round trip and tolerant parsing") {
   s.uiScale = 1.25f;
   s.diagramFamily = "4";
   s.timelineSlot = 5;
+  s.checkForUpdates = false;
   Settings t = Settings::parse(s.serialize());
+  CHECK_FALSE(t.checkForUpdates);
+  CHECK(Settings::parse("").checkForUpdates);  // on by default
   CHECK_FALSE(t.integerScale);
   CHECK(t.par87);
   CHECK_EQ(t.flash, 3);
@@ -172,6 +176,121 @@ TEST_CASE("settings round trip and tolerant parsing") {
   CHECK_FALSE(old.integerScale);
   CHECK(old.showStats);
   CHECK_EQ(old.flash, 1);
+}
+
+// ------------------------------------------------------------------ in-app updates (Flatpak portal)
+
+TEST_CASE("update reports: download, restart to use, nothing") {
+  CHECK(classifyUpdate("aaa", "aaa", "bbb") == UpdateKind::download);
+  CHECK(classifyUpdate("aaa", "bbb", "bbb") == UpdateKind::restartToUse);  // `flatpak update` ran meanwhile
+  CHECK(classifyUpdate("aaa", "aaa", "aaa") == UpdateKind::none);           // the portal's first report
+  CHECK(classifyUpdate("aaa", "", "") == UpdateKind::none);
+  CHECK(classifyUpdate("aaa", "aaa", "") == UpdateKind::none);
+  CHECK_EQ(overallPercent(0, 0, 50), 0);
+  CHECK_EQ(overallPercent(0, 1, 50), 50);
+  CHECK_EQ(overallPercent(1, 2, 50), 75);
+  CHECK_EQ(overallPercent(5, 2, 100), 100);  // out of range: clamped
+}
+
+TEST_CASE("update errors are classified for their message") {
+  CHECK(classifyUpdateError("org.freedesktop.DBus.Error.NotSupported",
+                            "Self update not supported, new version requires new permissions") == UpdateError::newPermissions);
+  CHECK(classifyUpdateError("org.freedesktop.DBus.Error.AccessDenied", "Application update not allowed") == UpdateError::denied);
+  CHECK(classifyUpdateError("org.freedesktop.DBus.Error.NotSupported", "No portal support found") == UpdateError::noDialog);
+  CHECK(classifyUpdateError("org.freedesktop.DBus.Error.NameHasNoOwner",
+                            "Could not activate remote peer 'org.freedesktop.impl.portal.desktop.gtk': startup job failed") ==
+        UpdateError::noDialog);
+  CHECK(classifyUpdateError("org.freedesktop.DBus.Error.Failed", "While fetching https://x/summary: Could not resolve host") ==
+        UpdateError::network);
+  CHECK(classifyUpdateError("", "something else") == UpdateError::other);
+}
+
+TEST_CASE("update model: notice, progress, Later, errors") {
+  UpdateModel m;
+  CHECK_FALSE(m.noticeVisible());
+  m.portalReady();
+  m.updateAvailable("a", "a", "a");  // first report of the monitor: nothing new
+  CHECK(m.phase == UpdatePhase::idle);
+  uint64_t s0 = m.serial;
+  m.updateAvailable("a", "a", "b");
+  CHECK(m.phase == UpdatePhase::available);
+  CHECK(m.noticeVisible());
+  CHECK(m.serial != s0);
+  m.dismiss();  // Later
+  CHECK_FALSE(m.noticeVisible());
+  m.updateAvailable("a", "a", "b");  // the same commit again: stays hidden
+  CHECK_FALSE(m.noticeVisible());
+  m.updateAvailable("a", "a", "c");  // a newer one: shows again
+  CHECK(m.noticeVisible());
+  m.updateStarted();
+  CHECK(m.busy());
+  CHECK(m.noticeVisible());
+  UpdateProgressInfo p;
+  p.op = 0;
+  p.nOps = 2;
+  p.progress = 40;
+  m.progress(p);
+  CHECK(m.phase == UpdatePhase::updating);
+  CHECK_EQ(m.percent, 20);
+  m.updateAvailable("a", "a", "d");  // ignored while installing
+  CHECK(m.phase == UpdatePhase::updating);
+  p.status = kUpdateDone;
+  m.progress(p);
+  CHECK(m.phase == UpdatePhase::installed);
+  CHECK(m.noticeVisible());
+  m.setNewVersion("0.3.1");
+  CHECK_EQ(m.newVersion, std::string("0.3.1"));
+  // Check now: nothing to update ("up to date", shown in Settings only).
+  UpdateModel c;
+  c.portalReady();
+  c.checkStarted();
+  CHECK_FALSE(c.noticeVisible());
+  UpdateProgressInfo e;
+  e.status = kUpdateEmpty;
+  c.progress(e);
+  CHECK(c.phase == UpdatePhase::upToDate);
+  CHECK_FALSE(c.noticeVisible());
+  // Errors: shown on the notice for Update, in Settings for Check now.
+  UpdateModel f;
+  f.updateAvailable("a", "a", "b");
+  f.updateStarted();
+  e.status = kUpdateError;
+  e.error = "org.freedesktop.DBus.Error.AccessDenied";
+  e.errorMessage = "Application update not allowed";
+  f.progress(e);
+  CHECK(f.phase == UpdatePhase::failed);
+  CHECK(f.error == UpdateError::denied);
+  CHECK(f.noticeVisible());
+  f.dismiss();
+  CHECK(f.phase == UpdatePhase::idle);
+  CHECK_FALSE(f.noticeVisible());
+  // Unavailable: not a Flatpak (developer build).
+  UpdateModel u;
+  u.setUnsupported(UpdateUnavailable::notFlatpak);
+  CHECK(u.phase == UpdatePhase::unsupported);
+  CHECK_FALSE(u.noticeVisible());
+}
+
+TEST_CASE("restart into an update: arguments, environment, version") {
+  std::vector<std::string> argv = {"/app/bin/replaynes-linux", "--script", "update restart", "--windowed", "--rom", "a.nes",
+                                   "--perf-seconds", "5", "--inject-input"};
+  std::vector<std::string> args = restartArguments(argv);
+  REQUIRE_EQ(args.size(), size_t(3));
+  CHECK_EQ(args[0], std::string("--windowed"));
+  CHECK_EQ(args[1], std::string("--rom"));
+  CHECK_EQ(args[2], std::string("a.nes"));
+  std::vector<std::string> env = {"PATH=/app/bin:/usr/bin", "DISPLAY=:99.0", "LANG=ja_JP.UTF-8", "SteamGameId=123",
+                                  "SDL_VIDEO_DRIVER=x11", "REPLAYNES_LANG=en", "XDG_CONFIG_HOME=/x", "LD_PRELOAD=/y.so",
+                                  "GAMESCOPE_WAYLAND_DISPLAY=gamescope-0", "broken"};
+  auto kept = restartEnvironment(env);
+  std::vector<std::string> keys;
+  for (auto& [k, v] : kept) keys.push_back(k);
+  std::vector<std::string> want = {"LANG", "SteamGameId", "SDL_VIDEO_DRIVER", "REPLAYNES_LANG", "GAMESCOPE_WAYLAND_DISPLAY"};
+  CHECK(keys == want);
+  CHECK_EQ(parseVersionOutput("ReplayNES 0.3.1\n"), std::string("0.3.1"));
+  CHECK_EQ(parseVersionOutput("ReplayNES 1.10.0-test\n"), std::string("1.10.0"));
+  CHECK_EQ(parseVersionOutput(""), std::string());
+  CHECK_EQ(parseVersionOutput("error: no such command\n"), std::string());
 }
 
 // ------------------------------------------------------------------ trash

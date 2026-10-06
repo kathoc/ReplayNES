@@ -1,4 +1,4 @@
-# Release procedure (macOS)
+# Release procedure (macOS; Linux / Steam Deck in step 7)
 
 1. Bump the version by hand: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (must increase every
    release; Sparkle compares it as `sparkle:version`) in `apps/macos/project.yml`, and
@@ -20,6 +20,11 @@
    ```
 6. Check: `curl -sL https://github.com/kathoc/ReplayNES/releases/latest/download/appcast.xml` shows the
    new version, and an installed previous version finds it via "Check for Updates…".
+7. Linux / Steam Deck (same version; also bump `project(ReplayNESLinux VERSION ...)` in
+   `apps/linux/CMakeLists.txt` and add a `<release>` to
+   `apps/linux/flatpak/io.github.replaynes.ReplayNES.metainfo.xml`): `scripts/publish-flatpak-repo.sh`
+   (see "Linux: Flatpak repository" below), then attach the bundle to the release:
+   `gh release upload v<version> dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak --repo kathoc/ReplayNES`.
 
 ## Automatic updates (Sparkle 2)
 
@@ -62,6 +67,84 @@ cp <new zip> <dir>/ && (cd <dir> && python3 -m http.server 8765 --bind 127.0.0.1
 The `-SU...` arguments live only in the argument domain (not persisted). Sparkle still writes
 `SUHasLaunchedBefore` / `SULastCheckTime` to the `io.github.replaynes.ReplayNES` defaults and caches
 to `~/Library/Caches/io.github.replaynes.ReplayNES`; remove them afterwards if needed.
+
+## Linux: Flatpak repository (GitHub Pages)
+
+Installs of the Linux Flatpak update from a signed OSTree repository served by GitHub Pages:
+`https://kathoc.github.io/ReplayNES/flatpak/` (branch `gh-pages`, folder `flatpak/`; Pages source
+`gh-pages` `/`). Users install with
+`flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref`
+or with the release bundle, which is built with `--repo-url` and the key, so it registers the same
+remote. The app's update notice (Flatpak portal) and `flatpak update` both use it.
+
+```
+scripts/publish-flatpak-repo.sh            # build on the Deck, sign, update the repo, bundle, push gh-pages
+NO_PUSH=1 scripts/publish-flatpak-repo.sh  # stop before the push (inspect build/gh-pages first)
+SKIP_BUILD=1 ...                           # reuse the Deck's last build (~/ReplayNES-dev/repo)
+TARGET=test scripts/publish-flatpak-repo.sh   # local test repo on the Deck (~/ReplayNES-dev/test-repo, file://)
+```
+
+What it does: builds with `scripts/build-linux-flatpak.sh` (no install, no bundle) on the Deck;
+copies the published repository (gh-pages `flatpak/`, worktree `build/gh-pages`) to the Deck; adds
+the build as a new commit with `flatpak build-commit-from --gpg-sign` (subject "ReplayNES
+<version>"); `flatpak build-update-repo --gpg-sign --generate-static-deltas --prune
+--prune-depth=KEEP-1` (signed summary, deltas, only the last `KEEP`=3 commits kept, the `.Debug`
+extension is never published); writes `ReplayNES.flatpakrepo` and
+`io.github.replaynes.ReplayNES.flatpakref` (base64 public key embedded, `RuntimeRepo` = Flathub);
+builds `dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from the signed commit with
+`--repo-url` + `--gpg-keys`; copies the repository back and commits gh-pages as **one orphan commit,
+force-pushed** (old repository objects never pile up in git history; the repo is ~10 MB). It enables
+Pages on the first push (`gh api -X POST repos/kathoc/ReplayNES/pages`). Pages takes a minute or two
+to deploy and its CDN caches files ~10 minutes, so clients can see the new summary a little later.
+
+Check from a Linux machine / the Deck:
+`flatpak remote-ls --user replaynes` (or the bundle's `replaynes-origin`), `flatpak update --user`.
+
+Self-updates must not need new sandbox permissions: the portal refuses an update whose
+`finish-args` add permissions ("requires new permissions"); such a release reaches users only through
+`flatpak update` / Discover. Keep `finish-args` stable, or announce it.
+
+### Signing key (GPG)
+
+- Dedicated key "ReplayNES Flatpak Repo", RSA 4096, no expiry, fingerprint
+  `5267770BF84CC0DA2FB9B8D093BCD9083B5DF142`. Public key: `apps/linux/flatpak/replaynes-repo.gpg`
+  (also embedded in the `.flatpakrepo` / `.flatpakref` and in every bundle).
+- Private key: **only on the Steam Deck**, GnuPG home `~/.local/share/replaynes-signing/gnupg`
+  (mode 700), **without a passphrase** so that the publish script can sign unattended. Risk: anyone
+  with access to that account (or a copy of the folder) can sign repository updates that every
+  installed ReplayNES accepts. Keep the Deck's account protected, never copy the folder into a repo,
+  backup or sync folder unencrypted, and **never commit the private key**.
+- Backup (store it offline / in a password manager, then delete the file):
+  ```
+  ssh deck@steamdeck.local 'GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --export-secret-keys --armor 5267770BF84CC0DA2FB9B8D093BCD9083B5DF142' > replaynes-repo-secret.asc
+  ```
+  The revocation certificate is in `~/.local/share/replaynes-signing/gnupg/openpgp-revocs.d/`; back it
+  up the same way.
+- Restore (new Deck / build host):
+  ```
+  mkdir -p ~/.local/share/replaynes-signing/gnupg && chmod 700 ~/.local/share/replaynes-signing ~/.local/share/replaynes-signing/gnupg
+  GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --batch --import replaynes-repo-secret.asc
+  ```
+  (`SIGN_HOME` / `GPG_KEY` override the location / key for `scripts/publish-flatpak-repo.sh`.)
+- Losing the key: existing installs reject a repository signed by another key. Recovery = a new key,
+  new `.flatpakrepo` / `.flatpakref`, and users re-add the remote
+  (`flatpak remote-modify --user --gpg-import=<new key> replaynes`) or reinstall.
+
+### Local end-to-end update test (Flatpak, on the Deck)
+
+```
+TARGET=test scripts/publish-flatpak-repo.sh            # version N into ~/ReplayNES-dev/test-repo (file://)
+# on the Deck: install the test bundle (it points to the test repo)
+flatpak install --user -y --bundle ~/ReplayNES-dev/test-io.github.replaynes.ReplayNES-<N>-x86_64.flatpak
+# bump to N+1 locally (CMakeLists.txt, apps/linux/CMakeLists.txt, metainfo; do not commit), then
+TARGET=test scripts/publish-flatpak-repo.sh
+# portal check interval is 30 min: for the test run flatpak-portal with a short one (same ssh session)
+systemctl --user stop flatpak-portal; /usr/lib/flatpak-portal --replace --poll-timeout=15 &
+flatpak run io.github.replaynes.ReplayNES --script "updatewait available 120; update apply; updatewait installed 240; update restart"
+flatpak ps --columns=pid,application,commit   # the restarted instance runs the new commit
+```
+Afterwards reinstall from the real repository (`.flatpakref` or the published bundle) and
+`pkill -x flatpak-portal` (it is started again on demand).
 
 ## Developer ID signing + notarization (when a Developer ID is available)
 

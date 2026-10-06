@@ -193,6 +193,7 @@ void UI::buildPracticeTab() {
 void UI::buildLibrary(double now) {
   LibraryModel* lib = d_.library;
   lib->watch(now);
+  buildUpdateNotice();  // in-app update waiting / downloading (ui_update.cpp)
   float h = ImGui::GetContentRegionAvail().y;
   // Header: search (Y), reload, open folder.
   bool noPopup = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && dialogs_.empty() && !chooser_;

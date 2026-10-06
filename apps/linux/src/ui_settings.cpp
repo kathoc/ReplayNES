@@ -181,6 +181,7 @@ void UI::buildAudioControlSettings() {
   ImGui::EndDisabled();
   wrappedDisabled(TR("Adds ReplayNES to the Steam library with its artwork, for every Steam account on this device. Close Steam "
                      "first (Desktop Mode)."));
+  buildUpdateSettings();  // ui_update.cpp
 }
 
 // "Add to Steam": runs steam::addToSteam off the render thread (it reads / writes the Steam folders); the result

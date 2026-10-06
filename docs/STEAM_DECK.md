@@ -12,13 +12,28 @@ Japanese, display-locked low-latency pacing (also full speed on displays slower 
 ReplayNES is a Flatpak (`io.github.replaynes.ReplayNES`, runtime `org.freedesktop.Platform` 25.08), so
 nothing touches the read-only SteamOS system.
 
-From a bundle (`dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak`), in Desktop Mode
-(Konsole):
+Recommended: from the ReplayNES Flatpak repository (signed, on GitHub Pages:
+<https://kathoc.github.io/ReplayNES/flatpak/>), in Desktop Mode (Konsole) - this install gets updates:
+
+```sh
+flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref
+flatpak run io.github.replaynes.ReplayNES
+```
+
+The `.flatpakref` adds the remote `replaynes` (its signing key is embedded) and takes the runtime
+from Flathub. Opening the `.flatpakref` in Discover works too.
+
+Or from the release bundle (`io.github.replaynes.ReplayNES-<version>-x86_64.flatpak`, built by
+`scripts/publish-flatpak-repo.sh` with `--repo-url`): installing it also registers the repository
+(remote `replaynes-origin`), so it updates the same way:
 
 ```sh
 flatpak install --user io.github.replaynes.ReplayNES-0.3.0-x86_64.flatpak   # fetches the runtime from Flathub
-flatpak run io.github.replaynes.ReplayNES
+flatpak remotes --user                                                      # replaynes-origin  https://kathoc.github.io/ReplayNES/flatpak/
 ```
+
+Bundles made by `scripts/build-linux-flatpak.sh` (development) carry no repository: they never see
+updates (reinstall from the `.flatpakref` to switch).
 
 From source (builds on the Deck itself; run on a Mac or Linux checkout with ssh access to the Deck):
 
@@ -36,6 +51,31 @@ ROMs go into `~/Documents/ReplayNES/ROM` (created on first start; `*.nes`, also 
 down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-documents/ReplayNES`)
 and to your Trash (`--filesystem=xdg-data/Trash`, for the "Reset Project" backup and projects
 replaced by Save As).
+
+## Updates
+
+- **In the app:** while ReplayNES runs, the system's Flatpak portal checks the repository about every
+  30 minutes; a new version shows a notice on the library ("A new version of ReplayNES is available.
+  Update / Later") and an **Update** button on the pause hub. Update downloads in the background
+  (progress on the notice), then **Restart** saves the session, quits and starts the new version
+  (through the portal; Steam keeps showing the game as running). Later hides the notice until a
+  newer version appears.
+- **Settings -> Audio & Controls -> Updates:** "Automatically check for updates" (on by default;
+  off = no update monitor) and **Check now** (checks right away and installs the update when there
+  is one; "ReplayNES is up to date." otherwise). The app itself has no network access: the portal
+  (`org.freedesktop.portal.Flatpak`, outside the sandbox) does the checking and installing.
+- **Permission (once):** the first self-update asks "Update ReplayNES?" - in Desktop Mode KDE shows
+  that dialog. Gaming Mode has no dialog for it (the gamescope portal set has no Access portal): the
+  app then says so; update once in Desktop Mode, or allow it in Konsole:
+
+  ```sh
+  flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes   # undo: flatpak permission-remove flatpak updates io.github.replaynes.ReplayNES
+  ```
+- Updates that need new sandbox permissions are refused by the portal; the app tells you to update
+  with `flatpak update io.github.replaynes.ReplayNES` (or Discover) instead. `flatpak update` and
+  Discover always work as usual.
+- Installed without a repository (a development bundle): nothing to update from; "Check now"
+  reports up to date (the portal cannot tell the difference). Reinstall from the `.flatpakref`.
 
 ## Gaming Mode (add to Steam)
 

@@ -36,6 +36,7 @@
 #include "replaynes/frontend.h"
 #include "steam_shortcut.h"
 #include "ui_logic.h"
+#include "update_model.h"
 #include "vk_renderer.h"
 
 namespace rnl {
@@ -45,6 +46,7 @@ class EmulationController;
 class InputRouter;
 class LibraryModel;
 class ThumbnailManager;
+class UpdateService;
 struct Settings;
 struct EmuStatus;
 struct LibraryROM;
@@ -71,12 +73,14 @@ class UI : public DialogHost {
     VkRenderer* renderer;
     Settings* settings;
     SDL_Window* window;
+    UpdateService* updates = nullptr;  // in-app updates (Flatpak portal); null in tests
   };
   explicit UI(Deps d);
   void setApp(AppModel* app) { d_.app = app; }
 
   // Hooks from main.
   std::function<void()> onQuit;              // the user chose Quit
+  std::function<void()> onRestart;           // restart into an installed update (quits first)
   std::function<void()> onSettingsChanged;   // save + apply (volume, flash level ...)
   std::function<void(bool)> onFullscreen;
   std::function<bool()> isFullscreen;
@@ -122,6 +126,10 @@ class UI : public DialogHost {
   /// Script hooks (--script, tests): the visible dialog's button / the chooser's name.
   bool answerDialog(int button);
   bool dialogVisible() const { return !dialogs_.empty(); }
+  /// Script hooks for the update flow: "check", "apply", "later", "restart"; the phase's name
+  /// ("idle", "checking", "available", "updating", "installed", "uptodate", "failed", "unsupported").
+  bool scriptUpdate(const std::string& action);
+  std::string updatePhaseName() const;
 
  private:
   // ui.cpp
@@ -187,6 +195,13 @@ class UI : public DialogHost {
   void buildCrtSettings();
   void startAddToSteam();
   void pollAddToSteam();
+  // ui_update.cpp (in-app updates: library notice, hub button, Settings -> System)
+  void refreshUpdate();
+  void buildUpdateNotice();
+  void buildUpdateSettings();
+  void showUpdateDialog();
+  std::string updateStatusText() const;
+  std::string updateErrorText() const;
   void changed();
 
   Deps d_;
@@ -213,6 +228,9 @@ class UI : public DialogHost {
   double noticeTime_ = 0;
   // Settings -> Audio & Controls -> System -> Add to Steam (file I/O on a worker thread).
   std::future<steam::Report> steamJob_;
+  // In-app updates: this frame's copy of the service's state.
+  UpdateModel update_;
+  uint64_t updateSerial_ = 0;
   // Dialogs.
   std::deque<Dialog> dialogs_;
   bool dialogOpened_ = false;

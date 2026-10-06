@@ -252,6 +252,7 @@ GameRect UI::gameRect(int w, int h) const {
 void UI::build(double now) {
   if (noticeTime_ < 0) noticeTime_ = now;
   prompts_.clear();
+  refreshUpdate();
   // Hold buttons (rewind / fast-forward) set these again while they are held.
   d_.emu->setRewindHeld(false);
   d_.emu->setFastForwardHeld(false);
@@ -454,7 +455,7 @@ void UI::buildHubButtons() {
     int id;
     bool enabled;
   };
-  const HubButton buttons[] = {
+  std::vector<HubButton> buttons = {
       {Tab::playback, TR("Resume"), 0, true},
       {Tab::library, TR("Back to Library"), 1, true},
       {Tab::settings, TR("Settings"), 2, true},
@@ -465,7 +466,15 @@ void UI::buildHubButtons() {
       {Tab::playback, TR("Reset…"), 7, true},
       {Tab::guide, TR("Controls Guide"), 8, true},
   };
-  const int n = int(sizeof buttons / sizeof buttons[0]);
+  // An update waiting (in-app updates): its dialog (Update / Restart).
+  std::string updateLabel;
+  if (update_.noticeVisible() && (update_.phase == UpdatePhase::available || update_.phase == UpdatePhase::installed))
+    buttons.push_back({Tab::playback, update_.phase == UpdatePhase::installed ? TR("Restart to Update") : TR("Update"), 9, true});
+  else if (update_.noticeVisible() && update_.busy()) {
+    updateLabel = TRF("Updating… %lld%%", {update_.percent});
+    buttons.push_back({Tab::playback, updateLabel.c_str(), 9, false});
+  }
+  const int n = int(buttons.size());
   // Focus a button for two frames: ImGui otherwise restores the hub window's last focused item
   // when the page that was shown goes away.
   if (focusFirst_) hubFocusFrames_ = 2;
@@ -515,6 +524,7 @@ void UI::buildHubButtons() {
       case 6: openExportDialog(); break;
       case 7: showResetChoices(); break;
       case 8: selectTab(Tab::guide); break;
+      case 9: showUpdateDialog(); break;
     }
   }
   ImGui::PopStyleVar();

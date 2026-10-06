@@ -51,6 +51,7 @@
 #include "steam_shortcut.h"
 #include "thumbnails.h"
 #include "ui.h"
+#include "update_service.h"
 #include "vk_renderer.h"
 
 using namespace rnl;
@@ -72,6 +73,7 @@ struct Options {
   bool crtAdaptive = true;
   bool crtBuildAhead = true;
   int integerScale = -1;  // -1 = the saved setting
+  std::vector<std::string> argv;  // as started (restart into an update)
 };
 
 void usage() {
@@ -93,6 +95,7 @@ void usage() {
       "  --crt-max-width N     tube width cap (default 1600); --crt-fixed: no adaptive resolution;\n"
       "  --crt-no-build-ahead  never build CRT pictures one frame ahead\n"
       "  --integer-scale 0|1   integer scaling for this run (0 = fill the screen)\n"
+      "  --version             print the version and exit\n"
       "  --add-to-steam        add ReplayNES to the Steam library with its artwork, then exit (close Steam first);\n"
       "                        add --dry-run to only show what would change (also --force, --steam-userdata DIR, --steam-artwork DIR)\n"
       "Environment: REPLAYNES_LANG=ja|en overrides the system language.\n");
@@ -170,6 +173,8 @@ class App {
   std::unique_ptr<LibraryModel> library_;
   std::unique_ptr<UI> ui_;
   std::unique_ptr<AppModel> app_;
+  std::unique_ptr<UpdateService> updates_;
+  bool restart_ = false;  // quit, then start the newest installed version (an update)
   PadNavFeed padNav_;
   DisplayScheduler sched_;
   rnf_input_deadline* deadline_ = nullptr;
@@ -254,10 +259,11 @@ int App::run(const Options& opt) {
   settings_.load(paths_.settingsFile());
   if (opt.flash >= 0 && opt.flash <= 3) settings_.flash = opt.flash;
   if (opt.integerScale >= 0) settings_.integerScale = opt.integerScale != 0;
+  std::fprintf(stderr, "ReplayNES %s\n", RNL_APP_VERSION);
   prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);  // precise wake-ups for the just-in-time sample
   const bool perfMode = opt.perfSeconds > 0;
 
-  SDL_SetAppMetadata("ReplayNES", "0.3.0", "io.github.replaynes.ReplayNES");
+  SDL_SetAppMetadata("ReplayNES", RNL_APP_VERSION, "io.github.replaynes.ReplayNES");
   SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
   SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
   // Controllers are updated on their own thread (below), not by the frame loop's event pump: the
@@ -300,7 +306,10 @@ int App::run(const Options& opt) {
   ImGuiIO& io = ImGui::GetIO();
   io.IniFilename = nullptr;
   io.ConfigNavCaptureKeyboard = true;
-  UI::Deps deps{nullptr, emu_.get(), library_.get(), input_.get(), thumbs_.get(), &vr_, &settings_, window_};
+  // In-app updates (Flatpak portal; its own thread). Not for measurement runs.
+  updates_ = std::make_unique<UpdateService>();
+  if (!perfMode) updates_->start(settings_.checkForUpdates);
+  UI::Deps deps{nullptr, emu_.get(), library_.get(), input_.get(), thumbs_.get(), &vr_, &settings_, window_, updates_.get()};
   // The UI is the app model's dialog host and shows its state.
   ui_ = std::make_unique<UI>(deps);
   app_ = std::make_unique<AppModel>(paths_, emu_.get(), library_.get(), ui_.get());
@@ -337,9 +346,16 @@ int App::run(const Options& opt) {
     ui_->notice(TRF("Paused because %@ was disconnected", {name}));
   };
   ui_->onQuit = [this] { app_->requestQuit([this] { running_ = false; }); };
+  ui_->onRestart = [this] {
+    app_->requestQuit([this] {
+      restart_ = true;
+      running_ = false;
+    });
+  };
   ui_->onSettingsChanged = [this] {
     settings_.save(paths_.settingsFile());
     applySettings();
+    updates_->setAutoCheck(settings_.checkForUpdates);
   };
   ui_->onFullscreen = [this](bool on) { applyFullscreen(on); };
   ui_->isFullscreen = [this] { return fullscreen_; };
@@ -633,6 +649,13 @@ int App::run(const Options& opt) {
   rnf_input_deadline_free(cpuWork_);
   SDL_DestroyWindow(window_);
   SDL_Quit();
+  if (restart_) {
+    // Into the update: the newest installed version, through the portal; this process waits for
+    // it so that Steam keeps the game running (and stops it with this one).
+    int rc = updates_->restartLatestAndWait(restartArguments(opt.argv));
+    if (rc >= 0) return rc;
+    std::fprintf(stderr, "could not start the updated ReplayNES: start it again\n");
+  }
   return 0;
 }
 
@@ -640,8 +663,13 @@ int App::run(const Options& opt) {
 
 int main(int argc, char** argv) {
   if (int rc = 0; steam::runCli(argc, argv, &rc)) return rc;  // --add-to-steam [--dry-run] (no window)
+  if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
+    std::printf("ReplayNES %s\n", RNL_APP_VERSION);
+    return 0;
+  }
   Options opt;
   if (!parseArgs(argc, argv, &opt)) return 2;
+  opt.argv.assign(argv, argv + argc);
   App app;
   return app.run(opt);
 }

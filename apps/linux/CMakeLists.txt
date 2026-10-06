@@ -96,7 +96,8 @@ add_library(rnl_logic STATIC
   src/settings.cpp
   src/thumbnails.cpp
   src/trash.cpp
-  src/ui_logic.cpp)
+  src/ui_logic.cpp
+  src/update_model.cpp)
 target_include_directories(rnl_logic PUBLIC src)
 target_link_libraries(rnl_logic PUBLIC replaynes_frontend replaynes_engine Threads::Threads)
 target_compile_options(rnl_logic PRIVATE ${RNL_WARNINGS})
@@ -115,11 +116,25 @@ add_executable(replaynes-linux
   src/ui_play.cpp
   src/ui_settings.cpp
   src/ui_export.cpp
+  src/ui_update.cpp
+  src/update_service.cpp
   ${SHADER_INCS})
 target_include_directories(replaynes-linux PRIVATE src ${SHADER_OUT})
 target_link_libraries(replaynes-linux PRIVATE rnl_logic rnl_crt_export rnl_render rnl_export rn_imgui SDL3::SDL3 Vulkan::Vulkan
   PkgConfig::FONTCONFIG Threads::Threads)
 target_compile_options(replaynes-linux PRIVATE ${RNL_WARNINGS})
+# The version of the release (root CMakeLists.txt): --version, the update notice.
+file(STRINGS ${REPLAYNES_ROOT}/CMakeLists.txt RNL_ROOT_PROJECT REGEX "^project\\(ReplayNES VERSION")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" RNL_APP_VERSION "${RNL_ROOT_PROJECT}")
+target_compile_definitions(replaynes-linux PRIVATE RNL_APP_VERSION="${RNL_APP_VERSION}")
+# In-app updates through the XDG Flatpak portal (GDBus; GLib is in org.freedesktop.Platform).
+pkg_check_modules(GIO IMPORTED_TARGET gio-2.0 gio-unix-2.0)
+if(GIO_FOUND)
+  target_link_libraries(replaynes-linux PRIVATE PkgConfig::GIO)
+  target_compile_definitions(replaynes-linux PRIVATE RNL_HAVE_GIO)
+else()
+  message(STATUS "gio-2.0 not found: in-app updates (Flatpak portal) disabled")
+endif()
 
 if(RNL_BUILD_TESTS)
   set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)

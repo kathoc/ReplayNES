@@ -69,6 +69,13 @@ void Script::step(double now) {
     }
   }
   while (next_ < cmds_.size()) {
+    if (waitCond_) {
+      bool met = waitCond_();
+      if (!met && now < waitUntil_) return;
+      std::fprintf(stderr, "script: updatewait %s (%s)\n", met ? "reached" : "timed out", ui_->updatePhaseName().c_str());
+      waitCond_ = nullptr;
+      waitUntil_ = 0;
+    }
     if (now < waitUntil_) return;
     const std::vector<std::string>& c = cmds_[next_++];
     const std::string& op = c[0];
@@ -132,6 +139,12 @@ void Script::step(double now) {
     } else if (op == "shot") {
       renderer_->requestScreenshot(arg(1, "screenshot.png"));
       return;  // this frame is the one saved
+    } else if (op == "update") {
+      if (!ui_->scriptUpdate(arg(1))) std::fprintf(stderr, "script: update %s: not possible now\n", arg(1).c_str());
+    } else if (op == "updatewait") {
+      std::string want = arg(1, "available");
+      waitUntil_ = now + std::atof(arg(2, "60").c_str());
+      waitCond_ = [this, want] { return ui_->updatePhaseName() == want; };
     } else if (op == "quit") {
       if (onQuit) onQuit();
     } else {

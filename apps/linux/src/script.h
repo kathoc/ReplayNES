@@ -12,6 +12,8 @@
 //   seek <frame> | advance <n> | dialog <button> | panel | shot <file.png> | quit
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)
 //   exportdialog | exportstart | crt [off]       (MP4 export dialog / its Export button, CRT setting)
+//   update check|apply|later|restart            (in-app update: Check now, Update, Later, Restart)
+//   updatewait <phase> <seconds>                 wait until the update phase is <phase> (UI::updatePhaseName)
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -44,6 +46,7 @@ class Script {
   std::vector<std::vector<std::string>> cmds_;
   size_t next_ = 0;
   double waitUntil_ = 0;
+  std::function<bool()> waitCond_;  // updatewait: until this holds (or waitUntil_)
   struct Release {
     double at;
     std::string button;
