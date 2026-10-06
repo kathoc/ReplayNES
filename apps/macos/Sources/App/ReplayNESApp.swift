@@ -124,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct ReplayNESApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
+    init() {
+        UILanguage.apply()
+    }
+
     var body: some Scene {
         Window("ReplayNES", id: "main") {
             ContentView().environmentObject(AppModel.shared)
