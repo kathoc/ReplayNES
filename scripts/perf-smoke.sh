@@ -79,12 +79,17 @@ if len(rows) < 3: print("not enough samples (app paused or not running?)"); sys.
 a, b = rows[0], rows[-1]
 dt = b["t"] - a["t"]; mins = dt / 60
 d = lambda k: b.get(k, 0) - a.get(k, 0)
-fr = [r for r in csv.DictReader(open(os.path.join(work, "frames.csv")))]
-fr = [{k: float(v) for k, v in r.items()} for r in fr]
-if not fr: print("no presented frames (window occluded? try ACTIVATE=1)"); sys.exit(1)
-t0 = fr[0]["presented"]
+allrows = [{k: float(v) for k, v in r.items()} for r in csv.DictReader(open(os.path.join(work, "frames.csv")))]
+if not allrows: print("no presented frames (window occluded? try ACTIVATE=1)"); sys.exit(1)
+t0 = min(r["presented"] for r in allrows)
 # Same window as the stats rows (stats t is from launch; frames start ~1-2 s later).
-fr = [r for r in fr if r["presented"] - t0 >= warm - 2 and r["presented"] - t0 <= warm - 2 + dt]
+allrows = [r for r in allrows if warm - 2 <= r["presented"] - t0 <= warm - 2 + dt]
+fr = [r for r in allrows if r.get("kind", 0) == 0]
+# When each picture first reached the screen: its own present, or a repeat when that was dropped.
+first = {}
+for r in allrows:
+    f = int(r["frame"])
+    if f not in first or r["presented"] < first[f]: first[f] = r["presented"]
 ms = lambda x: x * 1000
 def stat(name, vals):
     vals = sorted(vals)
@@ -97,22 +102,26 @@ stages = {
     "sample->emulated": [ms(r["emulated"] - r["sample"]) for r in live],
     "emulated->commit (render)": [ms(r["commit"] - r["emulated"]) for r in live],
     "commit->on screen": [ms(r["presented"] - r["commit"]) for r in live],
-    "INPUT SAMPLE->ON SCREEN": [ms(r["presented"] - r["sample"]) for r in live],
+    "INPUT SAMPLE->ON SCREEN": [ms(first[int(r["frame"])] - r["sample"]) for r in live],
     "on screen - target refresh": [ms(r["presented"] - r["target"]) for r in live if r["target"] > 0],
-    "input event->on screen": [ms(r["presented"] - r["event"]) for r in fr if r["event"] > 0],
+    "input event->on screen": [ms(first[int(r["frame"])] - r["event"]) for r in fr if r["event"] > 0],
 }
-# Judder: consecutive frames, steady interval = median; refresh = smallest common step.
-iv = [(b2["presented"] - b1["presented"]) for b1, b2 in zip(fr, fr[1:]) if b2["frame"] == b1["frame"] + 1 and 0 < b2["presented"] - b1["presented"] < 0.25]
-skipped = sum(int(b2["frame"] - b1["frame"] - 1) for b1, b2 in zip(fr, fr[1:]) if 1 < b2["frame"] - b1["frame"] <= 8)
-refresh = 1 / (b.get("refreshHz") or 120) if b.get("refreshHz") else 1 / 120
+# Judder: how long each picture stays on screen (next picture's first appearance - its own),
+# consecutive frames only; steady = median; refresh from the stats (default 120 Hz).
+frames_sorted = sorted(first)
+iv = [first[b2] - first[b1] for b1, b2 in zip(frames_sorted, frames_sorted[1:]) if b2 == b1 + 1 and 0 < first[b2] - first[b1] < 0.25]
+skipped = sum(b2 - b1 - 1 for b1, b2 in zip(frames_sorted, frames_sorted[1:]) if 1 < b2 - b1 <= 8)
+refresh = 1 / b["refreshHz"] if b.get("refreshHz") else 1 / 120
 steady = statistics.median(iv) if iv else 0
 off = sum(1 for x in iv if abs(x - steady) > refresh / 2)
+own = {int(r["frame"]) for r in fr}
+late_pictures = sum(1 for f in first if f not in own)   # own present dropped, shown by a repeat
 cpu = lambda k: d(k) / dt * 100
 summary = {
     "label": label, "fullscreen": b["fullScreen"], "chromeHidden": b.get("chromeHidden", False), "pacing": b.get("pacing", "?"),
     "seconds": round(dt), "emulatedFPS": statistics.fmean(r["emulatedFPS"] for r in rows[1:]),
     "presentedFPS": d("presentCount") / dt, "steadyIntervalMs": ms(steady),
-    "judderPerMin": off / mins, "neverShownPerMin": skipped / mins, "missedRefreshes": d("missedRefreshes"),
+    "judderPerMin": off / mins, "neverShownPerMin": skipped / mins, "shownByRepeatPerMin": late_pictures / mins, "missedRefreshes": d("missedRefreshes"),
     "repeatPerSec": d("repeatPresents") / dt, "backlogDrains": d("backlogDrains"),
     "audioUnderruns": d("audioUnderruns"), "audioDropped": d("audioDropped"), "audioRatio": b.get("audioRatio", 1),
     "audioFillMs": statistics.fmean(r.get("audioFillMs", 0) for r in rows),
@@ -126,7 +135,7 @@ print(f"{'stage (ms)':28s} {'mean':>7s} {'p50':>7s} {'p95':>7s} {'p99':>7s} {'ma
 for k, s in summary["stages"].items():
     if s["n"]: print(f"{k:28s} {s['mean']:7.2f} {s['p50']:7.2f} {s['p95']:7.2f} {s['p99']:7.2f} {s['max']:7.2f}  {s['n']}")
 print(f"judder / min        {summary['judderPerMin']:8.1f}   (interval off the steady one by > 1/2 refresh)")
-print(f"never shown / min   {summary['neverShownPerMin']:8.1f}   missed refreshes {summary['missedRefreshes']}   repeats/s {summary['repeatPerSec']:.1f}   backlog drains {summary['backlogDrains']}")
+print(f"never shown / min   {summary['neverShownPerMin']:8.1f}   shown only by a repeat / min {summary['shownByRepeatPerMin']:.1f}   missed refreshes {summary['missedRefreshes']}   repeats/s {summary['repeatPerSec']:.1f}   backlog drains {summary['backlogDrains']}")
 print(f"audio               underruns {summary['audioUnderruns']}  dropped {summary['audioDropped']}  ratio {summary['audioRatio']:.5f}  fill {summary['audioFillMs']:.1f} ms")
 print(f"CPU % of one core   emulation {summary['cpuEmulation']:.1f}  present {summary['cpuPresent']:.1f}  main {summary['cpuMain']:.1f}  process {summary['cpuProcess']:.1f}   GPU {summary['gpuMs']:.3f} ms/frame   input lead {summary['inputLeadMs']:.2f} ms")
 print("JSON " + json.dumps(summary))

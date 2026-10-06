@@ -169,6 +169,9 @@ final class EmulationController {
     private var lastStep: UInt64 = 0            // when a frame was last emulated (repeat presents)
     private var emulationRate = 1 / FramePacing.period
     private var pendingThumbnail: UInt64?       // captured after the frame is presented
+    /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
+    private var workgroup: OpaquePointer?
+    static let useWorkgroup = UserDefaults.standard.object(forKey: "frameWorkgroup") as? Bool ?? true
     // Requested viewport (any thread -> emulation thread).
     private let targetLock = NSLock()
     private var requestedTarget: DisplayTarget?
@@ -343,6 +346,8 @@ final class EmulationController {
         }
         // Woken every display refresh (8.3 ms at 120 Hz); a frame needs ~1 ms of CPU.
         HostClock.makeCurrentThreadRealtime(period: FramePacing.period / 2, computation: 0.003, constraint: 0.007)
+        if Self.useWorkgroup { workgroup = rn_frame_workgroup_join_new("ReplayNES.frame") }
+        defer { rn_frame_workgroup_leave_free(workgroup); workgroup = nil }
         nextDeadline = HostClock.now()
         while running {
             syncDisplayTarget()
@@ -378,7 +383,9 @@ final class EmulationController {
         tickStart = woke
         emulationRate = 1 / FramePacing.period
         runCommands()
+        rn_frame_workgroup_start(workgroup, HostClock.now(), nextDeadline &+ period / 2)
         let s = tickFrame()
+        rn_frame_workgroup_finish(workgroup)
         let after = HostClock.now()
         afterTick(s, slack: nextDeadline &+ period > after ? HostClock.seconds(nextDeadline &+ period - after) : 0)
         nextDeadline &+= period
@@ -442,7 +449,10 @@ final class EmulationController {
         let newFrame = cadence.refresh(presentation: present)
         let refresh = cadence.refresh > 0 ? cadence.refresh : 1.0 / 120
         let fb = feedback, lat = latency
-        let onRepeat: (Double) -> Void = { t in if t > present + refresh / 4 { fb.late() } }
+        let onRepeat: (UInt64, Double) -> Void = { frame, t in
+            if t > present + refresh / 4 { fb.late() }
+            lat.recordRepeatPresented(frame: frame, target: present, presentedSeconds: t)
+        }
         guard newFrame else {
             let playing = lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
             if playing && fb.takeBacklog() {
@@ -461,6 +471,7 @@ final class EmulationController {
         runCommands()
         let lead = inputDeadline.lead
         HostClock.wait(untilSeconds: update.targetTimestamp - lead)
+        rn_frame_workgroup_start(workgroup, HostClock.now(), HostClock.ticks(seconds: update.targetTimestamp))
         tickDeadline = 0
         tickStart = cb
         emulationRate = cadence.emulationRate
@@ -472,6 +483,7 @@ final class EmulationController {
             drawable: update.drawable, targetPresentation: present, newFrame: true, repeatPicture: playing,
             onPresented: { meta, commit, t in if lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t) { fb.miss() } },
             onRepeatPresented: onRepeat)
+        rn_frame_workgroup_finish(workgroup)
         if stepped, let commit, commit > lastSample {
             // CPU work from the sample to the commit; the GPU part (a few µs for the plain picture,
             // more with the CRT model) is covered by the margin and the miss feedback (Metal's

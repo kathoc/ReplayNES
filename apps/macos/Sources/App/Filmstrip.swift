@@ -28,6 +28,8 @@ final class ThumbnailJob {
 
 final class FilmstripModel: ObservableObject {
     static let shared = FilmstripModel()
+    /// -filmstripThumbnails NO: no thumbnails at all (pacing measurements, docs/FRAME_PACING.md).
+    static let thumbnailsEnabled = UserDefaults.standard.object(forKey: "filmstripThumbnails") as? Bool ?? true
 
     /// Bumped (throttled, <= 10 Hz) when thumbnails change: the timeline redraws.
     @Published private(set) var version: UInt64 = 0
@@ -86,6 +88,7 @@ final class FilmstripModel: ObservableObject {
             tileStep = q
         }
         cache.setStep(q)
+        guard Self.thumbnailsEnabled else { return }
         target = (q, takeLength)
         scheduleReconcile(after: 0.3)
     }

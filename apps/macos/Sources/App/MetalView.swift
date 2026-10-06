@@ -87,7 +87,8 @@ final class GameRenderer {
         return (CGRect(x: x0, y: y0, width: dw, height: dh), crop)
     }
 
-    // What the last present showed (present thread).
+    // What the last present showed (present / emulation thread).
+    private var shownFrame: UInt64 = 0
     private var shownSize = CGSize.zero
     private var shownOptions: DisplayOptions?
     private var shownCRT: CRTSettingsModel.Snapshot?
@@ -153,13 +154,15 @@ final class GameRenderer {
     @discardableResult
     func present(drawable: CAMetalDrawable, targetPresentation: Double, newFrame: Bool, repeatPicture: Bool,
                  onPresented: @escaping (FrameMeta, UInt64, Double) -> Void,
-                 onRepeatPresented: @escaping (Double) -> Void) -> UInt64? {
+                 onRepeatPresented: @escaping (UInt64, Double) -> Void) -> UInt64? {
         let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize)
         var newMeta = newFrame ? fetched : nil
         if !newFrame, let m = fetched, m.emulatedTime == 0 { newMeta = m }  // seek / option refresh: show it
         if newMeta == nil && !changed && !repeatPicture { return nil }
         guard let cb = queue.makeCommandBuffer() else { return nil }
         newMeta?.targetPresentation = targetPresentation
+        if let m = newMeta { shownFrame = m.frame }
+        let pictureFrame = shownFrame
         encode(newMeta: newMeta, drawable: drawable, cb: cb)
         let commit = HostClock.now()
         if let meta = newMeta, meta.emulatedTime != 0 {
@@ -168,7 +171,7 @@ final class GameRenderer {
             }
         } else {
             drawable.addPresentedHandler { d in
-                if d.presentedTime > 0 { onRepeatPresented(d.presentedTime) }
+                if d.presentedTime > 0 { onRepeatPresented(pictureFrame, d.presentedTime) }
             }
         }
         cb.present(drawable)

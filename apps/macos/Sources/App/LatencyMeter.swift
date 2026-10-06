@@ -172,7 +172,7 @@ final class LatencyMeter {
         if frameLog != nil {
             func sec(_ t: UInt64) -> String { t == 0 ? "0" : String(format: "%.6f", HostClock.seconds(t)) }
             frameLog?.append("\(meta.frame),\(sec(meta.tickStart)),\(sec(meta.sampleTime)),\(sec(meta.emulatedTime)),\(sec(commit)),"
-                + String(format: "%.6f,%.6f,", meta.targetPresentation, presentedSeconds) + "\(sec(meta.inputEventTime))")
+                + String(format: "%.6f,%.6f,", meta.targetPresentation, presentedSeconds) + "\(sec(meta.inputEventTime)),0")
         }
         return missed
     }
@@ -192,7 +192,15 @@ final class LatencyMeter {
 
     // MARK: frame log (--frame-log)
 
-    static let frameLogHeader = "frame,tick,sample,emulated,commit,target,presented,event"
+    /// kind 0: a newly emulated frame; 1: the same picture presented again (repeat refresh).
+    static let frameLogHeader = "frame,tick,sample,emulated,commit,target,presented,event,kind"
+
+    /// A repeat present of the picture of `frame` reached the screen (frame log only).
+    func recordRepeatPresented(frame: UInt64, target: Double, presentedSeconds: Double) {
+        lock.lock(); defer { lock.unlock() }
+        guard frameLog != nil else { return }
+        frameLog?.append("\(frame),0,0,0,0," + String(format: "%.6f,%.6f,", target, presentedSeconds) + "0,1")
+    }
 
     func startFrameLog() { lock.lock(); if frameLog == nil { frameLog = [] }; lock.unlock() }
 

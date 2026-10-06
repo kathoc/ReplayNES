@@ -85,32 +85,55 @@ struct DisplayCadence {
 }
 
 /// Just-in-time input sampling: input is read `lead` seconds before the frame's commit deadline
-/// (CAMetalDisplayLink targetTimestamp), so the emulate + render + GPU work finishes just in time.
-/// The lead follows the slowest recent work (a decaying maximum, so a single slow frame raises it
-/// at once and it relaxes over ~10 s) plus a safety margin, plus a penalty that grows when a frame
-/// still missed its refresh and decays while none do.
+/// (CAMetalDisplayLink targetTimestamp), so the emulate + render work is committed just in time.
+/// The lead is the 99.5th percentile of the recent work (sample -> commit, last ~10 s: a single
+/// stall does not raise it, a run of heavier frames - e.g. the flash filter on a flashing scene -
+/// does within a few frames), plus a safety margin (on a ProMotion panel a commit later than about
+/// 1.5 ms before the deadline sometimes misses its refresh), plus a penalty that grows on every
+/// frame that still missed its refresh and decays while none do.
 struct InputDeadline {
-    static let margin = 0.0008
-    static let minLead = 0.0012
-    static let maxLead = 0.008
+    static let margin = 0.0015
+    static let minLead = 0.002
+    static let maxLead = 0.010
     static let missPenalty = 0.0005
     static let maxPenalty = 0.003
     /// Frames without a miss before the penalty shrinks by `penaltyDecay` (~10 s at 60 fps).
     static let decayAfter = 600
     static let penaltyDecay = 0.0001
-    /// Per-frame decay of the work maximum (half-life ~690 frames, ~11.5 s).
-    static let workDecay = 0.999
+    /// Work samples kept (~10 s at 60 fps) and the quantile used.
+    static let window = 600
+    static let quantile = 0.995
+    static let binWidth = 0.0001   // 0.1 ms
+    static let binCount = 101      // the last bin collects everything >= 10 ms
 
-    private(set) var workMax = 0.0
+    private var ring = [UInt8](repeating: 0, count: InputDeadline.window)
+    private var bins = [Int](repeating: 0, count: InputDeadline.binCount)
+    private var filled = 0, head = 0
     private(set) var penalty = 0.0
     private var clean = 0
     private(set) var misses: UInt64 = 0
 
-    var lead: Double { min(Self.maxLead, max(Self.minLead, workMax + Self.margin + penalty)) }
+    /// The work quantile (seconds; the upper edge of its 0.1 ms bin), 0 before any sample.
+    var workQuantile: Double {
+        guard filled > 0 else { return 0 }
+        let need = Int((Double(filled) * Self.quantile).rounded(.up))
+        var sum = 0
+        for (i, n) in bins.enumerated() {
+            sum += n
+            if sum >= need { return Double(i + 1) * Self.binWidth }
+        }
+        return Double(Self.binCount) * Self.binWidth
+    }
 
-    /// Seconds from the input sample to the frame's GPU work being complete (CPU + GPU).
+    var lead: Double { min(Self.maxLead, max(Self.minLead, workQuantile + Self.margin + penalty)) }
+
+    /// Seconds from the input sample to the frame's commit.
     mutating func observeWork(_ seconds: Double) {
-        workMax = max(seconds, workMax * Self.workDecay)
+        let bin = UInt8(min(Self.binCount - 1, max(0, Int(seconds / Self.binWidth))))
+        if filled == Self.window { bins[Int(ring[head])] -= 1 } else { filled += 1 }
+        ring[head] = bin
+        bins[Int(bin)] += 1
+        head = (head + 1) % Self.window
         clean += 1
         if clean >= Self.decayAfter {
             clean = 0

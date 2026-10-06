@@ -17,6 +17,7 @@ extension EmulationController {
     /// Live capture: the picture at cursor `frame` is on screen anyway; keep it if the filmstrip
     /// grid wants it (one locked dictionary lookup otherwise).
     func captureThumbnail(_ s: EngineSession, frame: UInt64) {
+        guard FilmstripModel.thumbnailsEnabled else { return }
         syncThumbnailTake(s)
         let take = s.activeTake
         guard thumbnails.wants(frame: frame, take: take), let v = s.video,

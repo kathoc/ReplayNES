@@ -73,19 +73,22 @@ final class DisplayPacingTests: XCTestCase {
     func testInputDeadlineFollowsWorkAndMisses() {
         var d = InputDeadline()
         XCTAssertEqual(d.lead, InputDeadline.minLead, accuracy: 1e-12)
-        for _ in 0..<100 { d.observeWork(0.001) }
-        XCTAssertEqual(d.lead, 0.001 + InputDeadline.margin, accuracy: 1e-9)
-        d.observeWork(0.004)   // one slow frame raises the lead at once
-        XCTAssertEqual(d.lead, 0.004 + InputDeadline.margin, accuracy: 1e-9)
-        for _ in 0..<5000 { d.observeWork(0.001) }   // and it relaxes
-        XCTAssertEqual(d.lead, 0.001 + InputDeadline.margin, accuracy: 1e-6)
+        for _ in 0..<600 { d.observeWork(0.00105) }
+        XCTAssertEqual(d.workQuantile, 0.0011, accuracy: 1e-9)
+        XCTAssertEqual(d.lead, 0.0011 + InputDeadline.margin, accuracy: 1e-9)
+        d.observeWork(0.050)   // a single stall (seek, autosave) does not move the lead
+        XCTAssertEqual(d.lead, 0.0011 + InputDeadline.margin, accuracy: 1e-9)
+        for _ in 0..<5 { d.observeWork(0.00405) }   // a run of heavier frames does
+        XCTAssertEqual(d.workQuantile, 0.0041, accuracy: 1e-9)
+        for _ in 0..<600 { d.observeWork(0.00105) }   // and it relaxes once they leave the window
+        XCTAssertEqual(d.workQuantile, 0.0011, accuracy: 1e-9)
         d.observeMiss()
-        XCTAssertEqual(d.lead, 0.001 + InputDeadline.margin + InputDeadline.missPenalty, accuracy: 1e-6)
+        XCTAssertEqual(d.lead, 0.0011 + InputDeadline.margin + InputDeadline.missPenalty, accuracy: 1e-9)
         for _ in 0..<20 { d.observeMiss() }
         XCTAssertEqual(d.penalty, InputDeadline.maxPenalty, accuracy: 1e-12)
-        for _ in 0..<(InputDeadline.decayAfter * 30) { d.observeWork(0.001) }
+        for _ in 0..<(InputDeadline.decayAfter * 30) { d.observeWork(0.00105) }
         XCTAssertEqual(d.penalty, 0, accuracy: 1e-12)
-        for _ in 0..<10 { d.observeWork(0.1) }
+        for _ in 0..<600 { d.observeWork(0.1) }
         XCTAssertEqual(d.lead, InputDeadline.maxLead)
     }
 

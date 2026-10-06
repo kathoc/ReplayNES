@@ -2,3 +2,4 @@
 // The app talks to the engine only through the stable C API (replaynes.h).
 #include "replaynes.h"
 #include "rn_audio_ring.h"
+#include "rn_frame_workgroup.h"
