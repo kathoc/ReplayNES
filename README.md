@@ -39,6 +39,17 @@ You can export it as-is to an MP4 with audio.
 3. Because it has not been notarized, launch it the first time with **right-click → "Open"**. If it still will not open, choose "Open Anyway" in "System Settings → Privacy & Security".
 4. On the second launch you will be asked "Automatically check for updates?". After that, updates can be done inside the app (0.1.2 and later; from 0.1.1 or earlier, replace the app manually). In the "Updates" tab of Settings, you can turn automatic checking and automatic installation on or off at any time.
 
+## Steam Deck / Linux (preview)
+
+ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and other x86_64 Linux systems as a Flatpak (`io.github.replaynes.ReplayNES`), with the same projects and features: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, MP4 export, English / Japanese. Full guide: [docs/STEAM_DECK.md](docs/STEAM_DECK.md).
+
+1. **Install** (Desktop Mode, Konsole): download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (the runtime comes from Flathub). Nothing is installed into the read-only SteamOS system.
+2. **Add to Steam**: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
+3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the ROM library: "Play" starts a project in `~/Documents/ReplayNES/Projects`, "Continue" reopens one.
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **R2 hold = rewind, L2 hold = fast-forward, R1 = pause, L1 = slow 1/2**, D-pad ←/→ while paused = step a frame. **R3 (press the right stick) opens the ReplayNES menu** (timeline, takes, bookmarks, practice, library, settings, guide): L1 / R1 switch tabs, A chooses, B goes back. Touch and the trackpad work on every screen too.
+
+Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden while you play, so it does not add latency.
+
 ## Usage
 
 ### Getting Started
@@ -228,7 +239,7 @@ What it reads and writes is limited to the ROMs and projects you specify, the Li
 - Pixel-perfect integer scaling happens only at a 1:1 pixel aspect ratio. At 8:7, the horizontal scaling width is not uniform.
 - The UI is available in English and Japanese. It has been tested only on Apple Silicon. Testing with physical game controllers has been limited.
 - Because it has not been notarized, the first launch requires some steps (see [Installation](#installation)).
-- There is no Windows / Linux version yet (planned).
+- There is no Windows version yet (planned). The Steam Deck / Linux version is a preview (see [Steam Deck / Linux](#steam-deck--linux-preview)).
 
 ## Build from Source
 

@@ -79,7 +79,7 @@ the menu is open. L1 / R1 switch tabs, the D-pad moves, A chooses, B goes back /
 | Bookmarks | Add (also the B key), rewind to, rename (Steam's on-screen keyboard opens), delete. |
 | Practice | The 8 A/B sections: set A / B, practice (A to B, a short hold, rewinds to A, repeats; nothing is recorded), rename, clear. While a practice run plays, a small pill shows the progress and "Stop Practicing". |
 | Library | The start screen (switching ROM asks to save first, see below). |
-| Settings | Display (Integer / FILL, 8:7, overscan, full screen, latency overlay, UI size, flash reduction); Audio & Controls (volume, pause after rewind / fast-forward, autosave interval, paused D-pad stepping, language); Controller (a diagram of the connected pad - Steam Deck / Xbox / PlayStation / Nintendo / other layouts - where pressed buttons light up: select a button, press A and pick its action; "Reset Pad N to Defaults"); Game Input & Hotkeys (assign by pressing a key or button, turbo, SOCD, stick threshold). |
+| Settings | Display (Integer / FILL, 8:7, overscan, full screen, latency overlay, UI size, flash reduction, CRT display); Audio & Controls (volume, pause after rewind / fast-forward, autosave interval, paused D-pad stepping, language); Controller (a diagram of the connected pad - Steam Deck / Xbox / PlayStation / Nintendo / other layouts - where pressed buttons light up: select a button, press A and pick its action; "Reset Pad N to Defaults"); Game Input & Hotkeys (assign by pressing a key or button, turbo, SOCD, stick threshold). |
 | Controls Guide | The tables below. |
 
 Header: "Save" (a temporary session asks where, in a file chooser rooted at
@@ -201,6 +201,22 @@ shown, yet its presents still "complete").
 Emulated 59.97-60.00 fps in every run above, DRC ratio ~1.0016 (emulation at 60.000 Hz instead of
 60.0988 Hz), audio level 26-40 ms. The intended 3:2 pattern itself is not counted as judder.
 
+After the Step 3 UI (feature parity on the shared core, UI hidden while playing; installed Flatpak,
+Gaming Mode, 90 Hz 3:2, SMB, 20 s warm-up + 30 s, no other instance running - the script now
+refuses to start / warns when one is):
+
+| Run | sample -> on screen p50 / p99 (ms) | event -> on screen p50 | ui stage p50 | judder/min | audio underruns | CPU % (process) |
+|---|---|---|---|---|---|---|
+| UI build, CRT off | 5.54 / 5.79 | - | 0.05 ms | 0 | 0 | 14.5 |
+| UI build, injected B presses | 4.54 / 5.01 | 13.1 | 0.05 ms | 4 | 0 | 14.2 |
+| UI build, `--crt` (960x720 RF, GPU p50 9.4 ms) | 15.31 / 15.49 | - | - | 0 | 0 | 16.1 |
+| A/B same session: UI build (2 runs) | 4.68 / 5.15, 5.19 / 5.36 | - | 0.05 ms | 4, 0 | 0 | 15.2-15.5 |
+| A/B same session: Step 2 skeleton (2 runs) | 6.29 / 6.89, 6.26 / 7.31 | - | 0.06 ms | 8, 12 | 0 | 14.9-15.0 |
+
+Runs made while another ReplayNES measurement ran at the same time (two windows fighting for
+gamescope's focus) showed the input lead running away to 15-22 ms and ~1000 judder/min for both
+builds; those are invalid, hence the guard in `scripts/perf-smoke-deck.sh`.
+
 After the CRT / flash / sub-60 Hz work (same Deck, Gaming Mode, SMB unless noted, `BIN=dev`):
 
 | Run | sample -> on screen p50 / p99 (ms) | emulated fps | judder/min | underruns | notes |
@@ -285,11 +301,11 @@ Renderer hashes are identical on the Deck and on macOS.
 1. 40-59 Hz were verified in a nested gamescope at 45 Hz only (see Measurements); below 30.05 Hz
    emulation still slows down.
 2. 90 Hz shows the 3:2 pattern; 60 Hz (QAM) is recommended until a measured comparison exists.
-3. Gamepad navigation of the menu was verified with keyboard events (Space/arrows) over ssh; the
-   built-in controls themselves need a hands-on check (Steam Input template, R3 menu).
-4. Feature parity (library, timeline, practice, takes, settings + remap, ja) and the CRT / export
-   menus are Step 3 (the hooks: `VkRenderer::setPostProcess` / `postProcessStatus`,
-   `render/post_process.h`; `exportProject` / `ExportJob`, `export/mp4_export.h`;
-   `crtExportProcessorFactory`, `render/crt_export.h`).
+3. Gamepad navigation was verified with scripted ImGui gamepad events and screenshots of the
+   presented frames (`scripts/ui-check-deck.sh`); a hands-on pass with the built-in controls
+   (Steam Input template, R3, holding A on the rewind / fast-forward buttons) and Steam's on-screen
+   keyboard for renaming (SDL_StartTextInput from the Flatpak) is still to do.
+4. Japanese needs a CJK font on the host (SteamOS has Noto Sans CJK); no font is bundled. Without
+   one the UI stays in English.
 5. CRT at full screen costs ~11.8 ms of GPU per frame on the Deck (RADV, 1600 MHz): 60 fps holds,
    but sample -> screen grows to ~17.4 ms. See docs/CRT_PORT.md, "Vulkan port".
