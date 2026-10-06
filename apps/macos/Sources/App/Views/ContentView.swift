@@ -34,6 +34,10 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 820, minHeight: 560)
+        // Immersive full screen: also under the (hidden) title bar, so the game layer covers the
+        // whole screen; otherwise macOS keeps compositing it (measured: 3024x1794 layer on a
+        // 3024x1898 full-screen window stays composited, +1 refresh).
+        .ignoresSafeArea(.container, edges: model.immersive ? .all : [])
         .background(WindowAccessor { w in
             // Only real changes: setting these (even to the same value) makes AppKit redo the
             // title bar, drag regions and cursor rects.
@@ -78,7 +82,7 @@ struct ContentView: View {
 
     @ViewBuilder private var viewport: some View {
         ZStack(alignment: .topLeading) {
-            Color.black
+            if !model.immersive { Color.black }
             if model.status.hasSession {
                 MetalGameView(emu: model.emu, options: model.displayOptions)
                 if let img = model.snapshotFrame { SnapshotFrameView(image: img, options: model.displayOptions) }

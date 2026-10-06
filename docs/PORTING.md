@@ -27,7 +27,7 @@ rn_session_open(dir, NULL, NULL, &s);            // or rn_session_new(rom, dir, 
 if (rn_session_recovered(s)) tell_user("recovered unsaved work");
 rn_input_load_json(in, settings_json);           // remap / turbo / SOCD / hotkeys
 
-for (;;) {                                       // woken by vsync / timer at ~60.0988 Hz
+for (;;) {                                       // woken by the display (see FRAME_PACING.md)
     drain_ui_commands();                         // seek, rewind, take switch, bookmark, mode...
     uint32_t edges, held; rn_input_poll_hotkeys(in, &edges, &held);   // also while paused
     handle_hotkeys(edges, held);
@@ -51,7 +51,9 @@ Rules:
   the old future stays available (`rn_take_*`, `rn_undo_take_switch`).
 * `rn_audio` returns 0 samples after seek/rewind/take switches; mute during scrub/rewind/slow.
 * Never feed wall-clock corrections back into emulation (no "catch-up" steps that depend on
-  audio drift); drop/duplicate *presentation* frames instead.
+  audio drift). Pace frames from the display (one frame per refresh, or per 2 refreshes at
+  120 Hz) and resample the audio stream slightly instead; docs/FRAME_PACING.md describes the
+  macOS implementation and the equivalents on iOS, Windows and Linux.
 * A controller disconnect: `rn_input_release_prefix(in, "<device prefix>")` and pause.
 
 ## Practice mode and A/B repeat

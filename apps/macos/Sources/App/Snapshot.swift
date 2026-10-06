@@ -127,7 +127,8 @@ extension AppModel {
                 "emulationCPU": s.emulationCPU, "mainCPU": mainCPU, "processCPU": processCPU,
                 "mainCPUWindow": mainCPU - mainCPU0,
                 "fullScreen": self.mainWindow?.styleMask.contains(.fullScreen) ?? false,
-                "chromeHidden": self.immersive,
+                "chromeHidden": self.immersive, "layerPixels": s.layerPixels,
+                "screenPixels": self.mainWindow?.screen.map { "\(Int($0.frame.width * $0.backingScaleFactor))x\(Int($0.frame.height * $0.backingScaleFactor))" } ?? "",
             ]
             let rows = frames != nil ? self.emu.latency.takeFrameLog() : []
             writer.async {

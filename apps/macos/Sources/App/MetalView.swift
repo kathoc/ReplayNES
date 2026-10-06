@@ -162,6 +162,7 @@ final class GameRenderer {
         let crtOn = crtState.enabled
         let store = crtFrame
         if let m = newMeta, m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
+        if shownSize != drawable.layer.drawableSize { latency.recordLayerSize(drawable.layer.drawableSize) }
         shownSize = drawable.layer.drawableSize
         shownOptions = options
         shownCRT = crtState

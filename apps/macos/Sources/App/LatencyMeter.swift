@@ -45,6 +45,7 @@ final class LatencyMeter {
         var tickWakeLate: UInt64 = 0       // emulation ticks that started > 4 ms after their deadline
         var tickWakeMaxMs = 0.0
         var emulationCPU = 0.0             // CPU seconds of the emulation thread (cumulative)
+        var layerPixels = ""               // game layer drawable size (full screen: should equal the screen)
     }
 
     private let lock = NSLock()
@@ -100,6 +101,7 @@ final class LatencyMeter {
     func recordAudioRatio(_ r: Double) { lock.lock(); s.audioRatio = r; lock.unlock() }
     func recordRepeat() { lock.lock(); s.repeatPresents &+= 1; lock.unlock() }
     func recordDropped() { lock.lock(); s.droppedFrames &+= 1; lock.unlock() }
+    func recordLayerSize(_ size: CGSize) { lock.lock(); s.layerPixels = "\(Int(size.width))x\(Int(size.height))"; lock.unlock() }
     func recordForeignCallback() { lock.lock(); s.foreignCallbacks &+= 1; lock.unlock() }
     func recordBacklogDrain() { lock.lock(); s.backlogDrains &+= 1; lock.unlock() }
 
