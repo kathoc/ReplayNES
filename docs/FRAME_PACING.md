@@ -1,6 +1,7 @@
 # Frame pacing and input latency (live play)
 
-Status: adopted 2026-10-06 (macOS). Replaces the host-clock tick + present thread +
+Status: adopted 2026-10-06 (macOS); updated the same evening (section 4b: CRT, main-thread
+display-link updates, backlog drain, refresh estimate). Replaces the host-clock tick + present thread +
 `present(atTime:)` lead of 0.2.x. Code: `apps/macos/Sources/App/EmulationController.swift`
 (loop), `MetalView.swift` (render / present), `Sources/Core/DisplayPacing.swift` (pure logic:
 `DisplayCadence`, `InputDeadline`, `AudioRateControl`), `Sources/Core/AudioResampler.swift`,
@@ -25,6 +26,10 @@ launch arguments) and logs one CSV row per presented frame (`--frame-log`):
 | **input sample → on screen** | the pipeline latency we control |
 | input event → on screen | `NSEvent.timestamp` / GameController `lastEventTimestamp` → on screen (INPUT=1 injects key presses; includes the wait for the next frame's sample, ~8 ms on average for real input) |
 
+The frame log also has the GPU execution of each new frame's command buffers (`gpuStart`,
+`gpuEnd`). perf-smoke runs with the CRT model off unless `CRT=1` (it used to inherit the user's
+setting, see 4b).
+
 Judder = consecutive frames whose time on screen differs from the steady one by more than half a
 refresh (each picture's first appearance, including a repeat present when its own drawable was
 dropped). Also: frames never shown, dropped drawables, audio underruns and resampling ratio, CPU
@@ -43,6 +48,12 @@ Measured first with a stand-alone probe (CAMetalDisplayLink, synthetic 0.6 ms of
 | Full screen, layer covering the screen, nothing above it (**direct to display**) | 1 refresh = 8.3 ms | **10.9 ms**, 0 judder in short runs |
 | Full screen with any view above the layer, or a layer smaller than the screen | 2 refreshes | 19-21 ms |
 | Full screen, free-running at 60.0988 Hz (VRR) | variable | 9.3 ms mean, judder (presents quantised to 4.17 ms) |
+
+Same probe on an external fixed-refresh display (BenQ EX2710U at 1920x1080, 120 Hz; a second
+display at 144 Hz beside it): full screen direct 10.9 ms (deadline -> screen 1 refresh), window
+19.25 ms (composited, 2 refreshes on this display). Under heavy load from other apps (the window
+server at 50-70 % CPU) even the probe has 5-9 % of its full-screen presents dropped (the window
+server skips a flip; the next present shows the picture a refresh late): 200-460 judder/min.
 
 Consequences:
 * The window compositor costs 3 refreshes; no presentation trick removes them without judder.
@@ -68,7 +79,8 @@ determinism, recordings and export are unaffected; pause, frame advance, slow 1/
 fast-forward and practice are per-frame decisions as before. Without a visible viewport
 (minimised, occluded) the thread keeps time on the host clock at 60.0988 Hz.
 * `InputDeadline`: lead = 99.5th percentile of the sample→commit work over ~10 s + 1.5 ms,
-  plus a penalty (+0.5 ms, ≤ 3 ms, decaying) for commits closer than 0.5 ms to the deadline.
+  plus a penalty (+0.5 ms, ≤ 3 ms, decaying) for commits closer than 0.5 ms to the deadline and,
+  direct to the display, for new frames whose present was dropped or late (latch misses, 4b).
   Typical lead 2.3-2.6 ms; 4.6 ms on a flash-heavy picture (flash filter ~2 ms worst case).
 * `AudioRateControl` + `AudioResampler` (RetroArch-style DRC): ratio = nominal/actual frame rate
   × (1 ± ≤ 0.5 %) from the smoothed ring level (target 21 ms), 4-point Hermite interpolation.
@@ -78,10 +90,42 @@ fast-forward and practice are per-frame decisions as before. Without a visible v
   a low CPU clock. Bench: mean 4.2 → 2.1 ms, p99 7.9 → 2.8 ms; in the app on a flash-heavy
   picture the lead drops from 10 ms (cap) to 4.6 ms (-4 ms latency) and the emulation thread
   CPU from 16 % to 14 %.
-* Display-link quirk: Core Animation sometimes delivers an update on the main thread (during the
-  main thread's transaction flush while the layer geometry changes). Those updates are skipped
-  (they would race the emulation thread); `foreignCallbacks` counts them (0-5 per minute of
-  layout changes, 0 in steady play).
+* Display-link quirk: Core Animation sometimes delivers an update on the main thread: AppKit's
+  transaction flush dispatches "deferred" display links (`stepTransactionFlush` ->
+  `CA::Display::DisplayLink::dispatch_deferred_display_links`), in full screen on every key
+  event (measured: 40-110 per minute with injected key presses, 0 without). They used to be
+  skipped: that refresh lost its present (judder) and, on a frame refresh, half a frame of
+  emulated time. They are now handed to the emulation thread's run loop
+  (`CFRunLoopPerformBlock`, processed ~30 µs later, ~6.5 ms before the deadline) and handled like
+  any other update; updates older than the last one handled are dropped (no out-of-order
+  presents). `foreignCallbacks` counts them.
+* Refresh estimate (`DisplayCadence`): the median of the last 15 timestamp deltas, refined by an
+  EMA. The former rule (a shorter delta always became the estimate, longer ones were only
+  refined within +-25 %) could stick at a wrong rate after one odd delta (seen: 157, 241, 316 Hz
+  on a 120 Hz display, i.e. free cadence or the wrong k). The game view also starts a new display
+  link when its window moves to another display.
+* Backlog drain (`BacklogDrain`): a one-drawable backlog (every present a refresh late after a
+  hiccup) is drained by skipping one present that would only repeat the picture. Direct to a
+  fixed-refresh display (`NSScreen` min == max refresh interval; `PresentPath`: every one of the
+  last 60 updates had presentDelay = 1 refresh, since Core Animation sometimes predicts one
+  refresh for a composited window too) a late
+  present can only be such a backlog: drained after 4 late presents (at most every 0.25 s).
+  Composited, a busy window server also shows presents a refresh late (no skip fixes that), and
+  on a variable-refresh panel a skipped refresh shifts the panel's timing: there it stays rare
+  (60 late presents, at most every 5 s), as before.
+* GPU-heavy pictures (`BuildAhead`, GameRenderer): the CRT model needs 8 ms of GPU per frame at
+  1080p on M1 Max (p95 12 ms; its passes now run in their own command buffer and are timed).
+  Direct to the display a picture must be finished by about 1.5 ms before its refresh, so a CRT
+  picture built after the input sample always missed it, queued behind it and stayed a refresh
+  late (sticky backlog; with three drawables the display link was then starved: skipped
+  refreshes, emulation at 57-59 fps, audio underruns, 150-900 judder/min). When the p90 of the
+  build time exceeds presentDelay - 2.5 ms (presentDelay = targetPresentationTimestamp -
+  targetTimestamp, the largest of the last 60 updates; back below presentDelay - 4 ms), the
+  picture is built with the frame and shown by the next refresh's present (the frame refresh
+  presents the previous picture again, or skips that present to drain a backlog). Every CRT
+  picture then appears exactly one refresh later (19.7-19.9 ms instead of a late 19.6-20.1 ms with
+  the side effects). Composited (window: presentDelay = 2 refreshes) the CRT picture fits and is
+  built and shown in the same refresh as before.
 * Window compositor drops: ~0.1-0.5 % of new-frame drawables are never shown in a window (a
   repeat shows the picture one refresh later); independent of how early the frame is committed
   (still there with a 9 ms lead), so it does not raise the lead.
@@ -152,8 +196,72 @@ Reading the table:
   other window over the screen (a permission prompt, a Notification Center banner) also forces
   composition; with such a window present even the probe measures 19.2 ms. When direct, a
   one-drawable backlog can also appear after a hiccup (+1 refresh); a rare drain removes it.
+* Correction (4b): with the CRT model off the app does go direct in full screen (10.7 ms on an
+  external 120 Hz display, the probe's 10.9 ms). The +1 refresh left in later full-screen runs
+  came from the CRT model: perf-smoke did not pin it and the user's setting was on, so those
+  runs measured CRT pictures that missed their refresh (4b).
 * Measurements share the machine with the user's other apps (video playback in a browser during
   several runs); the window figures for judder vary between runs (4-60/min) with that load.
+
+## 4b. Update 2026-10-06 evening (external BenQ EX2710U, 1920x1080 at 120 Hz fixed refresh)
+
+A full-screen run of f6c60f5 with the user's settings measured 19.45 / 21.16 ms, every frame a
+refresh after its target, 3459 of 3539 frames missed, judder 164/min, 43 audio underruns,
+emulation at 59.03 fps. Findings, each measured:
+
+1. No regression: f6b8c47 and f6c60f5 measure the same (CRT off 10.60 / 10.70 and 10.71 / 10.72
+   ms; CRT on 19.64 / 21.15 and 19.62 / 21.16 ms, both with underruns and 135-900 judder/min).
+   No pacing code changed between them.
+2. Not composited: hiding every layer but the game layer, ordering out the full-screen toolbar
+   window, removing the toolbar, dropping the layer's background colour (all via test actions,
+   `dumpLayers` logs the tree) changed nothing; the standalone probe in the app's configuration
+   (textured quad, background colour, toolbar, audio engine, nested view) stays direct.
+3. The CRT model (`crtEnabled` = on in the user's preferences, inherited by perf-smoke): GPU
+   7.5-8.4 ms p50, 9.5-12 ms p95 per frame (separate command buffer: 8.2 / 11.8 ms), constant
+   with a background GPU load (not a clock issue). With `-crtEnabled NO` the same build is direct:
+   10.71 / 10.72 ms, 0 underruns. The CRT picture missed every refresh and the resulting backlog
+   starved the display link (see 3 A, BuildAhead): emulation 57-59 fps, beyond the DRC's +-0.5 %:
+   that is where the underruns came from.
+4. Main-thread display-link updates: on every key event in full screen (3 A); skipped before.
+5. Backlog drain and the refresh estimate (3 A): the old estimator stuck at 241-450 Hz in several
+   runs of f6c60f5 ("free" cadence or k = 4 on a 120 Hz display).
+6. Window-server drops: with other apps keeping the window server busy, 2-8 full-screen presents
+   per second are dropped (also by the probe). Direct to the display these are latch misses (the
+   window server latches earlier when busy): with a fixed lead of 2.5 / 4 / 6 ms, 225 / 52 / 25
+   drops per 25 s. They now count as input-deadline misses (`PresentPath` direct, not built
+   ahead, the present before on time; `-latchFeedback NO` disables): under that load the lead
+   settles at 5.8 ms (sample -> screen 14.1 ms) with 3-33 drops per 30 s instead of 141-235.
+   Composited, drops do not depend on the lead and are not counted.
+
+Before = f6c60f5, after = this update; interleaved runs, 30 s each after 8 s, key presses
+injected, Super Mario Bros. All runs were made while other apps loaded the window server (an
+illustration app at 50-100 % CPU, the window server at 40-70 %): the standalone probe measured in
+the same period drops 3-13 % of its presents (215-460 judder/min), so judder here is mostly the
+environment. ms; judder per minute; dropped = new-frame presents never shown.
+
+| Run | sample->screen p50 / p99 | event->screen mean | judder/min | missed refreshes | dropped | audio underruns | emulated fps |
+|---|---|---|---|---|---|---|---|
+| Before, full screen, CRT off | 10.79 / 19.12 | 24.9 | 586 | 101 | 141 | 2 | 59.87 |
+| **After, full screen, CRT off** | 14.10 / 22.43 (lead 5.8 under load) | 22.9 | 328 | 145 | **28** | 9 | 59.59 |
+| After, same, second run | 14.12 / 14.12 | 24.8 | 360 | 0 | **3** | 0 | 59.99 |
+| Before, full screen, CRT on | 20.12 / 21.64 (every frame a refresh late) | 28.4 | 805 | 1209 | - | 73 | 56.97 |
+| **After, full screen, CRT on** | **20.32 / 28.54** (built ahead) | 33.8 | **19** | 22 | 1 | **0** | **60.00** |
+| Before, window, CRT off | 19.02 / 27.45 | 36.1 | 25 | 397 | - | 0 | 59.98 |
+| **After, window, CRT off** | **18.83 / 18.85** | 34.6 | **0** | 0 | 0 | 0 | 60.00 |
+| Before, window, CRT on (3 runs) | 19.2-19.7 / 21.3-29.5 | 34-35 | 62-583 | 0-403 | 16-144 | 0-1 | 59.9-60.1 |
+| After, window, CRT on (3 runs) | 19.4-21.0 / 27.7-29.3 | 35-36 | 269-563 | 57-638 | 72-141 | 0 | 59.95-59.98 |
+
+Calm period earlier the same evening (window server < 20 % CPU, before the latch feedback and
+the drain change), plain picture: before 10.71 / 10.72 ms full screen (judder 29/min, 0 underruns,
+2-6 drops per 30 s), 18.84 / 18.95 ms window (judder 0); with the main-thread update forwarding
+10.70 / 10.81 ms full screen (judder 46/min), 18.84 / 18.85 ms window.
+
+Reading: with the CRT off, full screen is direct before and after (10.7 ms when the window server
+keeps up; under heavy load the latch feedback trades ~3.3 ms for 5-50x fewer dropped frames). With
+the CRT on, the latency stays one refresh above the plain picture (now by design: built ahead) but
+judder drops from 800 to ~20/min, underruns from 60-75 to 0 and emulation is back at 60 fps. The
+window path is unchanged (CRT: within the noise of the load; plain: the fast drain is not used
+there, the corrected estimate removes the stuck states).
 
 ## 5. Budget on smaller devices
 
@@ -184,20 +292,28 @@ unchanged; only the callback source and the present call differ.
 scripts/build-macos.sh                       # or any Release build of ReplayNES.app
 caffeinate -d scripts/perf-smoke.sh build/ReplayNES.app 60 "<rom>"      # window
 FULLSCREEN=1 ACTIVATE=1 INPUT=1 scripts/perf-smoke.sh ...                # full screen + key presses
+CRT=1 ...                                                                # with the CRT model (default off)
+ACTIONS="10:dumpLayers" ...                                              # more --test-actions
 WARMUP=150 ...                                                           # long take
-EXTRA_ARGS="-frameWorkgroup NO" ...   # also -repeatPresents NO, -backlogDrain NO,
+EXTRA_ARGS="-frameWorkgroup NO" ...   # also -repeatPresents NO, -backlogDrain NO, -latchFeedback NO,
                                       # -inputLeadMs <ms>, -fullScreenAutoHide NO, -filmstripThumbnails NO
 ```
-The app must be visible (ACTIVATE=1); an occluded window is not presented at all. Do not take
+The app must be visible (ACTIVATE=1); an occluded window is not presented at all. The window is
+moved to the menu-bar screen first (`screen:0`); check the pacing line (e.g. "120 Hz / 2") and
+"chromeHidden" (100 % unless the pointer moved) in the summary. Do not take
 screen captures during a run (a capture permission prompt over a full-screen app forces
 composition).
 
 ## 8. Open issues
 
-1. Confirm full-screen direct-to-display in the app (~11 ms expected) with no other window on
-   screen; if SwiftUI's hosting layers still prevent it, host the game layer in a dedicated
-   borderless full-screen window. Keep the one-drawable backlog from forming on a
-   variable-refresh panel (currently drained at most every 5 s).
-2. Run-ahead (B) needs an engine API decision.
-3. Keyboard input still passes through the main thread (GCKeyboard on the controller queue would
-   remove that dependency).
+1. CRT model: built a refresh ahead it is shown at sample + ~19.8 ms (120 Hz, direct). Sampling
+   later in that mode (wait until the next refresh minus the measured sample -> build-end time)
+   would give ~15 ms at its p99 GPU time; needs the GPU completion fed back into the deadline
+   controller. A cheaper CRT (or a smaller tube at 1080p) would allow the same refresh again.
+2. Under heavy window-server load the plain picture runs at ~14 ms (lead raised by the latch
+   feedback) and still has 0.1-1 drops per second; the penalty decays slowly (0.1 ms per 10 s),
+   so after the load ends it takes up to ~5 min to return to 10.7 ms. A faster decay would trade
+   that for more drops at equilibrium; needs a calm-machine measurement of the final build.
+3. Re-validate the backlog drain and BuildAhead on the built-in ProMotion panel (variable refresh
+   keeps the rare drain; not measured since this update). Run-ahead (B) needs an engine API
+   decision; keyboard input still passes through the main thread.

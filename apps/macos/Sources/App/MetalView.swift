@@ -16,7 +16,22 @@ struct DisplayOptions: Equatable {
     var hideOverscan = true
 }
 
-/// Emulation thread only, except `options` and `lastGPUSeconds` (any thread).
+/// GPU execution of a new frame's command buffers (host-clock seconds, earliest start to latest
+/// end; 0 until one completed). Written by Metal completion handlers, read by presented handlers.
+final class GPUSpan {
+    private let lock = NSLock()
+    private var start_ = 0.0, end_ = 0.0
+    func extend(_ s: Double, _ e: Double) {
+        guard e > s else { return }
+        lock.lock()
+        start_ = start_ == 0 ? s : min(start_, s)
+        end_ = max(end_, e)
+        lock.unlock()
+    }
+    var times: (start: Double, end: Double) { lock.lock(); defer { lock.unlock() }; return (start_, end_) }
+}
+
+/// Emulation thread only, except `options` (any thread).
 final class GameRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
@@ -94,36 +109,109 @@ final class GameRenderer {
     private var shownCRT: CRTSettingsModel.Snapshot?
     private var crtPending = false   // CRT on but its tube plan was not ready: try again shortly
 
-    /// GPU time of the last new frame's command buffer (seconds; any thread).
-    private let gpuLock = NSLock()
-    private var gpuSeconds_ = 0.0
-    var lastGPUSeconds: Double { gpuLock.lock(); defer { gpuLock.unlock() }; return gpuSeconds_ }
+    // GPU-heavy pictures (the CRT model: ~8 ms of GPU per frame at 1080p on M1 Max, more than the
+    // direct-to-display path at 120 Hz leaves after the commit) are built one refresh ahead: the passes that
+    // make a new picture are committed with the frame, and the next refresh's present shows it.
+    // Every picture then reaches the screen exactly one refresh later, instead of missing its
+    // refresh and queueing behind it (a sticky backlog that starved the display link of drawables:
+    // skipped refreshes, judder, emulation below 60 fps, audio underruns; docs/FRAME_PACING.md).
+    // Decided by BuildAhead (DisplayPacing.swift) from the measured picture-building GPU time.
+    private var buildAhead = BuildAhead()
+    var pipelined: Bool { buildAhead.active }
+    /// A new picture that was built for the next present (pipelined).
+    private var pending: (meta: FrameMeta, commit: UInt64, gpu: GPUSpan)?
+    var hasPendingPicture: Bool { pending != nil }
 
     /// Display-link pacing (emulation thread): renders into the display link's drawable for the
     /// refresh at `targetPresentation`. `newFrame`: this refresh starts a new emulated frame (just
     /// published); otherwise the current picture is presented again when `repeatPicture` (steady
     /// cadence) or something changed (size, options, CRT). Returns the commit time (mach ticks)
-    /// when something was presented, nil when nothing was. `onPresented(meta, commit, seconds)`
-    /// is called for a new frame (on a Metal thread; seconds = 0 when it was never shown);
-    /// `onRepeatPresented` for a repeat that was shown.
+    /// when something was presented (pipelined: the new picture's build commit), nil when nothing
+    /// was. `onPresented(meta, commit, seconds, gpu)` is called for the present that first shows a
+    /// new frame (on a Metal thread; seconds = 0 when it was never shown); `onRepeatPresented` for
+    /// a repeat that was shown. `presentDelay`: targetPresentationTimestamp - targetTimestamp of
+    /// the display link update (pipelining decision, BuildAhead).
+    /// `skipRepeat`: pipelined, this refresh would only show the current picture again: skip that
+    /// present (backlog drain) and only build the new picture.
     @discardableResult
-    func present(drawable: CAMetalDrawable, targetPresentation: Double, newFrame: Bool, repeatPicture: Bool,
-                 onPresented: @escaping (FrameMeta, UInt64, Double) -> Void,
+    func present(drawable: CAMetalDrawable, targetPresentation: Double, presentDelay: Double, newFrame: Bool, repeatPicture: Bool,
+                 skipRepeat: Bool = false,
+                 onPresented: @escaping (FrameMeta, UInt64, Double, GPUSpan) -> Void,
                  onRepeatPresented: @escaping (UInt64, Double) -> Void) -> UInt64? {
         let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize)
         var newMeta = newFrame ? fetched : nil
         if !newFrame, let m = fetched, m.emulatedTime == 0 { newMeta = m }  // seek / option refresh: show it
-        if newMeta == nil && !changed && !repeatPicture { return nil }
-        guard let cb = queue.makeCommandBuffer() else { return nil }
-        newMeta?.targetPresentation = targetPresentation
-        if let m = newMeta { shownFrame = m.frame }
-        let pictureFrame = shownFrame
-        encode(newMeta: newMeta, drawable: drawable, cb: cb)
-        let commit = HostClock.now()
-        if let meta = newMeta, meta.emulatedTime != 0 {
-            drawable.addPresentedHandler { d in
-                onPresented(meta, commit, d.presentedTime)   // 0: never shown (the compositor dropped it)
+        let crtState = CRTSettingsModel.shared.snapshot
+        updatePipelining(crtOn: crtState.enabled, presentDelay: presentDelay)
+        if !pipelined, let p = pending {
+            // Left the pipelined mode: show the picture that was built (unless a newer one comes).
+            pending = nil
+            if newMeta == nil { return show(p, drawable: drawable, target: targetPresentation, crtState: crtState, onPresented: onPresented) }
+        }
+        if pipelined {
+            // This drawable shows what was built before; the new picture is built for the next one.
+            var shownCommit: UInt64?
+            if let p = pending {
+                pending = nil
+                shownCommit = show(p, drawable: drawable, target: targetPresentation, crtState: crtState, onPresented: onPresented)
+            } else if !skipRepeat && (newMeta != nil || changed || repeatPicture) {
+                shownCommit = encodeAndPresent(build: nil, drawable: drawable, crtState: crtState, span: nil,
+                                               onPresented: { _, _ in }, onRepeatPresented: onRepeatPresented)
             }
+            guard var m = newMeta else { return shownCommit }
+            let span = GPUSpan()
+            m.targetPresentation = 0
+            guard let commit = build(m, crtState: crtState, drawableSize: drawable.layer.drawableSize, span: span) else { return shownCommit }
+            pending = (m, commit, span)
+            return commit
+        }
+        if newMeta == nil && !changed && !repeatPicture { return nil }
+        newMeta?.targetPresentation = targetPresentation
+        let span = GPUSpan()
+        return encodeAndPresent(build: newMeta, drawable: drawable, crtState: crtState, span: span,
+                                onPresented: { commit, t in if let m = newMeta { onPresented(m, commit, t, span) } },
+                                onRepeatPresented: onRepeatPresented)
+    }
+
+    /// Pipelined: presents the already built picture `p` (first appearance of its frame).
+    private func show(_ p: (meta: FrameMeta, commit: UInt64, gpu: GPUSpan), drawable: CAMetalDrawable, target: Double,
+                      crtState: CRTSettingsModel.Snapshot, onPresented: @escaping (FrameMeta, UInt64, Double, GPUSpan) -> Void) -> UInt64? {
+        var meta = p.meta
+        meta.targetPresentation = target
+        shownFrame = meta.frame
+        let commit = p.commit, span = p.gpu
+        return encodeAndPresent(build: nil, revealed: meta, drawable: drawable, crtState: crtState, span: nil,
+                                onPresented: { _, t in onPresented(meta, commit, t, span) }, onRepeatPresented: { _, _ in })
+    }
+
+    /// Pipelined: encodes and commits the passes that build the picture of `m` (CRT). Returns the
+    /// commit time, nil when nothing could be encoded.
+    private func build(_ m: FrameMeta, crtState: CRTSettingsModel.Snapshot, drawableSize: CGSize, span: GPUSpan) -> UInt64? {
+        guard let crt = crtRenderer(), crtFrame.valid, let cb = queue.makeCommandBuffer() else { return nil }
+        configureCRT(crt, crtState: crtState, size: drawableSize)
+        crtFrame.encode(into: crt, cb: cb)
+        if m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
+        addBuildTiming(cb, span: span)
+        cb.commit()
+        return HostClock.now()
+    }
+
+    /// Encodes the picture into `drawable` and presents it. `build`: a new frame whose picture is
+    /// built and shown now (not pipelined); `revealed`: a new frame whose picture was built before
+    /// (pipelined). Handlers: `onPresented(commit, seconds)` for a new frame's first appearance,
+    /// `onRepeatPresented(frame, seconds)` otherwise. Returns the commit time.
+    private func encodeAndPresent(build: FrameMeta?, revealed: FrameMeta? = nil, drawable: CAMetalDrawable,
+                                  crtState: CRTSettingsModel.Snapshot, span: GPUSpan?,
+                                  onPresented: @escaping (UInt64, Double) -> Void,
+                                  onRepeatPresented: @escaping (UInt64, Double) -> Void) -> UInt64? {
+        guard let cb = queue.makeCommandBuffer() else { return nil }
+        if let m = build { shownFrame = m.frame }
+        let pictureFrame = shownFrame
+        encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
+        let commit = HostClock.now()
+        if let m = build ?? revealed, m.emulatedTime != 0 {
+            if let span, build != nil { cb.addCompletedHandler { b in span.extend(b.gpuStartTime, b.gpuEndTime) } }
+            drawable.addPresentedHandler { d in onPresented(commit, d.presentedTime) }   // 0: never shown (dropped)
         } else {
             drawable.addPresentedHandler { d in
                 if d.presentedTime > 0 { onRepeatPresented(pictureFrame, d.presentedTime) }
@@ -134,9 +222,35 @@ final class GameRenderer {
         return commit
     }
 
+    private func updatePipelining(crtOn: Bool, presentDelay: Double) {
+        if crtOn { buildAhead.update(presentDelay: presentDelay) } else { buildAhead.reset() }
+    }
+
+    /// GPU timing of a command buffer that builds a new picture (CRT passes).
+    private func addBuildTiming(_ cb: MTLCommandBuffer, span: GPUSpan) {
+        let lat = latency, times = buildTimesLock
+        cb.addCompletedHandler { [weak self] b in
+            guard b.gpuEndTime > b.gpuStartTime else { return }
+            span.extend(b.gpuStartTime, b.gpuEndTime)
+            let sec = b.gpuEndTime - b.gpuStartTime
+            lat.recordDisplayGPU(ms: sec * 1000, crtInfo: self?.crtInfo ?? "")
+            times.lock(); self?.buildTimesIn.append(sec); times.unlock()
+        }
+    }
+    // Build times from completion handlers (any thread) -> buildAhead (emulation thread).
+    private let buildTimesLock = NSLock()
+    private var buildTimesIn: [Double] = []
+    private var crtInfo_ = ""
+    private var crtInfo: String { buildTimesLock.lock(); defer { buildTimesLock.unlock() }; return crtInfo_ }
+    private func drainBuildTimes() {
+        buildTimesLock.lock(); let t = buildTimesIn; buildTimesIn.removeAll(keepingCapacity: true); buildTimesLock.unlock()
+        for x in t { buildAhead.add(x) }
+    }
+
     /// Takes a newly published frame into the texture (and the CRT store). Returns its meta and
     /// whether anything else that is shown changed since the last draw.
     private func fetch(drawableSize wanted: CGSize) -> (FrameMeta?, Bool) {
+        drainBuildTimes()
         let options = self.options
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
@@ -155,10 +269,21 @@ final class GameRenderer {
         return (newMeta, changed)
     }
 
-    /// Encodes the picture (plain or CRT) into `drawable` on `cb`.
-    private func encode(newMeta: FrameMeta?, drawable: CAMetalDrawable, cb: MTLCommandBuffer) {
+    /// Sizes the CRT tube for the drawable; returns its destination rectangle and crop.
+    @discardableResult
+    private func configureCRT(_ crt: CRTRenderer, crtState: CRTSettingsModel.Snapshot, size: CGSize) -> (CGRect, Double) {
+        let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
+        let (tw, th) = CRTRenderer.tubeSize(forDestination: dst.size, cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
+        crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
+        return (dst, cropFraction)
+    }
+
+    /// Encodes the picture (plain or CRT) into `drawable` on `cb`. CRT: when `newMeta` is given
+    /// (or the tube has no picture yet), the passes that build it are committed first in their own
+    /// command buffer (timed: GPUSpan / pipelining decision).
+    private func encode(newMeta: FrameMeta?, drawable: CAMetalDrawable, cb: MTLCommandBuffer,
+                        crtState: CRTSettingsModel.Snapshot, span: GPUSpan?) {
         let options = self.options
-        let crtState = CRTSettingsModel.shared.snapshot
         let crtOn = crtState.enabled
         let store = crtFrame
         if let m = newMeta, m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
@@ -173,21 +298,23 @@ final class GameRenderer {
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        // Physical CRT model (nesterm port): every pass is encoded into THIS command buffer, so a
-        // new emulated frame is presented exactly like on the plain path.
-        var crtShown = false, crtInfo = ""
+        // Physical CRT model (nesterm port).
+        var crtShown = false
         if crtOn, let crt = crtRenderer() {
-            let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
-            let (tw, th) = CRTRenderer.tubeSize(forDestination: dst.size, cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
-            crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
-            if newMeta != nil || !crt.hasOutput, store.valid {
-                store.encode(into: crt, cb: cb)
+            let (dst, cropFraction) = configureCRT(crt, crtState: crtState, size: size)
+            if newMeta != nil || !crt.hasOutput, store.valid, let bcb = queue.makeCommandBuffer() {
+                store.encode(into: crt, cb: bcb)
+                addBuildTiming(bcb, span: span ?? GPUSpan())
+                bcb.commit()
             }
             if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
                 enc.endEncoding()
                 crtShown = true
-                if let o = crt.outputSize { crtInfo = "\(o.width)x\(o.height) " + (store.usedCodes ? "RF" : "RGB") }
+                if let o = crt.outputSize {
+                    let info = "\(o.width)x\(o.height) " + (store.usedCodes ? "RF" : "RGB") + (pipelined ? " +1" : "")
+                    buildTimesLock.lock(); crtInfo_ = info; buildTimesLock.unlock()
+                }
             }
         } else if !crtOn && crtRenderer_ != nil {
             crtRenderer_ = nil          // free the tube buffers when CRT is switched off
@@ -208,14 +335,11 @@ final class GameRenderer {
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             enc.endEncoding()
         }
-        if newMeta != nil {
+        if newMeta != nil && !crtOn {
             let lat = latency
-            let info = crtInfo
-            cb.addCompletedHandler { [weak self] b in
+            cb.addCompletedHandler { b in
                 guard b.gpuEndTime > b.gpuStartTime else { return }
-                let sec = b.gpuEndTime - b.gpuStartTime
-                lat.recordDisplayGPU(ms: sec * 1000, crtInfo: info)
-                if let self { self.gpuLock.lock(); self.gpuSeconds_ = sec; self.gpuLock.unlock() }
+                lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: "")
             }
         }
     }
@@ -319,10 +443,23 @@ final class GameLayerView: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {}  // drawn by the emulation thread
 
+    private var screenObserver: NSObjectProtocol?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateDrawableSize()
-        if window != nil { startRendering() } else { stopRendering() }
+        if let o = screenObserver { NotificationCenter.default.removeObserver(o); screenObserver = nil }
+        if let w = window {
+            // Another display (refresh rate, fixed or variable refresh): a new display link for it.
+            screenObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: w, queue: .main) { [weak self] _ in
+                guard let self, self.displayTarget != nil else { return }
+                self.stopRendering()
+                self.startRendering()
+            }
+            startRendering()
+        } else {
+            stopRendering()
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -354,8 +491,9 @@ final class GameLayerView: NSView {
 
     private func startRendering() {
         guard let renderer, let emu, displayTarget == nil else { return }
-        let t = DisplayTarget(layer: metalLayer, renderer: renderer,
-                              maxFPS: window?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60)
+        let screen = window?.screen ?? NSScreen.main
+        let t = DisplayTarget(layer: metalLayer, renderer: renderer, maxFPS: screen?.maximumFramesPerSecond ?? 60,
+                              variableRefresh: screen.map { $0.maximumRefreshInterval - $0.minimumRefreshInterval > 0.0005 } ?? true)
         displayTarget = t
         emu.setDisplayTarget(t)
     }

@@ -133,7 +133,7 @@ final class LatencyMeter {
     /// A newly emulated frame reached the screen. `commit`: mach ticks when its command buffer was
     /// committed. Returns true when it missed the refresh it was made for (display-link pacing).
     @discardableResult
-    func recordPresent(meta: FrameMeta, commit: UInt64, presentedSeconds: Double) -> Bool {
+    func recordPresent(meta: FrameMeta, commit: UInt64, presentedSeconds: Double, gpu: (start: Double, end: Double) = (0, 0)) -> Bool {
         let emu = HostClock.seconds(meta.emulatedTime)
         lock.lock()
         defer { lock.unlock() }
@@ -174,7 +174,7 @@ final class LatencyMeter {
         if frameLog != nil {
             func sec(_ t: UInt64) -> String { t == 0 ? "0" : String(format: "%.6f", HostClock.seconds(t)) }
             frameLog?.append("\(meta.frame),\(sec(meta.tickStart)),\(sec(meta.sampleTime)),\(sec(meta.emulatedTime)),\(sec(commit)),"
-                + String(format: "%.6f,%.6f,", meta.targetPresentation, presentedSeconds) + "\(sec(meta.inputEventTime)),0")
+                + String(format: "%.6f,%.6f,", meta.targetPresentation, presentedSeconds) + "\(sec(meta.inputEventTime)),0," + String(format: "%.6f,%.6f", gpu.start, gpu.end))
         }
         return missed
     }
@@ -194,13 +194,14 @@ final class LatencyMeter {
     // MARK: frame log (--frame-log)
 
     /// kind 0: a newly emulated frame; 1: the same picture presented again (repeat refresh).
-    static let frameLogHeader = "frame,tick,sample,emulated,commit,target,presented,event,kind"
+    /// gpuStart / gpuEnd: GPU execution of the new frame's command buffers (0 for repeats).
+    static let frameLogHeader = "frame,tick,sample,emulated,commit,target,presented,event,kind,gpuStart,gpuEnd"
 
     /// A repeat present of the picture of `frame` reached the screen (frame log only).
     func recordRepeatPresented(frame: UInt64, target: Double, presentedSeconds: Double) {
         lock.lock(); defer { lock.unlock() }
         guard frameLog != nil else { return }
-        frameLog?.append("\(frame),0,0,0,0," + String(format: "%.6f,%.6f,", target, presentedSeconds) + "0,1")
+        frameLog?.append("\(frame),0,0,0,0," + String(format: "%.6f,%.6f,", target, presentedSeconds) + "0,1,0,0")
     }
 
     func startFrameLog() { lock.lock(); if frameLog == nil { frameLog = [] }; lock.unlock() }

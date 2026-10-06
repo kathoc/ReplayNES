@@ -16,20 +16,27 @@ final class DisplayTarget {
     let layer: CAMetalLayer
     let renderer: GameRenderer
     let maxFPS: Int   // the screen's highest refresh rate (120 on ProMotion)
-    init(layer: CAMetalLayer, renderer: GameRenderer, maxFPS: Int) {
+    let variableRefresh: Bool   // ProMotion / Adaptive-Sync (NSScreen min != max refresh interval)
+    init(layer: CAMetalLayer, renderer: GameRenderer, maxFPS: Int, variableRefresh: Bool) {
         self.layer = layer
         self.renderer = renderer
         self.maxFPS = maxFPS
+        self.variableRefresh = variableRefresh
     }
 }
 
 /// Presentation feedback from Metal's presented handlers to the emulation thread: detects a
 /// steady backlog (every present a whole refresh behind its target: one drawable too many in the
-/// queue, which a constant present-per-refresh cadence never drains by itself).
+/// queue, which a constant present-per-refresh cadence never drains by itself) and latch misses.
 private final class PresentFeedback {
     private let lock = NSLock()
     private var lateRun = 0
+    private var misses = 0
     func presented(late: Bool) { lock.lock(); lateRun = late ? lateRun + 1 : 0; lock.unlock() }
+    /// A new frame's own present was dropped or late while the present before it was on time (not
+    /// a backlog): direct to the display, its commit missed the window server's latch.
+    func newFrameMissed() { lock.lock(); if lateRun == 0 { misses += 1 }; lock.unlock() }
+    func takeMisses() -> Int { lock.lock(); defer { lock.unlock() }; let n = misses; misses = 0; return n }
     /// True (once) when the last `n` presents were all late.
     func takeSteadyBacklog(_ n: Int) -> Bool {
         lock.lock(); defer { lock.unlock() }
@@ -45,13 +52,19 @@ private final class DisplayLinkProxy: NSObject, CAMetalDisplayLinkDelegate {
     init(owner: EmulationController) { self.owner = owner }
     func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
         guard let owner else { return }
-        // Core Animation occasionally delivers an update on the main thread instead of the run loop
-        // the link was added to (during the main thread's transaction flush while the layer's
-        // geometry changes: window layout, resize, full-screen transition). The emulation state is
-        // owned by the emulation thread, so such an update is skipped (that refresh keeps its
-        // picture; DisplayCadence starts the frame at the next update).
-        guard owner.isEmulationThread else { owner.latency.recordForeignCallback(); return }
-        autoreleasepool { owner.displayRefresh(update) }
+        if owner.isEmulationThread {
+            autoreleasepool { owner.displayRefresh(update) }
+            return
+        }
+        // Core Animation sometimes delivers an update on the main thread instead of the run loop
+        // the link was added to: AppKit's transaction flush dispatches "deferred" display links
+        // (stepTransactionFlush -> CA::Display::DisplayLink::dispatch_deferred_display_links), e.g.
+        // on every key event in full screen. The emulation state is owned by the emulation thread,
+        // so the update is handed to it (microseconds later) instead of being dropped: a dropped
+        // update cost that refresh (judder) and, on a frame refresh, half a frame of emulated
+        // time (audio underruns at a high key rate).
+        owner.latency.recordForeignCallback()
+        owner.forwardDisplayUpdate(update, from: link)
     }
 }
 
@@ -181,13 +194,18 @@ final class EmulationController {
     private var emulationRate = 1 / FramePacing.period
     private var pendingThumbnail: UInt64?       // captured after the frame is presented
     private var lastDrain: UInt64 = 0
+    private var lastUpdateTarget = 0.0          // targetPresentationTimestamp of the last update handled
+    private var presentPath = PresentPath()
+    private var runLoop: CFRunLoop?             // the emulation thread's (targetLock)
     /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
     private var workgroup: OpaquePointer?
     static let useWorkgroup = UserDefaults.standard.flag("frameWorkgroup", default: true)
     /// -repeatPresents NO: present only new frames (every k-th refresh) instead of every refresh.
     static let repeatPresents = UserDefaults.standard.flag("repeatPresents", default: true)
-    // Experiment knobs (docs/FRAME_PACING.md): -backlogDrain NO, -inputLeadMs <ms> (fixed lead).
+    // Experiment knobs (docs/FRAME_PACING.md): -backlogDrain NO, -latchFeedback NO, -inputLeadMs <ms> (fixed lead).
     static let backlogDrain = UserDefaults.standard.flag("backlogDrain", default: true)
+    /// -latchFeedback NO: dropped / late presents on the direct path do not raise the input lead.
+    static let latchFeedback = UserDefaults.standard.flag("latchFeedback", default: true)
     static let fixedLead: Double? = UserDefaults.standard.object(forKey: "inputLeadMs") != nil
         ? UserDefaults.standard.double(forKey: "inputLeadMs") / 1000 : nil
     // Requested viewport (any thread -> emulation thread).
@@ -354,6 +372,7 @@ final class EmulationController {
 
     private func threadMain() {
         emulationThread = pthread_self()
+        targetLock.lock(); runLoop = CFRunLoopGetCurrent(); targetLock.unlock()
         // Real-time (time-constraint) thread, woken every display refresh (8.3 ms at 120 Hz); a frame needs ~1 ms of CPU.
         HostClock.makeCurrentThreadRealtime(period: FramePacing.period / 2, computation: 0.003, constraint: 0.007)
         if Self.useWorkgroup { workgroup = rn_frame_workgroup_join_new("ReplayNES.frame") }
@@ -444,12 +463,29 @@ final class EmulationController {
         l.add(to: .current, forMode: .default)
         link = l
         linkProxy = proxy
+        lastUpdateTarget = 0
+        presentPath.reset()
         cadence = DisplayCadence()
         nextDeadline = HostClock.now()
     }
 
+    /// Main thread: a display link update delivered there (DisplayLinkProxy) runs on the
+    /// emulation thread's run loop instead, unless the link was replaced meanwhile.
+    fileprivate func forwardDisplayUpdate(_ update: CAMetalDisplayLink.Update, from link: CAMetalDisplayLink) {
+        targetLock.lock(); let rl = runLoop; targetLock.unlock()
+        guard let rl else { return }
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue) { [weak self] in
+            guard let self, self.link === link else { return }
+            autoreleasepool { self.displayRefresh(update) }
+        }
+        CFRunLoopWakeUp(rl)
+    }
+
     /// CAMetalDisplayLink callback (emulation thread run loop): one display refresh.
     fileprivate func displayRefresh(_ update: CAMetalDisplayLink.Update) {
+        // A forwarded update can arrive after a later one: never present out of order.
+        guard update.targetPresentationTimestamp > lastUpdateTarget else { return }
+        lastUpdateTarget = update.targetPresentationTimestamp
         let cb = HostClock.now()
         lastLinkCallback = cb
         linkActive = true
@@ -458,24 +494,51 @@ final class EmulationController {
         let newFrame = cadence.refresh(presentation: present)
         let refresh = cadence.refresh > 0 ? cadence.refresh : 1.0 / 120
         let fb = feedback, lat = latency
+        for _ in 0..<fb.takeMisses() { inputDeadline.observeMiss() }
+        // Direct to the display (presentDelay = 1 refresh) a new frame whose present is dropped or
+        // late missed the window server's latch: under load (other apps keeping the window server
+        // busy) the latch comes earlier, so these raise the input lead like late commits do
+        // (measured under such load: drops 225 -> 52 -> 25 per 25 s with a lead of 2.5 -> 4 -> 6
+        // ms). Composited, drops do not depend on the lead; a picture built ahead (BuildAhead) is
+        // committed a refresh early anyway.
+        presentPath.observe(presentDelay: present - update.targetTimestamp)
+        let direct = presentPath.isDirect(refresh: refresh)
+        let latchFeedback = Self.latchFeedback && direct && !target.renderer.pipelined
         let onRepeat: (UInt64, Double) -> Void = { frame, t in
             // A whole refresh late = behind (a ProMotion panel in full screen may run its refreshes
             // a fraction of a refresh off the display link's timestamps; that is not).
             fb.presented(late: t > present + refresh * 0.75)
             lat.recordRepeatPresented(frame: frame, target: present, presentedSeconds: t)
         }
-        guard newFrame else {
-            let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
-            if playing && Self.backlogDrain && HostClock.seconds(cb &- lastDrain) > 5 && fb.takeSteadyBacklog(60) {
-                // Half a second of presents all a refresh behind: skipping one repeat drains the
-                // extra drawable (at most every 5 s: on a variable-refresh panel a skipped refresh
-                // shifts its timing, so this must stay rare).
-                lastDrain = cb
-                latency.recordBacklogDrain()
+        // The first present of a new frame's picture (this refresh, or the next one when the
+        // picture is built a refresh ahead: GameRenderer.pipelined).
+        let onNew: (FrameMeta, UInt64, Double, GPUSpan) -> Void = { meta, commit, t, gpu in
+            // Dropped (never shown; a later present showed the picture a refresh late).
+            if t <= 0 {
+                lat.recordDropped()
+                if latchFeedback { fb.newFrameMissed() }
                 return
             }
-            if target.renderer.present(drawable: update.drawable, targetPresentation: present, newFrame: false,
-                                       repeatPicture: playing, onPresented: { _, _, _ in }, onRepeatPresented: onRepeat) != nil,
+            let late = lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t, gpu: gpu.times)
+            if late && latchFeedback { fb.newFrameMissed() }
+            fb.presented(late: late)
+        }
+        // Presents all a refresh behind (BacklogDrain): skipping one present that would only
+        // repeat the current picture drains the extra drawable.
+        let drain = BacklogDrain.policy(variableRefresh: target.variableRefresh, direct: direct)
+        let drainNow = Self.backlogDrain && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
+            && !target.renderer.hasPendingPicture && (!newFrame || target.renderer.pipelined)
+            && HostClock.seconds(cb &- lastDrain) > drain.minInterval && fb.takeSteadyBacklog(drain.lateRun)
+        if drainNow {
+            lastDrain = cb
+            latency.recordBacklogDrain()
+        }
+        guard newFrame else {
+            let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
+            if drainNow { return }
+            if target.renderer.present(drawable: update.drawable, targetPresentation: present,
+                                       presentDelay: present - update.targetTimestamp, newFrame: false,
+                                       repeatPicture: playing, onPresented: onNew, onRepeatPresented: onRepeat) != nil,
                playing {
                 latency.recordRepeat()
             }
@@ -493,19 +556,13 @@ final class EmulationController {
         let stepped = lastStep != stepsBefore
         let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(HostClock.now() &- lastStep) < 0.5
         let commit = target.renderer.present(
-            drawable: update.drawable, targetPresentation: present, newFrame: true, repeatPicture: playing,
-            onPresented: { meta, commit, t in
-                // Dropped by the window compositor (a repeat then shows the picture a refresh late).
-                // Measured independent of how early the frame is committed (still happens with an
-                // 9 ms lead), so it does not raise the input lead; a late presentation does.
-                if t <= 0 { lat.recordDropped(); return }
-                fb.presented(late: lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t))
-            },
-            onRepeatPresented: onRepeat)
+            drawable: update.drawable, targetPresentation: present, presentDelay: present - update.targetTimestamp,
+            newFrame: true, repeatPicture: playing,
+            skipRepeat: drainNow, onPresented: onNew, onRepeatPresented: onRepeat)
         rn_frame_workgroup_finish(workgroup)
         // Committed (nearly) past the deadline: sample earlier from now on. (Presentation
-        // lateness is not used for this: a queue backlog or variable refresh also delays frames
-        // that were committed in time.)
+        // lateness counts only through latchFeedback above: a queue backlog, a busy compositor or
+        // variable refresh also delay frames that were committed in time.)
         if let commit, commit > HostClock.ticks(seconds: update.targetTimestamp - InputDeadline.lateCommit) {
             inputDeadline.observeMiss()
         }

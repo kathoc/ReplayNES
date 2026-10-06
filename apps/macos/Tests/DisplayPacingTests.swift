@@ -77,6 +77,30 @@ final class DisplayPacingTests: XCTestCase {
         XCTAssertEqual(frames, 600)
     }
 
+    func testOddDeltaDoesNotStickTheEstimate() {
+        // One short delta (seen in a window and around display changes: estimates of 157, 241 and
+        // 316 Hz on a 120 Hz display) must not become a lasting refresh estimate.
+        var c = DisplayCadence()
+        var frames = 0
+        for i in 0..<1200 {
+            let t = 10 + Double(i) / 120
+            if c.refresh(presentation: t) { frames += 1 }
+            if i == 100 && c.refresh(presentation: t + 0.0035) { frames += 1 }
+        }
+        XCTAssertEqual(c.refresh, 1.0 / 120, accuracy: 1e-5)
+        XCTAssertEqual(c.refreshesPerFrame, 2)
+        XCTAssertEqual(frames, 600, accuracy: 2)
+    }
+
+    func testDisplayChangeIsFollowed() {
+        var c = DisplayCadence()
+        for i in 0..<240 { _ = c.refresh(presentation: 10 + Double(i) / 60) }
+        XCTAssertEqual(c.refreshesPerFrame, 1)
+        for i in 1...240 { _ = c.refresh(presentation: 14 + Double(i) / 120) }
+        XCTAssertEqual(c.refresh, 1.0 / 120, accuracy: 1e-5)
+        XCTAssertEqual(c.refreshesPerFrame, 2)
+    }
+
     func testFreeCadenceKeepsTheNTSCRate() {
         var c = DisplayCadence()
         let f = run(&c, refresh: 1.0 / 144, count: 144 * 60)   // one minute at 144 Hz
@@ -172,5 +196,75 @@ final class DisplayPacingTests: XCTestCase {
         for (a, b) in zip(out, out.dropFirst()) {
             XCTAssertLessThanOrEqual(abs(Double(b) - Double(a)), maxStep * 1.02 + 2)
         }
+    }
+
+    // MARK: BuildAhead / BacklogDrain
+
+    func testBuildAheadOnlyForHeavyPicturesOnTheDirectPath() {
+        let direct = 1.0 / 120, composited = 2.0 / 120
+        var b = BuildAhead()
+        for _ in 0..<120 { b.add(0.0001) }        // plain picture: ~0.1 ms of GPU
+        b.update(presentDelay: direct)
+        XCTAssertFalse(b.active)
+        var crt = BuildAhead()
+        for i in 0..<29 { crt.add(0.008); crt.update(presentDelay: direct); XCTAssertFalse(crt.active, "decided after \(i + 1) samples") }
+        crt.add(0.008)
+        crt.update(presentDelay: direct)          // CRT at 1080p: ~8 ms > 8.33 - 2.5 ms
+        XCTAssertTrue(crt.active)
+        var window = BuildAhead()
+        for _ in 0..<120 { window.add(0.008) }
+        window.update(presentDelay: composited)   // composited (window): 8 ms fits in 16.7 - 2.5 ms
+        XCTAssertFalse(window.active)
+        // One composited update among direct ones counts (largest recent delay).
+        var mixed = BuildAhead()
+        for _ in 0..<120 { mixed.add(0.008) }
+        mixed.update(presentDelay: composited)
+        for _ in 0..<(BuildAhead.delayWindow - 1) { mixed.update(presentDelay: direct) }
+        XCTAssertFalse(mixed.active)
+        mixed.update(presentDelay: direct)        // the composited one left the window
+        XCTAssertTrue(mixed.active)
+    }
+
+    func testBuildAheadHysteresis() {
+        let direct = 1.0 / 120
+        var b = BuildAhead()
+        for _ in 0..<120 { b.add(0.008) }
+        b.update(presentDelay: direct)
+        XCTAssertTrue(b.active)
+        for _ in 0..<120 { b.add(0.005) }         // between 8.33 - 4 and 8.33 - 2.5 ms: stays
+        b.update(presentDelay: direct)
+        XCTAssertTrue(b.active)
+        for _ in 0..<120 { b.add(0.003) }         // clearly below: back in the same refresh
+        b.update(presentDelay: direct)
+        XCTAssertFalse(b.active)
+        for _ in 0..<120 { b.add(0.008) }
+        b.update(presentDelay: direct)
+        b.reset()                                 // CRT off
+        XCTAssertFalse(b.active)
+        XCTAssertNil(b.p90)
+    }
+
+    func testBacklogDrainPolicy() {
+        // Direct to a fixed-refresh display: drain as soon as two frames' presents were late.
+        XCTAssertEqual(BacklogDrain.policy(variableRefresh: false, direct: true), BacklogDrain.fast)
+        XCTAssertEqual(BacklogDrain.fast, BacklogDrain.Policy(lateRun: 4, minInterval: 0.25))
+        // Composited (a busy window server is also late) or variable refresh: rare.
+        XCTAssertEqual(BacklogDrain.policy(variableRefresh: false, direct: false), BacklogDrain.rare)
+        XCTAssertEqual(BacklogDrain.policy(variableRefresh: true, direct: true), BacklogDrain.rare)
+        XCTAssertEqual(BacklogDrain.rare, BacklogDrain.Policy(lateRun: 60, minInterval: 5))
+    }
+
+    func testPresentPathNeedsEveryRecentUpdateDirect() {
+        let r = 1.0 / 120
+        var p = PresentPath()
+        XCTAssertFalse(p.isDirect(refresh: r))                 // nothing seen yet
+        for _ in 0..<PresentPath.window { p.observe(presentDelay: r) }
+        XCTAssertTrue(p.isDirect(refresh: r))
+        p.observe(presentDelay: 2 * r)                         // one composited prediction
+        XCTAssertFalse(p.isDirect(refresh: r))
+        for _ in 0..<(PresentPath.window - 1) { p.observe(presentDelay: r) }
+        XCTAssertFalse(p.isDirect(refresh: r))
+        p.observe(presentDelay: r)                             // it left the window
+        XCTAssertTrue(p.isDirect(refresh: r))
     }
 }

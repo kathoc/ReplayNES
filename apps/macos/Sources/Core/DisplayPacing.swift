@@ -1,6 +1,9 @@
 // Display-locked pacing logic (pure, no clocks of its own; see docs/FRAME_PACING.md):
 //  * DisplayCadence  - which display refreshes start a new emulated frame
 //  * InputDeadline   - how long before the commit deadline input is sampled (just in time)
+//  * PresentPath     - whether the layer goes direct to the display (from the update timestamps)
+//  * BacklogDrain    - when a steady one-drawable backlog is drained
+//  * BuildAhead      - whether GPU-heavy pictures (CRT model) are built one refresh ahead
 //  * AudioRateControl - dynamic rate control: resampling ratio that keeps the audio buffer level
 //                       while emulation runs at the display rate instead of 60.0988 Hz
 // The live loop (EmulationController) is driven by CAMetalDisplayLink; these types only decide.
@@ -52,18 +55,28 @@ struct DisplayCadence {
         return Double(k) * refresh
     }
 
+    /// Recent plausible timestamp deltas (the refresh estimate follows their median).
+    private var deltas: [Double] = []
+    private var deltaHead = 0
+    static let deltaWindow = 15
+
     /// One display callback whose picture appears at `presentation` (seconds). Returns true when
     /// this refresh starts a new emulated frame.
     mutating func refresh(presentation t: Double) -> Bool {
         if let l = lastPresentation, t > l {
             let d = t - l
-            if d < Self.minRefresh || d > Self.maxRefresh {
-                // Not one refresh apart (duplicate / bogus timestamps, or a gap): no estimate.
-            } else if refresh == 0 || d < refresh * 0.75 {
-                refresh = d                                  // first estimate, or a faster display
-            } else if d < refresh * 1.25 {
-                refresh += (d - refresh) * 0.05              // refine (skipped callbacks are ignored)
+            if d >= Self.minRefresh && d <= Self.maxRefresh {
+                if deltas.count < Self.deltaWindow { deltas.append(d) } else { deltas[deltaHead] = d; deltaHead = (deltaHead + 1) % Self.deltaWindow }
+                let median = deltas.sorted()[deltas.count / 2]
+                if refresh == 0 || abs(refresh - median) > 0.1 * median {
+                    // First estimate, another display, or a wrong estimate from odd timestamps
+                    // (a single short delta once stuck the estimate at 2-4x the real rate).
+                    refresh = median
+                } else if abs(d - refresh) < 0.25 * refresh {
+                    refresh += (d - refresh) * 0.05              // refine (skipped callbacks are ignored)
+                }
             }
+            // Other deltas are not one refresh apart (duplicate / bogus timestamps, or a gap).
         }
         lastPresentation = t
         guard refresh > 0, let last = lastFrameTime else {
@@ -95,7 +108,8 @@ struct DisplayCadence {
 /// stall does not raise it, a run of heavier frames - e.g. the flash filter on a flashing scene -
 /// does within a few frames), plus a safety margin (on a ProMotion panel a commit later than about
 /// 1.5 ms before the deadline sometimes misses its refresh), plus a penalty that grows on every
-/// frame committed less than `lateCommit` before its deadline and decays while none are.
+/// frame committed less than `lateCommit` before its deadline - or, direct to the display, whose
+/// present was dropped or late (EmulationController) - and decays while none are.
 struct InputDeadline {
     static let margin = 0.0015
     static let minLead = 0.002
@@ -153,6 +167,89 @@ struct InputDeadline {
         misses &+= 1
         clean = 0
         penalty = min(Self.maxPenalty, penalty + Self.missPenalty)
+    }
+}
+
+/// Whether the game layer goes direct to the display: every one of the last `window` display link
+/// updates had presentDelay (targetPresentationTimestamp - targetTimestamp) of about one refresh.
+/// Composited it is two or more refreshes, but Core Animation sometimes predicts one refresh for a
+/// composited window too, so a single update is not enough.
+struct PresentPath {
+    static let window = 60
+    private var delays: [Double] = []
+    private var head = 0
+    mutating func observe(presentDelay: Double) {
+        guard presentDelay > 0 else { return }
+        if delays.count < Self.window { delays.append(presentDelay) } else { delays[head] = presentDelay; head = (head + 1) % Self.window }
+    }
+    mutating func reset() { delays.removeAll(keepingCapacity: true); head = 0 }
+    /// The largest recent presentDelay (0 before any update).
+    var maxDelay: Double { delays.max() ?? 0 }
+    func isDirect(refresh: Double) -> Bool { delays.count >= Self.window / 4 && refresh > 0 && maxDelay < 1.5 * refresh }
+}
+
+/// A steady backlog: every present a whole refresh behind its target (one drawable too many queued
+/// after a hiccup; presenting on every refresh never drains it by itself). Skipping one repeat
+/// present drains it. When the layer goes direct to a fixed-refresh display, a late present can
+/// only be such a backlog and skipping costs nothing but that refresh, so it is drained as soon as
+/// two frames' presents were late. Otherwise it stays rare (half a second of late presents, at
+/// most every 5 s): composited, a busy window server also shows presents a refresh late, which no
+/// skip fixes; on a variable-refresh panel (ProMotion, Adaptive-Sync) a skipped refresh shifts the
+/// panel's timing.
+enum BacklogDrain {
+    struct Policy: Equatable {
+        let lateRun: Int          // consecutive late presents (new or repeat)
+        let minInterval: Double   // seconds since the previous drain
+    }
+    static let fast = Policy(lateRun: 4, minInterval: 0.25)
+    static let rare = Policy(lateRun: 60, minInterval: 5)
+    static func policy(variableRefresh: Bool, direct: Bool) -> Policy {
+        !variableRefresh && direct ? fast : rare
+    }
+}
+
+/// GPU-heavy pictures (the CRT model) are built one refresh ahead of the present that shows them
+/// (GameRenderer) when the picture-building GPU time (p90 of the last `window` frames) exceeds what
+/// the display path leaves after the commit deadline: `presentDelay - enterMargin`, where
+/// presentDelay = targetPresentationTimestamp - targetTimestamp of the display link updates (one
+/// refresh when the layer goes direct to the display, two or more when composited; the largest of
+/// the recent ones). Back in the same refresh when clearly below (`presentDelay - leaveMargin`).
+/// Built in the same refresh, such a picture misses it and queues behind it (sticky one-refresh
+/// backlog, drawable starvation); built ahead, it is shown exactly one refresh later.
+struct BuildAhead {
+    static let window = 120
+    static let delayWindow = 60
+    static let enterMargin = 0.0025
+    static let leaveMargin = 0.004
+    private(set) var active = false
+    private var times: [Double] = []
+    private var head = 0
+    private var delays: [Double] = []
+    private var delayHead = 0
+
+    /// GPU seconds of one picture build.
+    mutating func add(_ seconds: Double) {
+        if times.count < Self.window { times.append(seconds) } else { times[head] = seconds; head = (head + 1) % Self.window }
+    }
+
+    /// Forget the history (nothing is built: plain picture).
+    mutating func reset() { times.removeAll(keepingCapacity: true); head = 0; active = false }
+
+    /// p90 of the recent builds; nil until a quarter of the window was seen.
+    var p90: Double? {
+        guard times.count >= Self.window / 4 else { return nil }
+        let s = times.sorted()
+        return s[Int((Double(s.count - 1) * 0.9).rounded())]
+    }
+
+    /// Re-decides at a display link update whose picture appears `presentDelay` seconds after its
+    /// commit deadline.
+    mutating func update(presentDelay: Double) {
+        guard presentDelay > 0 else { return }
+        if delays.count < Self.delayWindow { delays.append(presentDelay) } else { delays[delayHead] = presentDelay; delayHead = (delayHead + 1) % Self.delayWindow }
+        guard let q = p90, let budget = delays.max() else { return }
+        if !active && q > budget - Self.enterMargin { active = true }
+        else if active && q < budget - Self.leaveMargin { active = false }
     }
 }
 
