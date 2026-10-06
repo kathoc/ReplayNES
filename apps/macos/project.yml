@@ -159,6 +159,7 @@ targets:
     sources:
       - path: Sources/Core
       - path: Sources/App
+      - path: Resources/Assets.xcassets
     dependencies:
       - target: Engine
       - package: Sparkle
@@ -170,6 +171,7 @@ targets:
         PRODUCT_MODULE_NAME: ReplayNESApp
         ENABLE_HARDENED_RUNTIME: NO
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.games
     info:
       path: Config/Info.plist
