@@ -235,3 +235,9 @@ extension HostClock {
         if r != KERN_SUCCESS { NSLog("ReplayNES: real-time thread policy not applied (\(r))") }
     }
 }
+
+extension UserDefaults {
+    /// A boolean preference with a default. Launch arguments (`-key NO`) arrive as strings, which
+    /// `object(forKey:) as? Bool` would not read; bool(forKey:) parses YES/NO/1/0/true/false.
+    func flag(_ key: String, default value: Bool) -> Bool { object(forKey: key) == nil ? value : bool(forKey: key) }
+}

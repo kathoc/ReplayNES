@@ -62,6 +62,21 @@ final class DisplayPacingTests: XCTestCase {
         XCTAssertEqual(frames, 1200)
     }
 
+    func testBogusTimestampsDoNotBreakTheEstimate() {
+        // Seen on a composited full-screen window: updates whose presentation times are almost
+        // equal. They must not become the refresh estimate (that once locked onto "k = 71 million").
+        var c = DisplayCadence()
+        var frames = 0
+        for i in 0..<1200 {
+            let t = 10 + Double(i) / 120
+            if c.refresh(presentation: t) { frames += 1 }
+            if i % 50 == 7 && c.refresh(presentation: t + 1e-6) { frames += 1 }
+        }
+        XCTAssertEqual(c.refresh, 1.0 / 120, accuracy: 1e-6)
+        XCTAssertEqual(c.refreshesPerFrame, 2)
+        XCTAssertEqual(frames, 600)
+    }
+
     func testFreeCadenceKeepsTheNTSCRate() {
         var c = DisplayCadence()
         let f = run(&c, refresh: 1.0 / 144, count: 144 * 60)   // one minute at 144 Hz

@@ -17,6 +17,9 @@ import Foundation
 /// mixed cadence is unavoidable there without variable refresh).
 struct DisplayCadence {
     static let lockTolerance = 0.005
+    /// Plausible refresh intervals (500 Hz .. 24 Hz); other timestamp deltas are not refreshes.
+    static let minRefresh = 1.0 / 500
+    static let maxRefresh = 1.0 / 24
     let framePeriod: Double
 
     /// Estimated refresh interval (seconds); 0 until two presentation times were seen.
@@ -54,7 +57,9 @@ struct DisplayCadence {
     mutating func refresh(presentation t: Double) -> Bool {
         if let l = lastPresentation, t > l {
             let d = t - l
-            if refresh == 0 || d < refresh * 0.75 {
+            if d < Self.minRefresh || d > Self.maxRefresh {
+                // Not one refresh apart (duplicate / bogus timestamps, or a gap): no estimate.
+            } else if refresh == 0 || d < refresh * 0.75 {
                 refresh = d                                  // first estimate, or a faster display
             } else if d < refresh * 1.25 {
                 refresh += (d - refresh) * 0.05              // refine (skipped callbacks are ignored)
@@ -90,7 +95,7 @@ struct DisplayCadence {
 /// stall does not raise it, a run of heavier frames - e.g. the flash filter on a flashing scene -
 /// does within a few frames), plus a safety margin (on a ProMotion panel a commit later than about
 /// 1.5 ms before the deadline sometimes misses its refresh), plus a penalty that grows on every
-/// frame that still missed its refresh and decays while none do.
+/// frame that still missed its refresh (presented after it) and decays while none do.
 struct InputDeadline {
     static let margin = 0.0015
     static let minLead = 0.002

@@ -186,7 +186,7 @@ struct LatencyOverlay: View {
             row(String(localized: "Display fps"), String(format: "%.1f", s.presentedFPS))
             row(String(localized: "Pacing"), s.pacing)
             row(String(localized: "Input sampled before deadline"), String(format: "%.1f ms", s.inputLeadMs))
-            row(String(localized: "Missed refreshes / judder"), "\(s.missedRefreshes) / \(s.offCadence)")
+            row(String(localized: "Missed refreshes / judder"), "\(s.missedRefreshes + s.droppedFrames) / \(s.offCadence)")
             row(String(localized: "Display GPU (avg/max)"), String(format: "%.2f / %.2f ms", s.displayGPUMs, s.displayGPUMaxMs))
             if !s.crtInfo.isEmpty { row(String(localized: "CRT"), s.crtInfo) }
             row(String(localized: "Audio buffer / output"), String(format: "%.1f ms / %.1f ms", s.audioFillMs, s.audioOutputLatencyMs))

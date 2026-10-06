@@ -9,8 +9,11 @@ import CoreGraphics
 import Foundation
 
 enum ThumbnailGrid {
-    /// Finest spacing (frames).
-    static let baseStep: UInt64 = 4
+    /// Finest spacing: one picture per 5 s of game time (300 frames). Longer takes use 10 s, 20 s,
+    /// 40 s ... (power-of-two multiples, so every coarser grid reuses the pictures already made).
+    /// Live capture therefore copies at most one frame per 5 s, and the background generator makes
+    /// a few dozen pictures per take instead of hundreds.
+    static let baseStep: UInt64 = 300
 
     /// Smallest baseStep * 2^k with at most maxCount grid frames over the take. Power-of-two
     /// steps make coarser grids subsets of finer ones: a growing take or a narrower window reuses
@@ -34,9 +37,10 @@ enum ThumbnailGrid {
     // drawn at its natural aspect (tileWidth wide) and clipped at the next tile's anchor / the
     // strip end. As the take grows every anchor slides left continuously and the last tile is
     // revealed gradually (partially visible), instead of the strip changing in whole tiles.
-    // F (frames per tile) is a power-of-two grid step chosen so the on-screen span per tile stays
-    // in [minSpanRatio, 1] * tileWidth (no gaps, at most ~2.5 tiles per tileWidth); it only
-    // changes (x2 / /2) when the span leaves that band (hysteresis).
+    // F (frames per tile) is baseStep x 2^k chosen so the on-screen span per tile stays in
+    // [minSpanRatio, 1] * tileWidth (no gaps, at most ~2.5 tiles per tileWidth); it only changes
+    // (x2 / /2) when the span leaves that band (hysteresis). A take too short for that keeps
+    // baseStep: its tiles are wider than a picture, which is then repeated to fill the span.
 
     /// Lower bound of the span per tile (fraction of tileWidth) before F doubles. < 0.5, so both F
     /// and 2F are acceptable for spans in [minSpanRatio, 0.5]: no flip-flopping at the boundary.

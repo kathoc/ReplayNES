@@ -40,7 +40,7 @@ final class FullScreenChrome {
         }
     }
 
-    static var autoHide: Bool { UserDefaults.standard.object(forKey: "fullScreenAutoHide") as? Bool ?? true }
+    static var autoHide: Bool { UserDefaults.standard.flag("fullScreenAutoHide", default: true) }
 
     /// Shows the chrome and restarts the idle timer.
     func pointerMoved() {

@@ -34,6 +34,8 @@ final class LatencyMeter {
         var skippedFrames: UInt64 = 0      // emulated frames never shown
         var presentIntervalMaxMs = 0.0
         var missedRefreshes: UInt64 = 0    // frames presented after the refresh they were made for
+        var droppedFrames: UInt64 = 0      // new frames the compositor never showed (a repeat did)
+        var foreignCallbacks: UInt64 = 0   // display-link updates delivered on another thread (skipped)
         var repeatPresents: UInt64 = 0     // the same picture presented again (keeps the cadence)
         var backlogDrains: UInt64 = 0      // repeat presents skipped because the queue was behind
         var inputLeadMs = 0.0              // just-in-time input sample before the commit deadline
@@ -97,6 +99,8 @@ final class LatencyMeter {
 
     func recordAudioRatio(_ r: Double) { lock.lock(); s.audioRatio = r; lock.unlock() }
     func recordRepeat() { lock.lock(); s.repeatPresents &+= 1; lock.unlock() }
+    func recordDropped() { lock.lock(); s.droppedFrames &+= 1; lock.unlock() }
+    func recordForeignCallback() { lock.lock(); s.foreignCallbacks &+= 1; lock.unlock() }
     func recordBacklogDrain() { lock.lock(); s.backlogDrains &+= 1; lock.unlock() }
 
     /// A frame was rendered. `refresh` = the expected interval in seconds.
@@ -146,7 +150,10 @@ final class LatencyMeter {
                 s.inputToPresentMs = Self.ema(s.inputToPresentMs, v)
             }
         }
-        let missed = meta.targetPresentation > 0 && presentedSeconds > meta.targetPresentation + refreshInterval / 4
+        // Missed = shown at least a refresh after the one it was made for. (Full screen on a
+        // ProMotion panel, presentation times can sit a fraction of a refresh off the display
+        // link's targets while every frame still keeps its slot.)
+        let missed = meta.targetPresentation > 0 && presentedSeconds > meta.targetPresentation + refreshInterval * 0.75
         if missed { s.missedRefreshes &+= 1 }
         if let l = pacing.lastPresent, meta.frame == l.frame + 1, presentedSeconds > l.time,
            presentedSeconds - l.time < FramePacing.continuityLimit,

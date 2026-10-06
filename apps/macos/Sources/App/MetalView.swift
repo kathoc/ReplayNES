@@ -103,8 +103,9 @@ final class GameRenderer {
     /// refresh at `targetPresentation`. `newFrame`: this refresh starts a new emulated frame (just
     /// published); otherwise the current picture is presented again when `repeatPicture` (steady
     /// cadence) or something changed (size, options, CRT). Returns the commit time (mach ticks)
-    /// when something was presented, nil when nothing was. `onPresented(meta, presentedSeconds)`
-    /// is called for a presented new frame (on a Metal thread); `onRepeatPresented` for a repeat.
+    /// when something was presented, nil when nothing was. `onPresented(meta, commit, seconds)`
+    /// is called for a new frame (on a Metal thread; seconds = 0 when it was never shown);
+    /// `onRepeatPresented` for a repeat that was shown.
     @discardableResult
     func present(drawable: CAMetalDrawable, targetPresentation: Double, newFrame: Bool, repeatPicture: Bool,
                  onPresented: @escaping (FrameMeta, UInt64, Double) -> Void,
@@ -121,7 +122,7 @@ final class GameRenderer {
         let commit = HostClock.now()
         if let meta = newMeta, meta.emulatedTime != 0 {
             drawable.addPresentedHandler { d in
-                if d.presentedTime > 0 { onPresented(meta, commit, d.presentedTime) }
+                onPresented(meta, commit, d.presentedTime)   // 0: never shown (the compositor dropped it)
             }
         } else {
             drawable.addPresentedHandler { d in

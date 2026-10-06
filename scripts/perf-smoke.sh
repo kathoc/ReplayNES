@@ -122,7 +122,7 @@ summary = {
     "label": label, "fullscreen": b["fullScreen"], "chromeHidden": b.get("chromeHidden", False), "pacing": b.get("pacing", "?"),
     "seconds": round(dt), "emulatedFPS": statistics.fmean(r["emulatedFPS"] for r in rows[1:]),
     "presentedFPS": d("presentCount") / dt, "steadyIntervalMs": ms(steady),
-    "judderPerMin": off / mins, "neverShownPerMin": skipped / mins, "shownByRepeatPerMin": late_pictures / mins, "missedRefreshes": d("missedRefreshes"),
+    "judderPerMin": off / mins, "neverShownPerMin": skipped / mins, "shownByRepeatPerMin": late_pictures / mins, "missedRefreshes": d("missedRefreshes"), "droppedFrames": d("droppedFrames"), "foreignCallbacks": d("foreignCallbacks"),
     "repeatPerSec": d("repeatPresents") / dt, "backlogDrains": d("backlogDrains"),
     "audioUnderruns": d("audioUnderruns"), "audioDropped": d("audioDropped"), "audioRatio": b.get("audioRatio", 1),
     "audioFillMs": statistics.fmean(r.get("audioFillMs", 0) for r in rows),
@@ -136,7 +136,7 @@ print(f"{'stage (ms)':28s} {'mean':>7s} {'p50':>7s} {'p95':>7s} {'p99':>7s} {'ma
 for k, s in summary["stages"].items():
     if s["n"]: print(f"{k:28s} {s['mean']:7.2f} {s['p50']:7.2f} {s['p95']:7.2f} {s['p99']:7.2f} {s['max']:7.2f}  {s['n']}")
 print(f"judder / min        {summary['judderPerMin']:8.1f}   (interval off the steady one by > 1/2 refresh)")
-print(f"never shown / min   {summary['neverShownPerMin']:8.1f}   shown only by a repeat / min {summary['shownByRepeatPerMin']:.1f}   missed refreshes {summary['missedRefreshes']}   repeats/s {summary['repeatPerSec']:.1f}   backlog drains {summary['backlogDrains']}")
+print(f"never shown / min   {summary['neverShownPerMin']:8.1f}   shown only by a repeat / min {summary['shownByRepeatPerMin']:.1f}   missed refreshes {summary['missedRefreshes']}  dropped {summary['droppedFrames']}  main-thread updates {summary['foreignCallbacks']}   repeats/s {summary['repeatPerSec']:.1f}   backlog drains {summary['backlogDrains']}")
 print(f"audio               underruns {summary['audioUnderruns']}  dropped {summary['audioDropped']}  ratio {summary['audioRatio']:.5f}  fill {summary['audioFillMs']:.1f} ms")
 print(f"CPU % of one core   emulation {summary['cpuEmulation']:.1f}  main {summary['cpuMain']:.1f}  process {summary['cpuProcess']:.1f}   GPU busy+wait {summary['gpuMs']:.1f} ms/frame   input lead {summary['inputLeadMs']:.2f} ms")
 print("JSON " + json.dumps(summary))

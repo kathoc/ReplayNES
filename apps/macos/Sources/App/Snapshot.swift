@@ -116,7 +116,7 @@ extension AppModel {
                 "t": HostClock.seconds(HostClock.now() - start), "frame": self.status.frame, "paused": self.status.paused,
                 "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "presentCount": s.presentCount,
                 "presentHitches": s.presentHitches, "offCadence": s.offCadence, "skippedFrames": s.skippedFrames,
-                "presentIntervalMaxMs": s.presentIntervalMaxMs, "missedRefreshes": s.missedRefreshes,
+                "presentIntervalMaxMs": s.presentIntervalMaxMs, "missedRefreshes": s.missedRefreshes, "droppedFrames": s.droppedFrames, "foreignCallbacks": s.foreignCallbacks,
                 "repeatPresents": s.repeatPresents, "backlogDrains": s.backlogDrains,
                 "drawCount": s.drawCount, "drawLate": s.drawLate, "drawGapMaxMs": s.drawGapMaxMs,
                 "tickWakeLate": s.tickWakeLate, "tickWakeMaxMs": s.tickWakeMaxMs, "lateTicks": s.lateTicks,
