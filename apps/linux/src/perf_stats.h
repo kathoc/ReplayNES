@@ -35,6 +35,8 @@ struct FrameRecord {
   double refresh = 0;     // refresh estimate (s)
   int frames = 1;         // frames emulated for this present (2 on displays slower than 60.0988 Hz)
   double gpuExtra = 0;    // CRT build GPU time counted into the work (s)
+  double pictureSample = 0;  // input sample of the picture this present shows (CRT built ahead:
+                             // the previous frame's; 0 = this frame's)
 };
 
 struct RunInfo {

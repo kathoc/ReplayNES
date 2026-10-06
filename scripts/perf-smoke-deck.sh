@@ -15,6 +15,8 @@
 #                         shortcut, docs/STEAM_DECK.md) is focused by Steam itself.
 #   SESSION=desktop       Plasma (Wayland),
 #   SESSION=nested        Desktop Mode, nested gamescope at 60 Hz (gamescope -r 60 -f --)
+#   NESTED_RATE=45        run inside a nested gamescope at that refresh (any session; e.g. a display
+#                         slower than the NES rate: 2 frames per present when needed)
 #   BIN=dev               use ~/ReplayNES-dev/build-dev/replaynes-linux (DEV=1 build) inside the
 #                         installed app's sandbox (default: the installed Flatpak)
 #   WARMUP=8 INPUT=1 FLASH=0 LABEL=name EXTRA_ARGS="--windowed" DRIVER=wayland|x11
@@ -37,7 +39,7 @@ ARGS="$ARGS ${EXTRA_ARGS:-}"
 CMD="flatpak run $APP_ID"
 [ "${BIN:-}" = "dev" ] && CMD="flatpak run --filesystem=home ${FLATPAK_ARGS:-} --command=/home/deck/ReplayNES-dev/build-dev/replaynes-linux $APP_ID"
 
-VARS="$(printf 'APP_ID=%q ROMARG=%q CMD=%q ARGS=%q SESSION=%q DRIVER=%q' "$APP_ID" "$ROMARG" "$CMD" "$ARGS" "${SESSION:-}" "${DRIVER:-}")"
+VARS="$(printf 'APP_ID=%q ROMARG=%q CMD=%q ARGS=%q SESSION=%q DRIVER=%q NESTED_RATE=%q' "$APP_ID" "$ROMARG" "$CMD" "$ARGS" "${SESSION:-}" "${DRIVER:-}" "${NESTED_RATE:-}")"
 ssh "$HOST" "$VARS bash -s" <<'EOF'
 set -e
 export XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
@@ -60,11 +62,16 @@ case "$SESSION" in
     [ "$SESSION" = nested ] && PRE="gamescope -W 1280 -H 800 -r 60 -f --" ;;
 esac
 [ -n "$DRIVER" ] && export SDL_VIDEO_DRIVER="$DRIVER"
+WINPAT='^ReplayNES$'
+if [ -n "$NESTED_RATE" ]; then
+  PRE="gamescope -W 1280 -H 800 -r $NESTED_RATE --"
+  WINPAT='^(ReplayNES|gamescope)$'
+fi
 echo "session: $SESSION"
 if [ "$SESSION" = gaming ]; then
   # Give the (ssh-started) window gamescope's focus for the run; restored below.
   ( for i in $(seq 1 60); do
-      W=$(xdotool search --name '^ReplayNES$' 2>/dev/null | head -1)
+      W=$(xdotool search --name "$WINPAT" 2>/dev/null | head -1)
       if [ -n "$W" ]; then
         sleep 0.5
         xprop -id "$W" -f STEAM_GAME 32c -set STEAM_GAME 769

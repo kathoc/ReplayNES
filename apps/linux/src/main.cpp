@@ -222,7 +222,8 @@ class App {
   interim::EmuHost emu_;
   DisplayScheduler sched_;
   interim::InputDeadline deadline_;
-  interim::InputDeadline cpuWork_;  // CPU part of the work only (build-ahead budget)
+  interim::InputDeadline cpuWork_;
+  double lastPictureSample_ = 0;  // CPU part of the work only (build-ahead budget)
   PadSlot pads_[2];
   std::set<std::string> routedSteps_;
   bool running_ = true;
@@ -666,7 +667,8 @@ int App::run(const Options& opt) {
         deadline_.observeMiss();
         missGuard = lastTargetIssued;
       }
-      if (rec.emulated) recentLatency_[recentHead_++ % recentLatency_.size()] = d->time - rec.sample;
+      if (rec.emulated)
+        recentLatency_[recentHead_++ % recentLatency_.size()] = d->time - (rec.pictureSample > 0 ? rec.pictureSample : rec.sample);
     }
     if (perfMode) perf.add(rec);
   };
@@ -687,6 +689,7 @@ int App::run(const Options& opt) {
       deadline_.maxPenalty = std::max(0.003, deadline_.maxLead - deadline_.minLead);
       double rate = sched_.cadence().emulationRate(r);
       if (std::fabs(rate - lastRate) > 0.01) { audio_.setEmulationRate(rate); lastRate = rate; }
+      audio_.setFramesPerPush(sched_.cadence().kind == interim::Cadence::Kind::slower ? RNF_MAX_FRAMES_PER_PRESENT : 1);
     }
     double lead = deadline_.lead();
     int frames = 1;
@@ -755,6 +758,12 @@ int App::run(const Options& opt) {
     rec.acquireWait = vr_.lastAcquireWait();
     // CRT built with the present: its GPU time is part of the sample -> screen work.
     rec.gpuExtra = vr_.gpuLeadExtra();
+    {
+      // CRT built ahead: this present shows the previous new picture (sampled one frame earlier).
+      PostProcessStatus ps = vr_.postProcessStatus();
+      if (ps.crtShown && ps.buildAhead && lastPictureSample_ > 0) rec.pictureSample = lastPictureSample_;
+      if (tick.newPicture) lastPictureSample_ = rec.sample;
+    }
     cpuWork_.observeWork(rec.submit - rec.sample);
     deadline_.observeWork(rec.submit - rec.sample + rec.gpuExtra);
     // Build-ahead budget: GPU time left before the target vblank at the maximum lead.

@@ -99,7 +99,7 @@ std::string PerfStats::finish(const RunInfo& info, const std::string& statsPath,
     acq.push_back(ms(r.acquireWait));
     if (r.displayed > 0) {
       gpuToScreen.push_back(ms(r.displayed - r.submit));
-      total.push_back(ms(r.displayed - r.sample));
+      total.push_back(ms(r.displayed - (r.pictureSample > 0 ? r.pictureSample : r.sample)));
       if (r.target > 0) {
         vsTarget.push_back(ms(r.displayed - r.target));
         if (r.refresh > 0 && r.displayed > r.target + r.refresh / 2) missed += 1;

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 #include "replaynes/frontend.h"
@@ -99,7 +100,10 @@ void CrtDisplay::update(double budget, bool allowBuildAhead, bool adaptive) {
     p50_ = s[s.size() / 2];
     p90_ = s[size_t(std::round(double(s.size() - 1) * 0.9))];
   }
-  if (allowBuildAhead && budget > 0) {
+  static const bool forceAhead = std::getenv("REPLAYNES_CRT_BUILD_AHEAD") != nullptr;  // verification
+  if (forceAhead) {
+    pipelined_ = true;
+  } else if (allowBuildAhead && budget > 0) {
     rnf_build_ahead_update(ahead_, budget);
     pipelined_ = rnf_build_ahead_active(ahead_) != 0;
   } else {
