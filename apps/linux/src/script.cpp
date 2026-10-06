@@ -94,6 +94,12 @@ void Script::step(double now) {
       app_->save();
     } else if (op == "closeproject") {
       app_->closeProject();
+    } else if (op == "exportdialog") {
+      ui_->openExportDialog();
+    } else if (op == "exportstart") {
+      ui_->startExport();
+    } else if (op == "crt") {
+      if (onCrt) onCrt(arg(1) != "off");
     } else if (op == "panel") {
       ui_->showPracticePanel(true);
     } else if (op == "shot") {

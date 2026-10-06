@@ -1,0 +1,32 @@
+// tube_scatter along x through a shared-memory row tile (default path on Vulkan). Same arithmetic as
+// tube_scatter: every output sums its taps d = -R..R in the same order with the same weights
+// (out-of-screen taps add an exact +0, as in the Metal register-window kernel). R <= 64.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 256) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { float weights[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+TUBE_PARAMS
+const int RMAX = 64;
+shared float tr[256 + 2 * RMAX], tg[256 + 2 * RMAX], tb[256 + 2 * RMAX];
+void main() {
+  int tid = int(gl_LocalInvocationID.x), x0 = int(gl_WorkGroupID.x) * 256, py = int(gl_WorkGroupID.y);
+  int R = P.radius;
+  for (int i = tid; i < 256 + 2 * R; i += 256) {
+    int qx = x0 - R + i;
+    vec3 v = (qx >= 0 && qx < P.ow) ? src[py * P.ow + qx].rgb : vec3(0.0);
+    tr[i] = v.r; tg[i] = v.g; tb[i] = v.b;
+  }
+  barrier();
+  int px = x0 + tid;
+  if (px >= P.ow) return;
+  precise vec3 sum = vec3(0.0);
+  for (int d = -R; d <= R; d++) {
+    int i = tid + R + d;
+    sum += vec3(tr[i], tg[i], tb[i]) * weights[d + R];
+  }
+  outp[py * P.ow + px] = vec4(sum, 1.0);
+}

@@ -5,6 +5,7 @@
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | panel | shot <file.png> | quit
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)
+//   exportdialog | exportstart | crt [off]       (MP4 export dialog / its Export button, CRT setting)
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -27,6 +28,7 @@ class Script {
   void step(double now);
   std::function<void()> onQuit;
   std::function<void(int)> onSettingsPage;
+  std::function<void(bool)> onCrt;
 
  private:
   std::vector<std::vector<std::string>> cmds_;

@@ -51,6 +51,12 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "showFlashIndicator") s.showFlashIndicator = parseBool(v, s.showFlashIndicator);
     else if (k == "uiScale" && num && d >= 0.5 && d <= 2.5) s.uiScale = float(d);
     else if (k == "volume" && num && d >= 0 && d <= 1) s.volume = float(d);
+    else if (k == "crt") s.crt = parseBool(v, s.crt);
+    else if (k == "crtLines" && num && (d == 240 || (d >= 110 && d <= 220)) && d == std::floor(d)) s.crtLines = int(d);
+    else if (k == "crtBeamGrowth") s.crtBeamGrowth = parseBool(v, s.crtBeamGrowth);
+    else if (k == "crtPersistence") s.crtPersistence = parseBool(v, s.crtPersistence);
+    else if (k == "crtSupply") s.crtSupply = parseBool(v, s.crtSupply);
+    else if (k == "crtAntenna" && num && d >= 20 && d <= 90) s.crtAntenna = d;
     else if (k == "pauseAfterRewind") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
@@ -76,6 +82,13 @@ std::string Settings::serialize() const {
   o << "uiScale=" << buf << "\n";
   std::snprintf(buf, sizeof buf, "%.3f", double(volume));
   o << "volume=" << buf << "\n";
+  o << "crt=" << int(crt) << "\n";
+  o << "crtLines=" << crtLines << "\n";
+  o << "crtBeamGrowth=" << int(crtBeamGrowth) << "\n";
+  o << "crtPersistence=" << int(crtPersistence) << "\n";
+  o << "crtSupply=" << int(crtSupply) << "\n";
+  std::snprintf(buf, sizeof buf, "%g", crtAntenna);
+  o << "crtAntenna=" << buf << "\n";
   o << "pauseAfterRewind=" << int(pauseAfterRewind) << "\n";
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";

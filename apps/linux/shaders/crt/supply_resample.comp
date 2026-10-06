@@ -1,0 +1,21 @@
+// supply-webgl.mjs resampleProgram.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 perRow[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+layout(push_constant) uniform SupplyParams { int width; int rows; float decay; float v0; float reff; float imax; float n; float relax; float reqScale; float ablFraction; float ilim; float pad; vec4 share; } P;
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (int(g.x) >= P.width || int(g.y) >= P.rows) return;
+  int px = int(g.x), py = int(g.y);
+  vec2 k = perRow[py].xy;
+  float halfW = float(P.width) / 2.0;
+  precise float sx = halfW + (float(px) + 0.5 - halfW) / k.x - 0.5; int x0 = int(floor(sx)); float t = sx - float(x0);
+  vec3 a = (x0 >= 0 && x0 < P.width) ? src[py * P.width + x0].rgb : vec3(0.0);
+  vec3 b = (x0 + 1 >= 0 && x0 + 1 < P.width) ? src[py * P.width + x0 + 1].rgb : vec3(0.0);
+  outp[py * P.width + px] = vec4(glmix3(a, b, t) * k.y, 1.0);
+}

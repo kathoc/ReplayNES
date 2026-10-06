@@ -117,6 +117,7 @@ void UI::buildDisplaySettings() {
   ImGui::PopTextWrapPos();
   ImGui::PopStyleColor();
   if (ImGui::Checkbox(TR("Show “Flash Reduction Active” on screen while reducing"), &s.showFlashIndicator)) changed();
+  buildCrtSettings();
 }
 
 void UI::buildAudioControlSettings() {

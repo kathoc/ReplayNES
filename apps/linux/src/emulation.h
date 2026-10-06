@@ -129,6 +129,16 @@ class EmulationController {
   void afterFrame(double slack);
 
   const uint32_t* picture() const { return display_.data(); }
+  /// CRT side channel of picture() (display only): rn_video_indices of the same frame + whether
+  /// the flash filter changed it. codes == nullptr when there are none (mock core, a picture from
+  /// the practice rewind animation).
+  struct Signal {
+    const uint16_t* codes = nullptr;
+    uint32_t burstPhase = 0;
+    uint64_t ordinal = 0;
+    bool flashAltered = false;
+  };
+  const Signal& signal() const { return signal_; }
   uint64_t emulatedFrames() const { return emulatedFrames_; }
 
   // ---- commands (UI, hotkeys) ----
@@ -220,6 +230,8 @@ class EmulationController {
   rn_flash_filter* flash_ = nullptr;
   rn_flash_level flashLevel_ = RN_FLASH_STANDARD;
   std::vector<uint32_t> display_;
+  Signal signal_;
+  uint64_t pictureOrdinal_ = 0;
   bool pictureDirty_ = false;
   bool flashAltered_ = false;
   uint64_t lastFlashTick_ = 0;

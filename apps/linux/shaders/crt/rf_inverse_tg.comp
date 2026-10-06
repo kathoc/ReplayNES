@@ -1,0 +1,47 @@
+// Overlap-save FFT, inverse half: kernel multiply (bit-reversed) + FFT(+1) + extract (rf_inverse_tg).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 512) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec2 spectrum[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec2 carrier[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { vec2 kernelSpec[]; };
+layout(std430, set = 0, binding = 3) readonly buffer B3 { vec2 tw[]; };
+RF_PARAMS
+vec2 twv(int k, float s) { vec2 p = tw[k]; return vec2(p.x, s * p.y); }
+shared vec2 buf[4096];
+// Every radix-2 DIT stage in shared memory (one 4096-point block per workgroup): exactly the
+// butterfly / butterfly2 arithmetic (a +- cmul(b, twiddle)), so the result equals the multi-pass port.
+void fftStagesTG(float sgn) {
+  uint tid = gl_LocalInvocationID.x, nthreads = gl_WorkGroupSize.x;
+  for (int span = 2; span <= 4096; span *= 2) {
+    int h = span / 2, step = 4096 / span;
+    for (int p = int(tid); p < 2048; p += int(nthreads)) {
+      int j = p % h, i0 = (p / h) * span + j, i1 = i0 + h;
+      vec2 a = buf[i0], t = cmul(buf[i1], twv(j * step, sgn));
+      precise vec2 s0 = a + t;
+      precise vec2 s1 = a - t;
+      buf[i0] = s0; buf[i1] = s1;
+    }
+    barrier();
+  }
+}
+void main() {
+  uint tid = gl_LocalInvocationID.x, nthreads = gl_WorkGroupSize.x, blk = gl_WorkGroupID.x;
+  // buf[i] = cmul(spectrum[rev(i)], kernelSpec[rev(i)]): coalesced load, then the bit-reversal
+  // permutation as pair swaps in shared memory (same products as the gather).
+  for (int i = int(tid); i < 4096; i += int(nthreads)) buf[i] = spectrum[blk * 4096u + uint(i)];
+  barrier();
+  for (int i = int(tid); i < 4096; i += int(nthreads)) {
+    int j = reverse12(i);
+    if (i < j) { vec2 a = buf[i], b = buf[j]; buf[i] = cmul(b, kernelSpec[j]); buf[j] = cmul(a, kernelSpec[i]); }
+    else if (i == j) buf[i] = cmul(buf[i], kernelSpec[i]);
+  }
+  barrier();
+  fftStagesTG(1.0);
+  for (int k = int(tid); k < P.hop; k += int(nthreads)) {
+    int n = int(blk) * P.hop + k;
+    if (n < 654720) carrier[n] = buf[k + P.overlap] / 4096.0;
+  }
+}

@@ -17,6 +17,13 @@ struct Settings {
   int flash = 2;  // rn_flash_level: 0 off, 1 low, 2 standard (default: safety first), 3 high
   bool showFlashIndicator = true;
   float uiScale = 1.0f;  // multiplies the automatic scale (window height / 800)
+  // CRT display (nesterm physical model; display only). Defaults are nesterm's.
+  bool crt = false;
+  int crtLines = 240;  // 240, or 110...220 (reduced-line experiment)
+  bool crtBeamGrowth = true;
+  bool crtPersistence = true;
+  bool crtSupply = true;
+  double crtAntenna = 65.0;  // dBuV, 20...90
   // Audio
   float volume = 0.8f;
   // Controls

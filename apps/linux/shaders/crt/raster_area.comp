@@ -1,0 +1,32 @@
+// raster-webgl.mjs: area integration of 240 source rows into `lines` rows in linear drive (COMPOSE-RASTER).
+// rgbSource: the 512x240 synthetic RGB image is the 256x240 BGRA8 frame with each pixel doubled
+// horizontally (COMPOSE-ASCII-RGB input; unorm8 -> c/255 like a WebGL RGBA8 texture).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { uint bgra[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+layout(push_constant) uniform RasterParams { int lines; int decode; int rgbSource; int pad; } P;
+vec3 linearize(vec3 v) {
+  vec3 a = pow((v + 0.055) / 1.055, vec3(2.4)), b = v / 12.92;
+  return mix(a, b, lessThanEqual(v, vec3(0.04045)));
+}
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 512u || int(g.y) >= P.lines) return;
+  int px = int(g.x), py = int(g.y);
+  int low = py * 240, high = (py + 1) * 240;
+  precise vec3 sum = vec3(0.0); int first = low / P.lines;
+  for (int k = 0; k < 4; k++) {
+    int y = first + k; if (y * P.lines >= high) break;
+    vec3 v;
+    if (P.rgbSource != 0) { uint c = bgra[y * 256 + px / 2]; v = vec3(float((c >> 16) & 255u), float((c >> 8) & 255u), float(c & 255u)) / 255.0; }
+    else v = src[y * 512 + px].rgb;
+    if (P.decode != 0) v = linearize(v);
+    sum += v * float(min(high, (y + 1) * P.lines) - max(low, y * P.lines));
+  }
+  outp[py * 512 + px] = vec4(sum / 240.0, 1.0);
+}

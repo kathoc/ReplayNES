@@ -1,0 +1,36 @@
+// tube_h with the detector taps of a column held in registers over 8 rows (default path; xCount <= 16).
+// Same taps, order and weights per (column, row, channel) as tube_h.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 64) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 xmap[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 outp[]; };
+TUBE_PARAMS
+const int XMAX = 16, ROWS = 8;
+void main() {
+  int px = int(gl_GlobalInvocationID.x);
+  if (px >= P.ow) return;
+  int chunks = (P.height + ROWS - 1) / ROWS;
+  int parity = int(gl_WorkGroupID.y) / chunks, y0 = (int(gl_WorkGroupID.y) % chunks) * ROWS;
+  int idx[3 * XMAX]; float wt[3 * XMAX];
+  for (int c = 0; c < 3; c++)
+    for (int k = 0; k < XMAX; k++) {
+      if (k >= P.xCount) break;
+      vec2 w = xmap[(px * 6 + c * 2 + parity) * P.xCount + k];
+      idx[c * XMAX + k] = int(w.x); wt[c * XMAX + k] = w.y;
+    }
+  for (int r = 0; r < ROWS; r++) {
+    int y = y0 + r;
+    if (y >= P.height) break;
+    precise vec3 sum = vec3(0.0);
+    for (int c = 0; c < 3; c++)
+      for (int k = 0; k < XMAX; k++) {
+        if (k >= P.xCount) break;
+        sum[c] += src[y * P.width + idx[c * XMAX + k]][c] * wt[c * XMAX + k];
+      }
+    outp[(y + parity * P.height) * P.ow + px] = vec4(sum, 1.0);
+  }
+}

@@ -99,6 +99,54 @@ CRT Display itself is off by default (the conventional crisp display).
 - `tests/test_render.cpp` "video indices": the code-to-RGB correspondence, an unchanged state hash, agreement between session and export, and
   the mock core returning "unsupported".
 
+## Vulkan port (Linux / Steam Deck)
+
+`apps/linux/shaders/crt/*.comp` (GLSL 450 compute, compiled to SPIR-V by glslc at build time) +
+`apps/linux/src/render/` (`crt_model.cpp` = CRTModel.swift, `crt_renderer.cpp` = CRTRenderer.swift,
+`crt_display.cpp` = the live-view policy, `crt_export.cpp` = CRTExportRenderer). Each MSL kernel
+has a GLSL twin with the same name, arithmetic and evaluation order; images are std430 `vec4`
+buffers, push descriptors (`VK_KHR_push_descriptor`) bind them, parameters are push constants. The
+AGC loop runs in the one-thread `rx_agc` kernel, receiver/supply/persistence state lives in GPU
+buffers and is reset with `vkCmdUpdateBuffer` in command order (a non-increasing ordinal = a
+discontinuity). Display-only: the input is `rn_video_indices` (RF path) or the flash-filtered RGB
+picture when the filter altered it.
+
+Differences from the Metal port, all value-preserving:
+
+1. Arithmetic the bit-identity checks rely on is `precise` (no FMA contraction, like Metal's safe
+   math mode). `gaussAt`'s `log`/`cos` are float32 cephes implementations (~1 ULP): Vulkan only
+   guarantees ~2^-11 absolute error for `cos`, which would show in the RF noise.
+2. The persistence ring is zeroed when allocated (WebGL textures start at 0; a Vulkan buffer does
+   not, and 0 x garbage can be NaN).
+3. Restructured kernels (numerically identical to the direct port, checked bit for bit at 256x192
+   and 1144x858): shared-memory FFT with 512 threads and a coalesced inverse load (the bit-reversal
+   as pair swaps in shared memory), the x scatter through a shared-memory row tile, `tube_h` with
+   the column's taps in registers over 8 rows, `tube_lit` + `tube_persist` fused (the new slot is
+   read as the half value it stores). The y scatter keeps the register-window kernel.
+4. Live view: GPU time per new picture (timestamp queries) drives build-ahead (`rnf_build_ahead`,
+   budget = what the maximum input lead leaves after the CPU work) and an adaptive tube scale
+   (x0.85 steps when p90 > 80 % of a frame period, >= 512 wide, back above below 55 %); otherwise
+   the tube maps 1:1 onto the destination (cap 1600x1200).
+
+Conformance (`replaynes-crt-test`, the same fixture, inputs and tolerances as CRTConformance /
+CRTTests; ctest `crt_conformance`): passes on RADV (Steam Deck), lavapipe (llvmpipe, Mesa 26.2 in
+the Flatpak runtime; `REPLAYNES_VK_DEVICE=llvmpipe`) and MoltenVK (development). Maximum errors on
+RADV: receiver 1.0e-6, with noise 1.4e-6, tube 1.8e-7 / growth 2.4e-7, raster 1.2e-7, supply 3.6e-5,
+spot 1.8e-7, persistence 4.9e-4 (half); determinism and fast == direct port bit-identical.
+
+GPU time on the Steam Deck (RADV VANGOGH, 1600 MHz, default effects, RF input):
+
+| Tube | `--bench` (sync, per frame) | in the app, Gaming Mode 90 Hz (p50 / p90) |
+|---|---|---|
+| 1600x1200 | 18.4 ms (before restructuring) | - (larger than the screen) |
+| 1144x858 (full screen 1280x800, fill) | 8.9 ms (11.0 before) | 11.7 / 11.8 ms |
+| 960x720 (integer scale) | - | 9.3 / 9.5 ms |
+| 640x480 | 6.3 ms (before) | - |
+
+About 2.6 ms of it is the fixed receiver (FFT 1.6 ms); the tube passes are memory-bound
+(persistence reads 7 half-float slots per pixel). 60 fps holds at full screen without lowering the
+resolution; the adaptive step only engages if the GPU p90 passes 13.3 ms.
+
 ## Latency and GPU time (M1 Max, 32-core GPU, 120 Hz built-in display)
 
 Existing in-app measurement (emulation done -> display, the `--snapshot` JSON, SMB auto-played for 12 seconds):

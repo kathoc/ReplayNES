@@ -331,6 +331,16 @@
         }
       }
     },
+    "A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nesterm の「CRT（物理モデル・実験）」を Vulkan に移植した表示です。NES の画素コード → RF/IF → 復調 → 管面（スロットマスク・散乱・残光）。未校正の実験モデルで、実在のテレビの再現ではありません。表示だけの処理で、記録・ゲームの進行・再現性には影響しません。画面は 4:3（ピクセル比の設定は使いません）です。"
+          }
+        }
+      }
+    },
     "A and B are at the same position. Play a little further before setting B": {
       "localizations": {
         "ja": {
@@ -1861,6 +1871,16 @@
         }
       }
     },
+    "Export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出す"
+          }
+        }
+      }
+    },
     "Export MP4": {
       "localizations": {
         "ja": {
@@ -1927,6 +1947,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "激しい点滅を抑えた映像で書き出します（強さ: %@。設定 → 表示・音声で変更）。オフにすると記録どおりの映像です。"
+          }
+        }
+      }
+    },
+    "Exports the video with intense flashing reduced (level: %@; change it in Settings → Display). When off, the video is exactly as recorded.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "激しい点滅を抑えた映像で書き出します（強さ: %@。設定 → 表示で変更）。オフにすると記録どおりの映像です。"
           }
         }
       }
@@ -2187,6 +2217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "先頭へ"
+          }
+        }
+      }
+    },
+    "H.264 (automatic encoder)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "H.264（エンコーダー自動選択）"
           }
         }
       }
@@ -4211,6 +4251,16 @@
         }
       }
     },
+    "Renders each frame with the CRT Display settings through the same Vulkan pipeline (4:3; best with 4:3 sizes such as 1280×960). Exporting is slower.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウン管 (CRT) の設定で、同じ Vulkan パイプラインを使って 1 フレームずつ描画します（4:3、1280×960 などの 4:3 サイズ向き）。書き出しは遅くなります。"
+          }
+        }
+      }
+    },
     "Renders each frame with the CRT Display settings, using the same Metal pipeline (4:3, internal resolution up to 1600×1200; best with 4:3 sizes such as 1280×960). Exporting is slower.": {
       "localizations": {
         "ja": {
@@ -4601,6 +4651,16 @@
         }
       }
     },
+    "Run in Background": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドで続ける"
+          }
+        }
+      }
+    },
     "SHA-256 %@…": {
       "localizations": {
         "ja": {
@@ -4667,6 +4727,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存しました"
+          }
+        }
+      }
+    },
+    "Saved in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存先: %@"
           }
         }
       }
@@ -5347,6 +5417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "一時保存: %@"
+          }
+        }
+      }
+    },
+    "The CRT display isn’t available on this GPU: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この GPU ではブラウン管 (CRT) 表示を使えません: %@"
           }
         }
       }

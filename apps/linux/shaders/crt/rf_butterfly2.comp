@@ -1,0 +1,29 @@
+// rf-webgl.mjs butterfly2: two consecutive radix-2 DIT stages (span, 2*span) in one pass.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec2 inp[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec2 outp[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { vec2 tw[]; };
+layout(push_constant) uniform FFTParams { int span; float signValue; int blocks; int pad; } P;
+vec2 twv(int k, float s) { vec2 p = tw[k]; return vec2(p.x, s * p.y); }
+vec2 stage1(int k, int row, int span, float s) {
+  int h = span / 2; int b = (k / span) * span; int j = k % h;
+  vec2 a = inp[row * 4096 + b + j]; vec2 c = inp[row * 4096 + b + j + h];
+  vec2 t = cmul(c, twv(j * (4096 / span), s));
+  precise vec2 r = (k % span < h) ? a + t : a - t;
+  return r;
+}
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 4096u || int(g.y) >= P.blocks) return;
+  int x = int(g.x), row = int(g.y), span = P.span, s2 = span * 2;
+  int base = (x / s2) * s2; int j = x % span;
+  vec2 a = stage1(base + j, row, span, P.signValue);
+  vec2 c = stage1(base + j + span, row, span, P.signValue);
+  vec2 t = cmul(c, twv(j * (4096 / s2), P.signValue));
+  precise vec2 r = (x % s2 < span) ? a + t : a - t;
+  outp[row * 4096 + x] = r;
+}

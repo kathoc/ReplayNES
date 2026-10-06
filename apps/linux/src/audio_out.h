@@ -26,6 +26,9 @@ class AudioOut : public AudioSink {
   void close();
   /// Frames are emulated at `fps` (DRC base ratio = nominal / fps).
   void setEmulationRate(double fps);
+  /// Emulated frames that may arrive together (2 on displays slower than the NES rate): the kept
+  /// level grows by one frame of audio per extra frame, so the bursts do not drain it.
+  void setFramesPerPush(int frames);
   /// One emulated frame's samples (only call while audible).
   void push(const int16_t* pcm, size_t n) override;
   void setMuted(bool muted) override;
@@ -43,7 +46,9 @@ class AudioOut : public AudioSink {
   static void SDLCALL onGet(void* user, SDL_AudioStream* stream, int additional, int total);
   SDL_AudioStream* stream_ = nullptr;
   rnf_audio_rate* drc_ = nullptr;
+  double rate_ = 0;        // emulation rate given to the DRC (re-applied when it is recreated)
   float volume_ = 1.0f;
+  double baseFill_ = 1568;
   std::atomic<uint64_t> underruns_{0};
   std::atomic<bool> counting_{false};
   bool muted_ = true;

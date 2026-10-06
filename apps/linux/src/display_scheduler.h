@@ -17,11 +17,16 @@
 #include <cstdint>
 
 #include "cadence.h"
+#include "replaynes/frontend.h"
 
 namespace rnl {
 
 class DisplayScheduler {
  public:
+  DisplayScheduler() : budget_(rnf_frame_budget_new(0)) {}
+  ~DisplayScheduler() { rnf_frame_budget_free(budget_); }
+  DisplayScheduler(const DisplayScheduler&) = delete;
+  DisplayScheduler& operator=(const DisplayScheduler&) = delete;
   void seedRefresh(double r) { est_.seed(r); }
   double refresh() const { return est_.refresh; }
   Cadence cadence() const { return Cadence::classify(est_.refresh); }
@@ -70,14 +75,22 @@ class DisplayScheduler {
 
   uint64_t backlogDrains() const { return drains_; }
 
+  uint64_t multiFramePresents() const { return multi_; }
+  uint64_t droppedFrames() const { return rnf_frame_budget_dropped(budget_); }
+
   /// Target vblank of the next frame, with input sampled `lead` seconds before it: the cadence's
-  /// next vblank after the previous target, moved on while now + lead does not fit.
-  double nextTarget(double now, double lead) {
+  /// next vblank after the previous target, moved on while now + lead does not fit. `frames`
+  /// (optional): frames to emulate for this present - 1, or up to RNF_MAX_FRAMES_PER_PRESENT on a
+  /// display slower than the NES rate (the emulated time follows the displayed time).
+  double nextTarget(double now, double lead, int* frames = nullptr) {
+    if (frames) *frames = 1;
     double r = est_.refresh;
     if (!(r > 0) || !hasAnchor_) {
       lastTarget_ = now + lead + nesFramePeriod();
+      rnf_frame_budget_reset(budget_);
       return lastTarget_;
     }
+    const double previous = lastTarget_;
     Cadence c = Cadence::classify(r);
     double t;
     if (lastTarget_ <= 0 || lastTarget_ < now - 4 * nesFramePeriod()) {
@@ -88,6 +101,8 @@ class DisplayScheduler {
     } else if (c.kind == Cadence::Kind::three_two) {
       pattern_ ^= 1;
       t = snap(lastTarget_ + (pattern_ ? 2 : 1) * r);
+    } else if (c.kind == Cadence::Kind::slower) {
+      t = snap(lastTarget_ + r);  // every refresh shows a new picture
     } else {
       content_ += nesFramePeriod();
       t = snap(content_);
@@ -97,6 +112,13 @@ class DisplayScheduler {
     while (t - lead < now + 0.0002) {
       t += r;
       skipped_ += 1;
+    }
+    if (c.kind == Cadence::Kind::slower && previous > 0 && t > previous) {
+      int n = rnf_frame_budget_frames(budget_, t - previous, RNF_MAX_FRAMES_PER_PRESENT);
+      if (frames) *frames = n;
+      if (n > 1) multi_ += 1;
+    } else {
+      rnf_frame_budget_reset(budget_);
     }
     lastTarget_ = t;
     return t;
@@ -124,6 +146,8 @@ class DisplayScheduler {
   int pattern_ = 0;
   int rejected_ = 0;
   uint64_t skipped_ = 0;
+  rnf_frame_budget* budget_ = nullptr;
+  uint64_t multi_ = 0;
 };
 
 }  // namespace rnl

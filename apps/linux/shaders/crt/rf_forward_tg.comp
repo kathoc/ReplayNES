@@ -1,0 +1,38 @@
+// Overlap-save FFT, forward half: initCodes + FFT(-1) in shared memory (rf_forward_tg).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 512) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) buffer B0 { vec2 outp[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { uint codes[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { int phases[]; };
+layout(std430, set = 0, binding = 3) readonly buffer B3 { float volts[]; };
+layout(std430, set = 0, binding = 4) readonly buffer B4 { vec2 tw[]; };
+RF_PARAMS
+#include "rf_common.glsl"
+vec2 twv(int k, float s) { vec2 p = tw[k]; return vec2(p.x, s * p.y); }
+shared vec2 buf[4096];
+// Every radix-2 DIT stage in shared memory (one 4096-point block per workgroup): exactly the
+// butterfly / butterfly2 arithmetic (a +- cmul(b, twiddle)), so the result equals the multi-pass port.
+void fftStagesTG(float sgn) {
+  uint tid = gl_LocalInvocationID.x, nthreads = gl_WorkGroupSize.x;
+  for (int span = 2; span <= 4096; span *= 2) {
+    int h = span / 2, step = 4096 / span;
+    for (int p = int(tid); p < 2048; p += int(nthreads)) {
+      int j = p % h, i0 = (p / h) * span + j, i1 = i0 + h;
+      vec2 a = buf[i0], t = cmul(buf[i1], twv(j * step, sgn));
+      precise vec2 s0 = a + t;
+      precise vec2 s1 = a - t;
+      buf[i0] = s0; buf[i1] = s1;
+    }
+    barrier();
+  }
+}
+void main() {
+  uint tid = gl_LocalInvocationID.x, nthreads = gl_WorkGroupSize.x, blk = gl_WorkGroupID.x;
+  for (int i = int(tid); i < 4096; i += int(nthreads)) buf[i] = vec2(rfInitValue(i, int(blk)), 0.0);
+  barrier();
+  fftStagesTG(-1.0);
+  for (int i = int(tid); i < 4096; i += int(nthreads)) outp[blk * 4096u + uint(i)] = buf[i];
+}

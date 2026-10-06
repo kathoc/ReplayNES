@@ -21,7 +21,7 @@ namespace rnl {
 inline double nesFramePeriod() { return rnf_frame_period(); }
 
 struct Cadence {
-  enum class Kind { unknown, locked, three_two, free };
+  enum class Kind { unknown, locked, three_two, free, slower };
   Kind kind = Kind::unknown;
   int k = 0;  // refreshes per frame when locked
 
@@ -33,6 +33,8 @@ struct Cadence {
       c.k = k;
     } else if (std::fabs(1.5 * refresh - framePeriod) / framePeriod <= RNF_CADENCE_LOCK_TOLERANCE) {
       c.kind = Kind::three_two;
+    } else if (rnf_display_slower_than_frames(refresh, framePeriod)) {
+      c.kind = Kind::slower;
     } else {
       c.kind = Kind::free;
     }
@@ -53,6 +55,7 @@ struct Cadence {
       case Kind::locked: return "locked";
       case Kind::three_two: return "3:2";
       case Kind::free: return "free";
+      case Kind::slower: return "slower";
       default: return "?";
     }
   }

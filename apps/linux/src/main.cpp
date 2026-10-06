@@ -64,6 +64,12 @@ struct Options {
   bool injectInput = false;
   bool resume = true;
   int flash = -1;  // -1 = the saved setting
+  // Measurement overrides (not saved): CRT display on, its knobs, integer scaling.
+  bool crt = false;
+  int crtMaxWidth = 1600;
+  bool crtAdaptive = true;
+  bool crtBuildAhead = true;
+  int integerScale = -1;  // -1 = the saved setting
 };
 
 void usage() {
@@ -81,6 +87,10 @@ void usage() {
       "  --label NAME          label of the summary\n"
       "  --flash 0-3           flash reduction level for this run (off / low / standard / high)\n"
       "  --script \"CMD; ...\"   scripted UI steps (see apps/linux/src/script.h)\n"
+      "  --crt                 CRT display on for this run (Settings -> Display -> CRT Display saves it)\n"
+      "  --crt-max-width N     tube width cap (default 1600); --crt-fixed: no adaptive resolution;\n"
+      "  --crt-no-build-ahead  never build CRT pictures one frame ahead\n"
+      "  --integer-scale 0|1   integer scaling for this run (0 = fill the screen)\n"
       "Environment: REPLAYNES_LANG=ja|en overrides the system language.\n");
 }
 
@@ -103,6 +113,11 @@ bool parseArgs(int argc, char** argv, Options* o) {
     else if (a == "--script" && next(&v)) o->script = v;
     else if (a == "--label" && next(&v)) o->label = v;
     else if (a == "--flash" && next(&v)) o->flash = std::atoi(v.c_str());
+    else if (a == "--crt") o->crt = true;
+    else if (a == "--integer-scale" && next(&v)) o->integerScale = std::atoi(v.c_str()) != 0;
+    else if (a == "--crt-max-width" && next(&v)) o->crtMaxWidth = std::atoi(v.c_str());
+    else if (a == "--crt-fixed") o->crtAdaptive = false;
+    else if (a == "--crt-no-build-ahead") o->crtBuildAhead = false;
     else if (a == "--fullscreen") o->fullscreen = 1;
     else if (a == "--windowed") o->fullscreen = 0;
     else if (a == "--inject-input") o->injectInput = true;
@@ -153,6 +168,8 @@ class App {
   std::unique_ptr<AppModel> app_;
   DisplayScheduler sched_;
   rnf_input_deadline* deadline_ = nullptr;
+  rnf_input_deadline* cpuWork_ = nullptr;  // CPU part of the work only (CRT build-ahead budget)
+  double lastPictureSample_ = 0;
   bool running_ = true;
   bool fullscreen_ = false;
   bool navOn_ = false;
@@ -173,6 +190,13 @@ void App::applySettings() {
   emu_->autosaveInterval = settings_.autosaveInterval;
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
   audio_.setVolume(settings_.volume);
+  DisplayPostProcess pp = vr_.postProcess();
+  pp.crt = settings_.crt || opt_.crt;
+  pp.crtSettings = ui_->crtSettings();
+  pp.maxTubeWidth = opt_.crtMaxWidth;
+  pp.adaptiveResolution = opt_.crtAdaptive;
+  pp.allowBuildAhead = opt_.crtBuildAhead;
+  vr_.setPostProcess(pp);
 }
 
 /// ImGui navigates with the gamepad / keyboard only while the UI has the controls; in play
@@ -231,6 +255,7 @@ int App::run(const Options& opt) {
   paths_.ensure();
   settings_.load(paths_.settingsFile());
   if (opt.flash >= 0 && opt.flash <= 3) settings_.flash = opt.flash;
+  if (opt.integerScale >= 0) settings_.integerScale = opt.integerScale != 0;
   prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);  // precise wake-ups for the just-in-time sample
   const bool perfMode = opt.perfSeconds > 0;
 
@@ -321,6 +346,7 @@ int App::run(const Options& opt) {
   ui_->onFullscreen = [this](bool on) { applyFullscreen(on); };
   ui_->isFullscreen = [this] { return fullscreen_; };
   deadline_ = rnf_input_deadline_new();
+  cpuWork_ = rnf_input_deadline_new();
   ui_->stats = [this] {
     StatsInfo s;
     double r = sched_.refresh();
@@ -335,6 +361,13 @@ int App::run(const Options& opt) {
     s.audioFillMs = audio_.fillMs();
     s.underruns = audio_.underruns();
     s.presentWait = vr_.presentWait();
+    PostProcessStatus ps = vr_.postProcessStatus();
+    if (vr_.postProcess().crt && ps.crtShown) {
+      char b[160];
+      std::snprintf(b, sizeof b, "CRT %dx%d (x%.2f) %s  GPU p50 %.2f / p90 %.2f ms%s", ps.tubeWidth, ps.tubeHeight, ps.scale,
+                    ps.usedCodes ? "RF" : "RGB", ps.gpuMsP50, ps.gpuMsP90, ps.buildAhead ? "  built ahead" : "");
+      s.crt = b;
+    }
     return s;
   };
   applySettings();
@@ -354,6 +387,10 @@ int App::run(const Options& opt) {
       running_ = false;
     };
     script->onSettingsPage = [this](int p) { ui_->setSettingsPage(p); };
+    script->onCrt = [this](bool on) {
+      settings_.crt = on;
+      applySettings();
+    };
   }
 
   std::atomic<bool> polling{true};
@@ -406,7 +443,8 @@ int App::run(const Options& opt) {
         rnf_input_deadline_observe_miss(deadline_);
         missGuard = lastTargetIssued;
       }
-      if (rec.emulated) recentLatency_[recentHead_++ % recentLatency_.size()] = d->time - rec.sample;
+      if (rec.emulated)
+        recentLatency_[recentHead_++ % recentLatency_.size()] = d->time - (rec.pictureSample > 0 ? rec.pictureSample : rec.sample);
     }
     if (perfMode) perf.add(rec);
   };
@@ -428,9 +466,11 @@ int App::run(const Options& opt) {
       rnf_input_deadline_set_limits(deadline_, 0, maxLead, std::max(0.003, maxLead - RNF_INPUT_DEADLINE_MIN_LEAD));
       double rate = sched_.cadence().emulationRate(r);
       if (std::fabs(rate - lastRate) > 0.01) { audio_.setEmulationRate(rate); lastRate = rate; }
+      audio_.setFramesPerPush(sched_.cadence().kind == Cadence::Kind::slower ? RNF_MAX_FRAMES_PER_PRESENT : 1);
     }
     double lead = rnf_input_deadline_lead(deadline_);
-    double target = vr_.presentWait() ? sched_.nextTarget(nowSeconds(), lead) : 0;
+    int frames = 1;
+    double target = vr_.presentWait() ? sched_.nextTarget(nowSeconds(), lead, &frames) : 0;
     double sampleAt = target > 0 ? target - lead : 0;
     lastTargetIssued = target;
     if (!vr_.presentWait()) {
@@ -438,7 +478,15 @@ int App::run(const Options& opt) {
       sampleAt = lastSample + nesFramePeriod();
       if (sampleAt < nowSeconds() - 2 * nesFramePeriod()) sampleAt = nowSeconds();
     }
-    // 3. Housekeeping in the slack, then wait for the sample point.
+    // 3. Display slower than the NES rate: the frames before the shown one are emulated now, in
+    //    the slack (their own, earlier time slots); the shown frame keeps its just-in-time sample.
+    bool extraPicture = false;
+    for (int i = 1; i < frames; ++i) {
+      SDL_Event e;
+      while (SDL_PollEvent(&e)) handleEvent(e, nowSeconds());
+      extraPicture = emu_->tick().newPicture || extraPicture;
+    }
+    // Housekeeping in the slack, then wait for the sample point.
     double slack = sampleAt - nowSeconds();
     if (slack > 0.004) {
       double now = nowSeconds();
@@ -455,6 +503,7 @@ int App::run(const Options& opt) {
     rec.wake = wake;
     rec.target = target;
     rec.lead = lead;
+    rec.frames = frames;
     rec.refresh = sched_.refresh();
     rec.sample = lastSample = nowSeconds();
     SDL_Event e;
@@ -486,10 +535,25 @@ int App::run(const Options& opt) {
     ImGui::Render();
     rec.ui = nowSeconds();
     GameRect rect = ui_->gameRect(w, h);
-    uint64_t id = vr_.drawAndPresent(tick.newPicture ? emu_->picture() : nullptr, rect, ImGui::GetDrawData());
+    bool newPicture = tick.newPicture || extraPicture;
+    const EmulationController::Signal& es = emu_->signal();
+    FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered};
+    uint64_t id = vr_.drawAndPresent(newPicture ? emu_->picture() : nullptr, rect, ImGui::GetDrawData(), &sig);
     rec.submit = nowSeconds();
     rec.acquireWait = vr_.lastAcquireWait();
-    rnf_input_deadline_observe_work(deadline_, rec.submit - rec.sample);
+    // CRT built with the present: its GPU time is part of the sample -> screen work.
+    rec.gpuExtra = vr_.gpuLeadExtra();
+    {
+      // CRT built ahead: this present shows the previous new picture (sampled one frame earlier).
+      PostProcessStatus ps = vr_.postProcessStatus();
+      if (ps.crtShown && ps.buildAhead && lastPictureSample_ > 0) rec.pictureSample = lastPictureSample_;
+      if (newPicture) lastPictureSample_ = rec.sample;
+    }
+    rnf_input_deadline_observe_work(cpuWork_, rec.submit - rec.sample);
+    rnf_input_deadline_observe_work(deadline_, rec.submit - rec.sample + rec.gpuExtra);
+    // Build-ahead budget: GPU time left before the target vblank at the maximum lead.
+    vr_.setGpuBudget(std::max(0.0, rnf_input_deadline_max_lead(deadline_) - rnf_input_deadline_work_quantile(cpuWork_) -
+                                       RNF_INPUT_DEADLINE_MARGIN));
     if (id) {
       rec.presentId = id;
       if (vr_.presentWait()) inflight.push_back(rec);
@@ -526,6 +590,19 @@ int App::run(const Options& opt) {
     Cadence c = sched_.cadence();
     info.cadence = c.kind == Cadence::Kind::locked ? "locked k=" + std::to_string(c.k) : c.name();
     if (c.kind == Cadence::Kind::unknown) info.cadence = "unknown";
+    info.multiFramePresents = sched_.multiFramePresents();
+    info.droppedFrames = sched_.droppedFrames();
+    {
+      PostProcessStatus ps = vr_.postProcessStatus();
+      if (vr_.postProcess().crt) {
+        char b[200];
+        std::snprintf(b, sizeof b, "%dx%d x%.2f %s gpu p50 %.2f p90 %.2f ms%s", ps.tubeWidth, ps.tubeHeight, ps.scale,
+                      ps.usedCodes ? "RF" : "RGB", ps.gpuMsP50, ps.gpuMsP90, ps.buildAhead ? " built-ahead" : "");
+        info.crt = b;
+      } else {
+        info.crt = "off";
+      }
+    }
     info.videoDriver = SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?";
     info.gpu = vr_.description();
     info.audioDevice = audio_.deviceName();
@@ -552,6 +629,7 @@ int App::run(const Options& opt) {
   if (audioOK_) audio_.close();
   input_.reset();
   rnf_input_deadline_free(deadline_);
+  rnf_input_deadline_free(cpuWork_);
   SDL_DestroyWindow(window_);
   SDL_Quit();
   return 0;

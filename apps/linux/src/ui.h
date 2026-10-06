@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "dialogs.h"
-#include "export_hook.h"
+#include "mp4_export.h"
 #include "imgui.h"
 #include "replaynes/frontend.h"
 #include "vk_renderer.h"
@@ -47,6 +47,7 @@ struct StatsInfo {
   double leadMs = 0, latencyMs = 0, audioRatio = 1, audioFillMs = 0;
   uint64_t underruns = 0;
   bool presentWait = false;
+  std::string crt;  // CRT status line ("" = off)
 };
 
 class UI : public DialogHost {
@@ -97,6 +98,11 @@ class UI : public DialogHost {
   /// The practice panel (A/B slots) over the game.
   void showPracticePanel(bool on) { practicePanel_ = on; }
   void setSettingsPage(int p) { settingsPage_ = p; }
+  /// "Export…": the MP4 export dialog; startExport() = its Export button (scripts).
+  void openExportDialog();
+  void startExport();
+  /// The CRT display parameters of the settings (sanitized).
+  CrtSettings crtSettings() const;
   /// The timeline has the D-pad (gamepad scrub mode): ImGui must not navigate with it.
   bool navGamepadSuspended() const { return timelinePad_; }
 
@@ -123,7 +129,9 @@ class UI : public DialogHost {
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
   std::vector<Tab> tabs() const;
-  ExportHost exportHost() const;
+  // ui_export.cpp
+  void buildExportDialog();
+  void buildExportProgressPill();
   // ui_play.cpp
   void buildDock(bool inMenu, double now);
   void buildTransport(bool inMenu);
@@ -146,6 +154,7 @@ class UI : public DialogHost {
   void buildInputSettings();
   void buildDiagram(rnf_controller_family family, int slot, float width);
   void buildAssignPicker();
+  void buildCrtSettings();
   void changed();
 
   Deps d_;
@@ -205,6 +214,21 @@ class UI : public DialogHost {
   int settingsPage_ = 0;
   std::string assignElement_;  // physical id whose action is being picked
   std::string capturingAction_;
+  // MP4 export.
+  ExportJob exportJob_;
+  bool exportDialog_ = false;   // the dialog is up (settings or progress)
+  bool exportOpened_ = false;
+  bool exportStarted_ = false;  // the dialog shows this job's progress / result
+  bool exportCropOverscan_ = true;
+  bool exportPar87_ = false;
+  bool exportApplyFlash_ = true;
+  bool exportApplyCRT_ = false;
+  bool exportWholeTake_ = true;
+  int exportStart_ = 0, exportEnd_ = 0;
+  int exportPreset_ = -1;  // index into rnf_export_preset_get (-1: the default canvas)
+  int exportEncoder_ = 0;  // 0 auto, then a named H.264 encoder
+  char exportName_[200] = {0};
+  std::string exportError_;
 };
 
 }  // namespace rnl

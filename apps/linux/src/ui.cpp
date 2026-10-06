@@ -118,7 +118,7 @@ void UI::updateScale(int windowHeight) {
 
 bool UI::interactive() const {
   return menuOpen_ || !hasSession() || !dialogs_.empty() || chooser_.has_value() || rename_.has_value() ||
-         !assignElement_.empty();
+         !assignElement_.empty() || exportDialog_;
 }
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
@@ -145,7 +145,7 @@ void UI::setMenu(bool open) {
 
 void UI::toggleMenu() {
   // A popup has the controls: B / Esc close it (handled by the popup itself).
-  if (!dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty()) return;
+  if (!dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty() || exportDialog_) return;
   if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) return;
   if (timelinePad_) {
     timelinePad_ = false;
@@ -204,21 +204,6 @@ void UI::changed() {
   if (onSettingsChanged) onSettingsChanged();
 }
 
-ExportHost UI::exportHost() const {
-  ExportHost h;
-  h.session = d_.emu->session();
-  h.takeLength = d_.emu->status().takeLength;
-  h.romName = d_.app->romName();
-  h.outputDir = d_.library->root();
-  h.flashLevel = rn_flash_level(d_.settings->flash);
-  h.par87 = d_.settings->par87;
-  h.hideOverscan = d_.settings->hideOverscan;
-  h.uiScale = scale_;
-  UI* self = const_cast<UI*>(this);
-  h.notice = [self](const std::string& t) { self->notice(t); };
-  return h;
-}
-
 // ------------------------------------------------------------------ layout
 
 float UI::dockHeight(bool inMenu) const {
@@ -236,6 +221,7 @@ GameRect UI::gameRect(int w, int h) const {
     int top = int(headerHeight(scale_)), bottom = int(dockHeight(true));
     GameRect r = computeGameRect(w, std::max(1, h - top - bottom), st.integerScale, st.par87, st.hideOverscan);
     r.y += float(top);
+    r.crt.y += float(top);
     return r;
   }
   return computeGameRect(w, h, st.integerScale, st.par87, st.hideOverscan);
@@ -272,7 +258,8 @@ void UI::build(double now) {
   buildChooser();
   buildRename();
   buildAssignPicker();
-  if (menuOpen_ && hasSession()) exportDrawUI(exportHost());
+  buildExportDialog();
+  buildExportProgressPill();
 }
 
 void UI::handleMenuGamepad() {
@@ -336,9 +323,9 @@ void UI::buildHeader() {
     }
   }
   if (ImGui::BeginPopup("##project")) {
-    ExportHost eh = exportHost();
     if (ImGui::Selectable(TR("Save As…"))) d_.app->saveAs();
-    if (ImGui::Selectable(TR("Export…"), false, exportAvailable(eh) ? 0 : ImGuiSelectableFlags_Disabled)) exportOpen(eh);
+    if (ImGui::Selectable(TR("Export…"), false, d_.emu->status().takeLength > 0 ? 0 : ImGuiSelectableFlags_Disabled))
+      openExportDialog();
     if (ImGui::Selectable(TR("Open Project…"))) d_.app->openProjectChooser();
     ImGui::Separator();
     if (ImGui::Selectable(TR("Reset Project…"))) d_.app->resetProjectPrompt();
@@ -439,6 +426,7 @@ void UI::buildStats() {
   ImGui::Text("%.2f Hz %s  lead %.2f ms  sample->screen %.2f ms", s.refreshHz, s.cadence, s.leadMs, s.latencyMs);
   ImGui::Text("audio ratio %.4f  fill %.1f ms  underruns %llu  present_wait %s", s.audioRatio, s.audioFillMs,
               (unsigned long long)s.underruns, s.presentWait ? "yes" : "no");
+  if (!s.crt.empty()) ImGui::TextUnformatted(s.crt.c_str());
   ImGui::PopFont();
   ImGui::End();
 }

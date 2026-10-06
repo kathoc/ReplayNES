@@ -1,0 +1,15 @@
+// rf-webgl.mjs extract.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec2 inp[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec2 carrier[]; };
+RF_PARAMS
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 2728u || g.y >= 240u) return;
+  int n = int(g.y) * 2728 + int(g.x);
+  carrier[n] = inp[(n / P.hop) * 4096 + n % P.hop + P.overlap] / 4096.0;
+}

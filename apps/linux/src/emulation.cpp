@@ -146,6 +146,15 @@ void EmulationController::resetFlashFilter() {
 }
 
 void EmulationController::show(const uint32_t* v) {
+  signal_ = Signal();
+  rn_video_indices_info vi{};
+  if (session_ && v == rn_video(session_) && rn_video_indices(session_, &vi) == RN_OK && vi.codes) {
+    signal_.codes = vi.codes;
+    signal_.burstPhase = vi.burst_phase;
+    signal_.ordinal = vi.frame;
+  } else {
+    signal_.ordinal = ++pictureOrdinal_;
+  }
   if (flashLevel_ == RN_FLASH_OFF) {
     std::memcpy(display_.data(), v, display_.size() * 4);
     flashAltered_ = false;
@@ -155,6 +164,7 @@ void EmulationController::show(const uint32_t* v) {
     flashAltered_ = info.altered != 0;
     if (flashAltered_) lastFlashTick_ = tickCount_;
   }
+  signal_.flashAltered = flashAltered_;
   pictureDirty_ = true;
 }
 

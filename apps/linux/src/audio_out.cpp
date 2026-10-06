@@ -2,11 +2,15 @@
 #include "audio_out.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+
+#include "host_clock.h"
 #include <vector>
 
 namespace rnl {
 
-AudioOut::AudioOut() : drc_(rnf_audio_rate_new(1600)) {}
+AudioOut::AudioOut() : drc_(rnf_audio_rate_new(1568)) {}
 AudioOut::~AudioOut() {
   close();
   rnf_audio_rate_free(drc_);
@@ -30,8 +34,10 @@ bool AudioOut::open(std::string* error) {
                  std::to_string(deviceFrames_) + " frames)";
   // Level kept in the stream: the device's chunk plus one emulated frame and half a chunk of slack.
   int chunk = deviceFrames_ > 0 ? deviceFrames_ : 1024;
+  baseFill_ = 1.5 * chunk + 800;
   rnf_audio_rate_free(drc_);
-  drc_ = rnf_audio_rate_new(1.5 * chunk + 800);
+  drc_ = rnf_audio_rate_new(baseFill_);
+  if (rate_ > 0) rnf_audio_rate_set_frame_rate(drc_, rate_, 0);
   SDL_SetAudioStreamGain(stream_, volume_);
   SDL_SetAudioStreamGetCallback(stream_, &AudioOut::onGet, this);
   SDL_ResumeAudioStreamDevice(stream_);
@@ -43,12 +49,36 @@ void AudioOut::close() {
   stream_ = nullptr;
 }
 
-void SDLCALL AudioOut::onGet(void* user, SDL_AudioStream*, int additional, int) {
+void SDLCALL AudioOut::onGet(void* user, SDL_AudioStream*, int additional, int total) {
   auto* self = static_cast<AudioOut*>(user);
-  if (additional > 0 && self->counting_.load(std::memory_order_relaxed)) self->underruns_.fetch_add(1);
+  if (additional > 0 && self->counting_.load(std::memory_order_relaxed)) {
+    self->underruns_.fetch_add(1);
+    if (std::getenv("REPLAYNES_DEBUG_AUDIO"))
+      std::fprintf(stderr, "underrun t=%.3f additional=%d total=%d\n", nowSeconds(), additional / 2, total / 2);
+  }
 }
 
-void AudioOut::setEmulationRate(double fps) { rnf_audio_rate_set_frame_rate(drc_, fps, 0); }
+void AudioOut::setEmulationRate(double fps) {
+  rate_ = fps;
+  rnf_audio_rate_set_frame_rate(drc_, fps, 0);
+}
+
+void AudioOut::setFramesPerPush(int frames) {
+  double target = baseFill_ + 800.0 * std::max(0, frames - 1);
+  if (target == rnf_audio_rate_target_fill(drc_)) return;
+  rnf_audio_rate_free(drc_);  // the core's DRC has a fixed target: a new one (base ratio re-applied)
+  drc_ = rnf_audio_rate_new(target);
+  if (rate_ > 0) rnf_audio_rate_set_frame_rate(drc_, rate_, 0);
+  if (stream_ && !muted_) {
+    // Top up at once (silence) instead of waiting for the +-0.5 % rate control to get there.
+    int queued = SDL_GetAudioStreamQueued(stream_) / 2;
+    int need = int(target) - queued;
+    if (need > 0) {
+      std::vector<int16_t> silence(size_t(need), 0);
+      SDL_PutAudioStreamData(stream_, silence.data(), need * 2);
+    }
+  }
+}
 
 void AudioOut::setMuted(bool muted) {
   if (muted == muted_) return;

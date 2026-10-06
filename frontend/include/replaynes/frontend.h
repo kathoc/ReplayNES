@@ -103,6 +103,28 @@ double rnf_cadence_frame_period(const rnf_cadence* c);
 /* Refreshes per frame for a refresh interval (0 = not a multiple of the frame period). */
 int rnf_refreshes_per_frame(double refresh, double frame_period);
 
+/* Displays slower than the emulation rate (40-59 Hz modes, nested compositors, 30 Hz): the
+ * refresh interval is longer than the frame period by more than RNF_CADENCE_LOCK_TOLERANCE.
+ * Emulation keeps the NES rate by emulating up to RNF_MAX_FRAMES_PER_PRESENT frames for one present
+ * (down to 30.05 Hz; slower displays slow the emulation down). */
+#define RNF_MAX_FRAMES_PER_PRESENT 2
+int rnf_display_slower_than_frames(double refresh, double frame_period); /* frame_period <= 0: NES */
+
+/* FrameBudget: how many frames one present needs so the emulated time follows the displayed time
+ * (a Bresenham-style accumulator: 45 Hz -> 1,2,1,1,2,1,...; average refresh / frame period). The
+ * debt it keeps is within +-1/2 frame period; time beyond max_frames (a stall, skipped refreshes)
+ * is dropped instead of being caught up in a burst. */
+typedef struct rnf_frame_budget rnf_frame_budget;
+rnf_frame_budget* rnf_frame_budget_new(double frame_period); /* <= 0: rnf_frame_period() */
+rnf_frame_budget* rnf_frame_budget_clone(const rnf_frame_budget* b);
+void rnf_frame_budget_free(rnf_frame_budget* b);
+void rnf_frame_budget_reset(rnf_frame_budget* b);
+/* A present `interval` seconds of display time after the previous one: frames to emulate for it
+ * (1...max_frames; max_frames < 1 counts as 1). */
+int rnf_frame_budget_frames(rnf_frame_budget* b, double interval, int max_frames);
+double rnf_frame_budget_debt(const rnf_frame_budget* b); /* emulated time owed, seconds */
+uint64_t rnf_frame_budget_dropped(const rnf_frame_budget* b); /* frames dropped (not caught up) */
+
 /* InputDeadline: input is sampled `lead` seconds before the commit deadline. */
 #define RNF_INPUT_DEADLINE_MARGIN 0.0015
 #define RNF_INPUT_DEADLINE_MIN_LEAD 0.002

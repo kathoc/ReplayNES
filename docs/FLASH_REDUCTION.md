@@ -101,6 +101,15 @@ screen in any 60-frame window):
   2-block hold during the boot sequence). `RN_FLASH_DUMP_DIR=<dir>` writes side-by-side PPM
   pictures of altered frames for inspection.
 
+`tests/test_flash_filter_exact.cpp` checks that the optimised implementation (cached per-pixel
+metrics, deduplicated blending) is **bit-exact**: output pixels and frame info, every frame, equal
+those of a frozen copy of the original per-pixel implementation (`tests/support/FlashFilterRef.*`)
+over long synthetic flashing sequences (all levels, resets, in-place) and the generated test ROM.
+
+Cost: `replaynes-cli bench-flash <rom> [frames] [level]` times `rn_flash_filter_process` alone.
+On the generated test ROM (large-area flashing on most frames) at Standard: about 0.17 ms/frame
+on an M1 Max and 0.3 ms/frame on a Steam Deck (previously 1.6 / 3.3 ms).
+
 ## Known limitations
 
 * Block-based (16×16): a suppressed region has block-shaped edges while it is held; a flash
