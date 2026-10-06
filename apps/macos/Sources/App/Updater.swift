@@ -6,8 +6,8 @@
 // prompt (shown on the second launch) and can be turned off in Settings > アップデート.
 //
 // Installing never bypasses the app's quit path: Sparkle's installer asks the app to quit with a
-// normal Apple quit event, so AppDelegate.applicationShouldTerminate still offers to save
-// unsaved project changes (and may cancel) and stops the emulation thread before the bundle is
+// normal Apple quit event, so AppDelegate.applicationShouldTerminate still persists the session
+// for resuming (no save prompt; see SessionResume.swift) and stops the emulation thread before the bundle is
 // replaced and relaunched.
 //
 // Test hook (scripts / manual verification only):

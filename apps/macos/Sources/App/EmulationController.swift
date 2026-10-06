@@ -61,6 +61,7 @@ final class EmulationController {
     var paused = true {
         didSet {
             if paused != oldValue { statusDirty = true; if !paused { pauseHintShown = false; stepRepeater.reset() } }
+            if paused && !oldValue { autosaveSoon = true } // pausing persists right away (resume)
             input.setPausedStepMode(paused)
         }
     }
@@ -72,6 +73,9 @@ final class EmulationController {
     var scrubTarget: UInt64?
     var pauseAfterRewind = true
     var autosaveInterval: Double = 5
+    /// The session is the temporary project (SessionResume.swift): when paused it is also folded
+    /// into a full save now and then, so a resume after a force quit starts from recent checkpoints.
+    var tempSession = false
     private var rewinding = false
     private var fastForward = false
     private var rewindTicks = 0
@@ -84,6 +88,8 @@ final class EmulationController {
     private var lastPressSeq: UInt64 = 0
     private var pauseHintShown = false
     private var autosaveFailed = false
+    private var autosaveSoon = false
+    private var lastFullSave: UInt64 = 0
     private var nextDeadline: UInt64 = 0
     // Fast-forward (replays the recorded take only; never records).
     private var ff = FastForwardSession()
@@ -176,6 +182,7 @@ final class EmulationController {
         pauseHintShown = false
         audio.setMuted(true)
         lastAutosave = HostClock.now()
+        lastFullSave = 0
         autosaveFailed = false
         structureDirty = true
         statusDirty = true
@@ -787,19 +794,52 @@ final class EmulationController {
     private func maybeAutosave(_ s: EngineSession) {
         let now = HostClock.now()
         guard autosaveInterval > 0, !s.projectDir.isEmpty,
-              HostClock.seconds(now - lastAutosave) >= autosaveInterval else { return }
+              autosaveSoon || HostClock.seconds(now - lastAutosave) >= autosaveInterval else { return }
         let slack = nextDeadline &+ period > now ? HostClock.seconds(nextDeadline &+ period - now) : 0
         if slack < 0.008 && !paused { return } // try again next tick
         lastAutosave = now
+        autosaveSoon = false
         guard s.hasUnsavedChanges else { return }
         do {
-            try s.autosave()
+            if tempSession && paused && (lastFullSave == 0 || HostClock.seconds(now - lastFullSave) >= 30) {
+                try s.save()
+                lastFullSave = now
+            } else {
+                try s.autosave()
+            }
             autosaveFailed = false
         } catch {
             if !autosaveFailed { reportError("自動保存に失敗しました（作業内容はメモリ上に保持されています）", error) }
             autosaveFailed = true
         }
         latency.recordAutosave(ticks: HostClock.now() - now)
+    }
+
+    /// Persists now (quit, app in background): a full save for the temporary project, the autosave
+    /// journal for a normal project (its last full save stays what 「保存しない」 returns to).
+    /// Returns an error message, nil on success.
+    func flushForResume(fullSave: Bool) -> String? {
+        guard let s = session, !s.projectDir.isEmpty, s.hasUnsavedChanges else { return nil }
+        do {
+            if fullSave { try s.save(); lastFullSave = HostClock.now() } else { try s.autosave() }
+            lastAutosave = HostClock.now()
+            autosaveFailed = false
+            statusDirty = true
+            return nil
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+    }
+
+    /// After install(): back to the recorded take mode / position, paused.
+    func applyResume(_ r: ResumeRecord) {
+        guard let s = session else { return }
+        do { try SessionResume.apply(r, to: s) } catch { reportError("前回の位置へ移動できませんでした", error) }
+        paused = true
+        audio.setMuted(true)
+        endOfTake = false
+        markStructureDirty()
+        publishVideo()
     }
 
     // MARK: publishing
