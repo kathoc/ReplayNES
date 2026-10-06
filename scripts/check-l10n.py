@@ -7,11 +7,15 @@
 3. With --stringsdata <dir>: every string the Swift compiler extracted for localization (the
    *.stringsdata files of an app build) has an entry in the catalog, and every catalog entry is
    used. Keys without any letters (e.g. "%lld", "#%llu") need no translation and are skipped.
+   Strings of the shared frontend core (frontend/src, marked RNF_L("...")) count as used too: the
+   core resolves them at run time from a table generated from the same catalog.
 """
 import glob, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "apps", "macos")
+CORE = os.path.join(ROOT, "frontend", "src")
+RNF_L = re.compile(r'RNF_L\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿＀-￯]")
 SPEC = re.compile(r"%(?:(\d+)\$)?([-+#0]*\d*(?:\.\d+)?(?:ll|l|h|hh|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSpaA%])")
 
@@ -29,9 +33,21 @@ def specs(s):
             out.append((seq, typ))
     return sorted(out)
 
+def core_keys():
+    """(key, file, line) for every RNF_L("...") literal in the frontend core."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(CORE, "**", "*.[ch]pp"), recursive=True)):
+        for n, line in enumerate(open(path, encoding="utf-8"), 1):
+            for m in RNF_L.finditer(line):
+                key = re.sub(r'\\(.)', lambda e: {"n": "\n", "t": "\t"}.get(e.group(1), e.group(1)), m.group(1))
+                out.append((key, path, n))
+    return out
+
 def main():
     errors = []
-    for path in sorted(glob.glob(os.path.join(APP, "Sources", "**", "*.swift"), recursive=True)):
+    sources = glob.glob(os.path.join(APP, "Sources", "**", "*.swift"), recursive=True)
+    sources += glob.glob(os.path.join(CORE, "**", "*.[ch]pp"), recursive=True)
+    for path in sorted(sources):
         for n, line in enumerate(open(path, encoding="utf-8"), 1):
             if JAPANESE.search(line):
                 errors.append(f"{os.path.relpath(path, ROOT)}:{n}: Japanese text outside the String Catalog")
@@ -52,6 +68,10 @@ def main():
         if not files:
             errors.append(f"no .stringsdata files under {d}")
         seen = set()
+        for key, path, n in core_keys():
+            seen.add(key)
+            if re.search(r"[A-Za-z]", SPEC.sub("", key)) and key not in strings:
+                errors.append(f"{os.path.relpath(path, ROOT)}:{n}: {key!r} is missing from Localizable.xcstrings")
         for f in files:
             data = json.load(open(f, encoding="utf-8"))
             for table, items in data.get("tables", {}).items():

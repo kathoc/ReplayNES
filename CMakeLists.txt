@@ -10,9 +10,13 @@ endif()
 
 option(REPLAYNES_BUILD_TESTS "Build engine tests" ON)
 option(REPLAYNES_BUILD_CLI "Build replaynes-cli" ON)
+option(REPLAYNES_BUILD_FRONTEND "Build the shared frontend core (replaynes_frontend)" ON)
 
 include(cmake/NestopiaCore.cmake)
 add_subdirectory(engine)
+if(REPLAYNES_BUILD_FRONTEND)
+  add_subdirectory(frontend)
+endif()
 if(REPLAYNES_BUILD_CLI)
   add_subdirectory(tools/replaynes-cli)
 endif()
