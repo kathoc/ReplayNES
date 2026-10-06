@@ -44,7 +44,7 @@ ReplayNES は macOS 用のファミコン / NES エミュレーターです。�
 ReplayNES は Steam Deck（SteamOS 3、ゲームモード / デスクトップモード）やその他の x86_64 Linux でも Flatpak（`io.github.replaynes.ReplayNES`）として動きます。プロジェクトも機能も同じです（ライブラリ、テイク付きの巻き戻しと録り直し、フィルムストリップのタイムライン、練習（A/B）、ブックマーク、自動保存と再開、フラッシュ低減、ブラウン管 (CRT) 表示、MP4 書き出し、英語 / 日本語）。詳しい説明: [docs/STEAM_DECK.md](docs/STEAM_DECK.md)（英語）。
 
 1. **インストール**（デスクトップモードの Konsole）: [Releases](https://github.com/kathoc/ReplayNES/releases) から `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` をダウンロードし、`flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` を実行します（ランタイムは Flathub から取得されます）。読み取り専用の SteamOS 本体には何もインストールしません。
-2. **Steam に追加**: Steam →「ゲーム」→「非 Steam ゲームをマイライブラリに追加…」→ ReplayNES にチェック。ゲームモードのライブラリから起動します（全画面で開きます）。OLED モデルでは 60 Hz（クイックアクセス →「パフォーマンス」）にすると動きがいちばん均一になります。
+2. **Steam に追加**: デスクトップモードで Steam を終了してから ReplayNES を起動し、設定 →「システム」→「**Steam に追加**」を選びます（または `flatpak run io.github.replaynes.ReplayNES --add-to-steam`）。カプセル・ヒーロー・ロゴ・アイコンのアートワーク付きで Steam ライブラリに追加されます（[詳細](docs/STEAM_DECK.md#add-to-steam-with-artwork)、英語）。Steam から追加する場合は Steam →「ゲーム」→「非 Steam ゲームをマイライブラリに追加…」→ ReplayNES にチェック。ゲームモードのライブラリから起動します（全画面で開きます）。OLED モデルでは 60 Hz（クイックアクセス →「パフォーマンス」）にすると動きがいちばん均一になります。
 3. **ROM**: `.nes` ファイルを `~/Documents/ReplayNES/ROM` に入れます（デスクトップモードの Dolphin など）。起動画面は ROM ライブラリで、「プレイ」で `~/Documents/ReplayNES/Projects` にプロジェクトを作って始め、「続きから」で再開します。
 4. **操作**（Steam Input の標準ゲームパッド設定）: 十字キー / 左スティック = ファミコンの十字キー、B / A = ファミコンの A / B、Y / X = 連射 A / B、メニュー / ビュー = START / SELECT、**L2 長押し = 巻き戻し、R2 長押し = 早送り、R1 = 一時停止、L1 = スロー 1/2**。
 5. **メニュー: R1 で一時停止**（または R3 = 右スティック押し込み）。一時停止中の画面がそのままメニューです。ゲーム画面・タイムラインと大きなボタンの列（再開、ゲーム選択に戻る、設定、練習、テイク一覧、ブックマーク、書き出す…、リセット…、操作ガイド）をすべてコントローラーで操作でき、選択中の項目はオレンジの枠で囲まれ、画面下に使っているコントローラーのボタン表示が出ます。

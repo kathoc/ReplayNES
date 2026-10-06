@@ -47,7 +47,45 @@ replaced by Save As).
    pad; SDL reads it by button position).
 4. Recommended: Quick Access -> Performance -> **Refresh rate 60 Hz** for this game on the OLED
    model (see "Pacing" below; the LCD model is 60 Hz anyway).
-5. Artwork is optional (Steam shows the icon from the desktop entry).
+5. Artwork: see "Add to Steam (with artwork)" below - it also works for an entry added this way.
+
+## Add to Steam (with artwork)
+
+ReplayNES can add itself to the Steam library together with its library artwork (portrait and
+wide capsules, hero background, logo, icon):
+
+1. Switch to **Desktop Mode** and **close Steam** (Steam icon in the system tray -> Exit, or Steam
+   menu -> Exit). Steam keeps its shortcut list in memory and would overwrite the change otherwise.
+2. Start ReplayNES from the application menu and choose **Settings -> System -> Add to Steam**, or
+   run in Konsole:
+   ```
+   flatpak run io.github.replaynes.ReplayNES --add-to-steam --dry-run   # show what would change
+   flatpak run io.github.replaynes.ReplayNES --add-to-steam
+   ```
+3. Start Steam again (or return to Gaming Mode). ReplayNES is in the library with its artwork.
+
+What it does, for every Steam account on the device (`~/.local/share/Steam/userdata/<account>`):
+
+- `config/shortcuts.vdf`: appends a non-Steam shortcut "ReplayNES" (`/usr/bin/flatpak run
+  io.github.replaynes.ReplayNES`), or - when ReplayNES is already in the library (also when you
+  added it yourself as in "Gaming Mode" above) - updates that entry in place: it keeps its id, play
+  time, launch options and collections and only fills in the icon. All other shortcuts are kept
+  byte for byte; the previous file is saved as `shortcuts.vdf.replaynes-backup`. Running it again
+  changes nothing.
+- `config/grid/`: `<id>p.png` (capsule 600x900), `<id>.png` (wide 920x430), `<id>_hero.png`
+  (1920x620), `<id>_logo.png`, `<id>_icon.png` and `<id>.json` (logo pinned bottom left).
+  Artwork you set yourself is kept as `<name>.replaynes-backup` (a `.jpg` you put there wins);
+  your logo position is not changed.
+- If Steam is running, the shortcut list is left alone ("Close Steam first"); artwork for an
+  existing entry is still installed and appears after Steam restarts. `--force` writes anyway.
+- Steam is detected from the sandbox through the file locks the Steam client holds on its log
+  files. The Flatpak can read `~/.local/share/Steam/logs` and write
+  `~/.local/share/Steam/userdata` - nothing else of Steam's. The Steam Flatpak
+  (`com.valvesoftware.Steam`) is not supported.
+- To undo: in Steam, right-click ReplayNES -> Manage -> Remove non-Steam game from your library
+  (or, with Steam closed, copy `shortcuts.vdf.replaynes-backup` back over `shortcuts.vdf`).
+
+The artwork is generated from the app icon (`apps/linux/steam/artwork/`, see its `render.sh`).
 
 ## Using ReplayNES
 

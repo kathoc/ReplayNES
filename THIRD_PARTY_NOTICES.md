@@ -299,6 +299,17 @@ SOFTWARE.
   for Japanese, a CJK font of the host system found through fontconfig (on SteamOS: Noto Sans CJK,
   SIL Open Font License 1.1), read at run time from `/run/host/fonts`.
 
+## Noto Sans Black (Steam library artwork wordmark, Linux app)
+
+- The "ReplayNES" wordmark in the Steam library artwork (`apps/linux/steam/artwork/`: capsule, wide
+  capsule, logo) is drawn from the outlines of **Noto Sans Black** 2.015
+  (https://github.com/notofonts/latin-greek-cyrillic), converted to vector paths by
+  `apps/linux/steam/artwork/tools/generate_artwork.py`. The font file itself is not distributed.
+- Copyright 2022 The Noto Project Authors. Licensed under the **SIL Open Font License, Version 1.1**
+  (https://openfontlicense.org). The OFL places no restrictions on artwork made with the font.
+- The rest of the artwork (emblem from the ReplayNES app icon, backgrounds, scanline / rewind motifs)
+  is ReplayNES's own and under the project's license.
+
 ## Apple frameworks
 
 SwiftUI, Metal, AVFoundation, GameController (system frameworks, not redistributed).

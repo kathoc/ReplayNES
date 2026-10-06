@@ -9,10 +9,27 @@
     <p>ReplayNES records NES play frame by frame: rewind, fast-forward, slow motion and frame
     stepping never change what was recorded. Built on the Nestopia UE core with
     display-locked, low-latency pacing.</p>
+    <p>On the Steam Deck, "Add to Steam" puts ReplayNES into the Steam library with its own
+    capsule, hero, logo and icon artwork.</p>
   </description>
+  <developer id="io.github.kathoc">
+    <name>kathoc</name>
+  </developer>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <branding>
+    <color type="primary" scheme_preference="light">#f5f5f3</color>
+    <color type="primary" scheme_preference="dark">#202228</color>
+  </branding>
   <launchable type="desktop-id">io.github.replaynes.ReplayNES.desktop</launchable>
   <url type="homepage">https://github.com/kathoc/ReplayNES</url>
+  <url type="bugtracker">https://github.com/kathoc/ReplayNES/issues</url>
   <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>replaynes-linux</binary>
+  </provides>
   <supports>
     <control>gamepad</control>
     <control>keyboard</control>
