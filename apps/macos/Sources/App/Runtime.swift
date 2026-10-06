@@ -28,7 +28,6 @@ struct FrameMeta {
     var inputEventTime: UInt64 = 0  // last physical input change consumed by this frame (0 = none)
     var sampleTime: UInt64 = 0      // rn_input_sample_game
     var emulatedTime: UInt64 = 0    // rn_step returned
-    var deadline: UInt64 = 0        // scheduled start of the tick that made it (present scheduling; 0 = none)
     var tickStart: UInt64 = 0       // display callback / tick began (before the just-in-time input wait)
     var targetPresentation = 0.0    // refresh the frame was made for (display link, seconds; 0 = none)
     // CRT signal side channel (display only; see rn_video_indices).

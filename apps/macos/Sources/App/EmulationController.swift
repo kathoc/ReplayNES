@@ -6,8 +6,7 @@
 // until just before the commit deadline (InputDeadline), sample input, emulate one frame, render
 // and present it for that refresh, then do housekeeping (autosave, status). Other refreshes
 // present the same picture again (steady cadence). Without a visible viewport the host clock
-// paces at the NTSC rate. -framePacing hostClock selects the older host-clock + present-thread
-// path (comparison only).
+// paces at the NTSC rate.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 import QuartzCore
@@ -133,7 +132,6 @@ final class EmulationController {
     private var autosaveSoon = false
     private var lastFullSave: UInt64 = 0
     private var nextDeadline: UInt64 = 0
-    private var tickDeadline: UInt64 = 0    // scheduled start of the tick being run (stamped on frames)
     // Fast-forward (replays the recorded take only; never records).
     private var ff = FastForwardSession()
     private var ffBlocked = false           // hold started where nothing is recorded ahead
@@ -177,9 +175,6 @@ final class EmulationController {
     private var requestedTarget: DisplayTarget?
     private var targetChanged = false
 
-    enum PacingMode { case displayLink, hostClock }
-    /// -framePacing hostClock: the previous host-clock + present-thread pacing (for comparison).
-    static let pacingMode: PacingMode = UserDefaults.standard.string(forKey: "framePacing") == "hostClock" ? .hostClock : .displayLink
 
     init(input: InputManager) {
         self.input = input
@@ -299,7 +294,6 @@ final class EmulationController {
     private func show(_ v: UnsafePointer<UInt32>, meta: FrameMeta) {
         // Raw PPU codes of the same picture for the CRT signal path (display only).
         var meta = meta
-        meta.deadline = tickDeadline
         meta.tickStart = tickStart
         let signal = session?.videoIndices
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
@@ -336,15 +330,7 @@ final class EmulationController {
     // MARK: thread loop
 
     private func threadMain() {
-        if Self.pacingMode == .hostClock {
-            // Real-time: woken on its deadline even on an otherwise idle Mac.
-            HostClock.makeCurrentThreadRealtime(period: FramePacing.period, computation: 0.004, constraint: 0.010)
-            nextDeadline = HostClock.now()
-            while running { hostTick() }
-            session = nil
-            return
-        }
-        // Woken every display refresh (8.3 ms at 120 Hz); a frame needs ~1 ms of CPU.
+        // Real-time (time-constraint) thread, woken every display refresh (8.3 ms at 120 Hz); a frame needs ~1 ms of CPU.
         HostClock.makeCurrentThreadRealtime(period: FramePacing.period / 2, computation: 0.003, constraint: 0.007)
         if Self.useWorkgroup { workgroup = rn_frame_workgroup_join_new("ReplayNES.frame") }
         defer { rn_frame_workgroup_leave_free(workgroup); workgroup = nil }
@@ -373,13 +359,13 @@ final class EmulationController {
         session = nil
     }
 
-    /// One frame on the host clock at the NTSC rate (no viewport, or -framePacing hostClock).
+    /// One frame on the host clock at the NTSC rate (no visible viewport: window hidden, occluded
+    /// or minimised; nothing is presented then).
     private func hostTick() {
         let now = HostClock.now()
         if now < nextDeadline { mach_wait_until(nextDeadline) }
         let woke = HostClock.now()
         latency.recordTickWake(lateTicks: woke > nextDeadline ? woke - nextDeadline : 0)
-        tickDeadline = Self.pacingMode == .hostClock ? nextDeadline : 0
         tickStart = woke
         emulationRate = 1 / FramePacing.period
         runCommands()
@@ -472,7 +458,6 @@ final class EmulationController {
         let lead = inputDeadline.lead
         HostClock.wait(untilSeconds: update.targetTimestamp - lead)
         rn_frame_workgroup_start(workgroup, HostClock.now(), HostClock.ticks(seconds: update.targetTimestamp))
-        tickDeadline = 0
         tickStart = cb
         emulationRate = cadence.emulationRate
         let stepsBefore = lastStep

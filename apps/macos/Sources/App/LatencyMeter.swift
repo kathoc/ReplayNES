@@ -25,7 +25,7 @@ final class LatencyMeter {
         var displayGPUMaxMs = 0.0    // max over the last second
         var crtInfo = ""             // "" = CRT off; else tube size / signal path
         // Pacing (FramePacing.swift). Counters are cumulative; *Max* are over the last second.
-        var pacing = ""              // "display-link 120 Hz / 2" or "host clock"
+        var pacing = ""              // "display link 120 Hz / 2"
         var refreshHz = 0.0
         var emulatedFPS = 0.0        // frames emulated per second
         var presentCount: UInt64 = 0
@@ -40,11 +40,9 @@ final class LatencyMeter {
         var drawCount: UInt64 = 0          // frames rendered during play
         var drawLate: UInt64 = 0           // rendered > 1.5 frame periods after the previous one
         var drawGapMaxMs = 0.0
-        var presentLeadMs = 0.0            // host-clock pacing: frames appear this long after their tick
         var tickWakeLate: UInt64 = 0       // emulation ticks that started > 4 ms after their deadline
         var tickWakeMaxMs = 0.0
         var emulationCPU = 0.0             // CPU seconds of the emulation thread (cumulative)
-        var presentCPU = 0.0               // CPU seconds of the present thread (host-clock pacing)
     }
 
     private let lock = NSLock()
@@ -95,12 +93,7 @@ final class LatencyMeter {
         lock.unlock()
     }
 
-    func recordThreadCPU(emulation: Double? = nil, present: Double? = nil) {
-        lock.lock()
-        if let emulation { s.emulationCPU = emulation }
-        if let present { s.presentCPU = present }
-        lock.unlock()
-    }
+    func recordThreadCPU(emulation: Double) { lock.lock(); s.emulationCPU = emulation; lock.unlock() }
 
     func recordAudioRatio(_ r: Double) { lock.lock(); s.audioRatio = r; lock.unlock() }
     func recordRepeat() { lock.lock(); s.repeatPresents &+= 1; lock.unlock() }
@@ -186,7 +179,6 @@ final class LatencyMeter {
         if HostClock.seconds(now - gpuWindowStart) >= 1 { s.displayGPUMaxMs = gpuMaxWindow; gpuMaxWindow = 0; gpuWindowStart = now }
     }
 
-    func recordPresentLead(_ seconds: Double) { lock.lock(); s.presentLeadMs = seconds * 1000; lock.unlock() }
     func recordAutosave(ticks: UInt64) { lock.lock(); s.lastAutosaveMs = HostClock.seconds(ticks) * 1000; lock.unlock() }
     func recordLateTick() { lock.lock(); s.lateTicks += 1; lock.unlock() }
 

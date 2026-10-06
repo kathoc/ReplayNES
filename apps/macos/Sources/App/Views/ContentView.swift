@@ -45,6 +45,9 @@ struct ContentView: View {
             if w.representedURL != url { w.representedURL = url }
             if w.isDocumentEdited != model.status.unsaved { w.isDocumentEdited = model.status.unsaved }
         })
+        // Full screen, playing, pointer resting: no toolbar either, so the game layer covers the
+        // whole screen (direct-to-display; FullScreenChrome.swift).
+        .toolbar(model.immersive ? .hidden : .automatic, for: .windowToolbar)
         .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
         // Scripted checks (--test-actions open:<window>, TestHooks.swift).
         .onReceive(NotificationCenter.default.publisher(for: AppModel.testOpenWindow)) { n in

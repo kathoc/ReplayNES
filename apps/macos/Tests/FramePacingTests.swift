@@ -1,5 +1,5 @@
 // Frame pacing bookkeeping (FramePacing.swift): judder / skipped-frame counting, callback
-// regularity and the adaptive present lead.
+// regularity.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import XCTest
 
@@ -47,32 +47,5 @@ final class FramePacingTests: XCTestCase {
         XCTAssertEqual(r.count, 102)
         XCTAssertEqual(r.late, 1)
         XCTAssertEqual(r.takeWindowMax(), 2 * p, accuracy: 1e-9)
-    }
-
-    private func window(_ lead: inout PresentLead, misses: Int) {
-        for i in 0..<PresentLead.window { lead.observe(interval: i < misses ? 3.0 / 120 : 2.0 / 120) }
-    }
-
-    func testPresentLeadGrowsOnMissesWithinBounds() {
-        var l = PresentLead()
-        XCTAssertEqual(l.lead, PresentLead.initial)
-        window(&l, misses: 1)                       // a stray miss: unchanged
-        XCTAssertEqual(l.lead, PresentLead.initial)
-        window(&l, misses: 3)
-        XCTAssertEqual(l.lead, PresentLead.initial + 0.002, accuracy: 1e-9)
-        for _ in 0..<20 { window(&l, misses: 10) }
-        XCTAssertEqual(l.lead, PresentLead.maxLead, accuracy: 1e-9)
-    }
-
-    func testPresentLeadShrinksSlowlyWhenClean() {
-        var l = PresentLead()
-        window(&l, misses: 3)                       // grow: then held for a while
-        let grown = l.lead
-        for _ in 0..<PresentLead.holdAfterGrow { window(&l, misses: 0) }
-        XCTAssertEqual(l.lead, grown, accuracy: 1e-9)
-        for _ in 0..<PresentLead.shrinkAfter { window(&l, misses: 0) }
-        XCTAssertEqual(l.lead, grown - 0.001, accuracy: 1e-9)
-        for _ in 0..<1000 { window(&l, misses: 0) }
-        XCTAssertEqual(l.lead, PresentLead.minLead, accuracy: 1e-9)
     }
 }

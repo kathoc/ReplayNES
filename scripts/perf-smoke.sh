@@ -8,8 +8,8 @@
 #   * input event -> on screen (INPUT=1 injects key presses of Z = B button; NSEvent timestamps)
 #   * judder: consecutive frames whose on-screen interval differs from the steady one by more than
 #     half a refresh; frames never shown; missed refreshes
-#   * audio underruns / dropped samples / DRC resampling ratio; CPU per thread (emulation, present,
-#     main) and process, GPU time per frame
+#   * audio underruns / dropped samples / DRC resampling ratio; CPU per thread (emulation, main)
+#     and process
 #   scripts/perf-smoke.sh [app] [seconds] [rom]     (defaults: build/ReplayNES.app, 60, generated test ROM)
 #   FULLSCREEN=1 ...       full screen (FILL; the chrome auto-hides while playing)
 #   STRICT=1 ...           exit 1 when a threshold is missed (see below)
@@ -17,7 +17,8 @@
 #                          an occluded window is not presented at all)
 #   WARMUP=150 ...         start measuring later (long take: big filmstrip)
 #   INPUT=1 ...            inject key presses (event -> display latency)
-#   EXTRA_ARGS="-framePacing hostClock" ...   other pacing (comparison), any launch arguments
+#   EXTRA_ARGS="-filmstripThumbnails NO" ...  any launch arguments (e.g. -frameWorkgroup NO,
+#                          -fullScreenAutoHide NO, -flashReduction 0)
 #   LABEL=name ...         label for the JSON summary line
 # Everything goes to build/perf-smoke (library / session roots, logs); the user's preferences
 # are only overridden through the volatile argument domain (-integerScale NO ...).
@@ -125,7 +126,7 @@ summary = {
     "repeatPerSec": d("repeatPresents") / dt, "backlogDrains": d("backlogDrains"),
     "audioUnderruns": d("audioUnderruns"), "audioDropped": d("audioDropped"), "audioRatio": b.get("audioRatio", 1),
     "audioFillMs": statistics.fmean(r.get("audioFillMs", 0) for r in rows),
-    "cpuEmulation": cpu("emulationCPU"), "cpuPresent": cpu("presentCPU"), "cpuMain": cpu("mainCPU"), "cpuProcess": cpu("processCPU"),
+    "cpuEmulation": cpu("emulationCPU"), "cpuMain": cpu("mainCPU"), "cpuProcess": cpu("processCPU"),
     "gpuMs": statistics.fmean(r.get("displayGPUMs", 0) for r in rows), "inputLeadMs": b.get("inputLeadMs", 0),
     "stages": {k: stat(k, v) for k, v in stages.items()},
 }
@@ -137,7 +138,7 @@ for k, s in summary["stages"].items():
 print(f"judder / min        {summary['judderPerMin']:8.1f}   (interval off the steady one by > 1/2 refresh)")
 print(f"never shown / min   {summary['neverShownPerMin']:8.1f}   shown only by a repeat / min {summary['shownByRepeatPerMin']:.1f}   missed refreshes {summary['missedRefreshes']}   repeats/s {summary['repeatPerSec']:.1f}   backlog drains {summary['backlogDrains']}")
 print(f"audio               underruns {summary['audioUnderruns']}  dropped {summary['audioDropped']}  ratio {summary['audioRatio']:.5f}  fill {summary['audioFillMs']:.1f} ms")
-print(f"CPU % of one core   emulation {summary['cpuEmulation']:.1f}  present {summary['cpuPresent']:.1f}  main {summary['cpuMain']:.1f}  process {summary['cpuProcess']:.1f}   GPU {summary['gpuMs']:.3f} ms/frame   input lead {summary['inputLeadMs']:.2f} ms")
+print(f"CPU % of one core   emulation {summary['cpuEmulation']:.1f}  main {summary['cpuMain']:.1f}  process {summary['cpuProcess']:.1f}   GPU busy+wait {summary['gpuMs']:.1f} ms/frame   input lead {summary['inputLeadMs']:.2f} ms")
 print("JSON " + json.dumps(summary))
 bad = []
 if abs(summary["presentedFPS"] - summary["emulatedFPS"]) > 0.5: bad.append("presented fps")
