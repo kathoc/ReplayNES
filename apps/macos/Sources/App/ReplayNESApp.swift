@@ -205,6 +205,10 @@ struct AppCommands: Commands {
                 model.togglePracticePanel()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!has)
+            Button("選択中の区間のAをここに（タイムライン）") { model.timelineMarkA() }
+                .keyboardShortcut("i", modifiers: [.command, .option]).disabled(!has || st.practicing)
+            Button("選択中の区間のBをここに（タイムライン）") { model.timelineMarkB() }
+                .keyboardShortcut("o", modifiers: [.command, .option]).disabled(!has || st.practicing)
             Divider()
             Button("ブックマークを追加") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
             Button("前の試行へ戻す") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])

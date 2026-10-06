@@ -77,6 +77,7 @@ struct PracticeSlotInfo: Identifiable, Equatable {
     var name = ""
     var hasTakeFrame = false
     var takeFrame: UInt64 = 0
+    var takeID: UInt64 = 0          // take active when A was set
     var bSettable = false
     var id: Int { index }
     var displayName: String { name.isEmpty ? "区間 \(index + 1)" : name }
@@ -193,6 +194,10 @@ final class EngineSession {
     static let practiceSlotCount = Int(RN_PRACTICE_SLOTS)
     func practiceSetA(_ slot: Int) throws { try rnCheck(rn_practice_set_a(handle, UInt32(slot))) }
     func practiceSetB(_ slot: Int) throws { try rnCheck(rn_practice_set_b(handle, UInt32(slot))) }
+    /// A/B from take frames (timeline selection); the cursor is restored exactly.
+    func practiceSetRange(_ slot: Int, a: UInt64, b: UInt64) throws {
+        try rnCheck(rn_practice_set_range(handle, UInt32(slot), a, b))
+    }
     func practiceGotoA(_ slot: Int) throws { try rnCheck(rn_practice_goto_a(handle, UInt32(slot))) }
     func practiceRename(_ slot: Int, name: String) throws { try rnCheck(rn_practice_slot_rename(handle, UInt32(slot), name)) }
     func practiceClear(_ slot: Int) throws { try rnCheck(rn_practice_slot_clear(handle, UInt32(slot))) }
@@ -209,6 +214,7 @@ final class EngineSession {
         out.name = i.name.map { String(cString: $0) } ?? ""
         out.hasTakeFrame = i.has_take_frame != 0
         out.takeFrame = i.take_frame
+        out.takeID = i.take_id
         out.bSettable = i.b_settable != 0
         return out
     }

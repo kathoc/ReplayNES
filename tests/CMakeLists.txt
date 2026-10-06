@@ -22,6 +22,8 @@ rn_add_test(test_render)
 rn_add_test(test_longrun)
 # Practice mode + A/B repeat slots (engine + persistence + C API).
 rn_add_test(test_practice)
+# A/B slots defined from take frames (timeline selection: rn_practice_set_range).
+rn_add_test(test_practice_range)
 # Uses the developer's own ROMs in <repo>/roms when present (gitignored); skipped otherwise.
 rn_add_test(test_local_roms)
 target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")

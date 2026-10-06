@@ -67,6 +67,9 @@ rn_practice_set_a(s, slot);          // any mode: A = current machine state, cou
 /* ...play (record, replay or practice)... */
 if (rn_practice_set_b(s, slot) == RN_ERR_DISCONTINUITY) tell_user("seeked since A: set A again");
 rn_practice_slot_rename(s, slot, "boss");
+/* Or straight from take frames (timeline selection, no continuous play needed; not in practice).
+   The cursor, state and picture are restored exactly; rn_audio reports 0 samples afterwards. */
+rn_practice_set_range(s, slot, a_frame, b_frame);   // A = state at a_frame, length = b - a
 
 rn_practice_goto_a(s, slot);         // enters practice (remembers take position), loads A
 for (;;) {                           // A/B loop, per emulation tick
