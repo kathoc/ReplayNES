@@ -275,8 +275,12 @@ SOFTWARE.
 
 ## SDL3 and Vulkan loader (Linux app)
 
-- SDL 3 (zlib license, https://libsdl.org) and the Khronos Vulkan loader (Apache-2.0) are provided by the
-  `org.freedesktop.Platform` 25.08 Flatpak runtime; they are not bundled in the ReplayNES Flatpak.
+- SDL 3 (zlib license, https://libsdl.org), the Khronos Vulkan loader (Apache-2.0) and fontconfig
+  (MIT-style license) are provided by the `org.freedesktop.Platform` 25.08 Flatpak runtime; they are not
+  bundled in the ReplayNES Flatpak.
+- Fonts: no font is bundled. The UI uses the runtime's DejaVu Sans (Bitstream Vera / DejaVu license) and,
+  for Japanese, a CJK font of the host system found through fontconfig (on SteamOS: Noto Sans CJK,
+  SIL Open Font License 1.1), read at run time from `/run/host/fonts`.
 
 ## Apple frameworks
 

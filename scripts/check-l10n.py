@@ -8,14 +8,19 @@
    *.stringsdata files of an app build) has an entry in the catalog, and every catalog entry is
    used. Keys without any letters (e.g. "%lld", "#%llu") need no translation and are skipped.
    Strings of the shared frontend core (frontend/src, marked RNF_L("...")) count as used too: the
-   core resolves them at run time from a table generated from the same catalog.
+   core resolves them at run time from a table generated from the same catalog. So do the Linux
+   frontend's (apps/linux/src, TR("...") / TRF("...", ...), adjacent literals concatenated), which
+   must all be in the catalog (also without --stringsdata) and contain no Japanese.
 """
 import glob, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "apps", "macos")
 CORE = os.path.join(ROOT, "frontend", "src")
+LINUX = os.path.join(ROOT, "apps", "linux", "src")
 RNF_L = re.compile(r'RNF_L\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
+LINUX_TR = re.compile(r'\bTRF?\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)[,)]')
+LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿＀-￯]")
 SPEC = re.compile(r"%(?:(\d+)\$)?([-+#0]*\d*(?:\.\d+)?(?:ll|l|h|hh|q|z|t|j)?[@dDiuUxXoOfFeEgGcCsSpaA%])")
 
@@ -43,10 +48,26 @@ def core_keys():
                 out.append((key, path, n))
     return out
 
+def unescape(lit):
+    return re.sub(r'\\(.)', lambda e: {"n": "\n", "t": "\t"}.get(e.group(1), e.group(1)), lit)
+
+def linux_keys():
+    """(key, file, line) for every TR("...") / TRF("...") of the Linux frontend."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(LINUX, "**", "*.[ch]pp"), recursive=True) +
+                       glob.glob(os.path.join(LINUX, "**", "*.h"), recursive=True)):
+        text = open(path, encoding="utf-8").read()
+        for m in LINUX_TR.finditer(text):
+            key = "".join(unescape(l) for l in LITERAL.findall(m.group(1)))
+            out.append((key, path, text.count("\n", 0, m.start()) + 1))
+    return out
+
 def main():
     errors = []
     sources = glob.glob(os.path.join(APP, "Sources", "**", "*.swift"), recursive=True)
     sources += glob.glob(os.path.join(CORE, "**", "*.[ch]pp"), recursive=True)
+    sources += glob.glob(os.path.join(LINUX, "**", "*.[ch]pp"), recursive=True)
+    sources += glob.glob(os.path.join(LINUX, "**", "*.h"), recursive=True)
     for path in sorted(sources):
         for n, line in enumerate(open(path, encoding="utf-8"), 1):
             if JAPANESE.search(line):
@@ -62,12 +83,20 @@ def main():
             continue
         if specs(key) != specs(unit["value"]):
             errors.append(f"catalog: format specifiers differ for {key!r}: {unit['value']!r}")
+    linux = linux_keys()
+    for key, path, n in linux:
+        if re.search(r"[A-Za-z]", SPEC.sub("", key)) and key not in strings:
+            errors.append(f"{os.path.relpath(path, ROOT)}:{n}: {key!r} is missing from Localizable.xcstrings")
+    if "--list-linux-missing" in sys.argv:
+        for key in sorted({k for k, _, _ in linux if k not in strings}):
+            print(json.dumps(key, ensure_ascii=False))
+        return 0
     if "--stringsdata" in sys.argv:
         d = sys.argv[sys.argv.index("--stringsdata") + 1]
         files = glob.glob(os.path.join(d, "**", "*.stringsdata"), recursive=True)
         if not files:
             errors.append(f"no .stringsdata files under {d}")
-        seen = set()
+        seen = {k for k, _, _ in linux}
         for key, path, n in core_keys():
             seen.add(key)
             if re.search(r"[A-Za-z]", SPEC.sub("", key)) and key not in strings:

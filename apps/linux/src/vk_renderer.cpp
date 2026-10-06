@@ -102,7 +102,8 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
     VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     vkCreateSemaphore(device_, &sci, nullptr, &s.acquired);
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bci.size = kPictureBytes;
+    // The game picture, then up to kAtlasUploadsPerFrame thumbnails (vk_ui_resources.cpp).
+    bci.size = kPictureBytes + kAtlasUploadsPerFrame * kThumbBytes;
     bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     vkCreateBuffer(device_, &bci, nullptr, &s.staging);
     VkMemoryRequirements mr;
@@ -112,10 +113,11 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
     mai.memoryTypeIndex = findMemory(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkAllocateMemory(device_, &mai, nullptr, &s.stagingMem);
     vkBindBufferMemory(device_, s.staging, s.stagingMem, 0);
-    vkMapMemory(device_, s.stagingMem, 0, kPictureBytes, 0, &s.stagingPtr);
+    vkMapMemory(device_, s.stagingMem, 0, bci.size, 0, &s.stagingPtr);
   }
   if (presentWait_) waiter_ = std::thread([this] { waiterLoop(); });
   if (!createGameTexture()) { *error = "game texture"; return false; }
+  if (!createAtlas()) { *error = "thumbnail atlas"; return false; }
   if (!createSwapchain()) { *error = "swapchain"; return false; }
   if (!createPipeline()) { *error = "pipeline"; return false; }
   return true;
@@ -314,6 +316,9 @@ bool VkRenderer::createSwapchain() {
   sci.imageExtent = ext;
   sci.imageArrayLayers = 1;
   sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  // Screenshots (requestScreenshot) copy the presented image out.
+  swapchainCopyable_ = (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+  if (swapchainCopyable_) sci.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   sci.preTransform = caps.currentTransform;
   sci.compositeAlpha = alpha;
@@ -384,9 +389,10 @@ bool VkRenderer::createPipeline() {
   lci.bindingCount = 1;
   lci.pBindings = &b;
   vkCreateDescriptorSetLayout(device_, &lci, nullptr, &setLayout_);
-  VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+  // The plain picture's set + one per slot for a display filter's output (setDisplayFilter).
+  VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + kSlots};
   VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-  dpi.maxSets = 1;
+  dpi.maxSets = 1 + kSlots;
   dpi.poolSizeCount = 1;
   dpi.pPoolSizes = &ps;
   vkCreateDescriptorPool(device_, &dpi, nullptr, &descPool_);
@@ -395,6 +401,7 @@ bool VkRenderer::createPipeline() {
   dai.descriptorSetCount = 1;
   dai.pSetLayouts = &setLayout_;
   vkAllocateDescriptorSets(device_, &dai, &set_);
+  for (int i = 0; i < kSlots; ++i) vkAllocateDescriptorSets(device_, &dai, &filterSets_[i]);
   VkDescriptorImageInfo ii{sampler_, gameView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
   w.dstSet = set_;
@@ -482,7 +489,26 @@ bool VkRenderer::initImGui() {
   ii.PipelineInfoMain.Subpass = 0;
   ii.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
   imguiReady_ = ImGui_ImplVulkan_Init(&ii);
+  if (imguiReady_) registerAtlasWithImGui();
   return imguiReady_;
+}
+
+void VkRenderer::setDisplayFilter(DisplayFilter* f) {
+  if (f == filter_) return;
+  if (device_) vkDeviceWaitIdle(device_);
+  if (filter_ && filterReady_) filter_->shutdown();
+  filter_ = f;
+  filterReady_ = false;
+  filterViews_.fill(VK_NULL_HANDLE);
+  if (!f || !device_) return;
+  DisplayFilterContext ctx;
+  ctx.instance = instance_;
+  ctx.physicalDevice = phys_;
+  ctx.device = device_;
+  ctx.queueFamily = queueFamily_;
+  ctx.queue = queue_;
+  ctx.framesInFlight = kSlots;
+  filterReady_ = f->init(ctx);
 }
 
 uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui) {
@@ -537,6 +563,28 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
                          nullptr, 1, &toRead);
     hasPicture_ = true;
   }
+  recordAtlasUploads(cmd, slot_);
+  // Display filter (CRT ...): its own passes before the main pass; the blit samples its output.
+  VkDescriptorSet pictureSet = set_;
+  bool filtered = false;
+  if (filter_ && filterReady_ && filter_->active() && hasPicture_) {
+    VkImageView v = filter_->record(cmd, uint32_t(slot_), gameView_, newPicture != nullptr, rect);
+    if (v != VK_NULL_HANDLE) {
+      // One set per slot: this slot's previous command buffer finished (its fence was waited above).
+      if (v != filterViews_[slot_]) {
+        VkDescriptorImageInfo fi{sampler_, v, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet fw{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        fw.dstSet = filterSets_[slot_];
+        fw.descriptorCount = 1;
+        fw.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        fw.pImageInfo = &fi;
+        vkUpdateDescriptorSets(device_, 1, &fw, 0, nullptr);
+        filterViews_[slot_] = v;
+      }
+      pictureSet = filterSets_[slot_];
+      filtered = true;
+    }
+  }
   VkClearValue clear{};
   clear.color = {{0.f, 0.f, 0.f, 1.f}};
   VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -556,12 +604,14 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
     vkCmdSetScissor(cmd, 0, 1, &sc);
     float uv[4] = {float(rect.crop) / RN_VIDEO_WIDTH, float(rect.crop) / RN_VIDEO_HEIGHT,
                    float(RN_VIDEO_WIDTH - rect.crop) / RN_VIDEO_WIDTH, float(RN_VIDEO_HEIGHT - rect.crop) / RN_VIDEO_HEIGHT};
+    if (filtered) uv[0] = uv[1] = 0, uv[2] = uv[3] = 1;
     vkCmdPushConstants(cmd, pipeLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uv), uv);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeLayout_, 0, 1, &set_, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeLayout_, 0, 1, &pictureSet, 0, nullptr);
     vkCmdDraw(cmd, 4, 1, 0, 0);
   }
   if (ui && imguiReady_ && ui->CmdListsCount > 0) ImGui_ImplVulkan_RenderDrawData(ui, cmd);
   vkCmdEndRenderPass(cmd);
+  recordScreenshot(cmd, idx);
   vkEndCommandBuffer(cmd);
 
   VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -574,6 +624,7 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   si.signalSemaphoreCount = 1;
   si.pSignalSemaphores = &renderDone_[idx];
   vkQueueSubmit(queue_, 1, &si, s.fence);
+  finishScreenshot(slot_);
 
   uint64_t id = ++presentId_;
   VkPresentIdKHR pid{VK_STRUCTURE_TYPE_PRESENT_ID_KHR};
@@ -647,8 +698,12 @@ void VkRenderer::shutdown() {
   }
   if (waiter_.joinable()) waiter_.join();
   vkDeviceWaitIdle(device_);
+  if (filter_ && filterReady_) filter_->shutdown();
+  filterReady_ = false;
   if (imguiReady_) ImGui_ImplVulkan_Shutdown();
   imguiReady_ = false;
+  destroyAtlas();
+  destroyScreenshotBuffer();
   destroySwapchain();
   if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
   if (pipeLayout_) vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);

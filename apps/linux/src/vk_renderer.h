@@ -8,6 +8,7 @@
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -16,7 +17,10 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <unordered_map>
 #include <vector>
+
+#include "display_filter.h"
 
 struct ImDrawData;
 
@@ -62,6 +66,20 @@ class VkRenderer {
   /// Seconds the last drawAndPresent spent waiting for its slot fence + the swapchain image.
   double lastAcquireWait() const { return lastAcquireWait_; }
 
+  /// Display-only post-process (CRT, display_filter.h); nullptr = plain nearest-neighbour picture.
+  /// Call after init(); the renderer calls init / shutdown on it.
+  void setDisplayFilter(DisplayFilter* f);
+
+  // ---- UI resources (vk_ui_resources.cpp) ----
+  /// Once per UI frame, before thumbTexture() calls.
+  void beginUIFrame() { uiFrame_ += 1; }
+  /// Filmstrip thumbnails: a 128x120 BGRA picture identified by `key` in the thumbnail atlas
+  /// (uploaded before this frame's render pass if new). false: no room this frame (draw a
+  /// placeholder, it is uploaded on a later frame).
+  bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]);
+  /// Saves the next presented frame (game + UI) as PNG (tests, docs screenshots).
+  void requestScreenshot(const std::string& path);
+
  private:
   void waiterLoop();
   bool createDevice(std::string* error);
@@ -70,6 +88,14 @@ class VkRenderer {
   bool createPipeline();
   bool createGameTexture();
   uint32_t findMemory(uint32_t typeBits, VkMemoryPropertyFlags props);
+  // vk_ui_resources.cpp
+  bool createAtlas();
+  void destroyAtlas();
+  void registerAtlasWithImGui();
+  void recordAtlasUploads(VkCommandBuffer cmd, int slot);
+  void recordScreenshot(VkCommandBuffer cmd, uint32_t imageIndex);
+  void finishScreenshot(int slot);
+  void destroyScreenshotBuffer();
 
   SDL_Window* window_ = nullptr;
   VkInstance instance_ = VK_NULL_HANDLE;
@@ -103,6 +129,9 @@ class VkRenderer {
   uint64_t swapGen_ = 0;
 
   static constexpr int kSlots = 2;
+  static constexpr int kAtlasCell = 128, kAtlasSize = 1024, kAtlasCells = (kAtlasSize / kAtlasCell) * (kAtlasSize / kAtlasCell);
+  static constexpr int kAtlasUploadsPerFrame = 12;
+  static constexpr VkDeviceSize kThumbBytes = VkDeviceSize(128) * 120 * 4;
   struct Slot {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
@@ -127,6 +156,34 @@ class VkRenderer {
   VkPipeline pipeline_ = VK_NULL_HANDLE;
   bool imguiReady_ = false;
   double lastAcquireWait_ = 0;
+  // Display filter hook.
+  DisplayFilter* filter_ = nullptr;
+  bool filterReady_ = false;
+  std::array<VkDescriptorSet, kSlots> filterSets_{};
+  std::array<VkImageView, kSlots> filterViews_{};
+  // Thumbnail atlas.
+  VkImage atlasImage_ = VK_NULL_HANDLE;
+  VkDeviceMemory atlasMem_ = VK_NULL_HANDLE;
+  VkImageView atlasView_ = VK_NULL_HANDLE;
+  VkDescriptorSet atlasSet_ = VK_NULL_HANDLE;  // ImGui texture id
+  bool atlasInitialized_ = false;               // layout transitioned from UNDEFINED
+  uint64_t uiFrame_ = 0;
+  std::array<uint64_t, kAtlasCells> cellKey_{};
+  std::array<uint64_t, kAtlasCells> cellUsed_{};
+  std::unordered_map<uint64_t, int> keyCell_;
+  struct PendingThumb {
+    int cell;
+    std::vector<uint32_t> px;
+  };
+  std::vector<PendingThumb> pendingThumbs_;
+  // Screenshot.
+  std::string screenshotPath_;
+  bool screenshotRecorded_ = false;
+  bool swapchainCopyable_ = false;
+  VkBuffer shotBuffer_ = VK_NULL_HANDLE;
+  VkDeviceMemory shotMem_ = VK_NULL_HANDLE;
+  VkDeviceSize shotBytes_ = 0;
+  VkExtent2D shotExtent_{0, 0};
 };
 
 }  // namespace rnl

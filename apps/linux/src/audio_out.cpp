@@ -6,6 +6,17 @@
 
 namespace rnl {
 
+AudioOut::AudioOut() : drc_(rnf_audio_rate_new(1600)) {}
+AudioOut::~AudioOut() {
+  close();
+  rnf_audio_rate_free(drc_);
+}
+
+void AudioOut::setVolume(float v) {
+  volume_ = std::clamp(v, 0.0f, 1.0f);
+  if (stream_) SDL_SetAudioStreamGain(stream_, volume_);
+}
+
 bool AudioOut::open(std::string* error) {
   SDL_AudioSpec spec{SDL_AUDIO_S16, 1, RN_SAMPLE_RATE};
   stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
@@ -19,7 +30,9 @@ bool AudioOut::open(std::string* error) {
                  std::to_string(deviceFrames_) + " frames)";
   // Level kept in the stream: the device's chunk plus one emulated frame and half a chunk of slack.
   int chunk = deviceFrames_ > 0 ? deviceFrames_ : 1024;
-  drc_ = interim::AudioRateControl(1.5 * chunk + 800);
+  rnf_audio_rate_free(drc_);
+  drc_ = rnf_audio_rate_new(1.5 * chunk + 800);
+  SDL_SetAudioStreamGain(stream_, volume_);
   SDL_SetAudioStreamGetCallback(stream_, &AudioOut::onGet, this);
   SDL_ResumeAudioStreamDevice(stream_);
   return true;
@@ -35,7 +48,7 @@ void SDLCALL AudioOut::onGet(void* user, SDL_AudioStream*, int additional, int) 
   if (additional > 0 && self->counting_.load(std::memory_order_relaxed)) self->underruns_.fetch_add(1);
 }
 
-void AudioOut::setEmulationRate(double fps) { drc_.setFrameRate(fps); }
+void AudioOut::setEmulationRate(double fps) { rnf_audio_rate_set_frame_rate(drc_, fps, 0); }
 
 void AudioOut::setMuted(bool muted) {
   if (muted == muted_) return;
@@ -53,16 +66,16 @@ void AudioOut::push(const int16_t* pcm, size_t n) {
   int queued = SDL_GetAudioStreamQueued(stream_) / 2;
   if (primedFrames_ == 0) {
     // (Re)start: fill to the target with silence so the first device pull does not run dry.
-    int need = int(drc_.targetFill) - queued - int(n);
+    int need = int(rnf_audio_rate_target_fill(drc_)) - queued - int(n);
     if (need > 0) {
       std::vector<int16_t> silence(size_t(need), 0);
       SDL_PutAudioStreamData(stream_, silence.data(), need * 2);
       queued += need;
     }
-    drc_.reset();
+    rnf_audio_rate_reset(drc_);
   }
   lastFill_ = queued;
-  double r = drc_.update(queued);
+  double r = rnf_audio_rate_update(drc_, queued);
   // SDL's ratio speeds playback up (> 1); ours is output samples per input sample.
   SDL_SetAudioStreamFrequencyRatio(stream_, float(1.0 / r));
   SDL_PutAudioStreamData(stream_, pcm, int(n * 2));

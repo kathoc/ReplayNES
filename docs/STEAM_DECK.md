@@ -1,9 +1,11 @@
 # ReplayNES on Steam Deck / Linux
 
-Status 2026-10-07: **skeleton** (plan `docs/plans/2026-10-07-steam-deck-plan.md`, Step 2). It records,
-replays, rewinds, fast-forwards, pauses and steps with the same controller hotkeys as the macOS
-app, with display-locked low-latency pacing. Library, timeline, practice, takes, settings, CRT,
-export and Japanese UI follow in Step 3 (on the shared frontend core in `frontend/`).
+Status 2026-10-07: **feature parity preview** (plan `docs/plans/2026-10-07-steam-deck-plan.md`,
+Step 3) on the shared frontend core (`frontend/`): ROM library start screen, record / replay /
+rewind / fast-forward / slow / step, filmstrip timeline with A/B ranges, takes, bookmarks, practice
+(A/B repeat), Reset Project, autosave + resume, Save / Save As, settings with the controller
+diagram, flash reduction, English / Japanese, display-locked low-latency pacing. The CRT display
+and MP4 export are being ported separately (the menu shows "Export…" disabled until then).
 
 ## Install
 
@@ -31,7 +33,9 @@ builds with flatpak-builder (the Nestopia core is fetched at the pinned commit),
 `~/ReplayNES-dev/build-dev` (needs the pinned core cloned into `src/third_party/nestopia` on the Deck).
 
 ROMs go into `~/Documents/ReplayNES/ROM` (created on first start; `*.nes`, also one folder level
-down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-documents/ReplayNES`).
+down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-documents/ReplayNES`)
+and to your Trash (`--filesystem=xdg-data/Trash`, for the "Reset Project" backup and projects
+replaced by Save As).
 
 ## Gaming Mode (add to Steam)
 
@@ -45,6 +49,62 @@ down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-doc
    model (see "Pacing" below; the LCD model is 60 Hz anyway).
 5. Artwork is optional (Steam shows the icon from the desktop entry).
 
+## Using ReplayNES
+
+**Start screen = Library.** The ROMs in `~/Documents/ReplayNES/ROM` are listed (search field at the
+top; copy files in Desktop Mode with Dolphin, then "Reload" - the list also refreshes by itself
+while it is on screen). Pick a ROM: **Play** creates the project
+`~/Documents/ReplayNES/Projects/<ROM name> <date time>.nesrec` and starts recording at once
+(autosaved); **Continue** under "Projects for This ROM" reopens one (matched by the ROM's SHA-256, so
+renaming the ROM file is fine); **Try Without a Project** plays in a temporary session you can save
+later. "Open Project…" (header) browses `~/Documents/ReplayNES`.
+
+**Playing.** Nothing is drawn over the game while it runs (status badges appear only when paused,
+rewinding, fast-forwarding, slow, practicing or reducing flashes). Pause (R1) and the **dock** appears
+at the bottom: the glowing red **Record** toggle (record mode; gray = playback mode, which plays the
+recorded take), go to start, rewind (hold), step back, play / pause, step forward, fast-forward
+(hold), Slow, Practice, Integer / FILL and "···" (bookmark, previous take, re-record from here,
+advance N frames, soft reset / power cycle). The dock is for touch / trackpad (a tap while playing
+shows it for a moment); with the controller, paused D-pad ←/→ steps frames and R2 / L2 rewind /
+fast-forward.
+
+**The menu: R3 (press the right stick)**, or Esc / F1. The game pauses and nothing reaches it while
+the menu is open. L1 / R1 switch tabs, the D-pad moves, A chooses, B goes back / closes the menu;
+"▶ Resume" (top right) returns to the game, playing.
+
+| Tab | What is there |
+|---|---|
+| Playback | The dock with the **filmstrip timeline**: one picture per 5 s at its natural size (10 / 20 / 40 s ... once the take outgrows the width), the newest picture revealed as you record, 1-pixel playhead (red while recording), bookmarks (yellow), A/B ranges (numbered colour bands). Touch / mouse: drag the strip to move (silent, paused), drag the thin band above it to set the A/B range of the selected section, drag a range's end to adjust it, tap a range to practice it. Controller: select the timeline and press A, then ◀ ▶ move the playhead (hold = faster), ▲ ▼ ±5 s, X / Y set A / B there, B ends. Below: section picker, "Set A Here", "Set B Here", "Practice This Section", "Add Bookmark". |
+| Takes | "Re-record from Here", "Back to Previous Take", Reset Project…, and every take with its branch point ("Switch to This Take"). |
+| Bookmarks | Add (also the B key), rewind to, rename (Steam's on-screen keyboard opens), delete. |
+| Practice | The 8 A/B sections: set A / B, practice (A to B, a short hold, rewinds to A, repeats; nothing is recorded), rename, clear. While a practice run plays, a small pill shows the progress and "Stop Practicing". |
+| Library | The start screen (switching ROM asks to save first, see below). |
+| Settings | Display (Integer / FILL, 8:7, overscan, full screen, latency overlay, UI size, flash reduction); Audio & Controls (volume, pause after rewind / fast-forward, autosave interval, paused D-pad stepping, language); Controller (a diagram of the connected pad - Steam Deck / Xbox / PlayStation / Nintendo / other layouts - where pressed buttons light up: select a button, press A and pick its action; "Reset Pad N to Defaults"); Game Input & Hotkeys (assign by pressing a key or button, turbo, SOCD, stick threshold). |
+| Controls Guide | The tables below. |
+
+Header: "Save" (a temporary session asks where, in a file chooser rooted at
+`~/Documents/ReplayNES/Projects`; an existing project of the same name is moved to the Trash first)
+and "Project ▾" (Save As…, Export…, Open Project…, Reset Project…, Close Project, Quit).
+
+**Reset Project…** starts the project over from power-on (all takes, bookmarks and the take history
+are deleted; "Keep A/B repeat sections" is on by default). A saved project is first copied and the
+copy moved to the Trash (`~/.local/share/Trash`, freedesktop.org Trash specification), where Dolphin
+can restore it.
+
+**Autosave and resume** work like on macOS. The session is autosaved every 2 s (Settings) while you
+play and whenever you pause. Quitting (the menu, closing the window, Steam closing the game) never
+asks: the next start reopens the last project or temporary session, paused where you were
+("Resumed where you left off"). A temporary session lives in
+`~/.var/app/io.github.replaynes.ReplayNES/data/ReplayNES/Session/current.nesrec` (`resume.json` next to
+it). Starting another ROM or project asks "Do you want to save?" when a temporary session has
+recorded content (Save… / Don't Save) or a project has unsaved changes; a temporary session left
+from an earlier run is offered for saving first. A second running copy of ReplayNES neither resumes
+nor keeps sessions.
+
+**Language:** Japanese when the system's first language is Japanese, English otherwise
+(`REPLAYNES_LANG=ja|en` overrides it). Japanese text uses the system's CJK font through fontconfig
+(SteamOS: Noto Sans CJK); without one the UI stays in English.
+
 ## Controls
 
 | Input | Action |
@@ -55,26 +115,36 @@ down). The app only has access to `~/Documents/ReplayNES` (`--filesystem=xdg-doc
 | Menu (≡) / View (⧉) | START / SELECT |
 | R2 hold | rewind |
 | L2 hold | fast-forward (recorded part only) |
-| L | slow motion 1/2 on/off |
-| R | pause / play |
+| L1 | slow motion 1/2 on/off |
+| R1 | pause / play |
 | D-pad left/right while paused | step back / forward one frame (repeats when held) |
-| R3 (right stick click) | menu (open ROM, record/play back, save, display options, quit) |
+| R3 (right stick click) | the ReplayNES menu (reserved: cannot be assigned) |
+
+In the menu: D-pad move, A choose, B back / close, L1 / R1 tabs, Start close.
 
 Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
 Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, Esc/F1 menu, F11 full
-screen, F3 stats overlay. In the menu: D-pad + A (gamepad) or arrows + Space (keyboard); B closes it.
+screen, F3 statistics overlay. Every assignment can be changed in Settings (saved in
+`~/.var/app/io.github.replaynes.ReplayNES/config/ReplayNES/bindings.json`, the macOS format).
 
-Sessions: opening a ROM records into a temporary project
-(`~/.var/app/io.github.replaynes.ReplayNES/data/ReplayNES/Session/current.nesrec`, autosaved every
-3 s, fully saved on quit, including when Steam closes the game). "Resume last session" in the menu
-reopens it. Opening another ROM moves a temporary project with recorded content into
-`~/Documents/ReplayNES/Projects/` first.
+## UI and latency
+
+The UI is Dear ImGui drawn in the same Vulkan render pass as the game picture (one present per
+frame; gamescope composites the window as a whole anyway). While playing it costs ~0.05 ms per frame
+(an empty ImGui frame; badges and the practice pill are a few quads), and ImGui does not read the
+gamepads at all (its polling would contend with the controller thread): the controllers drive ImGui
+only while the menu, the library or a dialog is up, and the game is paused then. Work that is not
+frame-critical runs after the present, in the slack before the next input sample: autosave (while
+playing only with >= 8 ms of slack), the resume record (written by a background thread), library
+scan results and filmstrip thumbnails (pictures the game shows anyway; missing ones are rendered
+from the take's checkpoints on idle-priority worker threads).
 
 ## Pacing (how it works)
 
-`apps/linux/src/main.cpp`, `display_scheduler.h`, `vk_renderer.cpp`; pure logic ported from the
-macOS app in `apps/linux/src/interim/` (to be replaced by the shared core in Step 3). See
-`docs/FRAME_PACING.md` for the macOS design this follows.
+`apps/linux/src/main.cpp`, `display_scheduler.h`, `cadence.h`, `vk_renderer.cpp`; the decisions
+shared with macOS come from the frontend core (`rnf_refreshes_per_frame`, `rnf_input_deadline` with
+Linux limits, `rnf_audio_rate`); `cadence.h` adds the 3:2 lock and the refresh estimate from
+present timestamps. See `docs/FRAME_PACING.md` for the macOS design this follows.
 
 * Vulkan FIFO swapchain; every present carries a present id, and a waiter thread
   (`VK_KHR_present_wait`) records when each picture reached the screen. Those timestamps give a vblank

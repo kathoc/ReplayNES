@@ -15,10 +15,13 @@
 #                         shortcut, docs/STEAM_DECK.md) is focused by Steam itself.
 #   SESSION=desktop       Plasma (Wayland),
 #   SESSION=nested        Desktop Mode, nested gamescope at 60 Hz (gamescope -r 60 -f --)
-#   BIN=dev               use ~/ReplayNES-dev/build-dev/replaynes-linux (DEV=1 build) inside the
-#                         installed app's sandbox (default: the installed Flatpak)
+#   BIN=dev               use ~/$REMOTE_DIR/build-dev/replaynes-linux (DEV=1 build; REMOTE_DIR default
+#                         ReplayNES-dev) inside the installed app's sandbox (default: the installed Flatpak)
 #   WARMUP=8 INPUT=1 FLASH=0 LABEL=name EXTRA_ARGS="--windowed" DRIVER=wayland|x11
-# Results append to ~/.var/app/io.github.replaynes.ReplayNES/data/perf/stats.jsonl on the Deck.
+#   PERF_DIR=perf         output folder under ~/.var/app/<id>/data (separate folders keep parallel
+#                         work from clobbering each other's logs / session)
+# The run refuses to start while another replaynes-linux is running (measurements would mix).
+# Results append to ~/.var/app/io.github.replaynes.ReplayNES/data/$PERF_DIR/stats.jsonl on the Deck.
 set -euo pipefail
 HOST="${HOST:-deck@steamdeck.local}"
 DUR="${1:-30}"
@@ -35,16 +38,19 @@ ARGS="--perf-seconds $DUR --warmup $WARMUP --label '${LABEL:-run}'"
 [ -n "${FLASH:-}" ] && ARGS="$ARGS --flash $FLASH"
 ARGS="$ARGS ${EXTRA_ARGS:-}"
 CMD="flatpak run $APP_ID"
-[ "${BIN:-}" = "dev" ] && CMD="flatpak run --filesystem=home ${FLATPAK_ARGS:-} --command=/home/deck/ReplayNES-dev/build-dev/replaynes-linux $APP_ID"
+[ "${BIN:-}" = "dev" ] && CMD="flatpak run --filesystem=home ${FLATPAK_ARGS:-} --command=/home/deck/${REMOTE_DIR:-ReplayNES-dev}/build-dev/replaynes-linux $APP_ID"
 
-VARS="$(printf 'APP_ID=%q ROMARG=%q CMD=%q ARGS=%q SESSION=%q DRIVER=%q' "$APP_ID" "$ROMARG" "$CMD" "$ARGS" "${SESSION:-}" "${DRIVER:-}")"
+VARS="$(printf 'APP_ID=%q ROMARG=%q CMD=%q ARGS=%q SESSION=%q DRIVER=%q PERF_DIR=%q' "$APP_ID" "$ROMARG" "$CMD" "$ARGS" "${SESSION:-}" "${DRIVER:-}" "${PERF_DIR:-perf}")"
 ssh "$HOST" "$VARS bash -s" <<'EOF'
 set -e
 export XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 if [ -z "$SESSION" ]; then
   if pgrep -x gamescope >/dev/null || pgrep -x gamescope-wl >/dev/null; then SESSION=gaming; else SESSION=desktop; fi
 fi
-D=~/.var/app/$APP_ID/data/perf
+if pgrep -x replaynes-linux >/dev/null; then
+  echo "another replaynes-linux is running (measurements would mix):"; pgrep -ax replaynes-linux | cut -c1-160; exit 3
+fi
+D=~/.var/app/$APP_ID/data/$PERF_DIR
 mkdir -p "$D" ~/Documents/ReplayNES/perf
 [ -f ~/Documents/ReplayNES/perf/replaynes-test.nes ] ||
   flatpak run --command=replaynes-cli "$APP_ID" make-test-rom ~/Documents/ReplayNES/perf/replaynes-test.nes >/dev/null
@@ -74,10 +80,16 @@ if [ "$SESSION" = gaming ]; then
       sleep 0.2
     done ) &
 fi
+# Watch for a second instance during the run (another measurement would mix with this one).
+rm -f "$D/.concurrent"
+( for i in $(seq 1 100); do pgrep -x replaynes-linux >/dev/null && break; sleep 0.2; done
+  while pgrep -x replaynes-linux >/dev/null; do
+    [ "$(pgrep -x replaynes-linux | wc -l)" -gt 1 ] && touch "$D/.concurrent"; sleep 1; done ) &
 eval "$PRE $CMD --rom \"\$ROMARG\" --session-root \"\$D/session\" --stats-log \"\$D/stats.jsonl\" --frame-log \"\$D/frames-\$SESSION.csv\" $ARGS" 2>&1 |
   grep -vE "^(Gtk|dbus|$)" | tail -25
 if [ "$SESSION" = gaming ]; then
   xprop -root -f GAMESCOPECTRL_BASELAYER_WINDOW 32c -set GAMESCOPECTRL_BASELAYER_WINDOW 0
 fi
+[ -f "$D/.concurrent" ] && echo "WARNING: another replaynes-linux ran during this measurement: discard it"
 true
 EOF

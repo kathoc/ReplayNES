@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "paths.h"
 
-#include <SDL3/SDL.h>
-#include <fcntl.h>
-#include <sys/file.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <system_error>
+
+#include "replaynes/frontend.h"
 
 namespace fs = std::filesystem;
 
@@ -25,10 +21,23 @@ std::string stripSlash(std::string s) {
   while (s.size() > 1 && s.back() == '/') s.pop_back();
   return s;
 }
-bool isNes(const fs::path& p) {
-  std::string e = p.extension().string();
-  std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-  return e == ".nes";
+/// XDG_DOCUMENTS_DIR from the environment or user-dirs.dirs (XDG_DOCUMENTS_DIR="$HOME/Docs").
+std::string xdgDocumentsDir(const std::string& home) {
+  std::string v = env("XDG_DOCUMENTS_DIR");
+  if (!v.empty()) return stripSlash(v);
+  std::string config = env("XDG_CONFIG_HOME");
+  if (config.empty()) config = home + "/.config";
+  std::ifstream f(config + "/user-dirs.dirs");
+  std::string line;
+  while (std::getline(f, line)) {
+    const std::string key = "XDG_DOCUMENTS_DIR=";
+    if (line.compare(0, key.size(), key) != 0) continue;
+    std::string val = line.substr(key.size());
+    if (val.size() >= 2 && val.front() == '"' && val.back() == '"') val = val.substr(1, val.size() - 2);
+    if (val.compare(0, 5, "$HOME") == 0) val = home + val.substr(5);
+    if (!val.empty() && val[0] == '/') return stripSlash(val);
+  }
+  return {};
 }
 }  // namespace
 
@@ -38,10 +47,10 @@ Paths Paths::standard() {
   std::string docs = home + "/Documents";
   std::error_code ec;
   if (home.empty() || !fs::is_directory(docs, ec)) {
-    if (const char* d = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) docs = stripSlash(d);
+    std::string x = xdgDocumentsDir(home);
+    if (!x.empty()) docs = x;
   }
-  p.romDir = docs + "/ReplayNES/ROM";
-  p.projectsDir = docs + "/ReplayNES/Projects";
+  p.setLibraryRoot(docs + "/ReplayNES");
   std::string data = env("XDG_DATA_HOME");
   if (data.empty()) data = home + "/.local/share";
   std::string config = env("XDG_CONFIG_HOME");
@@ -51,31 +60,26 @@ Paths Paths::standard() {
   return p;
 }
 
+void Paths::setLibraryRoot(const std::string& root) {
+  libraryRoot = stripSlash(root);
+  romDir = libraryRoot + "/" + RNF_LIBRARY_ROM_DIR;
+  projectsDir = libraryRoot + "/" + RNF_LIBRARY_PROJECTS_DIR;
+}
+
 void Paths::ensure() const {
   std::error_code ec;
-  for (const std::string& d : {romDir, projectsDir, sessionRoot, configDir}) fs::create_directories(d, ec);
+  for (const std::string& d : {sessionRoot, configDir}) fs::create_directories(d, ec);
 }
 
-std::vector<std::string> listRoms(const std::string& dir) {
-  std::vector<std::string> out;
-  std::error_code ec;
-  for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
-    if (it->is_regular_file(ec) && isNes(it->path())) out.push_back(it->path().string());
-    else if (it->is_directory(ec)) {
-      std::error_code ec2;
-      for (fs::directory_iterator s(it->path(), ec2), e2; !ec2 && s != e2; s.increment(ec2))
-        if (s->is_regular_file(ec2) && isNes(s->path())) out.push_back(s->path().string());
-    }
-  }
-  std::sort(out.begin(), out.end());
-  return out;
-}
+std::string Paths::tempProject() const { return sessionRoot + "/" + RNF_SESSION_TEMP_PROJECT; }
+std::string Paths::resumeFile() const { return sessionRoot + "/" + RNF_SESSION_RESUME_FILE; }
+std::string Paths::lockFile() const { return sessionRoot + "/" + RNF_SESSION_LOCK_FILE; }
 
-bool lockSessionRoot(const Paths& p) {
-  int fd = ::open(p.lockFile().c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
-  if (fd < 0) return true;  // cannot lock (read-only?): do not block the app
-  if (flock(fd, LOCK_EX | LOCK_NB) != 0) { ::close(fd); return false; }
-  return true;  // fd stays open (and locked) for the life of the process
+std::string Paths::display(const std::string& path) {
+  std::string home = env("HOME");
+  if (!home.empty() && path.compare(0, home.size(), home) == 0 && (path.size() == home.size() || path[home.size()] == '/'))
+    return "~" + path.substr(home.size());
+  return path;
 }
 
 }  // namespace rnl

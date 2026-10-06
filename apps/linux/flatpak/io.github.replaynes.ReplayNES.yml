@@ -20,6 +20,9 @@ finish-args:
   - --filesystem=xdg-run/pipewire-0
   # ROM library and projects: ~/Documents/ReplayNES/{ROM,Projects}
   - --filesystem=xdg-documents/ReplayNES:create
+  # "Reset Project" backups and projects replaced by Save As go to the user's Trash
+  # (freedesktop Trash spec: ~/.local/share/Trash/{files,info}).
+  - --filesystem=xdg-data/Trash:create
 modules:
   - name: replaynes
     buildsystem: cmake-ninja
@@ -27,6 +30,7 @@ modules:
     builddir: true
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
+      - -DRNL_BUILD_TESTS=OFF
     sources:
       - type: dir
         path: ../../..
