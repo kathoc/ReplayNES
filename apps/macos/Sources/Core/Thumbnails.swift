@@ -28,18 +28,68 @@ enum ThumbnailGrid {
         return (1...(length / q)).map { $0 * q }
     }
 
-    /// Representative grid frame of each tile (tiles of tileWidth points across width), from the
-    /// tile's start position, snapped to the nearest grid frame. Empty if the take is shorter than q.
-    static func tileFrames(width: Double, tileWidth: Double, length: UInt64, step q: UInt64) -> [UInt64] {
-        guard width > 0, tileWidth > 0, q > 0, length >= q else { return [] }
-        let g = TimelineGeometry(width: width, length: length)
-        let n = Int((width / tileWidth).rounded(.up))
-        let last = length / q * q
-        return (0..<n).map { i in
-            let f = g.frame(atX: Double(i) * tileWidth)
-            let snapped = (f + q / 2) / q * q
-            return min(max(snapped, q), last)
+    // MARK: filmstrip layout (video-editor style)
+    //
+    // Tile k is anchored to take time: it starts at x(k*F) and shows the picture at frame k*F,
+    // drawn at its natural aspect (tileWidth wide) and clipped at the next tile's anchor / the
+    // strip end. As the take grows every anchor slides left continuously and the last tile is
+    // revealed gradually (partially visible), instead of the strip changing in whole tiles.
+    // F (frames per tile) is a power-of-two grid step chosen so the on-screen span per tile stays
+    // in [minSpanRatio, 1] * tileWidth (no gaps, at most ~2.5 tiles per tileWidth); it only
+    // changes (x2 / /2) when the span leaves that band (hysteresis).
+
+    /// Lower bound of the span per tile (fraction of tileWidth) before F doubles. < 0.5, so both F
+    /// and 2F are acceptable for spans in [minSpanRatio, 0.5]: no flip-flopping at the boundary.
+    static let minSpanRatio = 0.4
+
+    /// On-screen width of F frames.
+    static func span(step f: UInt64, width: Double, length: UInt64) -> Double {
+        guard length > 0, width > 0 else { return 0 }
+        return Double(f) / Double(length) * width
+    }
+
+    /// Frames per tile. Keeps `current` while its span is within [minSpanRatio, 1] * tileWidth
+    /// (or it is already baseStep and the take is too short to fill the strip); otherwise the
+    /// largest power-of-two step whose span is <= tileWidth (span then in (0.5, 1] * tileWidth).
+    static func tileStep(width: Double, tileWidth: Double, length: UInt64, current: UInt64? = nil) -> UInt64 {
+        guard width > 0, tileWidth > 0, length > 0 else { return current.map { max($0, baseStep) } ?? baseStep }
+        func ok(_ f: UInt64) -> Bool {
+            let s = span(step: f, width: width, length: length)
+            return (s <= tileWidth || f == baseStep) && s >= minSpanRatio * tileWidth
         }
+        if let c = current, c >= baseStep, c % baseStep == 0, (c / baseStep) & (c / baseStep - 1) == 0, ok(c) {
+            return c
+        }
+        var f = baseStep
+        while f < (UInt64(1) << 40) && span(step: f * 2, width: width, length: length) <= tileWidth { f *= 2 }
+        return f
+    }
+
+    /// One tile: picture at `frame`, drawn from `x` (natural aspect, repeated if `span` is wider
+    /// than a tile) and clipped to [x, x + span).
+    struct Tile: Equatable {
+        var frame: UInt64
+        var x: Double
+        var span: Double
+        /// Width of the (first) picture actually visible.
+        func visibleWidth(tileWidth: Double) -> Double { min(tileWidth, span) }
+    }
+
+    /// Tiles anchored at frames 0, F, 2F, ... <= length. The last one ends at the strip end.
+    static func tiles(width: Double, length: UInt64, step f: UInt64) -> [Tile] {
+        guard width > 0, length > 0, f > 0 else { return [] }
+        let g = TimelineGeometry(width: width, length: length)
+        let last = length / f
+        var out: [Tile] = []
+        out.reserveCapacity(Int(min(last + 1, 4096)))
+        var k: UInt64 = 0
+        while k <= last {
+            let x = g.x(forFrame: k * f)
+            let end = k < last ? g.x(forFrame: (k + 1) * f) : width
+            if end - x > 1e-9 { out.append(Tile(frame: k * f, x: x, span: end - x)) }
+            k += 1
+        }
+        return out
     }
 }
 

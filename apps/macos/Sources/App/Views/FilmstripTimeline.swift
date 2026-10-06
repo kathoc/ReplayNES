@@ -44,9 +44,12 @@ struct FilmstripTimeline: View {
             let ranges = TimelineEditing.visibleRanges(slots: model.practiceSlots, takes: model.takes,
                                                        activeTake: st.activeTake, takeLength: st.takeLength)
             let version = strip.version
-            Canvas { ctx, size in
-                _ = version
-                draw(&ctx, size: size, g: g, st: st, ranges: ranges)
+            let fade = strip.fade
+            TimelineView(.animation(minimumInterval: nil, paused: fade == nil)) { tl in
+                Canvas { ctx, size in
+                    _ = version
+                    draw(&ctx, size: size, g: g, st: st, ranges: ranges, fade: fade, now: tl.date)
+                }
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(g: g, st: st, ranges: ranges))
@@ -62,29 +65,27 @@ struct FilmstripTimeline: View {
     // MARK: drawing
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize, g: TimelineGeometry, st: EmuStatus,
-                      ranges: [TimelineRange]) {
+                      ranges: [TimelineRange], fade: (from: UInt64, start: Date)?, now: Date) {
         let lane = Self.laneHeight
         let stripRect = CGRect(x: 0, y: lane, width: size.width, height: Self.stripHeight)
         let stripPath = Path(roundedRect: stripRect, cornerRadius: 4)
         ctx.fill(stripPath, with: .color(Color.secondary.opacity(0.18)))
 
-        // Thumbnails.
+        // Thumbnails anchored to take time (ThumbnailGrid.tiles): they slide smoothly as the take
+        // grows; the step change (x2) crossfades from the previous layout.
         var thumbs = ctx
         thumbs.clip(to: stripPath)
-        let q = strip.cache.gridStep
         let tw = Double(Self.tileWidth)
-        let frames = ThumbnailGrid.tileFrames(width: g.width, tileWidth: tw, length: g.length, step: q)
-        let tolerance = max(q, g.length / UInt64(max(1, frames.count)))
-        for (i, f) in frames.enumerated() {
-            guard let img = strip.cache.image(near: f, tolerance: tolerance) else { continue }
-            let r = CGRect(x: Double(i) * tw, y: Double(lane), width: tw, height: Double(Self.stripHeight))
-            thumbs.draw(Image(decorative: img, scale: 1).interpolation(.none), in: r)
-        }
-        // Tile separators (subtle).
-        for i in 1..<max(1, frames.count) {
-            let x = Double(i) * tw
-            thumbs.fill(Path(CGRect(x: x - 0.5, y: Double(lane), width: 1, height: Double(Self.stripHeight))),
-                        with: .color(.black.opacity(0.35)))
+        let step = ThumbnailGrid.tileStep(width: g.width, tileWidth: tw, length: g.length,
+                                          current: strip.tileStep == 0 ? nil : strip.tileStep)
+        drawTiles(&thumbs, g: g, step: step)
+        if let f = fade, f.from != step, f.from == step * 2 || f.from * 2 == step {
+            let p = now.timeIntervalSince(f.start) / FilmstripModel.fadeDuration
+            if p < 1 {
+                var old = thumbs
+                old.opacity = 1 - max(0, p)
+                drawTiles(&old, g: g, step: f.from)
+            }
         }
 
         let selected = strip.selectedSlot
@@ -163,6 +164,30 @@ struct FilmstripTimeline: View {
             ctx.fill(tri, with: .color(h.color))
         }
         ctx.stroke(stripPath, with: .color(.secondary.opacity(0.35)), lineWidth: 1)
+    }
+
+    /// Draws the filmstrip tiles for `step` frames per tile. A tile whose picture is not cached
+    /// (yet) shows the nearest cached one: no blank tiles once anything is cached.
+    private func drawTiles(_ ctx: inout GraphicsContext, g: TimelineGeometry, step: UInt64) {
+        let tw = Double(Self.tileWidth)
+        let y = Double(Self.laneHeight), h = Double(Self.stripHeight)
+        let tiles = ThumbnailGrid.tiles(width: g.width, length: g.length, step: step)
+        for (i, t) in tiles.enumerated() {
+            let clip = CGRect(x: t.x, y: y, width: t.span, height: h)
+            if let img = strip.cache.image(near: t.frame, tolerance: .max) {
+                var c = ctx
+                c.clip(to: Path(clip))
+                let image = Image(decorative: img, scale: 1).interpolation(.none)
+                var x = t.x
+                repeat {  // natural aspect; repeated only when the take is too short to fill the strip
+                    c.draw(image, in: CGRect(x: x, y: y, width: tw, height: h))
+                    x += tw
+                } while x < t.x + t.span
+            }
+            if i > 0 {  // subtle separator at the anchor
+                ctx.fill(Path(CGRect(x: t.x - 0.5, y: y, width: 1, height: h)), with: .color(.black.opacity(0.35)))
+            }
+        }
     }
 
     // MARK: gestures

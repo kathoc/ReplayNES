@@ -61,11 +61,30 @@ final class FilmstripModel: ObservableObject {
         }
     }
 
-    /// The timeline's size or the take changed (main thread). Picks the grid and schedules
-    /// generation of whatever is missing.
+    /// Frames per filmstrip tile (ThumbnailGrid.tileStep, with hysteresis). 0 = not laid out yet.
+    @Published private(set) var tileStep: UInt64 = 0
+    /// While the tile step changes: the previous step, drawn on top and fading out.
+    @Published private(set) var fade: (from: UInt64, start: Date)?
+    static let fadeDuration = 0.3
+    private var fadeEnd: DispatchWorkItem?
+
+    /// The timeline's size or the take changed (main thread). Picks the tile step (= thumbnail
+    /// grid) and schedules generation of whatever is missing.
     func layout(width: Double, tileWidth: Double, takeLength: UInt64) {
-        let n = max(1, Int((width / max(tileWidth, 1)).rounded(.up)))
-        let q = ThumbnailGrid.step(length: takeLength, maxCount: 2 * n)
+        let q = ThumbnailGrid.tileStep(width: width, tileWidth: tileWidth, length: takeLength,
+                                       current: tileStep == 0 ? nil : tileStep)
+        if q != tileStep {
+            if tileStep != 0 && takeLength > 0 && (q == tileStep * 2 || q * 2 == tileStep) {
+                fade = (tileStep, Date())
+                fadeEnd?.cancel()
+                let w = DispatchWorkItem { [weak self] in self?.fade = nil }
+                fadeEnd = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration, execute: w)
+            } else {
+                fade = nil
+            }
+            tileStep = q
+        }
         cache.setStep(q)
         target = (q, takeLength)
         scheduleReconcile(after: 0.3)
