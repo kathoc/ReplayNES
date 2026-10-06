@@ -68,6 +68,9 @@ struct rnf_input_deadline {
   double penalty = 0;
   int clean = 0;
   uint64_t misses = 0;
+  double minLead = RNF_INPUT_DEADLINE_MIN_LEAD;
+  double maxLead = RNF_INPUT_DEADLINE_MAX_LEAD;
+  double maxPenalty = RNF_INPUT_DEADLINE_MAX_PENALTY;
 
   double workQuantile() const {
     if (filled <= 0) return 0;
@@ -244,14 +247,23 @@ void rnf_input_deadline_observe_miss(rnf_input_deadline* d) {
   if (!d) return;
   d->misses += 1;
   d->clean = 0;
-  d->penalty = std::min(RNF_INPUT_DEADLINE_MAX_PENALTY, d->penalty + RNF_INPUT_DEADLINE_MISS_PENALTY);
+  d->penalty = std::min(d->maxPenalty, d->penalty + RNF_INPUT_DEADLINE_MISS_PENALTY);
 }
 
 double rnf_input_deadline_lead(const rnf_input_deadline* d) {
   if (!d) return RNF_INPUT_DEADLINE_MIN_LEAD;
-  return std::min(RNF_INPUT_DEADLINE_MAX_LEAD,
-                  std::max(RNF_INPUT_DEADLINE_MIN_LEAD, d->workQuantile() + RNF_INPUT_DEADLINE_MARGIN + d->penalty));
+  return std::min(d->maxLead, std::max(d->minLead, d->workQuantile() + RNF_INPUT_DEADLINE_MARGIN + d->penalty));
 }
+
+void rnf_input_deadline_set_limits(rnf_input_deadline* d, double min_lead, double max_lead, double max_penalty) {
+  if (!d) return;
+  if (min_lead > 0) d->minLead = min_lead;
+  if (max_lead > 0) d->maxLead = max_lead;
+  if (max_penalty > 0) d->maxPenalty = max_penalty;
+  if (d->maxLead < d->minLead) d->maxLead = d->minLead;
+  d->penalty = std::min(d->penalty, d->maxPenalty);
+}
+double rnf_input_deadline_max_lead(const rnf_input_deadline* d) { return d ? d->maxLead : RNF_INPUT_DEADLINE_MAX_LEAD; }
 double rnf_input_deadline_work_quantile(const rnf_input_deadline* d) { return d ? d->workQuantile() : 0; }
 double rnf_input_deadline_penalty(const rnf_input_deadline* d) { return d ? d->penalty : 0; }
 uint64_t rnf_input_deadline_misses(const rnf_input_deadline* d) { return d ? d->misses : 0; }

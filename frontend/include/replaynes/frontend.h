@@ -123,6 +123,12 @@ double rnf_input_deadline_lead(const rnf_input_deadline* d);
 double rnf_input_deadline_work_quantile(const rnf_input_deadline* d);
 double rnf_input_deadline_penalty(const rnf_input_deadline* d);
 uint64_t rnf_input_deadline_misses(const rnf_input_deadline* d);
+/* Limits of the lead (defaults RNF_INPUT_DEADLINE_MIN_LEAD / _MAX_LEAD / _MAX_PENALTY). A frontend
+ * whose deadline is the vblank itself (Linux: the compositor's latch point before it is unknown)
+ * lets the lead grow past one refresh. Values <= 0 keep the current limit; the penalty is clamped
+ * to the new maximum. */
+void rnf_input_deadline_set_limits(rnf_input_deadline* d, double min_lead, double max_lead, double max_penalty);
+double rnf_input_deadline_max_lead(const rnf_input_deadline* d);
 
 /* PresentPath: whether the layer goes direct to the display (every recent presentDelay ~1 refresh). */
 #define RNF_PRESENT_PATH_WINDOW 60

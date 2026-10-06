@@ -156,6 +156,24 @@ TEST_CASE("input deadline follows work and misses") {
   rnf_input_deadline_free(d);
 }
 
+TEST_CASE("input deadline limits are configurable") {
+  rnf_input_deadline* d = rnf_input_deadline_new();
+  CHECK_EQ(rnf_input_deadline_max_lead(d), RNF_INPUT_DEADLINE_MAX_LEAD);
+  // Linux: the deadline is the vblank, so the lead may exceed one refresh (2 refreshes at 90 Hz).
+  rnf_input_deadline_set_limits(d, 0, 0.0222, 0.0202);
+  for (int i = 0; i < 600; ++i) rnf_input_deadline_observe_work(d, 0.00105);
+  for (int i = 0; i < 30; ++i) rnf_input_deadline_observe_miss(d);
+  CHECK(near(rnf_input_deadline_penalty(d), 30 * RNF_INPUT_DEADLINE_MISS_PENALTY, 1e-9));
+  CHECK(near(rnf_input_deadline_lead(d), 0.0011 + RNF_INPUT_DEADLINE_MARGIN + 0.015, 1e-9));
+  for (int i = 0; i < 20; ++i) rnf_input_deadline_observe_miss(d);
+  CHECK(near(rnf_input_deadline_lead(d), 0.0222, 1e-12));
+  // Back to the defaults: the penalty is clamped to the smaller maximum.
+  rnf_input_deadline_set_limits(d, RNF_INPUT_DEADLINE_MIN_LEAD, RNF_INPUT_DEADLINE_MAX_LEAD, RNF_INPUT_DEADLINE_MAX_PENALTY);
+  CHECK(near(rnf_input_deadline_penalty(d), RNF_INPUT_DEADLINE_MAX_PENALTY, 1e-12));
+  CHECK(near(rnf_input_deadline_lead(d), 0.0011 + RNF_INPUT_DEADLINE_MARGIN + RNF_INPUT_DEADLINE_MAX_PENALTY, 1e-9));
+  rnf_input_deadline_free(d);
+}
+
 TEST_CASE("audio rate control converges") {
   rnf_audio_rate* drc = rnf_audio_rate_new(1400);
   rnf_audio_rate_set_frame_rate(drc, 60, 0);
