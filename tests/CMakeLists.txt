@@ -36,6 +36,12 @@ target_compile_definitions(test_local_roms PRIVATE RN_LOCAL_ROMS="${PROJECT_SOUR
 # Display-side photosensitive flash reduction (synthetic frames; local ROMs when present).
 rn_add_test(test_flash_filter)
 target_compile_definitions(test_flash_filter PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")
+# The optimised flash filter is bit-exact against a frozen copy of the original implementation.
+rn_add_test(test_flash_filter_exact)
+target_sources(test_flash_filter_exact PRIVATE support/FlashFilterRef.cpp)
+if(NOT MSVC)
+  target_compile_options(test_flash_filter_exact PRIVATE -fno-fast-math -ffp-contract=off)
+endif()
 
 # Shared frontend core (frontend/: C API replaynes/frontend.h). Ported from the macOS XCTests of the
 # logic that moved there; they run on every platform.
