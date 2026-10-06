@@ -89,26 +89,53 @@ extension AppModel {
 
     /// `--stats-log <path>`: one JSON line of pacing / latency counters per second (perf smoke
     /// test; much cheaper than a window snapshot, so it does not disturb what it measures).
-    func startStatsLog(to url: URL) {
+    /// `frameLog`: also one CSV line per presented frame (LatencyMeter.frameLogHeader), written
+    /// off the main thread.
+    func startStatsLog(to url: URL, frameLog: URL? = nil) {
         FileManager.default.createFile(atPath: url.path, contents: nil)
         guard let h = try? FileHandle(forWritingTo: url) else { NSLog("ReplayNES: cannot write \(url.path)"); return }
+        var frames: FileHandle?
+        if let frameLog {
+            FileManager.default.createFile(atPath: frameLog.path, contents: Data((LatencyMeter.frameLogHeader + "\n").utf8))
+            frames = try? FileHandle(forWritingTo: frameLog)
+            frames?.seekToEndOfFile()
+            emu.latency.startFrameLog()
+        }
+        let writer = DispatchQueue(label: "ReplayNES.statsLog", qos: .utility)
         let start = HostClock.now()
+        var mainCPU0 = HostClock.threadCPUSeconds()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             let s = self.emu.latency.snapshot(audio: self.emu.audio)
+            var ru = rusage()
+            getrusage(RUSAGE_SELF, &ru)
+            let processCPU = Double(ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) + Double(ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1e6
+            let mainCPU = HostClock.threadCPUSeconds()
+            defer { mainCPU0 = mainCPU }
             let row: [String: Any] = [
                 "t": HostClock.seconds(HostClock.now() - start), "frame": self.status.frame, "paused": self.status.paused,
                 "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "presentCount": s.presentCount,
-                "presentHitches": s.presentHitches, "skippedFrames": s.skippedFrames, "presentIntervalMaxMs": s.presentIntervalMaxMs,
+                "presentHitches": s.presentHitches, "offCadence": s.offCadence, "skippedFrames": s.skippedFrames,
+                "presentIntervalMaxMs": s.presentIntervalMaxMs, "missedRefreshes": s.missedRefreshes,
+                "repeatPresents": s.repeatPresents, "backlogDrains": s.backlogDrains,
                 "drawCount": s.drawCount, "drawLate": s.drawLate, "drawGapMaxMs": s.drawGapMaxMs,
                 "tickWakeLate": s.tickWakeLate, "tickWakeMaxMs": s.tickWakeMaxMs, "lateTicks": s.lateTicks,
-                "presentLeadMs": s.presentLeadMs,
-                "emulatedToPresentMs": s.emulatedToPresentMs, "audioUnderruns": s.audioUnderruns,
+                "presentLeadMs": s.presentLeadMs, "inputLeadMs": s.inputLeadMs, "pacing": s.pacing, "refreshHz": s.refreshHz,
+                "emulatedToPresentMs": s.emulatedToPresentMs, "sampleToPresentMs": s.sampleToPresentMs,
+                "displayGPUMs": s.displayGPUMs, "audioUnderruns": s.audioUnderruns, "audioDropped": s.audioDropped,
+                "audioFillMs": s.audioFillMs, "audioRatio": s.audioRatio,
+                "emulationCPU": s.emulationCPU, "presentCPU": s.presentCPU, "mainCPU": mainCPU, "processCPU": processCPU,
+                "mainCPUWindow": mainCPU - mainCPU0,
                 "fullScreen": self.mainWindow?.styleMask.contains(.fullScreen) ?? false,
+                "chromeHidden": self.immersive,
             ]
-            if var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
-                line.append(0x0A)
-                h.write(line)
+            let rows = frames != nil ? self.emu.latency.takeFrameLog() : []
+            writer.async {
+                if var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
+                    line.append(0x0A)
+                    h.write(line)
+                }
+                if let frames, !rows.isEmpty { frames.write(Data((rows.joined(separator: "\n") + "\n").utf8)) }
             }
         }
         RunLoop.main.add(t, forMode: .common)

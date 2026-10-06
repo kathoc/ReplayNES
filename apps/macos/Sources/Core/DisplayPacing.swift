@@ -1,0 +1,169 @@
+// Display-locked pacing logic (pure, no clocks of its own; see docs/FRAME_PACING.md):
+//  * DisplayCadence  - which display refreshes start a new emulated frame
+//  * InputDeadline   - how long before the commit deadline input is sampled (just in time)
+//  * AudioRateControl - dynamic rate control: resampling ratio that keeps the audio buffer level
+//                       while emulation runs at the display rate instead of 60.0988 Hz
+// The live loop (EmulationController) is driven by CAMetalDisplayLink; these types only decide.
+// SPDX-License-Identifier: GPL-2.0-or-later
+import Foundation
+
+/// Maps display refreshes to emulated frames.
+/// Locked: when the refresh rate is (within `lockTolerance`) an integer multiple k of the NES rate
+/// (60 Hz: k = 1, 120 Hz ProMotion: k = 2, 240 Hz: k = 4), exactly every k-th refresh starts a
+/// frame: emulation runs at refresh / k (60.000 Hz instead of 60.0988 Hz, -0.16 %) and every frame
+/// stays on screen for exactly k refreshes - no judder by construction. Logical time is the frame
+/// index, so this never affects determinism; audio follows through AudioRateControl.
+/// Free: other rates (e.g. 144 Hz, 75 Hz) keep the NTSC rate and pick the nearest refresh (a
+/// mixed cadence is unavoidable there without variable refresh).
+struct DisplayCadence {
+    static let lockTolerance = 0.005
+    let framePeriod: Double
+
+    /// Estimated refresh interval (seconds); 0 until two presentation times were seen.
+    private(set) var refresh = 0.0
+    private var lastPresentation: Double?
+    private var lastFrameTime: Double?
+    private var contentTime = 0.0   // free mode: ideal start of the next frame
+
+    init(framePeriod: Double = FramePacing.period) { self.framePeriod = framePeriod }
+
+    /// Refreshes per frame when locked, nil when the display rate is not a multiple of the NES rate.
+    static func refreshesPerFrame(refresh: Double, framePeriod: Double = FramePacing.period) -> Int? {
+        guard refresh > 0 else { return nil }
+        let k = (framePeriod / refresh).rounded()
+        guard k >= 1, abs(k * refresh - framePeriod) / framePeriod <= lockTolerance else { return nil }
+        return Int(k)
+    }
+
+    var refreshesPerFrame: Int? { Self.refreshesPerFrame(refresh: refresh, framePeriod: framePeriod) }
+
+    /// Frames per second this cadence emulates (the NES rate when free or unknown).
+    var emulationRate: Double {
+        guard let k = refreshesPerFrame else { return 1 / framePeriod }
+        return 1 / (Double(k) * refresh)
+    }
+
+    /// Interval two consecutive frames are expected to be on screen apart (seconds).
+    var expectedFrameInterval: Double {
+        guard let k = refreshesPerFrame else { return framePeriod }
+        return Double(k) * refresh
+    }
+
+    /// One display callback whose picture appears at `presentation` (seconds). Returns true when
+    /// this refresh starts a new emulated frame.
+    mutating func refresh(presentation t: Double) -> Bool {
+        if let l = lastPresentation, t > l {
+            let d = t - l
+            if refresh == 0 || d < refresh * 0.75 {
+                refresh = d                                  // first estimate, or a faster display
+            } else if d < refresh * 1.25 {
+                refresh += (d - refresh) * 0.05              // refine (skipped callbacks are ignored)
+            }
+        }
+        lastPresentation = t
+        guard refresh > 0, let last = lastFrameTime else {
+            lastFrameTime = t
+            contentTime = t + framePeriod
+            return true
+        }
+        if t <= last { return false }
+        if let k = refreshesPerFrame {
+            // Every k-th refresh after the previous frame (half a refresh of tolerance absorbs
+            // timestamp noise; a refresh without a callback - display link hiccup - starts the
+            // frame at the next callback instead of skipping one).
+            guard t - last >= (Double(k) - 0.5) * refresh else { return false }
+            lastFrameTime = t
+            contentTime = t + framePeriod
+            return true
+        }
+        // Free: the refresh nearest to the ideal frame time; resynchronise after a long gap.
+        guard t >= contentTime - refresh / 2 else { return false }
+        contentTime = t - contentTime > 2 * framePeriod ? t + framePeriod : contentTime + framePeriod
+        lastFrameTime = t
+        return true
+    }
+}
+
+/// Just-in-time input sampling: input is read `lead` seconds before the frame's commit deadline
+/// (CAMetalDisplayLink targetTimestamp), so the emulate + render + GPU work finishes just in time.
+/// The lead follows the slowest recent work (a decaying maximum, so a single slow frame raises it
+/// at once and it relaxes over ~10 s) plus a safety margin, plus a penalty that grows when a frame
+/// still missed its refresh and decays while none do.
+struct InputDeadline {
+    static let margin = 0.0008
+    static let minLead = 0.0012
+    static let maxLead = 0.008
+    static let missPenalty = 0.0005
+    static let maxPenalty = 0.003
+    /// Frames without a miss before the penalty shrinks by `penaltyDecay` (~10 s at 60 fps).
+    static let decayAfter = 600
+    static let penaltyDecay = 0.0001
+    /// Per-frame decay of the work maximum (half-life ~690 frames, ~11.5 s).
+    static let workDecay = 0.999
+
+    private(set) var workMax = 0.0
+    private(set) var penalty = 0.0
+    private var clean = 0
+    private(set) var misses: UInt64 = 0
+
+    var lead: Double { min(Self.maxLead, max(Self.minLead, workMax + Self.margin + penalty)) }
+
+    /// Seconds from the input sample to the frame's GPU work being complete (CPU + GPU).
+    mutating func observeWork(_ seconds: Double) {
+        workMax = max(seconds, workMax * Self.workDecay)
+        clean += 1
+        if clean >= Self.decayAfter {
+            clean = 0
+            penalty = max(0, penalty - Self.penaltyDecay)
+        }
+    }
+
+    /// A frame reached the screen later than its target refresh.
+    mutating func observeMiss() {
+        misses &+= 1
+        clean = 0
+        penalty = min(Self.maxPenalty, penalty + Self.missPenalty)
+    }
+}
+
+/// Dynamic rate control for the audio stream (RetroArch-style DRC): the emulator produces
+/// 48000 / 60.0988 samples per frame, the device consumes 48000 per second of its own clock,
+/// and frames are emulated at the display rate. The output is resampled by
+/// `ratio = base x (1 + clamp(k x error))`, where `base` is the nominal / actual frame-rate
+/// ratio and `error` the smoothed relative distance of the buffer level from its target, so the
+/// buffer neither runs dry (underruns) nor grows (latency, skips). |ratio - base| <= 0.5 %:
+/// a pitch change far below audibility (0.5 % = 8.6 cents).
+struct AudioRateControl {
+    static let maxDeviation = 0.005
+    /// Full deviation at this relative fill error.
+    static let gain = 0.005
+    /// Smoothing of the measured fill (per frame).
+    static let fillSmoothing = 0.02
+    let targetFill: Double   // samples
+
+    private(set) var base = 1.0
+    private(set) var ratio = 1.0
+    private(set) var smoothedFill: Double?
+
+    init(targetFill: Double) { self.targetFill = targetFill }
+
+    /// Frames are emulated at `rate` Hz while the content is `nominal` Hz.
+    mutating func setFrameRate(_ rate: Double, nominal: Double = 1 / FramePacing.period) {
+        guard rate > 0 else { return }
+        base = nominal / rate
+    }
+
+    /// Restart (after mute / underrun): forget the fill history.
+    mutating func reset() { smoothedFill = nil; ratio = base }
+
+    /// Buffer level (samples) just before a frame's audio is pushed. Returns the ratio to use for
+    /// that frame (output samples per input sample).
+    mutating func update(fill: Double) -> Double {
+        let f = smoothedFill.map { $0 + (fill - $0) * Self.fillSmoothing } ?? fill
+        smoothedFill = f
+        let error = (targetFill - f) / targetFill
+        let adj = max(-Self.maxDeviation, min(Self.maxDeviation, error * Self.gain))
+        ratio = base * (1 + adj)
+        return ratio
+    }
+}

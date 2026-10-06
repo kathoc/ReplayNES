@@ -13,6 +13,13 @@ enum HostClock {
     @inline(__always) static func now() -> UInt64 { mach_absolute_time() }
     static func seconds(_ ticks: UInt64) -> Double { Double(ticks) * Double(timebase.numer) / Double(timebase.denom) / 1e9 }
     static func ticks(seconds s: Double) -> UInt64 { UInt64(s * 1e9 * Double(timebase.denom) / Double(timebase.numer)) }
+    /// CPU time consumed by the calling thread (seconds).
+    static func threadCPUSeconds() -> Double { Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e9 }
+    /// Sleeps until `seconds` (host-clock seconds, as CoreAnimation / Metal timestamps).
+    static func wait(untilSeconds t: Double) {
+        let target = ticks(seconds: t)
+        if target > now() { mach_wait_until(target) }
+    }
 }
 
 /// Timestamps (mach ticks) attached to a published frame for latency measurement.
@@ -22,6 +29,8 @@ struct FrameMeta {
     var sampleTime: UInt64 = 0      // rn_input_sample_game
     var emulatedTime: UInt64 = 0    // rn_step returned
     var deadline: UInt64 = 0        // scheduled start of the tick that made it (present scheduling; 0 = none)
+    var tickStart: UInt64 = 0       // display callback / tick began (before the just-in-time input wait)
+    var targetPresentation = 0.0    // refresh the frame was made for (display link, seconds; 0 = none)
     // CRT signal side channel (display only; see rn_video_indices).
     var hasCodes = false            // raw PPU codes published with this frame
     var burstPhase: UInt32 = 0      // core colour-burst phase of the frame (0..2)
@@ -82,150 +91,6 @@ final class FrameBuffer {
             codes.withUnsafeBufferPointer { cd in body(px.baseAddress!, meta.hasCodes ? cd.baseAddress! : nil, meta) }
         }
         return seq
-    }
-}
-
-/// Rolling latency / health statistics. Thread-safe.
-final class LatencyMeter {
-    struct Snapshot {
-        var sampleToEmulatedMs = 0.0
-        var emulatedToPresentMs = 0.0
-        var inputToPresentMs = 0.0   // only frames that consumed a fresh input change
-        var lastInputToPresentMs = 0.0
-        var stepMs = 0.0
-        var lastAutosaveMs = 0.0
-        var presentedFPS = 0.0
-        var audioFillMs = 0.0
-        var audioUnderruns: UInt64 = 0
-        var audioDropped: UInt64 = 0
-        var audioCallbackFrames: UInt32 = 0
-        var audioOutputLatencyMs = 0.0
-        var lateTicks: UInt64 = 0
-        var displayGPUMs = 0.0       // GPU time of the display command buffer for a new frame (EMA)
-        var displayGPUMaxMs = 0.0    // max over the last second
-        var crtInfo = ""             // "" = CRT off; else tube size / signal path
-        // Pacing (FramePacing.swift). Counters are cumulative; *Max* are over the last second.
-        var emulatedFPS = 0.0        // frames emulated per second (normal play: 60.0988)
-        var presentCount: UInt64 = 0
-        var presentHitches: UInt64 = 0     // new frame shown > 1.5 frame periods after the previous
-        var skippedFrames: UInt64 = 0      // emulated frames never shown
-        var presentIntervalMaxMs = 0.0
-        var drawCount: UInt64 = 0          // frames rendered by the present thread during play
-        var drawLate: UInt64 = 0           // rendered > 1.5 frame periods after the previous one
-        var drawGapMaxMs = 0.0
-        var presentLeadMs = 0.0            // PresentLead: frames appear this long after their tick
-        var tickWakeLate: UInt64 = 0       // emulation ticks that started > 4 ms after their deadline
-        var tickWakeMaxMs = 0.0
-    }
-
-    private let lock = NSLock()
-    private var s = Snapshot()
-    private var presentCount = 0
-    private var fpsWindowStart = HostClock.now()
-    private var gpuMaxWindow = 0.0, gpuWindowStart = HostClock.now()
-    private var pacing = FramePacing()
-    private var draws = CallbackRegularity(lateAfter: 1.5 / 120)
-    private var stepCount = 0, stepWindowStart = HostClock.now()
-    private var tickWakeWindowMax = 0.0
-    private var pacingWindowStart = HostClock.now()
-
-    private static func ema(_ old: Double, _ v: Double) -> Double { old == 0 ? v : old * 0.9 + v * 0.1 }
-
-    func recordStep(sampleToEmulated: UInt64) {
-        let now = HostClock.now()
-        lock.lock(); s.sampleToEmulatedMs = Self.ema(s.sampleToEmulatedMs, HostClock.seconds(sampleToEmulated) * 1000)
-        s.stepMs = s.sampleToEmulatedMs
-        stepCount += 1
-        let dt = HostClock.seconds(now - stepWindowStart)
-        if dt >= 1 { s.emulatedFPS = Double(stepCount) / dt; stepCount = 0; stepWindowStart = now }
-        lock.unlock()
-    }
-
-    /// Emulation thread: how late the tick woke up relative to its deadline.
-    func recordTickWake(lateTicks: UInt64) {
-        let ms = HostClock.seconds(lateTicks) * 1000
-        lock.lock()
-        if ms > 4 { s.tickWakeLate &+= 1 }
-        tickWakeWindowMax = max(tickWakeWindowMax, ms)
-        lock.unlock()
-    }
-
-    /// A frame was rendered (present thread). `refresh` = the expected interval in seconds.
-    func recordDraw(refresh: Double) {
-        let t = HostClock.seconds(HostClock.now())
-        lock.lock()
-        draws.lateAfter = refresh * 1.5
-        draws.tick(at: t)
-        s.drawCount = draws.count
-        s.drawLate = draws.late
-        rollPacingWindow()
-        lock.unlock()
-    }
-
-    /// Once a second: publishes the window maxima (lock held).
-    private func rollPacingWindow() {
-        let now = HostClock.now()
-        guard HostClock.seconds(now - pacingWindowStart) >= 1 else { return }
-        pacingWindowStart = now
-        s.presentIntervalMaxMs = pacing.takeWindowMax() * 1000
-        s.drawGapMaxMs = draws.takeWindowMax() * 1000
-        s.tickWakeMaxMs = tickWakeWindowMax
-        tickWakeWindowMax = 0
-    }
-
-    func recordPresent(meta: FrameMeta, presentedSeconds: Double) {
-        let emu = HostClock.seconds(meta.emulatedTime)
-        lock.lock()
-        defer { lock.unlock() }
-        if presentedSeconds > emu {
-            s.emulatedToPresentMs = Self.ema(s.emulatedToPresentMs, (presentedSeconds - emu) * 1000)
-        }
-        if meta.inputEventTime != 0 {
-            let ev = HostClock.seconds(meta.inputEventTime)
-            if presentedSeconds > ev {
-                let v = (presentedSeconds - ev) * 1000
-                s.lastInputToPresentMs = v
-                s.inputToPresentMs = Self.ema(s.inputToPresentMs, v)
-            }
-        }
-        pacing.present(frame: meta.frame, at: presentedSeconds)
-        s.presentCount = pacing.presents
-        s.presentHitches = pacing.hitches
-        s.skippedFrames = pacing.skipped
-        rollPacingWindow()
-        presentCount += 1
-        let now = HostClock.now()
-        let dt = HostClock.seconds(now - fpsWindowStart)
-        if dt >= 1 { s.presentedFPS = Double(presentCount) / dt; presentCount = 0; fpsWindowStart = now }
-    }
-
-    func recordDisplayGPU(ms: Double, crtInfo: String) {
-        lock.lock(); defer { lock.unlock() }
-        s.displayGPUMs = Self.ema(s.displayGPUMs, ms)
-        s.crtInfo = crtInfo
-        gpuMaxWindow = max(gpuMaxWindow, ms)
-        let now = HostClock.now()
-        if HostClock.seconds(now - gpuWindowStart) >= 1 { s.displayGPUMaxMs = gpuMaxWindow; gpuMaxWindow = 0; gpuWindowStart = now }
-    }
-
-    func recordPresentLead(_ seconds: Double) { lock.lock(); s.presentLeadMs = seconds * 1000; lock.unlock() }
-
-    func recordAutosave(ticks: UInt64) { lock.lock(); s.lastAutosaveMs = HostClock.seconds(ticks) * 1000; lock.unlock() }
-    func recordLateTick() { lock.lock(); s.lateTicks += 1; lock.unlock() }
-
-    func snapshot(audio: AudioOutput?) -> Snapshot {
-        lock.lock()
-        var out = s
-        lock.unlock()
-        if let audio {
-            let st = audio.stats()
-            out.audioFillMs = Double(st.fill) / 48.0
-            out.audioUnderruns = st.underruns
-            out.audioDropped = st.dropped_samples
-            out.audioCallbackFrames = st.last_request
-            out.audioOutputLatencyMs = audio.outputLatencySeconds * 1000
-        }
-        return out
     }
 }
 
@@ -316,12 +181,33 @@ final class AudioOutput {
         if m == muted { return }
         muted = m
         rn_ring_set_muted(ring, m ? 1 : 0)
+        if m { resampler.reset(); rate.reset() }
     }
 
-    /// Emulation thread only.
-    func push(_ pcm: UnsafeBufferPointer<Int16>) {
-        guard let base = pcm.baseAddress, pcm.count > 0, !muted else { return }
-        rn_ring_push(ring, base, UInt32(pcm.count))
+    // Dynamic rate control (emulation thread): frames are emulated at the display's rate, so the
+    // stream is resampled by a ratio that keeps the ring level at `targetFill` (AudioRateControl).
+    /// Ring level aimed at just before a frame's samples are pushed (~21 ms; the output starts
+    /// after `prime` = 25 ms are buffered and settles here).
+    static let targetFill = 1024.0
+    private var rate = AudioRateControl(targetFill: AudioOutput.targetFill)
+    private var resampler = AudioResampler()
+    private var resampled: [Int16] = []
+    /// Output / input sample ratio of the last pushed frame (emulation thread).
+    private(set) var ratio = 1.0
+
+    /// Emulation thread only. `frameRate`: frames per second the emulation currently runs at
+    /// (the display-locked rate, or the NTSC rate on the host clock).
+    func push(_ pcm: UnsafeBufferPointer<Int16>, frameRate: Double = 1 / FramePacing.period) {
+        guard pcm.baseAddress != nil, pcm.count > 0, !muted else { return }
+        var st = rn_audio_ring_stats()
+        rn_ring_get_stats(ring, &st)
+        rate.setFrameRate(frameRate)
+        ratio = rate.update(fill: Double(st.fill))
+        resampled.removeAll(keepingCapacity: true)
+        resampler.process(pcm, ratio: ratio, into: &resampled)
+        resampled.withUnsafeBufferPointer { b in
+            if let base = b.baseAddress, b.count > 0 { rn_ring_push(ring, base, UInt32(b.count)) }
+        }
     }
 
     func stats() -> rn_audio_ring_stats {

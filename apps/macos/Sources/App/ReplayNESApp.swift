@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   --crt               enable the CRT display for this run (not saved)
         //   --inject-pad / --test-actions / --snapshot-at / --snapshot-windows   scripted checks (TestHooks.swift)
         //   --stats-log <path>  append a JSON line of pacing counters every second (scripts/perf-smoke.sh)
+        //   --frame-log <path>  with --stats-log: one CSV line per presented frame (latency breakdown)
         let args = ProcessInfo.processInfo.arguments
         let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows", "--stats-log"].contains { args.contains($0) }
         if !args.contains("--no-updater") && !scripted {
@@ -80,7 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let acts = arg("--test-actions") { model.scheduleTestActions(acts) }
         if let snaps = arg("--snapshot-at") { model.scheduleSnapshots(snaps) }
         if let snaps = arg("--snapshot-windows") { model.scheduleWindowSnapshots(snaps) }
-        if let log = arg("--stats-log") { model.startStatsLog(to: URL(fileURLWithPath: log)) }
+        if let log = arg("--stats-log") {
+            model.startStatsLog(to: URL(fileURLWithPath: log), frameLog: arg("--frame-log").map { URL(fileURLWithPath: $0) })
+        }
         if let snap = arg("--snapshot") {
             let delay = Double(arg("--snapshot-delay") ?? "3") ?? 3
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {

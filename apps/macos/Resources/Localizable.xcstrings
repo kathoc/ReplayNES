@@ -2101,6 +2101,26 @@
         }
       }
     },
+    "Input sampled before deadline": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力サンプル（締切前）"
+          }
+        }
+      }
+    },
+    "Input sample→display": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力サンプル→表示"
+          }
+        }
+      }
+    },
     "Input→display (avg/last)": {
       "localizations": {
         "ja": {
@@ -2631,6 +2651,16 @@
         }
       }
     },
+    "Missed refreshes / judder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リフレッシュ遅れ / ジャダー"
+          }
+        }
+      }
+    },
     "More (bookmarks, takes, reset, …)": {
       "localizations": {
         "ja": {
@@ -2967,6 +2997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "出力サイズ"
+          }
+        }
+      }
+    },
+    "Pacing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペーシング"
           }
         }
       }

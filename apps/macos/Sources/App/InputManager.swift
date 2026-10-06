@@ -232,10 +232,17 @@ final class InputManager {
 
     // MARK: latency bookkeeping
 
-    private func noteEvent() {
-        let t = HostClock.now()
+    /// `at`: the event's own timestamp (seconds on the host clock: NSEvent.timestamp, GameController
+    /// lastEventTimestamp), so input->display latency includes any delay before it was handled.
+    private func noteEvent(at: Double? = nil) {
+        let now = HostClock.now()
+        var t = now
+        if let at, at > 0 { let ev = HostClock.ticks(seconds: at); if ev <= now { t = ev } }
         eventLock.lock(); eventTime = t; eventSeq &+= 1; eventLock.unlock()
     }
+
+    /// gcQueue: timestamp of the controller event being handled.
+    private var gcEventTime: Double?
 
     /// Emulation thread: time of the latest physical change not yet consumed by a frame (0 = none).
     func consumeEventTime() -> UInt64 {
@@ -252,10 +259,10 @@ final class InputManager {
     /// notice "a button was pressed while paused" without sampling (sampling consumes latches).
     var pressSequence: UInt64 { eventLock.lock(); defer { eventLock.unlock() }; return pressSeq }
 
-    private func setPressed(_ id: String, _ down: Bool) {
+    private func setPressed(_ id: String, _ down: Bool, at: Double? = nil) {
         rn_input_set_pressed(handle, id, down ? 1 : 0)
         if down { eventLock.lock(); pressSeq &+= 1; eventLock.unlock() }
-        noteEvent()
+        noteEvent(at: at)
     }
 
     // MARK: keyboard
@@ -299,16 +306,16 @@ final class InputManager {
         }
         switch ev.type {
         case .keyUp:
-            setPressed(id, false)
+            setPressed(id, false, at: ev.timestamp)
             return keyboardEnabled() ? nil : ev
         case .keyDown:
             // Command shortcuts belong to the menu; text fields keep their keys.
             if ev.modifierFlags.contains(.command) || !keyboardEnabled() { return ev }
-            if !ev.isARepeat { setPressed(id, true) }
+            if !ev.isARepeat { setPressed(id, true, at: ev.timestamp) }
             return nil
         case .flagsChanged:
             if let mask = Self.modifierMasks[ev.keyCode] {
-                setPressed(id, ev.modifierFlags.rawValue & mask != 0)
+                setPressed(id, ev.modifierFlags.rawValue & mask != 0, at: ev.timestamp)
             }
             return ev
         default:
@@ -423,7 +430,7 @@ final class InputManager {
             return
         }
         if routePausedStep(id, down) { return }
-        setPressed(id, down)
+        setPressed(id, down, at: gcEventTime)
     }
 
     /// Test hook (--inject-pad): a controller element change on slot 0, through the same path
@@ -448,12 +455,14 @@ final class InputManager {
                     cap(id)
                 }
             } else {
-                noteEvent()
+                noteEvent(at: gcEventTime)
             }
         }
     }
 
     private func update(extended g: GCExtendedGamepad, prefix p: String, face: FaceNames) {
+        gcEventTime = g.lastEventTimestamp
+        defer { gcEventTime = nil }
         set(p, face.a, g.buttonA.isPressed)
         set(p, face.b, g.buttonB.isPressed)
         set(p, face.x, g.buttonX.isPressed)
@@ -476,6 +485,8 @@ final class InputManager {
     }
 
     private func update(micro g: GCMicroGamepad, prefix p: String, face: FaceNames) {
+        gcEventTime = g.lastEventTimestamp
+        defer { gcEventTime = nil }
         set(p, face.a, g.buttonA.isPressed)
         set(p, face.x, g.buttonX.isPressed)
         set(p, "menu", g.buttonMenu.isPressed)

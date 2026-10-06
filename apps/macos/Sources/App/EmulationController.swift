@@ -1,8 +1,48 @@
 // Emulation thread: the only owner of the rn_session.
-// The host clock decides only WHEN rn_step is called (pacing, pause, slow, advance, rewind);
+// The display decides only WHEN rn_step is called (pacing, pause, slow, advance, rewind);
 // WHAT is emulated is fully determined by the recorded input/event stream.
+// Pacing (docs/FRAME_PACING.md): a CAMetalDisplayLink on this thread's run loop calls back once
+// per display refresh. Refreshes that start a frame (DisplayCadence: every 2nd at 120 Hz) wait
+// until just before the commit deadline (InputDeadline), sample input, emulate one frame, render
+// and present it for that refresh, then do housekeeping (autosave, status). Other refreshes
+// present the same picture again (steady cadence). Without a visible viewport the host clock
+// paces at the NTSC rate. -framePacing hostClock selects the older host-clock + present-thread
+// path (comparison only).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
+import QuartzCore
+
+/// The viewport the display link presents to (created on the main thread by GameLayerView).
+final class DisplayTarget {
+    let layer: CAMetalLayer
+    let renderer: GameRenderer
+    let maxFPS: Int   // the screen's highest refresh rate (120 on ProMotion)
+    init(layer: CAMetalLayer, renderer: GameRenderer, maxFPS: Int) {
+        self.layer = layer
+        self.renderer = renderer
+        self.maxFPS = maxFPS
+    }
+}
+
+/// Presentation feedback from Metal's presented handlers to the emulation thread.
+private final class PresentFeedback {
+    private let lock = NSLock()
+    private var misses = 0
+    private var backlog = false
+    func miss() { lock.lock(); misses += 1; backlog = true; lock.unlock() }
+    func late() { lock.lock(); backlog = true; lock.unlock() }
+    func takeMisses() -> Int { lock.lock(); defer { lock.unlock() }; let m = misses; misses = 0; return m }
+    func takeBacklog() -> Bool { lock.lock(); defer { lock.unlock() }; let b = backlog; backlog = false; return b }
+}
+
+/// CAMetalDisplayLinkDelegate for the emulation thread (EmulationController is not an NSObject).
+private final class DisplayLinkProxy: NSObject, CAMetalDisplayLinkDelegate {
+    weak var owner: EmulationController?
+    init(owner: EmulationController) { self.owner = owner }
+    func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
+        autoreleasepool { owner?.displayRefresh(update) }
+    }
+}
 
 /// UI-facing snapshot of the emulation state (published ~20 Hz).
 struct EmuStatus: Equatable {
@@ -115,6 +155,28 @@ final class EmulationController {
     private var lastFlashTick: UInt64 = 0   // tick of the last altered frame
     private var flashActiveShown = false
     private let period: UInt64 = HostClock.ticks(seconds: Double(RN_FPS_DEN) / Double(RN_FPS_NUM))
+    // Display-locked pacing (emulation thread).
+    private var link: CAMetalDisplayLink?
+    private var linkProxy: DisplayLinkProxy?
+    private var linkTarget: DisplayTarget?
+    private var linkActive = false
+    private var lastLinkCallback: UInt64 = 0
+    private var cadence = DisplayCadence()
+    private var inputDeadline = InputDeadline()
+    private let feedback = PresentFeedback()
+    private var tickStart: UInt64 = 0           // stamped on frames (latency breakdown)
+    private var lastSample: UInt64 = 0          // input sample of the last emulated frame
+    private var lastStep: UInt64 = 0            // when a frame was last emulated (repeat presents)
+    private var emulationRate = 1 / FramePacing.period
+    private var pendingThumbnail: UInt64?       // captured after the frame is presented
+    // Requested viewport (any thread -> emulation thread).
+    private let targetLock = NSLock()
+    private var requestedTarget: DisplayTarget?
+    private var targetChanged = false
+
+    enum PacingMode { case displayLink, hostClock }
+    /// -framePacing hostClock: the previous host-clock + present-thread pacing (for comparison).
+    static let pacingMode: PacingMode = UserDefaults.standard.string(forKey: "framePacing") == "hostClock" ? .hostClock : .displayLink
 
     init(input: InputManager) {
         self.input = input
@@ -235,6 +297,7 @@ final class EmulationController {
         // Raw PPU codes of the same picture for the CRT signal path (display only).
         var meta = meta
         meta.deadline = tickDeadline
+        meta.tickStart = tickStart
         let signal = session?.videoIndices
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
         if flashFilter.level == .off {
@@ -270,28 +333,155 @@ final class EmulationController {
     // MARK: thread loop
 
     private func threadMain() {
-        // Real-time: woken on its deadline even on an otherwise idle Mac (frames then reach the
-        // present thread on a steady grid; audio is pushed evenly). ~1 ms of CPU per frame.
-        HostClock.makeCurrentThreadRealtime(period: Double(RN_FPS_DEN) / Double(RN_FPS_NUM), computation: 0.004, constraint: 0.010)
+        if Self.pacingMode == .hostClock {
+            // Real-time: woken on its deadline even on an otherwise idle Mac.
+            HostClock.makeCurrentThreadRealtime(period: FramePacing.period, computation: 0.004, constraint: 0.010)
+            nextDeadline = HostClock.now()
+            while running { hostTick() }
+            session = nil
+            return
+        }
+        // Woken every display refresh (8.3 ms at 120 Hz); a frame needs ~1 ms of CPU.
+        HostClock.makeCurrentThreadRealtime(period: FramePacing.period / 2, computation: 0.003, constraint: 0.007)
         nextDeadline = HostClock.now()
         while running {
-            let now = HostClock.now()
-            if now < nextDeadline { mach_wait_until(nextDeadline) }
-            let woke = HostClock.now()
-            latency.recordTickWake(lateTicks: woke > nextDeadline ? woke - nextDeadline : 0)
-            tickDeadline = nextDeadline
-            tick()
-            nextDeadline &+= period
-            let after = HostClock.now()
-            if after > nextDeadline &+ period * 6 {
-                // Stalled (app nap, debugger, heavy seek): resync. Never "catch up" by stepping
-                // extra frames for wall-clock reasons.
-                latency.recordLateTick()
-                nextDeadline = after
+            syncDisplayTarget()
+            if link != nil && linkActive {
+                // Display callbacks (displayRefresh) run the frames.
+                _ = CFRunLoopRunInMode(.defaultMode, 0.05, true)
+                if HostClock.seconds(HostClock.now() &- lastLinkCallback) > 0.1 {
+                    // Window hidden / occluded / minimised: keep emulating on the host clock.
+                    linkActive = false
+                    nextDeadline = HostClock.now()
+                }
+            } else {
+                if link != nil {
+                    _ = CFRunLoopRunInMode(.defaultMode, 0, true)  // a callback takes over again
+                    if linkActive { continue }
+                }
+                hostTick()
             }
         }
+        link?.invalidate()
+        link = nil
         // Thread exit: release the session on its own thread.
         session = nil
+    }
+
+    /// One frame on the host clock at the NTSC rate (no viewport, or -framePacing hostClock).
+    private func hostTick() {
+        let now = HostClock.now()
+        if now < nextDeadline { mach_wait_until(nextDeadline) }
+        let woke = HostClock.now()
+        latency.recordTickWake(lateTicks: woke > nextDeadline ? woke - nextDeadline : 0)
+        tickDeadline = Self.pacingMode == .hostClock ? nextDeadline : 0
+        tickStart = woke
+        emulationRate = 1 / FramePacing.period
+        runCommands()
+        let s = tickFrame()
+        let after = HostClock.now()
+        afterTick(s, slack: nextDeadline &+ period > after ? HostClock.seconds(nextDeadline &+ period - after) : 0)
+        nextDeadline &+= period
+        let end = HostClock.now()
+        if end > nextDeadline &+ period * 6 {
+            // Stalled (app nap, debugger, heavy seek): resync. Never "catch up" by stepping
+            // extra frames for wall-clock reasons.
+            latency.recordLateTick()
+            nextDeadline = end
+        }
+    }
+
+    // MARK: display link (emulation thread)
+
+    /// Main thread (GameLayerView): the viewport to present to.
+    func setDisplayTarget(_ t: DisplayTarget) {
+        targetLock.lock(); requestedTarget = t; targetChanged = true; targetLock.unlock()
+    }
+
+    func clearDisplayTarget(_ t: DisplayTarget) {
+        targetLock.lock()
+        if requestedTarget === t { requestedTarget = nil; targetChanged = true }
+        targetLock.unlock()
+    }
+
+    private func syncDisplayTarget() {
+        targetLock.lock()
+        let changed = targetChanged
+        let t = requestedTarget
+        targetChanged = false
+        targetLock.unlock()
+        guard changed, t !== linkTarget else { return }
+        link?.invalidate()
+        link = nil
+        linkTarget = t
+        linkActive = false
+        guard let t else { return }
+        let l = CAMetalDisplayLink(metalLayer: t.layer)
+        let proxy = DisplayLinkProxy(owner: self)
+        l.delegate = proxy
+        // As many refreshes as the display offers (120 Hz ProMotion): a frame is emulated on
+        // every k-th one (DisplayCadence) and the picture re-presented on the others.
+        let maxFPS = Float(max(60, t.maxFPS))
+        l.preferredFrameRateRange = CAFrameRateRange(minimum: maxFPS, maximum: maxFPS, preferred: maxFPS)
+        l.preferredFrameLatency = 1
+        l.add(to: .current, forMode: .default)
+        link = l
+        linkProxy = proxy
+        cadence = DisplayCadence()
+        nextDeadline = HostClock.now()
+    }
+
+    /// CAMetalDisplayLink callback (emulation thread run loop): one display refresh.
+    fileprivate func displayRefresh(_ update: CAMetalDisplayLink.Update) {
+        let cb = HostClock.now()
+        lastLinkCallback = cb
+        linkActive = true
+        guard let target = linkTarget else { return }
+        for _ in 0..<feedback.takeMisses() { inputDeadline.observeMiss() }
+        let present = update.targetPresentationTimestamp
+        let newFrame = cadence.refresh(presentation: present)
+        let refresh = cadence.refresh > 0 ? cadence.refresh : 1.0 / 120
+        let fb = feedback, lat = latency
+        let onRepeat: (Double) -> Void = { t in if t > present + refresh / 4 { fb.late() } }
+        guard newFrame else {
+            let playing = lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
+            if playing && fb.takeBacklog() {
+                // The queue is a refresh behind: skipping this repeat lets it drain.
+                latency.recordBacklogDrain()
+                return
+            }
+            if target.renderer.present(drawable: update.drawable, targetPresentation: present, newFrame: false,
+                                       repeatPicture: playing, onPresented: { _, _, _ in }, onRepeatPresented: onRepeat) != nil,
+               playing {
+                latency.recordRepeat()
+            }
+            return
+        }
+        // Commands (seeks, take switches, ...) run before the wait: their cost is absorbed there.
+        runCommands()
+        let lead = inputDeadline.lead
+        HostClock.wait(untilSeconds: update.targetTimestamp - lead)
+        tickDeadline = 0
+        tickStart = cb
+        emulationRate = cadence.emulationRate
+        let stepsBefore = lastStep
+        let s = tickFrame()
+        let stepped = lastStep != stepsBefore
+        let playing = lastStep != 0 && HostClock.seconds(HostClock.now() &- lastStep) < 0.5
+        let commit = target.renderer.present(
+            drawable: update.drawable, targetPresentation: present, newFrame: true, repeatPicture: playing,
+            onPresented: { meta, commit, t in if lat.recordPresent(meta: meta, commit: commit, presentedSeconds: t) { fb.miss() } },
+            onRepeatPresented: onRepeat)
+        if stepped, let commit, commit > lastSample {
+            // CPU work from the sample to the commit; the GPU part (a few µs for the plain picture,
+            // more with the CRT model) is covered by the margin and the miss feedback (Metal's
+            // GPU start/end times include waiting for the drawable, so they are not added).
+            inputDeadline.observeWork(HostClock.seconds(commit - lastSample))
+        }
+        latency.recordCadence(pacing: cadence.refreshesPerFrame.map { "display link \(Int((1 / refresh).rounded())) Hz / \($0)" } ?? "display link \(Int((1 / refresh).rounded())) Hz (free)",
+                              refresh: refresh, expectedInterval: cadence.expectedFrameInterval, inputLead: inputDeadline.lead)
+        let now = HostClock.seconds(HostClock.now())
+        afterTick(s, slack: update.targetTimestamp + cadence.expectedFrameInterval - inputDeadline.lead - now)
     }
 
     private func runCommands() {
@@ -302,13 +492,11 @@ final class EmulationController {
         for c in cmds { c(self) }
     }
 
-    private func tick() {
+    /// The frame-critical part of a tick: hotkeys, input sample, emulation, publish. Returns the
+    /// session when the housekeeping (autosave) may run afterwards.
+    private func tickFrame() -> (EngineSession?, autosave: Bool) {
         tickCount &+= 1
-        runCommands()
-        guard let s = session else {
-            publishStatus(force: false)
-            return
-        }
+        guard let s = session else { return (nil, false) }
 
         // Read the press counter before polling hotkeys so a hotkey press is never mistaken
         // for a game-button press below.
@@ -349,8 +537,7 @@ final class EmulationController {
                     publishVideo(continuous: true)
                 } catch { reportError(String(localized: "Rewind failed"), error); uiRewindHeld = false }
             }
-            finishTick(s)
-            return
+            return (s, false)
         }
         if rewinding {
             rewinding = false
@@ -361,8 +548,7 @@ final class EmulationController {
         if let t = scrubTarget {
             scrubTarget = nil
             if !practicing { seekCommand(t) }
-            finishTick(s)
-            return
+            return (s, false)
         }
 
         if paused {
@@ -397,12 +583,19 @@ final class EmulationController {
         }
         let active = flashFilter.level != .off && tickCount &- lastFlashTick < 45 && lastFlashTick != 0
         if active != flashActiveShown { flashActiveShown = active; statusDirty = true }
-        maybeAutosave(s)
-        finishTick(s)
+        return (s, true)
     }
 
-    private func finishTick(_ s: EngineSession) {
-        if tickCount % 3 == 0 || structureDirty { publishStatus(force: false) }
+    /// After the frame is on its way: thumbnail, autosave (when `slack` seconds remain before the
+    /// next frame's work must start), status for the UI.
+    private func afterTick(_ r: (EngineSession?, autosave: Bool), slack: Double) {
+        if let s = r.0, let f = pendingThumbnail {
+            pendingThumbnail = nil
+            captureThumbnail(s, frame: f)
+        }
+        if let s = r.0, r.autosave { maybeAutosave(s, slack: slack) }
+        if r.0 == nil || tickCount % 3 == 0 || structureDirty { publishStatus(force: false) }
+        latency.recordThreadCPU(emulation: HostClock.threadCPUSeconds())
     }
 
     // MARK: fast-forward (emulation thread)
@@ -658,6 +851,7 @@ final class EmulationController {
         let mode = s.mode
         let live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE
         let tSample = HostClock.now()
+        lastSample = tSample
         var p1: UInt8 = 0, p2: UInt8 = 0
         if live {
             // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
@@ -698,8 +892,9 @@ final class EmulationController {
                 show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
             }
         }
-        if audible { audio.push(s.audio()) }
-        if mode != RN_MODE_PRACTICE { captureThumbnail(s, frame: info.frame) }
+        if audible { audio.push(s.audio(), frameRate: emulationRate); latency.recordAudioRatio(audio.ratio) }
+        if mode != RN_MODE_PRACTICE { pendingThumbnail = info.frame }
+        lastStep = tEmu
         latency.recordStep(sampleToEmulated: tEmu - tSample)
         statusDirty = true
         return true
@@ -814,11 +1009,10 @@ final class EmulationController {
     /// Autosave = engine journal append + fsync. The session is single-threaded, so it runs
     /// on this thread, but only right after a frame was published and only when the next
     /// frame deadline is far enough away; its cost is shown in the latency overlay.
-    private func maybeAutosave(_ s: EngineSession) {
+    private func maybeAutosave(_ s: EngineSession, slack: Double) {
         let now = HostClock.now()
         guard autosaveInterval > 0, !s.projectDir.isEmpty,
               autosaveSoon || HostClock.seconds(now - lastAutosave) >= autosaveInterval else { return }
-        let slack = nextDeadline &+ period > now ? HostClock.seconds(nextDeadline &+ period - now) : 0
         if slack < 0.008 && !paused { return } // try again next tick
         lastAutosave = now
         autosaveSoon = false

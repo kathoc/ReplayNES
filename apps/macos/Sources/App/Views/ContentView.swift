@@ -23,12 +23,12 @@ struct ContentView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 viewport
-                if model.showSidebar && model.status.hasSession {
+                if model.showSidebar && model.status.hasSession && !model.immersive {
                     Divider()
                     SidebarView().frame(width: 270)
                 }
             }
-            if model.status.hasSession {
+            if model.status.hasSession && !model.immersive {
                 Divider()
                 TransportBar()
             }
@@ -79,13 +79,17 @@ struct ContentView: View {
             if model.status.hasSession {
                 MetalGameView(emu: model.emu, options: model.displayOptions)
                 if let img = model.snapshotFrame { SnapshotFrameView(image: img, options: model.displayOptions) }
-                StatusBadges().padding(10)
-                if model.showLatency {
-                    VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(10)
-                }
-                if model.showPracticePanel || model.status.practicing {
-                    VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
-                        .padding(.leading, 12).padding(.bottom, 12)
+                // Full-screen play hides everything drawn over the game (FullScreenChrome.swift):
+                // any view above the layer forces a compositor pass.
+                if !model.immersive {
+                    StatusBadges().padding(10)
+                    if model.showLatency {
+                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(10)
+                    }
+                    if model.showPracticePanel || model.status.practicing {
+                        VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
+                            .padding(.leading, 12).padding(.bottom, 12)
+                    }
                 }
             } else {
                 WelcomeView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -173,9 +177,13 @@ struct LatencyOverlay: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Latency").bold()
             row(String(localized: "Input→display (avg/last)"), String(format: "%.1f / %.1f ms", s.inputToPresentMs, s.lastInputToPresentMs))
+            row(String(localized: "Input sample→display"), String(format: "%.1f ms", s.sampleToPresentMs))
             row(String(localized: "Sample→emulated"), String(format: "%.2f ms", s.sampleToEmulatedMs))
             row(String(localized: "Emulated→display"), String(format: "%.1f ms", s.emulatedToPresentMs))
             row(String(localized: "Display fps"), String(format: "%.1f", s.presentedFPS))
+            row(String(localized: "Pacing"), s.pacing)
+            row(String(localized: "Input sampled before deadline"), String(format: "%.1f ms", s.inputLeadMs))
+            row(String(localized: "Missed refreshes / judder"), "\(s.missedRefreshes) / \(s.offCadence)")
             row(String(localized: "Display GPU (avg/max)"), String(format: "%.2f / %.2f ms", s.displayGPUMs, s.displayGPUMaxMs))
             if !s.crtInfo.isEmpty { row(String(localized: "CRT"), s.crtInfo) }
             row(String(localized: "Audio buffer / output"), String(format: "%.1f ms / %.1f ms", s.audioFillMs, s.audioOutputLatencyMs))

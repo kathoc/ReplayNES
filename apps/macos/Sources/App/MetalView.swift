@@ -110,15 +110,80 @@ final class GameRenderer {
         latency.recordPresentLead(lead)
     }
 
-    /// Present thread: shows what is new (an emulated frame, a size / option / CRT change);
-    /// otherwise nothing is drawn and the layer keeps its picture.
+    func recordThreadCPU() { latency.recordThreadCPU(present: HostClock.threadCPUSeconds()) }
+
+    /// GPU time of the last new frame's command buffer (seconds; any thread).
+    private let gpuLock = NSLock()
+    private var gpuSeconds_ = 0.0
+    var lastGPUSeconds: Double { gpuLock.lock(); defer { gpuLock.unlock() }; return gpuSeconds_ }
+
+    /// Host-clock pacing (PresentThread): shows what is new (an emulated frame, a size / option /
+    /// CRT change); otherwise nothing is drawn and the layer keeps its picture.
     func draw(layer: CAMetalLayer) {
+        let (newMeta, changed) = fetch(drawableSize: layer.drawableSize)
+        guard newMeta != nil || changed else { return }
+        guard let drawable = layer.nextDrawable(), let cb = queue.makeCommandBuffer() else { shownOptions = nil; return }
+        encode(newMeta: newMeta, drawable: drawable, cb: cb)
+        if let meta = newMeta, meta.emulatedTime != 0 {
+            let lat = latency
+            let commit = HostClock.now()
+            drawable.addPresentedHandler { [weak self] d in
+                guard d.presentedTime > 0 else { return }
+                lat.recordPresent(meta: meta, commit: commit, presentedSeconds: d.presentedTime)
+                if meta.deadline != 0 { self?.presented(frame: meta.frame, at: d.presentedTime) }
+            }
+        }
+        // On the tick grid plus the lead; frames not made by a paced tick (seeks while paused,
+        // option changes) and frames already past their slot go out at once.
+        let target = newMeta.map { $0.deadline != 0 ? HostClock.seconds($0.deadline) + presentLead : 0 } ?? 0
+        if target > HostClock.seconds(HostClock.now()) {
+            cb.present(drawable, atTime: target)
+        } else {
+            cb.present(drawable)
+        }
+        cb.commit()
+    }
+
+    /// Display-link pacing (emulation thread): renders into the display link's drawable for the
+    /// refresh at `targetPresentation`. `newFrame`: this refresh starts a new emulated frame (just
+    /// published); otherwise the current picture is presented again when `repeatPicture` (steady
+    /// cadence) or something changed (size, options, CRT). Returns the commit time (mach ticks)
+    /// when something was presented, nil when nothing was. `onPresented(meta, presentedSeconds)`
+    /// is called for a presented new frame (on a Metal thread); `onRepeatPresented` for a repeat.
+    @discardableResult
+    func present(drawable: CAMetalDrawable, targetPresentation: Double, newFrame: Bool, repeatPicture: Bool,
+                 onPresented: @escaping (FrameMeta, UInt64, Double) -> Void,
+                 onRepeatPresented: @escaping (Double) -> Void) -> UInt64? {
+        let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize)
+        var newMeta = newFrame ? fetched : nil
+        if !newFrame, let m = fetched, m.emulatedTime == 0 { newMeta = m }  // seek / option refresh: show it
+        if newMeta == nil && !changed && !repeatPicture { return nil }
+        guard let cb = queue.makeCommandBuffer() else { return nil }
+        newMeta?.targetPresentation = targetPresentation
+        encode(newMeta: newMeta, drawable: drawable, cb: cb)
+        let commit = HostClock.now()
+        if let meta = newMeta, meta.emulatedTime != 0 {
+            drawable.addPresentedHandler { d in
+                if d.presentedTime > 0 { onPresented(meta, commit, d.presentedTime) }
+            }
+        } else {
+            drawable.addPresentedHandler { d in
+                if d.presentedTime > 0 { onRepeatPresented(d.presentedTime) }
+            }
+        }
+        cb.present(drawable)
+        cb.commit()
+        return commit
+    }
+
+    /// Takes a newly published frame into the texture (and the CRT store). Returns its meta and
+    /// whether anything else that is shown changed since the last draw.
+    private func fetch(drawableSize wanted: CGSize) -> (FrameMeta?, Bool) {
         let options = self.options
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
         let crtState = CRTSettingsModel.shared.snapshot
         let crtOn = crtState.enabled
-        let wanted = layer.drawableSize
         let store = crtFrame
         // CRT just switched on (e.g. while paused): fetch the current frame again for it.
         let refetch = crtOn && !store.valid
@@ -128,10 +193,18 @@ final class GameRenderer {
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
         }
-        guard newMeta != nil || crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT else { return }
-        guard let drawable = layer.nextDrawable(), let cb = queue.makeCommandBuffer() else { shownOptions = nil; return }
+        let changed = crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT
+        return (newMeta, changed)
+    }
+
+    /// Encodes the picture (plain or CRT) into `drawable` on `cb`.
+    private func encode(newMeta: FrameMeta?, drawable: CAMetalDrawable, cb: MTLCommandBuffer) {
+        let options = self.options
+        let crtState = CRTSettingsModel.shared.snapshot
+        let crtOn = crtState.enabled
+        let store = crtFrame
         if let m = newMeta, m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
-        shownSize = wanted
+        shownSize = drawable.layer.drawableSize
         shownOptions = options
         shownCRT = crtState
         let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
@@ -162,8 +235,7 @@ final class GameRenderer {
             store.valid = false
         }
         crtPending = crtOn && !crtShown
-        if !crtShown {
-            guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
+        if !crtShown, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             let (r, crop) = Self.viewport(drawableSize: size, options: options)
             let srcH = Double(Int(RN_VIDEO_HEIGHT) - 2 * crop), srcW = Double(Int(RN_VIDEO_WIDTH) - 2 * crop)
             var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float(r.minY / size.height * 2 - 1),
@@ -177,29 +249,16 @@ final class GameRenderer {
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             enc.endEncoding()
         }
-        if let meta = newMeta {
+        if newMeta != nil {
             let lat = latency
-            if meta.emulatedTime != 0 {
-                drawable.addPresentedHandler { [weak self] d in
-                    guard d.presentedTime > 0 else { return }
-                    lat.recordPresent(meta: meta, presentedSeconds: d.presentedTime)
-                    if meta.deadline != 0 { self?.presented(frame: meta.frame, at: d.presentedTime) }
-                }
-            }
             let info = crtInfo
-            cb.addCompletedHandler { b in
-                if b.gpuEndTime > b.gpuStartTime { lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: info) }
+            cb.addCompletedHandler { [weak self] b in
+                guard b.gpuEndTime > b.gpuStartTime else { return }
+                let sec = b.gpuEndTime - b.gpuStartTime
+                lat.recordDisplayGPU(ms: sec * 1000, crtInfo: info)
+                if let self { self.gpuLock.lock(); self.gpuSeconds_ = sec; self.gpuLock.unlock() }
             }
         }
-        // On the tick grid plus the lead; frames not made by a paced tick (seeks while paused,
-        // option changes) and frames already past their slot go out at once.
-        let target = newMeta.map { $0.deadline != 0 ? HostClock.seconds($0.deadline) + presentLead : 0 } ?? 0
-        if target > HostClock.seconds(HostClock.now()) {
-            cb.present(drawable, atTime: target)
-        } else {
-            cb.present(drawable)
-        }
-        cb.commit()
     }
 
     // MARK: CRT
@@ -267,23 +326,29 @@ final class CRTFrameStore {
     }
 }
 
-/// The game viewport: a layer-backed view whose CAMetalLayer is drawn by its PresentThread.
+/// The game viewport: a layer-backed view whose CAMetalLayer is driven by the emulation thread's
+/// display link (default), or by a PresentThread with host-clock pacing (-framePacing hostClock).
 final class GameLayerView: NSView {
     let renderer: GameRenderer?
     private let metalLayer = CAMetalLayer()
     private var presenter: PresentThread?
+    private weak var emu: EmulationController?
+    private var displayTarget: DisplayTarget?
 
-    init(frames: FrameBuffer, latency: LatencyMeter) {
-        renderer = GameRenderer(frames: frames, latency: latency)
+    init(emu: EmulationController) {
+        self.emu = emu
+        renderer = GameRenderer(frames: emu.frames, latency: emu.latency)
         super.init(frame: NSRect(x: 0, y: 0, width: 512, height: 480))
         metalLayer.device = renderer?.device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
+        // Opaque, no transform, no overlapping views while playing in full screen: the layer can
+        // then be shown direct-to-display (no compositor pass; docs/FRAME_PACING.md).
         metalLayer.isOpaque = true
         metalLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
-        // One drawable on screen, up to two scheduled ahead (present(atTime:)).
         metalLayer.maximumDrawableCount = 3
         metalLayer.displaySyncEnabled = true
+        metalLayer.presentsWithTransaction = false
         wantsLayer = true
         layerContentsRedrawPolicy = .never
     }
@@ -296,7 +361,7 @@ final class GameLayerView: NSView {
     override func makeBackingLayer() -> CALayer { metalLayer }
     override var isOpaque: Bool { true }
     override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() {}  // the present thread draws the contents
+    override func updateLayer() {}  // drawn by the emulation / present thread
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -314,7 +379,7 @@ final class GameLayerView: NSView {
         updateDrawableSize()
     }
 
-    /// Main thread. The present thread takes its geometry from each drawable's texture.
+    /// Main thread. The render path takes its geometry from each drawable's texture.
     private func updateDrawableSize() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let size = CGSize(width: max(1, (bounds.width * scale).rounded()), height: max(1, (bounds.height * scale).rounded()))
@@ -334,13 +399,23 @@ final class GameLayerView: NSView {
     }
 
     private func startRendering() {
-        guard presenter == nil, let renderer else { return }
-        presenter = PresentThread(renderer: renderer, layer: metalLayer)
+        guard let renderer, let emu else { return }
+        if EmulationController.pacingMode == .displayLink {
+            guard displayTarget == nil else { return }
+            let t = DisplayTarget(layer: metalLayer, renderer: renderer,
+                                  maxFPS: window?.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60)
+            displayTarget = t
+            emu.setDisplayTarget(t)
+        } else if presenter == nil {
+            presenter = PresentThread(renderer: renderer, layer: metalLayer)
+        }
     }
 
     func stopRendering() {
         presenter?.stop()
         presenter = nil
+        if let t = displayTarget { emu?.clearDisplayTarget(t) }
+        displayTarget = nil
     }
 }
 
@@ -363,6 +438,7 @@ final class PresentThread {
                 _ = wakeup.wait(timeout: .now() + 0.1)
                 guard self.isRunning else { break }
                 autoreleasepool { renderer.draw(layer: layer) }  // drawables are autoreleased
+                renderer.recordThreadCPU()
             }
         }
         t.name = "ReplayNES.present"
@@ -387,7 +463,7 @@ struct MetalGameView: NSViewRepresentable {
     var options: DisplayOptions
 
     func makeNSView(context: Context) -> GameLayerView {
-        let v = GameLayerView(frames: emu.frames, latency: emu.latency)
+        let v = GameLayerView(emu: emu)
         v.setOptions(options)
         return v
     }

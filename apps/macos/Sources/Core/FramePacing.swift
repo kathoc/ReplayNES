@@ -20,13 +20,14 @@ struct FramePacing {
     private(set) var skipped: UInt64 = 0
     /// Largest present-to-present interval of continuous play since the last `takeWindowMax()`.
     private(set) var windowMaxInterval = 0.0
-    private var last: (frame: UInt64, time: Double)?
+    /// The last newly emulated frame that became visible.
+    private(set) var lastPresent: (frame: UInt64, time: Double)?
 
     /// A newly emulated frame `frame` became visible at `time`.
     mutating func present(frame: UInt64, at time: Double) {
         presents &+= 1
-        defer { last = (frame, time) }
-        guard let l = last, frame > l.frame, frame - l.frame <= 8, time > l.time,
+        defer { lastPresent = (frame, time) }
+        guard let l = lastPresent, frame > l.frame, frame - l.frame <= 8, time > l.time,
               time - l.time < Self.continuityLimit else { return }
         let dt = time - l.time
         skipped &+= frame - l.frame - 1

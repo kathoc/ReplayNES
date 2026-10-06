@@ -37,7 +37,11 @@ final class AppModel: ObservableObject {
     /// (toolbar, menus, layout) is not rebuilt for every update.
     var status = EmuStatus() {
         willSet { if newValue.coarse != status.coarse { objectWillChange.send() } }
+        didSet { if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession { updateImmersive() } }
     }
+    /// Full-screen play with the window chrome hidden (FullScreenChrome.swift).
+    @Published var immersive = false
+    let chrome = FullScreenChrome()
     let clock = PlaybackClock()
     @Published var bookmarks: [BookmarkInfo] = []
     @Published var takes: [TakeInfo] = []
@@ -96,7 +100,7 @@ final class AppModel: ObservableObject {
         DisplayOptions(integerScale: integerScale, pixelAspect87: displayPAR87, hideOverscan: hideOverscan)
     }
 
-    weak var mainWindow: NSWindow?
+    weak var mainWindow: NSWindow? { didSet { if mainWindow !== oldValue { chrome.window = mainWindow } } }
     private var statsTimer: Timer?
     private var activity: NSObjectProtocol?
     private var noticeWork: DispatchWorkItem?
@@ -128,6 +132,7 @@ final class AppModel: ObservableObject {
             self.flash(String(localized: "Paused because \(name) was disconnected"))
         }
         input.onPausedStep = { [weak emu] dir, down in emu?.perform { e in e.pausedStep(dir, down: down) } }
+        chrome.onChange = { [weak self] in self?.updateImmersive() }
         input.keyboardEnabled = { [weak self] in
             guard let w = NSApp.keyWindow, w === self?.mainWindow else { return false }
             return !(w.firstResponder is NSText)
