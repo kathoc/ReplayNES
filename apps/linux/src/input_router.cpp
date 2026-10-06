@@ -69,6 +69,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 4) {  // L2 rewind / R2 fast-forward (untouched layout-3 triggers only)
+      rnf_input_trigger_swap_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -247,6 +252,7 @@ void InputRouter::detach(SDL_JoystickID id) {
   int s = slotOf(id);
   if (s < 0) return;
   std::string name = pads_[s].name;
+  if (lastSlot_ == s) lastSlot_ = -1;
   SDL_CloseGamepad(pads_[s].pad);
   pads_[s] = PadInfo();
   std::string prefix = slotPrefix(s);
@@ -270,6 +276,7 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
   const char* el = rnf_sdl_button_element(button);
   if (!el) return;
   std::string id = slotPrefix(slot) + el;
+  if (down) lastSlot_ = slot;
   if (isReserved(el)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -326,6 +333,7 @@ void InputRouter::padAxis(int slot, int axis, float v, double t) {
     bool now = state ? v > 0.35f : v > 0.5f;  // hysteresis
     if (now == state) return;
     state = now;
+    if (now) lastSlot_ = slot;
     std::string id = g + (right ? "rightTrigger" : "leftTrigger");
     if (now && capture_) {
       pressed_.insert(id);

@@ -29,6 +29,7 @@
 #include "support/rn_test.h"
 #include "thumbnails.h"
 #include "trash.h"
+#include "ui_logic.h"
 
 namespace fs = std::filesystem;
 using namespace rnl;
@@ -241,6 +242,56 @@ TEST_CASE("library search") {
   CHECK(librarySearchMatches("nintendo/", r));
   CHECK(librarySearchMatches("\xEF\xBC\xAD\xEF\xBD\x81\xEF\xBD\x92\xEF\xBD\x89\xEF\xBD\x8F", r));  // full-width "Mario"
   CHECK_FALSE(librarySearchMatches("zelda", r));
+}
+
+TEST_CASE("controller conventions: B / Menu / View pages") {
+  using P = MenuPage;
+  using C = MenuCommand;
+  // In a session: B and Menu on the hub resume play; on a page they return to the hub.
+  CHECK(menuTransition(P::playback, C::back, true, P::playback).closeAndResume);
+  CHECK(menuTransition(P::playback, C::menuButton, true, P::playback).closeAndResume);
+  for (P p : {P::takes, P::bookmarks, P::practice, P::settings, P::guide}) {
+    MenuTransition t = menuTransition(p, C::back, true, P::playback);
+    CHECK(t.page == P::playback);
+    CHECK_FALSE(t.closeAndResume);
+    CHECK(menuTransition(p, C::menuButton, true, P::playback).page == P::playback);
+  }
+  // View toggles the guide and back to where it was opened.
+  CHECK(menuTransition(P::settings, C::viewButton, true, P::playback).page == P::guide);
+  CHECK(menuTransition(P::guide, C::viewButton, true, P::settings).page == P::settings);
+  CHECK(menuTransition(P::guide, C::viewButton, true, P::guide).page == P::playback);
+  // Start screen: Menu = Library <-> Settings, B = back to the Library, never "resume".
+  CHECK(menuTransition(P::library, C::menuButton, false, P::library).page == P::settings);
+  CHECK(menuTransition(P::settings, C::menuButton, false, P::library).page == P::library);
+  CHECK(menuTransition(P::settings, C::back, false, P::library).page == P::library);
+  CHECK_FALSE(menuTransition(P::library, C::back, false, P::library).closeAndResume);
+  CHECK(menuTransition(P::guide, C::viewButton, false, P::playback).page == P::library);
+  // L1 / R1 on pages without tabs.
+  CHECK(cyclePage(P::practice, 1) == P::takes);
+  CHECK(cyclePage(P::practice, -1) == P::guide);
+  CHECK(cyclePage(P::guide, 1) == P::practice);
+  CHECK(cyclePage(P::settings, 1) == P::settings);
+}
+
+TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
+  CHECK_EQ(scrubStepFrames(0.0), 1);
+  CHECK_EQ(scrubStepFrames(1.0), 4);
+  CHECK_EQ(scrubStepFrames(2.0), 15);
+  CHECK_EQ(scrubStepFrames(10.0), 60);
+  std::vector<uint64_t> marks = {100, 900, 5000};
+  CHECK_EQ(timelineJumpTarget(500, 2000, marks, 1), uint64_t(900));
+  CHECK_EQ(timelineJumpTarget(500, 2000, marks, -1), uint64_t(100));
+  CHECK_EQ(timelineJumpTarget(900, 2000, marks, 1), uint64_t(1200));  // 5000 is past the take end: +5 s
+  CHECK_EQ(timelineJumpTarget(1900, 2000, marks, 1), uint64_t(2000));
+  CHECK_EQ(timelineJumpTarget(100, 2000, marks, -1), uint64_t(0));
+  CHECK_EQ(timelineJumpTarget(800, 2000, {}, -1), uint64_t(500));
+  // Glyphs by position: confirm (south) is A on Steam Deck / Xbox, ✕ on PlayStation, B on Nintendo.
+  CHECK_EQ(padGlyph(RNF_FAMILY_STEAM_DECK, "face.south"), std::string("A"));
+  CHECK_EQ(padGlyph(RNF_FAMILY_XBOX, "face.east"), std::string("B"));
+  CHECK_EQ(padGlyph(RNF_FAMILY_PLAYSTATION, "face.south"), std::string("\xE2\x9C\x95"));
+  CHECK_EQ(padGlyph(RNF_FAMILY_NINTENDO, "face.south"), std::string("B"));
+  CHECK_EQ(padGlyph(RNF_FAMILY_NINTENDO, "face.east"), std::string("A"));
+  CHECK_EQ(padGlyph(RNF_FAMILY_STEAM_DECK, "rightShoulder"), std::string("R1"));
 }
 
 TEST_CASE("cadence: integer lock from the core, 3:2 at 90 Hz") {

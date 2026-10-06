@@ -52,22 +52,44 @@ void wrappedDisabled(const char* text) {
 }  // namespace
 
 void UI::buildSettings() {
+  // Tabs: L1 / R1 (and mouse / touch); not in the D-pad focus order, so up / down stay on the page.
   const char* pages[] = {TR("Display"), TR("Audio & Controls"), TR("Controller"), TR("Game Input & Hotkeys")};
+  rnf_controller_family fam = promptFamily();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float gh = ImGui::GetFrameHeight() * 0.8f;
+  auto glyphHere = [&](const char* el) {
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = glyph(dl, ImVec2(p.x, p.y + (ImGui::GetFrameHeight() - gh) * 0.5f), el, fam, gh);
+    ImGui::Dummy(ImVec2(w, ImGui::GetFrameHeight()));
+  };
+  glyphHere("leftShoulder");
+  ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
   for (int i = 0; i < 4; ++i) {
-    if (i) ImGui::SameLine();
+    ImGui::SameLine(0, S(6));
     bool sel = settingsPage_ == i;
     ImGui::PushStyleColor(ImGuiCol_Button, sel ? ImVec4(0.30f, 0.42f, 0.62f, 1) : ImVec4(0.18f, 0.19f, 0.23f, 1));
-    if (ImGui::Button(pages[i])) settingsPage_ = i;
+    if (ImGui::Button(pages[i])) {
+      settingsPage_ = i;
+      focusFirst_ = true;
+    }
     ImGui::PopStyleColor();
   }
+  ImGui::PopItemFlag();
+  ImGui::SameLine(0, S(6));
+  glyphHere("rightShoulder");
   ImGui::Separator();
   ImGui::BeginChild("##settingspage", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+  if (focusFirst_) {
+    ui::FocusNextItem();
+    focusFirst_ = false;
+  }
   switch (settingsPage_) {
     case 0: buildDisplaySettings(); break;
     case 1: buildAudioControlSettings(); break;
     case 2: buildControllerSettings(); break;
     case 3: buildInputSettings(); break;
   }
+  scrollWithRightStick();
   ImGui::EndChild();
 }
 
@@ -132,9 +154,7 @@ void UI::buildAudioControlSettings() {
   wrappedDisabled(TR("Audio is muted while paused, rewinding, seeking, in slow motion or fast-forwarding."));
   ImGui::SeparatorText(TR("Controls"));
   if (ImGui::Checkbox(TR("Pause when rewind / fast-forward is released"), &s.pauseAfterRewind)) changed();
-  if (ImGui::Checkbox(TR("While paused, the controller’s D-pad ←/→ steps back / advances one frame (hold to repeat)"),
-                      &s.dpadStepWhenPaused))
-    changed();
+  wrappedDisabled(TR("While paused, move the focus up to the timeline: the D-pad ←/→ steps back / advances (hold for faster)."));
   ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(TR("Autosave interval"));
   for (double v : {2.0, 3.0, 5.0, 10.0, 30.0}) {
@@ -404,6 +424,8 @@ void UI::buildAssignPicker() {
     ImGui::EndChild();
     if (current.size() > 1) ImGui::TextDisabled("%s", TR("Choosing one makes it the only action assigned to this button."));
     if (ImGui::Button(TR("Cancel"))) close = true;
+    ImGui::SameLine(0, S(24));
+    inlinePrompts(TR("Cancel"));
     if (!appearing && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) close = true;
     if (close) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();

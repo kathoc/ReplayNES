@@ -185,7 +185,7 @@ void UI::buildExportDialog() {
     exportOpened_ = true;
   }
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-  ImGui::SetNextWindowSize(ImVec2(std::min(S(900), io.DisplaySize.x * 0.95f), 0));
+  ImGui::SetNextWindowSize(ImVec2(std::min(S(980), io.DisplaySize.x * 0.95f), 0));
   ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(io.DisplaySize.x, io.DisplaySize.y * 0.94f));
   bool close = false;
   if (ImGui::BeginPopupModal("##export", nullptr,
@@ -224,57 +224,73 @@ void UI::buildExportDialog() {
         if (ImGui::Button(TR("Close"))) close = true;
       }
     } else {
-      // Settings.
+      // Settings: two columns (picture | processing + range), the name, the result, then the
+      // collapsible advanced options, so the buttons are always on screen at 1280x800.
       const EmuStatus& st = d_.emu->status();
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(TR("Codec"));
-      ImGui::SameLine(S(240));
-      if (appearing) ImGui::SetKeyboardFocusHere();
-      if (ImGui::RadioButton(TR("H.264 (automatic encoder)"), exportEncoder_ == 0)) exportEncoder_ = 0;
-      ImGui::SetCursorPosX(S(240));
-      for (int i = 0; i < 3; ++i) {
-        if (i) ImGui::SameLine();
-        if (ImGui::RadioButton(kEncoders[i], exportEncoder_ == i + 1)) exportEncoder_ = i + 1;
-      }
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(TR("Size"));
-      ImGui::SameLine(S(240));
+      const float colW = S(460), gap = S(24);
+      // The options scroll (focus-driven) if they ever outgrow the screen; the buttons below stay.
+      float maxBody = io.DisplaySize.y * 0.94f - S(40) - S(100);
+      ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, maxBody));
+      ImGui::BeginChild("##exportbody", ImVec2(colW * 2 + gap + S(4), 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened,
+                        ImGuiWindowFlags_NoBackground);
+      const float x0 = ImGui::GetCursorPosX();
+      // A section title with a rule that stays inside its column (SeparatorText spans the window).
+      auto section = [&](const char* title, float colRight) {
+        ImGui::TextUnformatted(title);
+        ImVec2 a = ImGui::GetItemRectMax(), b = ImGui::GetItemRectMin();
+        float y = (a.y + b.y) * 0.5f;
+        float right = ImGui::GetWindowPos().x + colRight - ImGui::GetScrollX();
+        if (right > a.x + S(10)) ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x + S(10), y), ImVec2(right, y), ImGui::GetColorU32(ImGuiCol_Separator));
+      };
       ImGui::BeginGroup();
-      for (size_t i = 0, n = rnf_export_preset_count(); i < n; ++i) {
+      ImGui::PushItemWidth(colW);
+      section(TR("Size"), x0 + colW);
+      for (size_t i = 0, n = rnf_export_preset_count(), col = 0; i < n; ++i) {
         rnf_export_preset p{};
         if (!rnf_export_preset_get(i, &p)) continue;
-        if (i % 4) ImGui::SameLine();
+        if (col % 3) ImGui::SameLine(x0 + colW * float(col % 3) / 3.0f);
+        ++col;
         std::string l = str(rnf_export_preset_label(&p)) + "##preset" + std::to_string(i);
         if (ImGui::RadioButton(l.c_str(), exportPreset_ == int(i))) exportPreset_ = int(i);
       }
-      ImGui::EndGroup();
-      ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(TR("Pixel Aspect Ratio"));
-      ImGui::SameLine(S(240));
+      section(TR("Pixel Aspect Ratio"), x0 + colW);
       if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
-      ImGui::SameLine();
       if (ImGui::RadioButton(TR("8:7 (as on a CRT TV)"), exportPar87_)) exportPar87_ = true;
+      ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
+      ImGui::PopItemWidth();
+      ImGui::Dummy(ImVec2(colW, 0));
+      ImGui::EndGroup();
+      ImGui::SameLine(x0 + colW + gap);
+      ImGui::BeginGroup();
+      ImGui::PushTextWrapPos(x0 + colW + gap + colW);
+      section(TR("Processing"), x0 + colW + gap + colW);
       ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
       rn_flash_level level = d_.settings->flash == RN_FLASH_OFF ? RN_FLASH_STANDARD : rn_flash_level(d_.settings->flash);
-      wrappedDisabled(TRF("Exports the video with intense flashing reduced (level: %@; change it in Settings → Display). When "
-                          "off, the video is exactly as recorded.",
-                          {str(rnf_flash_level_label(level))})
-                          .c_str());
+      ImGui::TextDisabled("%s", TRF("Level: %@ (Settings → Display). Off: exactly as recorded.", {str(rnf_flash_level_label(level))}).c_str());
       ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable);
       ImGui::Checkbox(TR("Apply CRT Effect"), &exportApplyCRT_);
       ImGui::EndDisabled();
-      wrappedDisabled(TR("Renders each frame with the CRT Display settings through the same Vulkan pipeline (4:3; best with "
-                         "4:3 sizes such as 1280×960). Exporting is slower."));
+      ImGui::TextDisabled("%s", TR("CRT Display settings, 4:3 (best with 1280×960). Slower."));
+      section(TR("Range"), x0 + colW + gap + colW);
       ImGui::Checkbox(TR("Whole Take"), &exportWholeTake_);
       if (!exportWholeTake_) {
-        ImGui::SetNextItemWidth(S(200));
+        ImGui::SetNextItemWidth(colW * 0.5f);
         ImGui::InputInt(TR("Start Frame"), &exportStart_);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(S(200));
+        ImGui::SetNextItemWidth(colW * 0.5f);
         ImGui::InputInt(TR("End Frame"), &exportEnd_);
       }
-      // Output geometry + length.
+      ImGui::PopTextWrapPos();
+      ImGui::Dummy(ImVec2(colW, 0));
+      ImGui::EndGroup();
+      ImGui::Spacing();
+      // Name + result.
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted(TR("Name"));
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(S(440));
+      ImGui::InputText("##exportname", exportName_, sizeof exportName_);
+      ImGui::SameLine();
+      ImGui::TextDisabled(".mp4");
       rnf_export_settings s = defaultExportSettings();
       rnf_export_preset p{};
       if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
@@ -290,22 +306,36 @@ void UI::buildExportDialog() {
       uint64_t frames = exportWholeTake_ ? st.takeLength : uint64_t(std::max(0, exportEnd_ - exportStart_));
       ImGui::TextDisabled("%s: %s", TR("Length"),
                           TRF("%@ (%llu frames, 60.0988 fps, AAC 48 kHz)", {timecode(frames), (unsigned long long)frames}).c_str());
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(TR("Name"));
-      ImGui::SameLine(S(240));
-      ImGui::SetNextItemWidth(S(440));
-      ImGui::InputText("##exportname", exportName_, sizeof exportName_);
-      ImGui::SameLine();
-      ImGui::TextDisabled(".mp4");
-      wrappedDisabled(TRF("Saved in %@", {Paths::display(d_.library->root() + "/Exports")}).c_str());
-      wrappedDisabled(TR("The export is made by re-running the recorded input from the start in a separate emulator. The "
-                         "project is not changed, and you can keep playing while it exports."));
+      if (ImGui::CollapsingHeader(TR("Advanced"))) {
+        ImGui::TextDisabled("%s", TRF("Saved in %@", {Paths::display(d_.library->root() + "/Exports")}).c_str());
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(TR("Codec"));
+        ImGui::SameLine();
+        if (ImGui::RadioButton(TR("H.264 (automatic encoder)"), exportEncoder_ == 0)) exportEncoder_ = 0;
+        for (int i = 0; i < 3; ++i) {
+          ImGui::SameLine();
+          if (ImGui::RadioButton(kEncoders[i], exportEncoder_ == i + 1)) exportEncoder_ = i + 1;
+        }
+        wrappedDisabled(TR("The export is made by re-running the recorded input from the start in a separate emulator. The "
+                           "project is not changed, and you can keep playing while it exports."));
+      }
+      scrollWithRightStick();
+      ImGui::EndChild();
       if (!exportError_.empty()) ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s", exportError_.c_str());
+      ImGui::Spacing();
+      if (appearing) {
+        ImGui::SetKeyboardFocusHere();  // the main action first; the options are above it
+        ImGui::SetNavCursorVisible(true);
+      }
       ImGui::BeginDisabled(st.takeLength == 0 || exportJob_.running());
-      if (ImGui::Button(TR("Export"), ImVec2(S(160), 0))) startExport();
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.85f, 1));
+      if (ImGui::Button(TR("Export"), ImVec2(S(180), S(48)))) startExport();
+      ImGui::PopStyleColor();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      if (ImGui::Button(TR("Cancel"), ImVec2(S(140), 0))) close = true;
+      if (ImGui::Button(TR("Cancel"), ImVec2(S(160), S(48)))) close = true;
+      ImGui::SameLine(0, S(24));
+      inlinePrompts(TR("Cancel"));
     }
     if (!appearing && !io.WantTextInput &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
@@ -336,7 +366,7 @@ void UI::buildExportProgressPill() {
   }
   float fs = S(16);
   ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fs, 10000, 0, text.c_str());
-  ImVec2 p(io.DisplaySize.x - ts.x - S(28), menuOpen_ ? S(116) : S(12));
+  ImVec2 p(io.DisplaySize.x - ts.x - S(28), menuOpen_ ? S(68) : S(12));
   dl->AddRectFilled(p, ImVec2(p.x + ts.x + S(16), p.y + ts.y + S(8)), IM_COL32(30, 90, 160, 210), S(6));
   dl->AddText(nullptr, fs, ImVec2(p.x + S(8), p.y + S(4)), IM_COL32(255, 255, 255, 255), text.c_str());
 }

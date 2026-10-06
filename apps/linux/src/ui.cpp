@@ -18,6 +18,7 @@
 #include "settings.h"
 #include "thumbnails.h"
 #include "ui_widgets.h"
+#include "pad_nav.h"
 
 namespace fs = std::filesystem;
 
@@ -29,7 +30,7 @@ bool UI::hasSession() const { return d_.emu->session() != nullptr; }
 
 std::vector<UI::Tab> UI::tabs() const {
   if (!hasSession()) return {Tab::library, Tab::settings, Tab::guide};
-  return {Tab::playback, Tab::takes, Tab::bookmarks, Tab::practice, Tab::library, Tab::settings, Tab::guide};
+  return {Tab::playback, Tab::takes, Tab::bookmarks, Tab::practice, Tab::settings, Tab::guide};
 }
 
 static const char* tabTitle(UI::Tab t) {
@@ -123,45 +124,62 @@ bool UI::interactive() const {
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
 
+void UI::padUsed() {
+  if (ImGui::GetCurrentContext()) ImGui::SetNavCursorVisible(true);
+}
+
 void UI::setMenu(bool open) {
   if (!hasSession()) open = true;
   if (open == menuOpen_) return;
   menuOpen_ = open;
-  timelinePad_ = false;
   if (open) {
     // Nothing reaches the game while the menu is up; the emulation waits paused.
     d_.emu->setRewindHeld(false);
     d_.emu->setFastForwardHeld(false);
     if (hasSession()) {
       d_.emu->setPaused(true);
-      if (tab_ == Tab::library || tab_ == Tab::settings || tab_ == Tab::guide) tab_ = Tab::playback;
+      tab_ = Tab::playback;  // the hub
+      hubFocus_ = Tab::playback;
     }
     focusFirst_ = true;
+    menuOpenedFrame_ = ImGui::GetCurrentContext() ? ImGui::GetFrameCount() : -1;
   } else {
     d_.input->cancelCapture();
     capturingAction_.clear();
   }
 }
 
+void UI::openHub() { setMenu(true); }
+
+void UI::closeHubAndResume() {
+  setMenu(false);
+  if (hasSession() && d_.emu->paused()) d_.emu->togglePause();
+  lastPaused_ = false;
+}
+
 void UI::toggleMenu() {
   // A popup has the controls: B / Esc close it (handled by the popup itself).
   if (!dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty() || exportDialog_) return;
   if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) return;
-  if (timelinePad_) {
-    timelinePad_ = false;
-    return;
-  }
-  setMenu(!menuOpen_);
+  // R3 / Guide / Esc / F1: the hub from the game, back to the game from any page.
+  if (menuOpen_ && hasSession()) closeHubAndResume();
+  else setMenu(true);
 }
 
 void UI::selectTab(Tab t) {
   std::vector<Tab> v = tabs();
   if (std::find(v.begin(), v.end(), t) == v.end()) return;
   if (t != tab_) {
+    if (t == Tab::guide) previousTab_ = tab_;
+    if (t == Tab::playback && tab_ != Tab::playback) hubFocus_ = tab_;  // back on the hub: that page's button
     tab_ = t;
-    timelinePad_ = false;
   }
   focusFirst_ = true;
+}
+
+void UI::applyTransition(const MenuTransition& t) {
+  if (t.closeAndResume) closeHubAndResume();
+  else selectTab(t.page);
 }
 
 void UI::notice(const std::string& text) {
@@ -207,18 +225,20 @@ void UI::changed() {
 // ------------------------------------------------------------------ layout
 
 float UI::dockHeight(bool inMenu) const {
-  // lane + strip + labels + transport row (+ the A/B tools row in the menu) + padding
-  return S(inMenu ? 236.0f : 176.0f);
+  // lane + strip + labels + transport row + padding
+  return S(inMenu ? 146.0f : 176.0f);
 }
 
-static float headerHeight(float s) { return 108.0f * s; }
+static float headerHeight(float s) { return 60.0f * s; }
+
+float UI::hubPanelHeight() const { return dockHeight(true) + S(76) + promptBarHeight(); }
 
 GameRect UI::gameRect(int w, int h) const {
   if (!hasSession()) return GameRect{};
   const Settings& st = *d_.settings;
   if (menuOpen_ && tab_ != Tab::playback) return GameRect{};  // a full page covers it
   if (menuOpen_) {
-    int top = int(headerHeight(scale_)), bottom = int(dockHeight(true));
+    int top = int(headerHeight(scale_)), bottom = int(hubPanelHeight());
     GameRect r = computeGameRect(w, std::max(1, h - top - bottom), st.integerScale, st.par87, st.hideOverscan);
     r.y += float(top);
     r.crt.y += float(top);
@@ -231,6 +251,7 @@ GameRect UI::gameRect(int w, int h) const {
 
 void UI::build(double now) {
   if (noticeTime_ < 0) noticeTime_ = now;
+  prompts_.clear();
   // Hold buttons (rewind / fast-forward) set these again while they are held.
   d_.emu->setRewindHeld(false);
   d_.emu->setFastForwardHeld(false);
@@ -241,10 +262,20 @@ void UI::build(double now) {
       tab_ = Tab::library;
       focusFirst_ = true;
     }
+  } else if (!hadSession_) {
+    // A game was started from the start screen: to the game (it runs) or the hub (it opened paused).
+    menuOpen_ = false;
+    tab_ = Tab::playback;
+    lastPaused_ = false;
   }
+  hadSession_ = hasSession();
   if (d_.app->takePracticePanelRequest()) practicePanel_ = true;
   const EmuStatus& st = d_.emu->status();
   if (st.practicing) practicePanel_ = true;
+  // Pausing (R / Space, the end of a rewind, an opened project, ...) shows the hub.
+  bool paused = hasSession() && st.paused;
+  if (paused && !lastPaused_ && !menuOpen_ && drag_ == Drag::none) openHub();
+  lastPaused_ = paused;
 
   if (menuOpen_) {
     buildMenu(now);
@@ -260,18 +291,44 @@ void UI::build(double now) {
   buildAssignPicker();
   buildExportDialog();
   buildExportProgressPill();
+  if (interactive()) drawFocusRing();
+  popupLastFrame_ = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+  activeLastFrame_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput;
 }
 
 void UI::handleMenuGamepad() {
-  if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
-  if (timelinePad_) return;
-  std::vector<Tab> v = tabs();
-  auto idx = size_t(std::find(v.begin(), v.end(), tab_) - v.begin());
-  if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false)) selectTab(v[(idx + v.size() - 1) % v.size()]);
-  if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false)) selectTab(v[(idx + 1) % v.size()]);
-  if (hasSession() && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput &&
-      (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false)))
-    setMenu(false);
+  if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) || popupLastFrame_) return;
+  if (!dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty() || exportDialog_) return;
+  // B / L1 / ... that ended a text field or a slider edit, or the press that opened the menu.
+  if (activeLastFrame_ || ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput) return;
+  if (ImGui::GetFrameCount() == menuOpenedFrame_) return;
+  const bool session = hasSession();
+  auto pressed = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+  if (pressed(ImGuiKey_GamepadFaceRight)) return applyTransition(menuTransition(tab_, MenuCommand::back, session, previousTab_));
+  if (pressed(ImGuiKey_GamepadStart)) return applyTransition(menuTransition(tab_, MenuCommand::menuButton, session, previousTab_));
+  if (pressed(ImGuiKey_GamepadBack)) return applyTransition(menuTransition(tab_, MenuCommand::viewButton, session, previousTab_));
+  int lr = (pressed(ImGuiKey_GamepadR1) ? 1 : 0) - (pressed(ImGuiKey_GamepadL1) ? 1 : 0);
+  if (tab_ == Tab::settings) {
+    if (lr != 0) {
+      settingsPage_ = (settingsPage_ + lr + 4) % 4;
+      focusFirst_ = true;
+    }
+  } else if (tab_ == Tab::playback && session) {
+    // The hub: R resumes (it paused), L toggles slow like in play; the focused timeline uses them
+    // for jumps itself. The triggers held: rewind / fast-forward, as assigned for play (L2 / R2).
+    if (!timelineFocused_) {
+      if (pressed(ImGuiKey_GamepadR1)) return closeHubAndResume();
+      if (pressed(ImGuiKey_GamepadL1)) d_.emu->toggleSlow();
+    }
+    for (bool left : {true, false}) {
+      if (!ImGui::IsKeyDown(left ? ImGuiKey_GamepadL2 : ImGuiKey_GamepadR2)) continue;
+      std::string a = triggerAction(left);
+      if (a == "hk.rewind") d_.emu->setRewindHeld(true);
+      else if (a == "hk.fast_forward") d_.emu->setFastForwardHeld(true);
+    }
+  } else if (lr != 0 && session) {
+    selectTab(cyclePage(tab_, lr));
+  }
 }
 
 void UI::buildHeader() {
@@ -281,16 +338,31 @@ void UI::buildHeader() {
   dl->AddRectFilled(ImVec2(0, 0), ImVec2(io.DisplaySize.x, hh), IM_COL32(20, 22, 27, 245));
   dl->AddLine(ImVec2(0, hh), ImVec2(io.DisplaySize.x, hh), IM_COL32(255, 255, 255, 30));
   ImGui::SetCursorPos(ImVec2(S(16), S(10)));
-  // Row 1: title + project actions (right-aligned).
-  std::vector<std::pair<std::string, int>> buttons;
-  if (hasSession()) {
-    buttons = {{std::string("▶  ") + TR("Resume"), 1}, {TR("Save"), 2}, {std::string(TR("Project")) + "  ▾", 3}};
+  const bool session = hasSession();
+  const bool hub = session && tab_ == Tab::playback;
+  // Right-aligned buttons: the hub has the project actions (D-pad up from the timeline), a page
+  // "Back" (B; mouse / touch only), the start screen its pages + project actions.
+  struct HB {
+    std::string label;
+    int id;
+    bool selected;
+  };
+  std::vector<HB> buttons;
+  if (hub) {
+    buttons = {{TR("Save"), 2, false}, {std::string(TR("Project")) + "  ▾", 3, false}};
+  } else if (session) {
+    buttons = {{std::string("◀  ") + TR("Back"), 6, false}};
   } else {
-    buttons = {{TR("Open Project…"), 4}, {TR("Quit"), 5}};
+    buttons = {{TR("Library"), 10, tab_ == Tab::library},
+               {TR("Settings"), 11, tab_ == Tab::settings},
+               {TR("Controls Guide"), 12, tab_ == Tab::guide},
+               {TR("Open Project…"), 4, false},
+               {TR("Quit"), 5, false}};
   }
   float total = 0;
-  for (auto& b : buttons) total += ImGui::CalcTextSize(b.first.c_str()).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
-  std::string title = hasSession() ? d_.app->windowTitle() : std::string("ReplayNES");
+  for (auto& b : buttons)
+    total += ImGui::CalcTextSize(b.label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
+  std::string title = !session ? std::string("ReplayNES") : hub ? d_.app->windowTitle() : std::string(tabTitle(tab_));
   float room = io.DisplaySize.x - total - S(40);
   ImGui::PushFont(nullptr, S(26));
   ImGui::AlignTextToFramePadding();
@@ -300,28 +372,38 @@ void UI::buildHeader() {
   ImGui::PopClipRect();
   float titleW = ImGui::GetItemRectSize().x;
   ImGui::PopFont();
-  const char* tagline = TR("Made a mistake? Go back and record it again. At the end, export one continuous play video.");
-  if (!hasSession() && titleW + ImGui::CalcTextSize(tagline).x + S(16) < room) {
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("%s", tagline);
+  if (session && !hub) {
+    // Pages: L1 / R1 cycle Practice, Takes, Bookmarks, Guide (Settings uses them for its tabs).
+    ImGui::SameLine(0, S(24));
+    buildPageTabs();
+  } else if (!session) {
+    const char* tagline = TR("Made a mistake? Go back and record it again. At the end, export one continuous play video.");
+    if (titleW + ImGui::CalcTextSize(tagline).x + S(16) < room) {
+      ImGui::SameLine();
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextDisabled("%s", tagline);
+    }
   }
   ImGui::SameLine(std::max(ImGui::GetCursorPosX() + S(12), io.DisplaySize.x - total - S(8)));
+  ImGui::PushItemFlag(ImGuiItemFlags_NoNav, session && !hub);
   for (size_t i = 0; i < buttons.size(); ++i) {
     if (i) ImGui::SameLine();
-    if (ImGui::Button(buttons[i].first.c_str())) {
-      switch (buttons[i].second) {
-        case 1:  // back to the game, playing
-          setMenu(false);
-          if (d_.emu->paused()) d_.emu->togglePause();
-          break;
+    if (buttons[i].selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.42f, 0.62f, 1));
+    if (ImGui::Button(buttons[i].label.c_str())) {
+      switch (buttons[i].id) {
         case 2: d_.app->save(); break;
         case 3: ImGui::OpenPopup("##project"); break;
         case 4: d_.app->openProjectChooser(); break;
         case 5: if (onQuit) onQuit(); break;
+        case 6: selectTab(Tab::playback); break;
+        case 10: selectTab(Tab::library); break;
+        case 11: selectTab(Tab::settings); break;
+        case 12: selectTab(Tab::guide); break;
       }
     }
+    if (buttons[i].selected) ImGui::PopStyleColor();
   }
+  ImGui::PopItemFlag();
   if (ImGui::BeginPopup("##project")) {
     if (ImGui::Selectable(TR("Save As…"))) d_.app->saveAs();
     if (ImGui::Selectable(TR("Export…"), false, d_.emu->status().takeLength > 0 ? 0 : ImGuiSelectableFlags_Disabled))
@@ -334,47 +416,191 @@ void UI::buildHeader() {
     if (ImGui::Selectable(TR("Quit")) && onQuit) onQuit();
     ImGui::EndPopup();
   }
-  // Row 2: tabs (L1 / R1).
-  ImGui::SetCursorPos(ImVec2(S(12), S(58)));
-  std::vector<Tab> v = tabs();
-  for (size_t i = 0; i < v.size(); ++i) {
-    if (i) ImGui::SameLine(0, S(4));
-    bool sel = v[i] == tab_;
+}
+
+void UI::buildPageTabs() {
+  static const Tab order[] = {Tab::practice, Tab::takes, Tab::bookmarks, Tab::guide};
+  bool cycles = std::find(std::begin(order), std::end(order), tab_) != std::end(order);
+  if (!cycles) return;
+  rnf_controller_family f = promptFamily();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float gh = ImGui::GetFrameHeight() * 0.8f;
+  auto glyphHere = [&](const char* el) {
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = glyph(dl, ImVec2(p.x, p.y + (ImGui::GetFrameHeight() - gh) * 0.5f), el, f, gh);
+    ImGui::Dummy(ImVec2(w, ImGui::GetFrameHeight()));
+  };
+  glyphHere("leftShoulder");
+  ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+  for (Tab t : order) {
+    ImGui::SameLine(0, S(4));
+    bool sel = t == tab_;
     ImGui::PushStyleColor(ImGuiCol_Button, sel ? ImVec4(0.30f, 0.42f, 0.62f, 1) : ImVec4(0.16f, 0.17f, 0.21f, 1));
-    if (ImGui::Button(tabTitle(v[i]))) selectTab(v[i]);
+    if (ImGui::Button(tabTitle(t))) selectTab(t);
     ImGui::PopStyleColor();
   }
-  ImGui::SameLine(0, S(16));
-  ImGui::AlignTextToFramePadding();
-  ImGui::TextDisabled("L1 / R1");
+  ImGui::PopItemFlag();
+  ImGui::SameLine(0, S(4));
+  glyphHere("rightShoulder");
+}
+
+void UI::buildHubButtons() {
+  const EmuStatus& st = d_.emu->status();
+  ImGuiIO& io = ImGui::GetIO();
+  struct HubButton {
+    Tab focusKey;  // which page's button (hub focus when coming back)
+    const char* label;
+    int id;
+    bool enabled;
+  };
+  const HubButton buttons[] = {
+      {Tab::playback, TR("Resume"), 0, true},
+      {Tab::library, TR("Back to Library"), 1, true},
+      {Tab::settings, TR("Settings"), 2, true},
+      {Tab::practice, TR("Practice"), 3, true},
+      {Tab::takes, TR("Takes"), 4, true},
+      {Tab::bookmarks, TR("Bookmarks"), 5, true},
+      {Tab::playback, TR("Export…"), 6, st.takeLength > 0},
+      {Tab::playback, TR("Reset…"), 7, true},
+      {Tab::guide, TR("Controls Guide"), 8, true},
+  };
+  const int n = int(sizeof buttons / sizeof buttons[0]);
+  // Focus a button for two frames: ImGui otherwise restores the hub window's last focused item
+  // when the page that was shown goes away.
+  if (focusFirst_) hubFocusFrames_ = 2;
+  focusFirst_ = false;  // a button chosen below may ask for the next page's focus
+  const bool wantFocus = hubFocusFrames_ > 0;
+  if (hubFocusFrames_ > 0) --hubFocusFrames_;
+  const float gap = S(8), h = S(58), avail = io.DisplaySize.x - S(28);
+  // Widths follow the labels; a smaller font when they don't fit in one row.
+  float fs = S(21);
+  float pad = S(26);
+  auto widthAt = [&](float size) {
+    float w = 0;
+    for (const HubButton& b : buttons) w += std::max(S(92), ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0, b.label).x + pad);
+    return w + gap * float(n - 1);
+  };
+  while (fs > S(14) && widthAt(fs) > avail) fs -= S(1);
+  float extra = std::max(0.0f, (avail - widthAt(fs)) / float(n));
+  ImGui::SetCursorPosX(S(14));
+  ImGui::PushFont(nullptr, fs);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(12));
+  for (int i = 0; i < n; ++i) {
+    const HubButton& b = buttons[i];
+    if (i) ImGui::SameLine(0, gap);
+    float w = std::max(S(92), ImGui::CalcTextSize(b.label).x + pad) + extra;
+    bool focusThis = wantFocus && ((hubFocus_ == Tab::playback && i == 0) || (hubFocus_ != Tab::playback && b.focusKey == hubFocus_));
+    bool primary = i == 0;
+    if (primary) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.85f, 1));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.52f, 0.92f, 1));
+    }
+    ImGui::BeginDisabled(!b.enabled);
+    bool clicked = ImGui::Button((std::string(b.label) + "##hub" + std::to_string(i)).c_str(), ImVec2(w, h));
+    ImGui::EndDisabled();
+    if (primary) ImGui::PopStyleColor(2);
+    if (focusThis) {
+      ImGui::SetFocusID(ImGui::GetItemID(), ImGui::GetCurrentWindow());
+      ImGui::SetNavCursorVisible(true);
+    }
+    if (!clicked) continue;
+    switch (b.id) {
+      case 0: closeHubAndResume(); break;
+      case 1: d_.app->closeProject(); break;  // asks to save first when needed; then the Library
+      case 2: selectTab(Tab::settings); break;
+      case 3: selectTab(Tab::practice); break;
+      case 4: selectTab(Tab::takes); break;
+      case 5: selectTab(Tab::bookmarks); break;
+      case 6: openExportDialog(); break;
+      case 7: showResetChoices(); break;
+      case 8: selectTab(Tab::guide); break;
+    }
+  }
+  ImGui::PopStyleVar();
+  ImGui::PopFont();
+}
+
+void UI::showResetChoices() {
+  const EmuStatus& st = d_.emu->status();
+  Dialog d;
+  d.title = TR("Reset");
+  d.message = TR("Soft Reset and Power Cycle act on the game (they are recorded like the console’s buttons). Reset Project "
+                 "starts the whole recording over.");
+  std::vector<int> actions;
+  bool resetOK = st.recording || st.practicing;
+  if (resetOK) {
+    d.buttons.push_back(TR("Soft Reset"));
+    actions.push_back(0);
+    d.buttons.push_back(TR("Power Cycle (Off and On)"));
+    actions.push_back(1);
+  }
+  d.buttons.push_back(TR("Reset Project…"));
+  actions.push_back(2);
+  d.buttons.push_back(TR("Cancel"));
+  actions.push_back(3);
+  d.cancelIndex = int(d.buttons.size()) - 1;
+  d.onResult = [this, actions](int b, bool) {
+    if (b < 0 || b >= int(actions.size())) return;
+    switch (actions[size_t(b)]) {
+      case 0: d_.emu->requestEvent(RN_EV_SOFT_RESET); closeHubAndResume(); break;
+      case 1: d_.emu->requestEvent(RN_EV_POWER_CYCLE); closeHubAndResume(); break;
+      case 2: d_.app->resetProjectPrompt(); break;
+      default: break;
+    }
+  };
+  showDialog(std::move(d));
+}
+
+void UI::scrollWithRightStick() {
+  float v = ImGui::GetKeyData(ImGuiKey_GamepadRStickDown)->AnalogValue - ImGui::GetKeyData(ImGuiKey_GamepadRStickUp)->AnalogValue;
+  if (std::fabs(v) > 0.05f) ImGui::SetScrollY(ImGui::GetScrollY() + v * S(1100) * ImGui::GetIO().DeltaTime);
 }
 
 void UI::buildMenu(double now) {
   ImGuiIO& io = ImGui::GetIO();
+  handleMenuGamepad();  // first: it may change the page (or close the menu) for this frame
+  if (!menuOpen_) return;
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
-  bool playback = tab_ == Tab::playback && hasSession();
+  bool hub = tab_ == Tab::playback && hasSession();
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse;
-  if (playback) flags |= ImGuiWindowFlags_NoBackground;
+  if (hub) flags |= ImGuiWindowFlags_NoBackground;
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   ImGui::Begin("##menu", nullptr, flags);
   ImGui::PopStyleVar();
-  handleMenuGamepad();
   buildHeader();
   float hh = headerHeight(scale_);
-  if (playback) {
-    float dh = dockHeight(true);
-    ImGui::SetCursorPos(ImVec2(0, io.DisplaySize.y - dh));
+  float pb = promptBarHeight();
+  timelineFocused_ = false;
+  if (hub) {
+    // Bottom panel: timeline + transport, the hub buttons, the prompts.
+    float panel = hubPanelHeight();
+    ImVec2 p0(0, io.DisplaySize.y - panel);
+    ImGui::GetWindowDrawList()->AddRectFilled(p0, io.DisplaySize, IM_COL32(20, 22, 27, 245));
+    ImGui::GetWindowDrawList()->AddLine(p0, ImVec2(io.DisplaySize.x, p0.y), IM_COL32(255, 255, 255, 30));
+    ImGui::SetCursorPos(p0);
     buildDock(true, now);
+    ImGui::SetCursorPos(ImVec2(0, io.DisplaySize.y - pb - S(72)));
+    buildHubButtons();
     if (practicePanel_ || d_.emu->status().practicing) buildPracticeOverlay(false);
+    // Prompts (the timeline adds its own while focused).
+    if (!timelineFocused_) {
+      prompt({"face.south"}, TR("Select"));
+      prompt({"face.east", "rightShoulder"}, TR("Resume"));
+      for (bool left : {true, false}) {
+        std::string a = triggerAction(left);
+        if (a == "hk.rewind") prompt({left ? "leftTrigger" : "rightTrigger"}, TR("Rewind (hold)"));
+        else if (a == "hk.fast_forward") prompt({left ? "leftTrigger" : "rightTrigger"}, TR("Fast-forward (hold)"));
+      }
+    }
+    prompt({"options"}, TR("Controls Guide"));
   } else {
     ImGui::SetCursorPos(ImVec2(S(16), hh + S(10)));
-    ImGui::BeginChild("##page", ImVec2(io.DisplaySize.x - S(32), io.DisplaySize.y - hh - S(20)),
+    ImGui::BeginChild("##page", ImVec2(io.DisplaySize.x - S(32), io.DisplaySize.y - hh - pb - S(14)),
                       ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground);
-    if (focusFirst_ && tab_ != Tab::library) {  // the library focuses its first ROM itself
-      ImGui::SetKeyboardFocusHere(0);
-      ImGui::SetNavCursorVisible(true);
+    if (focusFirst_ && tab_ != Tab::library && tab_ != Tab::settings) {  // these focus their first item themselves
+      ui::FocusNextItem();
       focusFirst_ = false;
     }
     switch (tab_) {
@@ -386,9 +612,156 @@ void UI::buildMenu(double now) {
       case Tab::guide: buildGuide(); break;
       case Tab::playback: break;
     }
+    scrollWithRightStick();
     ImGui::EndChild();
+    bool session = hasSession();
+    if (tab_ != Tab::library) {
+      prompt({"face.south"}, TR("Select"));
+      prompt({"face.east"}, session ? TR("Back to Menu") : TR("Back to Library"));
+      if (tab_ == Tab::settings) prompt({"leftShoulder", "rightShoulder"}, TR("Switch Tabs"));
+      else if (session) prompt({"leftShoulder", "rightShoulder"}, TR("Previous / Next Page"));
+    }
+    if (session) prompt({"menu"}, TR("Back to Menu"));
+    else prompt({"menu"}, tab_ == Tab::settings ? TR("Back to Library") : TR("Settings"));
+    prompt({"options"}, tab_ == Tab::guide ? TR("Close the Guide") : TR("Controls Guide"));
   }
+  buildPromptBar();
   ImGui::End();
+}
+
+// ------------------------------------------------------------------ prompts / focus
+
+std::string UI::triggerAction(bool left) const {
+  // Pad 1's trigger hotkey (the hub mirrors the in-game assignment; defaults: L2 rewind, R2 FF).
+  const char* id = left ? "gc0:leftTrigger" : "gc0:rightTrigger";
+  for (const rnf_binding& b : d_.input->bindings())
+    if (std::strcmp(b.input, id) == 0 && (std::strcmp(b.action, "hk.rewind") == 0 || std::strcmp(b.action, "hk.fast_forward") == 0))
+      return b.action;
+  return {};
+}
+
+rnf_controller_family UI::promptFamily() const {
+  int slot = d_.input->lastSlot();
+  if (slot >= 0 && d_.input->pad(slot).pad) return d_.input->pad(slot).family;
+  for (int s = 0; s < InputRouter::kSlots; ++s)
+    if (d_.input->pad(s).pad) return d_.input->pad(s).family;
+  return RNF_FAMILY_STEAM_DECK;
+}
+
+void UI::prompt(std::initializer_list<const char*> elements, const std::string& text) {
+  Prompt p;
+  for (const char* e : elements) p.elements.push_back(e);
+  p.text = text;
+  prompts_.push_back(std::move(p));
+}
+
+float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_controller_family f, float h, bool draw) const {
+  // Face buttons: a round button with its printed label (by position for the family); the D-pad:
+  // a cross; others (shoulders, triggers, Menu / View): a rounded key cap with the label.
+  ImU32 bg = IM_COL32(236, 238, 244, 255), fg = IM_COL32(24, 26, 32, 255);
+  ImFont* font = ImGui::GetFont();
+  if (element.rfind("dpad", 0) == 0) {
+    float w = h;
+    if (draw) {
+      float a = h * 0.32f;
+      ImVec2 c(p.x + w * 0.5f, p.y + h * 0.5f);
+      dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + 1), ImVec2(c.x + a * 0.5f, p.y + h - 1), bg, a * 0.25f);
+      dl->AddRectFilled(ImVec2(p.x + 1, c.y - a * 0.5f), ImVec2(p.x + w - 1, c.y + a * 0.5f), bg, a * 0.25f);
+      ImU32 hl = IM_COL32(255, 196, 64, 255);
+      if (element == "dpad.lr") {
+        dl->AddRectFilled(ImVec2(p.x + 1, c.y - a * 0.5f), ImVec2(p.x + a, c.y + a * 0.5f), hl, a * 0.25f);
+        dl->AddRectFilled(ImVec2(p.x + w - a, c.y - a * 0.5f), ImVec2(p.x + w - 1, c.y + a * 0.5f), hl, a * 0.25f);
+      } else if (element == "dpad.ud") {
+        dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + 1), ImVec2(c.x + a * 0.5f, p.y + a), hl, a * 0.25f);
+        dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + h - a), ImVec2(c.x + a * 0.5f, p.y + h - 1), hl, a * 0.25f);
+      }
+    }
+    return w;
+  }
+  std::string label = padGlyph(f, element.c_str());
+  if (label.empty()) label = element;
+  bool face = element.rfind("face.", 0) == 0;
+  float fs = h * (face ? 0.66f : 0.56f);
+  ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, label.c_str());
+  float w = face ? h : std::max(h * 1.3f, ts.x + h * 0.6f);
+  if (draw) {
+    if (face) dl->AddCircleFilled(ImVec2(p.x + h * 0.5f, p.y + h * 0.5f), h * 0.5f, bg);
+    else dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), bg, h * 0.3f);
+    dl->AddText(font, fs, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f), fg, label.c_str());
+  }
+  return w;
+}
+
+void UI::buildPromptBar() {
+  if (prompts_.empty()) return;
+  ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float h = promptBarHeight();
+  ImVec2 p0(0, io.DisplaySize.y - h);
+  dl->AddRectFilled(p0, io.DisplaySize, IM_COL32(12, 13, 16, 250));
+  dl->AddLine(p0, ImVec2(io.DisplaySize.x, p0.y), IM_COL32(255, 255, 255, 36));
+  rnf_controller_family f = promptFamily();
+  float gh = h * 0.62f, fs = S(18);
+  ImFont* font = ImGui::GetFont();
+  // Measure, then right-align (Steam's convention) and drop entries from the left when too wide.
+  std::vector<float> widths;
+  float total = 0;
+  for (const Prompt& p : prompts_) {
+    float w = 0;
+    for (const std::string& e : p.elements) w += glyph(dl, ImVec2(), e, f, gh, false) + S(4);
+    w += S(4) + font->CalcTextSizeA(fs, FLT_MAX, 0, p.text.c_str()).x + S(22);
+    widths.push_back(w);
+    total += w;
+  }
+  size_t first = 0;
+  while (first + 1 < prompts_.size() && total > io.DisplaySize.x - S(24)) total -= widths[first++];
+  float x = io.DisplaySize.x - S(12) - total;
+  for (size_t i = first; i < prompts_.size(); ++i) {
+    const Prompt& p = prompts_[i];
+    for (const std::string& e : p.elements) x += glyph(dl, ImVec2(x, p0.y + (h - gh) * 0.5f), e, f, gh) + S(4);
+    x += S(4);
+    ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, p.text.c_str());
+    dl->AddText(font, fs, ImVec2(x, p0.y + (h - ts.y) * 0.5f), IM_COL32(230, 232, 238, 255), p.text.c_str());
+    x += ts.x + S(22);
+  }
+}
+
+void UI::inlinePrompts(const char* backText) {
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  rnf_controller_family f = promptFamily();
+  float gh = S(24), fs = S(17), fh = ImGui::GetFrameHeight();
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  float x0 = p.x;
+  p.y += (fh - gh) * 0.5f;
+  ImFont* font = ImGui::GetFont();
+  const std::pair<const char*, const char*> items[] = {{"face.south", TR("Select")}, {"face.east", backText}};
+  for (const auto& [el, text] : items) {
+    p.x += glyph(dl, p, el, f, gh) + S(6);
+    ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, text);
+    dl->AddText(font, fs, ImVec2(p.x, p.y + (gh - ts.y) * 0.5f), IM_COL32(200, 204, 212, 255), text);
+    p.x += ts.x + S(20);
+  }
+  ImGui::Dummy(ImVec2(p.x - x0, fh));
+}
+
+void UI::drawFocusRing() {
+  // A thick, high-contrast ring around the focused item (on top of ImGui's own thin one).
+  ImGuiContext& g = *ImGui::GetCurrentContext();
+  if (!g.NavCursorVisible || g.NavId == 0 || !g.NavIdIsAlive || !g.NavWindow || g.NavWindow->Hidden) return;
+  if (g.IO.WantTextInput) return;
+  ImGuiWindow* w = g.NavWindow;
+  ImRect r = ImGui::WindowRectRelToAbs(w, w->NavRectRel[g.NavLayer]);
+  if (r.GetWidth() <= 0 || r.GetHeight() <= 0) return;
+  ImRect clip = w->InnerClipRect;
+  if (!clip.Overlaps(r)) return;
+  float t = std::max(2.0f, S(3));
+  r.Expand(t + S(1));
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  dl->PushClipRect(ImVec2(clip.Min.x - t * 2, clip.Min.y - t * 2), ImVec2(clip.Max.x + t * 2, clip.Max.y + t * 2), true);
+  float rounding = ImGui::GetStyle().FrameRounding + t;
+  dl->AddRect(ImVec2(r.Min.x - 1, r.Min.y - 1), ImVec2(r.Max.x + 1, r.Max.y + 1), IM_COL32(0, 0, 0, 200), rounding + 1, 0, t + 2);
+  dl->AddRect(r.Min, r.Max, IM_COL32(255, 200, 64, 255), rounding, 0, t);
+  dl->PopClipRect();
 }
 
 // ------------------------------------------------------------------ overlays
@@ -401,7 +774,9 @@ void UI::buildOverlays(double now) {
     ImGui::PushFont(nullptr, S(19));
     ImVec2 ts = ImGui::CalcTextSize(notice_.c_str(), nullptr, false, io.DisplaySize.x * 0.8f);
     float bottom = io.DisplaySize.y - S(24);
-    if (hasSession() && (menuOpen_ ? tab_ == Tab::playback : d_.emu->status().paused)) bottom -= dockHeight(menuOpen_);
+    if (hasSession() && menuOpen_ && tab_ == Tab::playback) bottom -= hubPanelHeight();
+    else if (hasSession() && !menuOpen_ && d_.emu->status().paused) bottom -= dockHeight(false);
+    else if (menuOpen_) bottom -= promptBarHeight();
     ImVec2 pad(S(18), S(10));
     ImVec2 p0((io.DisplaySize.x - ts.x) * 0.5f - pad.x, bottom - ts.y - pad.y * 2);
     ImDrawList* dl = ImGui::GetForegroundDrawList();
@@ -477,6 +852,7 @@ void UI::buildDialogs() {
         result = int(i);
       if (destructive) ImGui::PopStyleColor();
     }
+    inlinePrompts(d.buttons.size() > 1 ? TR("Cancel") : TR("Close"));
     int cancel = d.cancelIndex >= 0 ? d.cancelIndex : int(d.buttons.size()) - 1;
     if (result < 0 && !ImGui::IsWindowAppearing() &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
@@ -626,6 +1002,8 @@ void UI::buildChooser() {
     } else {
       if (ImGui::Button(TR("Cancel"))) cancelled = true;
     }
+    ImGui::SameLine(0, S(24));
+    inlinePrompts(TR("Back"));
     if (!ImGui::GetIO().WantTextInput && !appearing &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
       if (!c.confirmReplace.empty()) c.confirmReplace.clear();
@@ -668,6 +1046,8 @@ void UI::buildRename() {
     if (ImGui::Button(TR("OK"), ImVec2(S(120), 0))) ok = true;
     ImGui::SameLine();
     if (ImGui::Button(TR("Cancel"), ImVec2(S(120), 0))) cancel = true;
+    ImGui::TextDisabled("%s", TR("Y: type with the on-screen keyboard · Enter / OK: done"));
+    inlinePrompts(TR("Cancel"));
     if (!io.WantTextInput && !ImGui::IsWindowAppearing() &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
       cancel = true;

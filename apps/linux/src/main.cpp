@@ -40,6 +40,7 @@
 #include "imgui_impl_vulkan.h"
 #include "input_router.h"
 #include "l10n.h"
+#include "pad_nav.h"
 #include "library.h"
 #include "paths.h"
 #include "perf_stats.h"
@@ -166,13 +167,13 @@ class App {
   std::unique_ptr<LibraryModel> library_;
   std::unique_ptr<UI> ui_;
   std::unique_ptr<AppModel> app_;
+  PadNavFeed padNav_;
   DisplayScheduler sched_;
   rnf_input_deadline* deadline_ = nullptr;
   rnf_input_deadline* cpuWork_ = nullptr;  // CPU part of the work only (CRT build-ahead budget)
   double lastPictureSample_ = 0;
   bool running_ = true;
   bool fullscreen_ = false;
-  bool navOn_ = false;
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
   double pickedEvent_ = 0;
@@ -199,27 +200,21 @@ void App::applySettings() {
   vr_.setPostProcess(pp);
 }
 
-/// ImGui navigates with the gamepad / keyboard only while the UI has the controls; in play
-/// ImGui does not read the pads at all (its per-frame polling would wait for the joystick lock
-/// while the pad thread is in a slow HIDAPI call) and nothing reaches the game from the UI.
+/// ImGui navigates with the gamepad / keyboard only while the UI has the controls (menu, hub,
+/// library, dialogs); then nothing reaches the game. ImGui never polls the pads itself (its
+/// per-frame polling would wait for the joystick lock while the pad thread is in a slow HIDAPI
+/// call): PadNavFeed passes it the SDL gamepad events.
 void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
   ImGuiIO& io = ImGui::GetIO();
-  bool padNav = inter && !ui_->navGamepadSuspended();
-  if (inter) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-  else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
-  if (padNav) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-  else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
-  if (inter != navOn_) {
-    navOn_ = inter;
-    if (inter) ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_AutoAll);
-    else ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual, nullptr, 0);
-  }
+  if (inter) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+  else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
 }
 
 void App::handleEvent(const SDL_Event& e, double now) {
   ImGui_ImplSDL3_ProcessEvent(&e);
+  padNav_.handle(e);
   // SDL event timestamps (SDL_GetTicksNS) -> our CLOCK_MONOTONIC seconds.
   double evTime = now - double(SDL_GetTicksNS() - e.common.timestamp) * 1e-9;
   switch (e.type) {
@@ -387,6 +382,7 @@ int App::run(const Options& opt) {
       running_ = false;
     };
     script->onSettingsPage = [this](int p) { ui_->setSettingsPage(p); };
+    script->padId = [this]() -> SDL_JoystickID { return input_->pad(0).pad ? input_->pad(0).id : SDL_JoystickID(0x7fff0000); };
     script->onCrt = [this](bool on) {
       settings_.crt = on;
       applySettings();
@@ -530,6 +526,8 @@ int App::run(const Options& opt) {
     vr_.beginUIFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;  // fed from the events (PadNavFeed)
+    if (padNav_.takeActivity()) ui_->padUsed();
     ImGui::NewFrame();
     ui_->build(rec.sample);
     ImGui::Render();

@@ -401,16 +401,6 @@
         }
       }
     },
-    "A: move the playhead with the D-pad": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A: 十字キーで再生位置を動かす"
-          }
-        }
-      }
-    },
     "About %.1f presses per second. The recording stores the button state after turbo is applied, so playback doesn’t depend on this setting.": {
       "localizations": {
         "ja": {
@@ -497,6 +487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "指定フレーム数だけ進める"
+          }
+        }
+      }
+    },
+    "Advanced": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細設定"
           }
         }
       }
@@ -741,12 +741,22 @@
         }
       }
     },
-    "Back / close the menu": {
+    "Back": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "戻る / メニューを閉じる"
+            "value": "戻る"
+          }
+        }
+      }
+    },
+    "Back (on the menu: resume play)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る（メニューではプレイを再開）"
           }
         }
       }
@@ -767,6 +777,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aへ戻る"
+          }
+        }
+      }
+    },
+    "Back to Library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲーム選択に戻る"
+          }
+        }
+      }
+    },
+    "Back to Menu": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューに戻る"
           }
         }
       }
@@ -877,6 +907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ブラウン管 (CRT)"
+          }
+        }
+      }
+    },
+    "CRT Display settings, 4:3 (best with 1280×960). Slower.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CRT表示の設定で描画（4:3、1280×960向き）。書き出しは遅くなります。"
           }
         }
       }
@@ -1001,6 +1041,16 @@
         }
       }
     },
+    "Choose": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決定"
+          }
+        }
+      }
+    },
     "Choose a ROM": {
       "localizations": {
         "ja": {
@@ -1091,6 +1141,16 @@
         }
       }
     },
+    "Close the Guide": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ガイドを閉じる"
+          }
+        }
+      }
+    },
     "Codec": {
       "localizations": {
         "ja": {
@@ -1107,6 +1167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "続きから"
+          }
+        }
+      }
+    },
+    "Continue the latest project of the ROM": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのROMの最新のプロジェクトを続ける"
           }
         }
       }
@@ -1167,6 +1237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作ガイド"
+          }
+        }
+      }
+    },
+    "Controls Guide on / off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作ガイドの表示／非表示"
           }
         }
       }
@@ -1531,16 +1611,6 @@
         }
       }
     },
-    "D-pad / A": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "十字キー / A"
-          }
-        }
-      }
-    },
     "D-pad / Left Stick": {
       "localizations": {
         "ja": {
@@ -1567,6 +1637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "十字←"
+          }
+        }
+      }
+    },
+    "D-pad ← / →": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "十字キー ← / →"
           }
         }
       }
@@ -1951,16 +2031,6 @@
         }
       }
     },
-    "Exports the video with intense flashing reduced (level: %@; change it in Settings → Display). When off, the video is exactly as recorded.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "激しい点滅を抑えた映像で書き出します（強さ: %@。設定 → 表示で変更）。オフにすると記録どおりの映像です。"
-          }
-        }
-      }
-    },
     "Export…": {
       "localizations": {
         "ja": {
@@ -2031,6 +2101,16 @@
         }
       }
     },
+    "Fast-forward (hold)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "早送り（長押し）"
+          }
+        }
+      }
+    },
     "Fast-forward (recorded range only; pauses at the end)": {
       "localizations": {
         "ja": {
@@ -2051,12 +2131,12 @@
         }
       }
     },
-    "Fast-forward while held (L2 / Tab). Plays only the recorded range and stops at its end": {
+    "Fast-forward while held (R2 / Tab). Plays only the recorded range and stops at its end": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "押している間 早送り（L2 / Tab）。録画済みの範囲だけを再生し、終端で止まります"
+            "value": "押している間 早送り（R2 / Tab）。録画済みの範囲だけを再生し、終端で止まります"
           }
         }
       }
@@ -2661,6 +2741,16 @@
         }
       }
     },
+    "L2 / R2 (hold)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L2 / R2（長押し）"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "ja": {
@@ -2831,6 +2921,16 @@
         }
       }
     },
+    "Level: %@ (Settings → Display). Off: exactly as recorded.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強さ: %@（設定 → 表示）。オフなら記録どおりの映像です。"
+          }
+        }
+      }
+    },
     "Library": {
       "localizations": {
         "ja": {
@@ -2951,6 +3051,16 @@
         }
       }
     },
+    "Menu (≡)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニュー（≡）"
+          }
+        }
+      }
+    },
     "Menu (≡) / View (⧉)": {
       "localizations": {
         "ja": {
@@ -3011,6 +3121,16 @@
         }
       }
     },
+    "Move (hold = faster)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動（長押しで速く）"
+          }
+        }
+      }
+    },
     "Move (while paused, D-pad ←/→ steps back / advances a frame)": {
       "localizations": {
         "ja": {
@@ -3031,22 +3151,22 @@
         }
       }
     },
-    "Move / choose": {
+    "Move the focus (the orange frame)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "移動 / 決定"
+            "value": "選択（オレンジの枠）を動かす"
           }
         }
       }
     },
-    "Move the playhead with the D-pad (X: Set A, Y: Set B)": {
+    "Move the playhead (hold = faster; at the end of the recording: record one more frame)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "十字キーで再生位置を移動（X: Aを設定、Y: Bを設定）"
+            "value": "再生位置を動かす（長押しで速く。録画の終わりでは1フレーム録る）"
           }
         }
       }
@@ -3341,6 +3461,16 @@
         }
       }
     },
+    "Open the menu / back to the game": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューを開く／ゲームに戻る"
+          }
+        }
+      }
+    },
     "Open the section panel with the “Practice” button, press “A” at the start of the section and “B” at the end you reach by playing on from A. Press ▶︎ to practice that section repeatedly. At B it pauses for 0.5 s, then rewinds to A and starts again. Nothing is recorded while practicing; “Stop Practicing” returns to the original position in the take. Up to 8 sections are saved in the project.": {
       "localizations": {
         "ja": {
@@ -3451,6 +3581,16 @@
         }
       }
     },
+    "Pause and open the menu (timeline, back to the library, settings, …)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止してメニューを開く（タイムライン、ゲーム選択に戻る、設定など）"
+          }
+        }
+      }
+    },
     "Pause when rewind / fast-forward is released": {
       "localizations": {
         "ja": {
@@ -3547,6 +3687,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "プレイ（新しいプロジェクト）"
+          }
+        }
+      }
+    },
+    "Play (creates a new project)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイ（新しいプロジェクトを作成）"
+          }
+        }
+      }
+    },
+    "Play from Here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここから再生"
           }
         }
       }
@@ -3851,12 +4011,22 @@
         }
       }
     },
-    "Previous / next tab": {
+    "Previous / Next Bookmark (or 5 s)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "前 / 次のタブ"
+            "value": "前／次のブックマーク（なければ5秒）"
+          }
+        }
+      }
+    },
+    "Previous / Next Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前／次のページ"
           }
         }
       }
@@ -3867,6 +4037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "プライバシー"
+          }
+        }
+      }
+    },
+    "Processing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加工"
           }
         }
       }
@@ -3991,6 +4171,16 @@
         }
       }
     },
+    "R1 / Menu (≡)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "R1 / メニュー（≡）"
+          }
+        }
+      }
+    },
     "R2 (hold)": {
       "localizations": {
         "ja": {
@@ -4087,6 +4277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ROM: %1$@　プロジェクト（自動保存）: %2$@"
+          }
+        }
+      }
+    },
+    "Range": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "範囲"
           }
         }
       }
@@ -4251,16 +4451,6 @@
         }
       }
     },
-    "Renders each frame with the CRT Display settings through the same Vulkan pipeline (4:3; best with 4:3 sizes such as 1280×960). Exporting is slower.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブラウン管 (CRT) の設定で、同じ Vulkan パイプラインを使って 1 フレームずつ描画します（4:3、1280×960 などの 4:3 サイズ向き）。書き出しは遅くなります。"
-          }
-        }
-      }
-    },
     "Renders each frame with the CRT Display settings, using the same Metal pipeline (4:3, internal resolution up to 1600×1200; best with 4:3 sizes such as 1280×960). Exporting is slower.": {
       "localizations": {
         "ja": {
@@ -4317,26 +4507,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "前回は正常に終了しなかったため、ジャーナルから最後の自動保存までの記録を復元しました。内容を確認して保存してください。"
-          }
-        }
-      }
-    },
-    "ReplayNES menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ReplayNES のメニュー"
-          }
-        }
-      }
-    },
-    "ReplayNES menu (timeline, takes, bookmarks, practice, library, settings)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ReplayNES のメニュー（タイムライン・テイク・ブックマーク・練習・ライブラリ・設定）"
           }
         }
       }
@@ -4441,6 +4611,16 @@
         }
       }
     },
+    "Reset…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット…"
+          }
+        }
+      }
+    },
     "Restart from A": {
       "localizations": {
         "ja": {
@@ -4467,6 +4647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "再開 / 一時停止（R / Space）"
+          }
+        }
+      }
+    },
+    "Resume play (on a page: back to the menu)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイを再開（各ページではメニューに戻る）"
           }
         }
       }
@@ -4511,12 +4701,32 @@
         }
       }
     },
+    "Rewind (hold)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "巻き戻し（長押し）"
+          }
+        }
+      }
+    },
     "Rewind (while held)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "巻き戻し（押している間）"
+          }
+        }
+      }
+    },
+    "Rewind / Fast-forward": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "巻き戻し／早送り"
           }
         }
       }
@@ -4541,12 +4751,12 @@
         }
       }
     },
-    "Rewind while held (R2 / Delete)": {
+    "Rewind while held (L2 / Delete)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "押している間 巻き戻し（R2 / Delete）"
+            "value": "押している間 巻き戻し（L2 / Delete）"
           }
         }
       }
@@ -4771,6 +4981,26 @@
         }
       }
     },
+    "Scroll the page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページをスクロール"
+          }
+        }
+      }
+    },
+    "Search (on-screen keyboard)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索（スクリーンキーボード）"
+          }
+        }
+      }
+    },
     "Search ROMs": {
       "localizations": {
         "ja": {
@@ -4821,6 +5051,26 @@
         }
       }
     },
+    "Section set on the timeline (X: Set A, Y: Set B)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイムラインで設定する区間（X: A点、Y: B点）"
+          }
+        }
+      }
+    },
+    "Select": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決定"
+          }
+        }
+      }
+    },
     "Set A": {
       "localizations": {
         "ja": {
@@ -4837,6 +5087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aを設定（いまの位置を区間の始まりにする）"
+          }
+        }
+      }
+    },
+    "Set A / Set B of the section chosen on the Practice page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "練習ページで選んだ区間のA点／B点を設定"
           }
         }
       }
@@ -4987,6 +5247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定ファイル: ~/Library/Application Support/ReplayNES/bindings.json"
+          }
+        }
+      }
+    },
+    "Settings tabs (other pages: previous / next page)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定のタブ切り替え（ほかのページでは前／次のページ）"
           }
         }
       }
@@ -5171,6 +5441,16 @@
         }
       }
     },
+    "Soft Reset and Power Cycle act on the game (they are recorded like the console’s buttons). Reset Project starts the whole recording over.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソフトリセットと電源再投入はゲームに対する操作です（本体のボタンと同じく記録されます）。「プロジェクトをリセット」は録画全体を最初からやり直します。"
+          }
+        }
+      }
+    },
     "Soft reset (practicing: not recorded)": {
       "localizations": {
         "ja": {
@@ -5317,6 +5597,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "配信出力 (Syphon) の映像"
+          }
+        }
+      }
+    },
+    "Switch Tabs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ切り替え"
           }
         }
       }
@@ -5661,12 +5951,12 @@
         }
       }
     },
-    "Timeline + A": {
+    "Timeline (move the focus up to it)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タイムライン + A"
+            "value": "タイムライン（選択を上に動かして操作）"
           }
         }
       }
@@ -5891,6 +6181,16 @@
         }
       }
     },
+    "View (⧉)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビュー（⧉）"
+          }
+        }
+      }
+    },
     "View and change button assignments on a controller diagram": {
       "localizations": {
         "ja": {
@@ -5941,6 +6241,16 @@
         }
       }
     },
+    "While paused, move the focus up to the timeline: the D-pad ←/→ steps back / advances (hold for faster).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中は選択をタイムラインに上げると、十字キー←/→でコマ戻し／コマ送りできます（長押しで速く）。"
+          }
+        }
+      }
+    },
     "While paused, the controller’s D-pad ←/→ steps back / advances one frame (hold to repeat)": {
       "localizations": {
         "ja": {
@@ -5987,6 +6297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Y / X（Steam Deck・Xbox）"
+          }
+        }
+      }
+    },
+    "Y: type with the on-screen keyboard · Enter / OK: done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Y: スクリーンキーボードで入力 · Enter / OK: 完了"
           }
         }
       }
@@ -6117,16 +6437,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "▶︎ 再生"
-          }
-        }
-      }
-    },
-    "◀ ▶ move (hold = faster) · ▲ ▼ ±5 s · X: Set A · Y: Set B · B: done": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "◀ ▶ 移動（長押しで速く）・▲ ▼ ±5 秒・X: Aを設定・Y: Bを設定・B: 終了"
           }
         }
       }

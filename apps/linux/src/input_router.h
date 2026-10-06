@@ -76,6 +76,8 @@ class InputRouter {
   // Settings diagram / bindings UI.
   const PadInfo& pad(int slot) const { return pads_[slot]; }
   int connectedCount() const;
+  /// Slot of the controller used last (-1: none yet); its family picks the UI's button prompts.
+  int lastSlot() const { return lastSlot_; }
   const std::set<std::string>& pressed() const { return pressed_; }
   /// Bindings as (input, action) pairs (refreshed on every change).
   const std::vector<rnf_binding>& bindings() const { return bindingView_; }
@@ -123,6 +125,7 @@ class InputRouter {
   Settings* settings_;
   PadInfo pads_[kSlots];
   bool ui_ = false;
+  int lastSlot_ = -1;
   bool pausedStepMode_ = false;
   std::map<std::string, int> stepDirs_;  // controller id -> -1 / +1
   std::set<std::string> routedSteps_;

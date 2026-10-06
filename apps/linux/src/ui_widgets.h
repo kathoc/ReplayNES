@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "imgui.h"
+#include "imgui_internal.h"
 
 namespace rnl::ui {
 
@@ -81,6 +82,19 @@ inline void HoldButton(const char* id, Icon icon, ImVec2 size, bool* held, bool 
   ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
   drawIcon(ImGui::GetWindowDrawList(), icon, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), (b.y - a.y) * 0.32f,
            enabled ? IM_COL32(235, 238, 245, 255) : IM_COL32(140, 140, 150, 160));
+}
+
+/// Gives the controller / keyboard focus to the next item submitted, like SetKeyboardFocusHere(0)
+/// but without activating it (that would open a slider or number field as a text field).
+inline void FocusNextItem() {
+  ImGuiContext& g = *ImGui::GetCurrentContext();
+  if (g.DragDropActive || g.MovingWindow != nullptr) return;
+  ImGui::SetNavWindow(g.CurrentWindow);
+  ImGui::NavMoveRequestSubmit(ImGuiDir_None, ImGuiDir_Down, ImGuiNavMoveFlags_IsTabbing | ImGuiNavMoveFlags_FocusApi,
+                              ImGuiScrollFlags_KeepVisibleEdgeX | ImGuiScrollFlags_KeepVisibleEdgeY);
+  g.NavTabbingDir = 1;
+  g.NavTabbingCounter = 1;
+  ImGui::SetNavCursorVisible(true);
 }
 
 /// A coloured status pill on the foreground draw list; returns its width.

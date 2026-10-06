@@ -95,7 +95,8 @@ add_library(rnl_logic STATIC
   src/png_writer.cpp
   src/settings.cpp
   src/thumbnails.cpp
-  src/trash.cpp)
+  src/trash.cpp
+  src/ui_logic.cpp)
 target_include_directories(rnl_logic PUBLIC src)
 target_link_libraries(rnl_logic PUBLIC replaynes_frontend replaynes_engine Threads::Threads)
 target_compile_options(rnl_logic PRIVATE ${RNL_WARNINGS})

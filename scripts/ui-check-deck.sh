@@ -9,9 +9,15 @@
 #   ROM=smb ...           start with Super Mario Bros. from the Deck's ROM folder (temporary session)
 #   BIN=dev REMOTE_DIR=ReplayNES-dev   the DEV=1 build in ~/$REMOTE_DIR/build-dev (default: installed)
 #   SESSION=gaming|desktop   KEEP_SESSION=1 (reuse the scratch session folder: resume tests)
-# Script commands: apps/linux/src/script.h. "shot NAME" writes into the remote shots folder.
+#   LIBRARY=scratch       a scratch library (~/.var/app/<id>/data/ui-check/library) whose ROM folder
+#                         hard-links Super Mario Bros. and the generated test ROM (two games to switch
+#                         between; projects made by the run stay out of the user's library)
+# Script commands: apps/linux/src/script.h. "shot NAME" writes into the remote shots folder;
+# "pad a|b|x|y|up|down|left|right|l1|r1|l2|r2|menu|view|r3" injects a controller press (SDL events
+# of pad 0, through the same path as a real press).
 # The app runs with a scratch session folder (~/.var/app/<id>/data/ui-check/session), so the
-# user's own session is never touched; the library is the real ~/Documents/ReplayNES.
+# user's own session is never touched; the library is the real ~/Documents/ReplayNES unless
+# LIBRARY=scratch.
 set -euo pipefail
 HOST="${HOST:-deck@steamdeck.local}"
 APP_ID=io.github.replaynes.ReplayNES
@@ -29,8 +35,8 @@ esac
 CMD="flatpak run --filesystem=home $APP_ID"
 [ "${BIN:-}" = "dev" ] && CMD="flatpak run --filesystem=home --command=/home/deck/$RDIR/build-dev/replaynes-linux $APP_ID"
 
-VARS="$(printf 'APP_ID=%q CMD=%q SCRIPT_CMDS=%q ROMARG=%q SESSION=%q RLANG=%q KEEP=%q' "$APP_ID" "$CMD" "$SCRIPT_CMDS" "$ROMARG" \
-  "${SESSION:-}" "${REPLAYNES_LANG:-}" "${KEEP_SESSION:-0}")"
+VARS="$(printf 'APP_ID=%q CMD=%q SCRIPT_CMDS=%q ROMARG=%q SESSION=%q RLANG=%q KEEP=%q LIBRARY=%q' "$APP_ID" "$CMD" "$SCRIPT_CMDS" "$ROMARG" \
+  "${SESSION:-}" "${REPLAYNES_LANG:-}" "${KEEP_SESSION:-0}" "${LIBRARY:-}")"
 ssh "$HOST" "$VARS bash -s" <<'EOF'
 set -e
 export XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
@@ -68,6 +74,17 @@ if [ "$SESSION" = gaming ]; then
     done ) &
 fi
 ARGS=(--session-root "$D/session" --script "$CMDS")
+if [ "$LIBRARY" = scratch ]; then
+  L=$D/library
+  [ "$KEEP" = "1" ] || rm -rf "$L"
+  mkdir -p "$L/ROM" ~/Documents/ReplayNES/perf
+  [ -f ~/Documents/ReplayNES/perf/replaynes-test.nes ] ||
+    flatpak run --command=replaynes-cli "$APP_ID" make-test-rom ~/Documents/ReplayNES/perf/replaynes-test.nes >/dev/null
+  # Hard links (the library skips symbolic links); same file system as ~/Documents.
+  ln -f ~/Documents/ReplayNES/perf/replaynes-test.nes "$L/ROM/ReplayNES Test ROM.nes"
+  ln -f "$HOME/Documents/ReplayNES/ROM/Super Mario Bros. (World).NES" "$L/ROM/Super Mario Bros. (World).NES"
+  ARGS+=(--library-root "$L")
+fi
 [ -n "$ROMARG" ] && ARGS+=(--rom "$ROMARG")
 $CMD "${ARGS[@]}" 2>&1 | grep -vE "^(Gtk|dbus|$)" | tail -40 || true
 if [ "$SESSION" = gaming ]; then

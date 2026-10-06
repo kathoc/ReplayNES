@@ -1,14 +1,18 @@
 // Dear ImGui UI of the Linux frontend, fully gamepad navigable (Gaming Mode has no keyboard) and
 // mouse / touch friendly at 1280x800 (scaled with the window and Settings -> UI scale).
 //
-//  * No session: the menu is always open on the Library (start screen).
+//  * No session: the menu is always open on the Library (start screen; Settings and the Guide
+//    from its header, Menu (≡) / View (⧉)).
 //  * Playing: nothing is drawn over the game except short notices, status badges and the
-//    practice pill (all in the same Vulkan pass as the picture). Paused (or the pointer moved):
-//    the dock (transport + filmstrip timeline) appears; mouse / touch only - the controller keeps
-//    stepping frames with the D-pad.
-//  * R3 / Guide / Esc opens the menu: tabs Playback (the dock, navigable, with the game above it),
-//    Takes, Bookmarks, Practice, Library, Settings, Guide; L1 / R1 switch tabs, B closes the menu.
-//    Emulation is paused while the menu is open and nothing reaches the game.
+//    practice pill (all in the same Vulkan pass as the picture). A click / tap shows the dock
+//    (transport + filmstrip timeline) for a moment.
+//  * Paused (R / Space, the end of a rewind, ...) or R3 / Guide / Esc: the hub - the game with the
+//    timeline, the transport and a row of large buttons below it (Resume, Back to Library,
+//    Settings, Practice, Takes, Bookmarks, Export…, Reset…, Guide), all controller navigable.
+//    Its buttons open pages (Settings, Practice, Takes, Bookmarks, Guide); B goes back to the hub,
+//    B / R / Menu (≡) on the hub resume play. Emulation is paused while the menu is open and
+//    nothing reaches the game. Controller conventions: ui_logic.h; button prompts for the
+//    controller in use are shown at the bottom of every screen.
 // Dialogs / file chooser / rename are modal popups (DialogHost); text fields start SDL text
 // input, which shows Steam's on-screen keyboard in Gaming Mode.
 // Frame-loop thread only.
@@ -20,6 +24,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,6 +33,7 @@
 #include "mp4_export.h"
 #include "imgui.h"
 #include "replaynes/frontend.h"
+#include "ui_logic.h"
 #include "vk_renderer.h"
 
 namespace rnl {
@@ -52,7 +58,7 @@ struct StatsInfo {
 
 class UI : public DialogHost {
  public:
-  enum class Tab { playback, takes, bookmarks, practice, library, settings, guide };
+  using Tab = MenuPage;  // playback = the hub
 
   struct Deps {
     AppModel* app;
@@ -103,8 +109,8 @@ class UI : public DialogHost {
   void startExport();
   /// The CRT display parameters of the settings (sanitized).
   CrtSettings crtSettings() const;
-  /// The timeline has the D-pad (gamepad scrub mode): ImGui must not navigate with it.
-  bool navGamepadSuspended() const { return timelinePad_; }
+  /// A controller button / stick was used (the focus ring shows).
+  void padUsed();
 
   // DialogHost
   void showDialog(Dialog d) override;
@@ -125,6 +131,27 @@ class UI : public DialogHost {
   void buildRename();
   void buildStats();
   void handleMenuGamepad();
+  void applyTransition(const MenuTransition& t);
+  void openHub();
+  void closeHubAndResume();
+  void buildHubButtons();
+  void showResetChoices();
+  void buildPageTabs();
+  void scrollWithRightStick();
+  void drawFocusRing();
+  // Button prompts (bottom bar): glyphs of controller elements ("face.south", "dpad.lr", ...).
+  struct Prompt {
+    std::vector<std::string> elements;
+    std::string text;
+  };
+  void prompt(std::initializer_list<const char*> elements, const std::string& text);
+  void buildPromptBar();
+  /// A / B prompts on one line inside a dialog (its cursor position).
+  void inlinePrompts(const char* backText);
+  float promptBarHeight() const { return S(40); }
+  rnf_controller_family promptFamily() const;
+  std::string triggerAction(bool left) const;  // "hk.rewind" / "hk.fast_forward" / ""
+  float glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_controller_family f, float h, bool draw = true) const;
   void askRename(const std::string& title, const std::string& initial, std::function<void(const std::string&)> apply);
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
@@ -134,8 +161,9 @@ class UI : public DialogHost {
   void buildExportProgressPill();
   // ui_play.cpp
   void buildDock(bool inMenu, double now);
+  float hubPanelHeight() const;
   void buildTransport(bool inMenu);
-  void buildTimeline(float width, bool inMenu, double now);
+  void buildTimeline(float width, bool inMenu, double now, float navLeft = 0, float navRight = 0);
   void buildPracticeOverlay(bool interactiveNav);
   void buildPracticeRows(bool compactButtons);
   void buildBadges();
@@ -163,7 +191,17 @@ class UI : public DialogHost {
   ImFont* font_ = nullptr;
   bool menuOpen_ = false;
   Tab tab_ = Tab::library;
+  Tab previousTab_ = Tab::playback;  // the page the guide was opened from (View toggles back)
+  Tab hubFocus_ = Tab::playback;     // hub button focused when the hub shows again
   bool focusFirst_ = false;  // gamepad focus on the first item of the page (next frame)
+  bool lastPaused_ = false;  // paused in the previous frame (a pause opens the hub)
+  bool hadSession_ = false;
+  int hubFocusFrames_ = 0;
+  int menuOpenedFrame_ = -1;
+  bool popupLastFrame_ = false;   // a popup / active item had B last frame (it closed itself)
+  bool activeLastFrame_ = false;
+  bool timelineFocused_ = false;  // the hub's timeline had the focus last frame
+  std::vector<Prompt> prompts_;
   double lastPointer_ = -10;
   bool practicePanel_ = false;
   // Notices.
@@ -205,11 +243,11 @@ class UI : public DialogHost {
   bool hasPreview_ = false;
   rnf_timeline_range preview_{};
   double previewUntil_ = 0;
-  bool timelinePad_ = false;  // gamepad scrub mode on the focused timeline
   // Library.
   char search_[128] = {0};
   std::string selectedRom_;
   bool focusPlay_ = false;
+  bool focusSearch_ = false;
   // Settings.
   int settingsPage_ = 0;
   std::string assignElement_;  // physical id whose action is being picked

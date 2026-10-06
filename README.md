@@ -17,7 +17,7 @@ You can export it as-is to an MP4 with audio.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
 - **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
 - **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
-- **Controller-only operation**: R2 rewinds, L2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
+- **Controller-only operation**: L2 rewinds, R2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
 - **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
 - **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
 - **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
@@ -46,7 +46,22 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
 1. **Install** (Desktop Mode, Konsole): download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (the runtime comes from Flathub). Nothing is installed into the read-only SteamOS system.
 2. **Add to Steam**: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
 3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the ROM library: "Play" starts a project in `~/Documents/ReplayNES/Projects`, "Continue" reopens one.
-4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **R2 hold = rewind, L2 hold = fast-forward, R1 = pause, L1 = slow 1/2**, D-pad ←/→ while paused = step a frame. **R3 (press the right stick) opens the ReplayNES menu** (timeline, takes, bookmarks, practice, library, settings, guide): L1 / R1 switch tabs, A chooses, B goes back. Touch and the trackpad work on every screen too.
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L2 hold = rewind, R2 hold = fast-forward, R1 = pause, L1 = slow 1/2**.
+5. **The menu: pause with R1** (or press R3 / the right stick). The paused screen is the menu: the game, the timeline and a row of large buttons - Resume, Back to Library, Settings, Practice, Takes, Bookmarks, Export…, Reset…, Controls Guide - all controller driven, with the focused item framed in orange and the buttons of your controller shown at the bottom.
+
+   | Button | In the menu |
+   |---|---|
+   | D-pad / left stick | move the focus |
+   | A | choose |
+   | B | back (on the menu: resume play) |
+   | R1 / Menu (≡) | resume play (on a page: back to the menu) |
+   | View (⧉) | Controls Guide on / off |
+   | L1 / R1 | Settings tabs, previous / next page |
+   | L2 / R2 hold | rewind / fast-forward |
+   | Timeline (focus it with ↑) | ←/→ move the playhead (hold = faster), L1 / R1 previous / next bookmark (or 5 s), X / Y set A / B, A play from here |
+   | Library | A play, X continue the latest project, Y search (on-screen keyboard), Menu (≡) Settings |
+
+   Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
 
 Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden while you play, so it does not add latency.
 
@@ -113,8 +128,8 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | A / B | Right / bottom button | A / B | B / A | ○ / ✕ | X / Z |
 | Turbo A / Turbo B | Top / left button | X / Y | Y / X | △ / □ | S / A |
 | START / SELECT | Menu / Options | + / − | ≡ / View | OPTIONS / CREATE | Return / Right Shift (or `\`) |
-| Rewind (while held) | **Right Trigger** | ZR | RT | R2 | Delete |
-| Fast-forward (while held) | **Left Trigger** | ZL | LT | L2 | Tab |
+| Rewind (while held) | **Left Trigger** | ZL | LT | L2 | Delete |
+| Fast-forward (while held) | **Right Trigger** | ZR | RT | R2 | Tab |
 | Pause / Resume | **Right Shoulder** | R | RB | R1 | Space |
 | Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
 | Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | `,` / `.` |
@@ -126,12 +141,13 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 - **Background input**: While a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and it does not pause automatically. Sound also keeps playing. The keyboard works only while ReplayNES is in front.
 - If the controller is disconnected, it pauses automatically.
 - If you update from 0.1.x and the controller hotkeys are still the old defaults (L1 rewind / R1 fast-forward / L2 and R2 frame advance), they are automatically switched to the new assignments above. If you had changed them yourself, they are left as they are.
+- Up to 0.2.x the triggers were the other way round (R2 rewind, L2 fast-forward). If they still have those defaults, they are switched to L2 rewind / R2 fast-forward automatically; changed assignments are kept.
 - **Button layout diagram**: In Settings → "Controllers" (or "Button Layout…" in the sidebar), a diagram of the connected controller (Nintendo / Xbox / PlayStation / other shapes) and the assignment of each button are shown. Pressing a button lights it up on the diagram, so you can check which button is which. Clicking a button in the diagram lets you choose the action to assign (Famicom button, turbo, hotkeys such as rewind, or none). "Reset Pad N to Defaults" resets only that controller to its defaults. The traditional method of assigning by pressing a key or button is in the "Game Input" and "Hotkeys" tabs.
 - Up to 0.2.0, A / B and X / Y were swapped on Nintendo controllers (Pro Controller, Joy-Con). If you were using the face button assignments at their defaults, they automatically become the correct layout after the update. If you had changed them yourself, they are carried over when you connect that controller, so the same buttons perform the same actions as before.
 
 ### Rewind and Re-record
 
-1. If you make a mistake, **hold R2 (or Delete) to rewind**, or drag the timeline bar to go back.
+1. If you make a mistake, **hold L2 (or Delete) to rewind**, or drag the timeline bar to go back.
 2. If you resume play from the position you went back to, recording of a new take starts from that position. The original play that came after it is kept rather than erased.
 3. If the previous take was better, you can go back with **"Back to Previous Take" (⌥⌘Z)**. All takes can be checked in "Takes" (⇧⌘T).
 4. In playback mode (the gray "Record" button), the recorded take is played. If you want to make changes, press the "Record" button to return to record mode.
@@ -154,7 +170,7 @@ Practice only the tricky section over and over without recording.
 1. Press "Practice" (⇧⌘P) in the bottom bar and 8 section panels appear over the game screen.
 2. At the start of a section press "**A**", then keep playing from there and press "**B**" at the end position (you can also set them while paused). Each section shows its length (minutes:seconds.frames), and from "…" you can rename or clear it.
 3. Press ▶︎ (Practice This Section) and play starts automatically from A. **When you reach B, the screen holds still for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again automatically**.
-4. While practicing you can also use R2 rewind (up to A), R pause, L slow, and D-pad frame advance / step back while paused.
+4. While practicing you can also use L2 rewind (up to A), R pause, L slow, and D-pad frame advance / step back while paused.
 5. "**Stop Practicing**" (in the panel / in the bottom bar / ⇧⌘P) returns you exactly to the position in the take from before you started practicing.
 
 - Nothing is recorded during practice. The length and contents of the take do not change.

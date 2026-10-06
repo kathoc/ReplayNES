@@ -9,6 +9,7 @@
 #include "imgui_internal.h"
 #include "input_router.h"
 #include "l10n.h"
+#include "pad_nav.h"
 #include "settings.h"
 #include "thumbnails.h"
 #include "ui.h"
@@ -65,7 +66,9 @@ void UI::buildDock(bool inMenu, double now) {
   dl->AddText(ImVec2(row.x + contentW - rw + S(6), ty), IM_COL32(160, 165, 175, 255), right.c_str());
   ImGui::PopFont();
   ImGui::SetCursorPos(ImVec2(x0 + lw, y0));
-  buildTimeline(std::max(S(100), contentW - lw - rw), inMenu, now);
+  // The timeline's focus rectangle spans the whole row (with the times): D-pad up / down from the
+  // transport buttons below reach it from anywhere.
+  buildTimeline(std::max(S(100), contentW - lw - rw), inMenu, now, row.x, row.x + contentW);
   ImGui::SetCursorPos(ImVec2(x0, y0 + rowH + S(6)));
   buildTransport(inMenu);
   if (inMenu) ImGui::EndGroup();
@@ -98,7 +101,7 @@ void UI::buildTransport(bool inMenu) {
     ImGui::PopStyleColor(2);
     ImVec2 a = ImGui::GetItemRectMin();
     dl->AddCircleFilled(ImVec2(a.x + S(22), a.y + sz.y * 0.5f), S(7), on ? IM_COL32(255, 255, 255, 255) : IM_COL32(150, 150, 160, 255));
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", on ? TR("Record mode (click for playback mode: plays the recorded take)")
                                  : TR("Playback mode (click to return to record mode and continue recording from here)"));
   }
@@ -113,8 +116,8 @@ void UI::buildTransport(bool inMenu) {
   ImGui::SameLine();
   if (ui::IconButton("##play", st.paused ? ui::Icon::play : ui::Icon::pause, ImVec2(S(72), bs.y), true,
                      IM_COL32(60, 66, 80, 255))) {
-    emu->togglePause();
-    if (inMenu && !emu->paused()) setMenu(false);  // playing: back to the game
+    if (inMenu) closeHubAndResume();  // playing: back to the game
+    else emu->togglePause();
   }
   ImGui::SameLine();
   if (ui::IconButton("##fwd", ui::Icon::stepForward, bs, st.paused)) emu->frameAdvance(1);
@@ -130,8 +133,8 @@ void UI::buildTransport(bool inMenu) {
     if (ImGui::Button((l + "##slow").c_str(), ImVec2(0, bs.y))) emu->toggleSlow();
     if (slow) ImGui::PopStyleColor();
   }
-  ImGui::SameLine(0, S(18));
-  {
+  if (!inMenu) {
+    ImGui::SameLine(0, S(18));
     bool on = st.practicing || practicePanel_;
     if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.42f, 0.08f, 1));
     std::string l = std::string(st.practicing ? TR("Stop Practicing") : TR("Practice")) + "##practice";
@@ -148,7 +151,7 @@ void UI::buildTransport(bool inMenu) {
       d_.settings->integerScale = !d_.settings->integerScale;
       changed();
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", TR("Integer: largest integer scale that fits (sharp) / FILL: fill the window, aspect ratio kept"));
   }
   ImGui::SameLine();
@@ -170,53 +173,11 @@ void UI::buildTransport(bool inMenu) {
       emu->requestEvent(RN_EV_POWER_CYCLE);
     ImGui::EndPopup();
   }
-  if (!inMenu) return;
-  // Row 3 (menu): the A/B section edited on the timeline + take actions.
-  ImGui::SetCursorPosX(S(14));
-  int& sel = d_.settings->timelineSlot;
-  const SessionStructure& ss = d_.emu->structure();
-  {
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    std::string l = TRF("A/B %lld", {sel + 1}) + "  ▾##abslot";
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(S(30), ImGui::GetStyle().FramePadding.y));
-    if (ImGui::Button(l.c_str(), ImVec2(0, bs.y))) ImGui::OpenPopup("##slots");
-    ImGui::PopStyleVar();
-    dl->AddRectFilled(ImVec2(p.x + S(9), p.y + bs.y * 0.5f - S(7)), ImVec2(p.x + S(23), p.y + bs.y * 0.5f + S(7)), slotColor(sel), S(3));
-  }
-  if (ImGui::BeginPopup("##slots")) {
-    for (const SlotInfo& s : ss.slots) {
-      std::string l = std::to_string(s.index + 1) + ". " + (s.hasA ? s.displayName() : std::string(TR("(not set)")));
-      if (ImGui::Selectable(l.c_str(), s.index == sel)) {
-        sel = s.index;
-        changed();
-      }
-    }
-    ImGui::EndPopup();
-  }
-  ImGui::SameLine();
-  ImGui::BeginDisabled(st.practicing);
-  if (ImGui::Button(TR("Set A Here (Playhead)"), ImVec2(0, bs.y))) emu->timelineMarkA(sel);
-  ImGui::SameLine();
-  if (ImGui::Button(TR("Set B Here (Playhead)"), ImVec2(0, bs.y))) emu->timelineMarkB(sel);
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  bool hasA = sel < int(ss.slots.size()) && ss.slots[size_t(sel)].hasA;
-  ImGui::BeginDisabled(!hasA);
-  if (ImGui::Button(TR("Practice This Section"), ImVec2(0, bs.y))) {
-    emu->startPractice(sel);
-    practicePanel_ = true;
-    setMenu(false);
-  }
-  ImGui::EndDisabled();
-  ImGui::SameLine(0, S(24));
-  ImGui::BeginDisabled(st.practicing);
-  if (ImGui::Button(TR("Add Bookmark"), ImVec2(0, bs.y))) emu->addBookmark();
-  ImGui::EndDisabled();
 }
 
 // ------------------------------------------------------------------ timeline
 
-void UI::buildTimeline(float width, bool inMenu, double now) {
+void UI::buildTimeline(float width, bool inMenu, double now, float navLeft, float navRight) {
   ImGuiIO& io = ImGui::GetIO();
   const EmuStatus& st = d_.emu->status();
   EmulationController* emu = d_.emu;
@@ -229,8 +190,18 @@ void UI::buildTimeline(float width, bool inMenu, double now) {
   ImVec2 origin = ImGui::GetCursorScreenPos();
   float left = origin.x + inset, top = origin.y;
   ImGui::PushID("timeline");
-  bool pressed = ImGui::InvisibleButton("##tl", ImVec2(width, laneH + stripH));
-  ImGuiID id = ImGui::GetItemID();
+  bool pressed = false;
+  {
+    // InvisibleButton with a wider navigation rectangle.
+    ImGuiID tid = ImGui::GetID("##tl");
+    ImRect bb(origin, ImVec2(origin.x + width, origin.y + laneH + stripH));
+    ImRect nav(ImVec2(std::min(navLeft, bb.Min.x), bb.Min.y), ImVec2(std::max(navRight, bb.Max.x), bb.Max.y));
+    ImGui::ItemSize(bb.GetSize());
+    if (ImGui::ItemAdd(bb, tid, &nav)) {
+      bool hovered = false, held = false;
+      pressed = ImGui::ButtonBehavior(bb, tid, &hovered, &held);
+    }
+  }
   bool focused = ImGui::IsItemFocused();
   ImGui::PopID();
   ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -341,30 +312,51 @@ void UI::buildTimeline(float width, bool inMenu, double now) {
   if (scrubFrame_ && drag_ != Drag::scrub && now > scrubHoldUntil_) scrubFrame_.reset();
   if (hasPreview_ && drag_ == Drag::none && now > previewUntil_) hasPreview_ = false;
 
-  // ---- interaction: gamepad (focused + A: move the playhead with the D-pad)
-  if (pressed && !io.MouseReleased[0] && inMenu && st.hasSession) timelinePad_ = !timelinePad_;
-  if (timelinePad_ && inMenu) {
-    if (!focused && ImGui::GetFocusID() != id) ImGui::SetFocusID(id, ImGui::GetCurrentWindow());
-    auto amount = [&](ImGuiKey k) {
-      float dur = ImGui::GetKeyData(k)->DownDuration;
-      return dur < 0.6f ? 1 : dur < 2.0f ? 6 : dur < 4.0f ? 30 : 120;
-    };
-    int64_t delta = 0;
-    for (ImGuiKey k : {ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft})
-      if (ImGui::IsKeyPressed(k, true)) delta -= amount(k);
-    for (ImGuiKey k : {ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight})
-      if (ImGui::IsKeyPressed(k, true)) delta += amount(k);
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true)) delta += 300;
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) delta -= 300;
-    if (delta != 0 && !st.practicing) {
-      int64_t f = std::clamp(int64_t(st.frame) + delta, int64_t(0), int64_t(len));
-      emu->scrub(uint64_t(f));
+  // ---- interaction: controller (the focused timeline on the hub): D-pad <- / -> moves the playhead
+  // (hold = faster; steps frames past the recorded end while recording), L1 / R1 jump to the
+  // previous / next bookmark (or 5 s), X / Y set A / B of the selected section, A plays from here.
+  if (inMenu && focused && st.hasSession) {
+    timelineFocused_ = true;
+    ImGuiContext& g = *GImGui;
+    if (g.NavMoveDir == ImGuiDir_Left || g.NavMoveDir == ImGuiDir_Right) ImGui::NavMoveRequestCancel();  // <- / -> are ours
+    int dir = 0;
+    ImGuiKey key = ImGuiKey_None;
+    for (ImGuiKey k : {ImGuiKey_GamepadDpadLeft, ImGuiKey_LeftArrow})
+      if (ImGui::IsKeyPressed(k, true)) dir = -1, key = k;
+    for (ImGuiKey k : {ImGuiKey_GamepadDpadRight, ImGuiKey_RightArrow})
+      if (ImGui::IsKeyPressed(k, true)) dir = 1, key = k;
+    if (dir != 0) {
+      int n = scrubStepFrames(ImGui::GetKeyData(key)->DownDuration);
+      uint64_t f = st.frame;
+      if (st.practicing) {
+        if (dir < 0) emu->stepBack(uint64_t(n));
+        else emu->frameAdvance(n);
+      } else if (dir < 0) {
+        emu->scrub(f >= uint64_t(n) ? f - uint64_t(n) : 0);
+      } else if (f + uint64_t(n) <= len) {
+        emu->scrub(f + uint64_t(n));
+      } else if (f < len) {
+        emu->scrub(len);
+      } else if (st.recording) {
+        emu->frameAdvance(1);  // at the end of the recording: record one more frame, like paused stepping
+      }
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false)) emu->timelineMarkA(sel);
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) emu->timelineMarkB(sel);
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) ||
-        (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) && !pressed))
-      timelinePad_ = false;
+    int jump = (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) ? 1 : 0) - (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 1 : 0);
+    if (jump != 0 && !st.practicing && len > 0) {
+      std::vector<uint64_t> marks;
+      for (const BookmarkInfo& b : emu->structure().bookmarks)
+        if (b.onActiveTake) marks.push_back(b.frame);
+      emu->seek(timelineJumpTarget(st.frame, len, marks, jump));
+    }
+    if (!st.practicing && ImGui::IsKeyPressed(kPadX, false)) emu->timelineMarkA(sel);
+    if (!st.practicing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) emu->timelineMarkB(sel);
+    if (pressed && !io.MouseReleased[0]) closeHubAndResume();  // A: play from here
+    prompt({"dpad.lr"}, TR("Move (hold = faster)"));
+    prompt({"leftShoulder", "rightShoulder"}, TR("Previous / Next Bookmark (or 5 s)"));
+    prompt({"face.west"}, TR("Set A"));
+    prompt({"face.north"}, TR("Set B"));
+    prompt({"face.south"}, TR("Play from Here"));
+    prompt({"face.east"}, TR("Resume"));
   }
 
   // ---- drawing
@@ -473,14 +465,13 @@ void UI::buildTimeline(float width, bool inMenu, double now) {
     dl->AddTriangleFilled(ImVec2(x - S(6), top + laneH - S(9)), ImVec2(x + S(7), top + laneH - S(9)),
                           ImVec2(x + 0.5f, top + laneH - S(1)), hc);
   }
-  dl->AddRect(s0, s1, IM_COL32(255, 255, 255, timelinePad_ ? 255 : 60), S(4), 0, timelinePad_ ? S(3) : 1.0f);
-  if (focused && inMenu) {
-    const char* hint = timelinePad_ ? TR("◀ ▶ move (hold = faster) · ▲ ▼ ±5 s · X: Set A · Y: Set B · B: done")
-                                    : TR("A: move the playhead with the D-pad");
-    ImGui::SetNextWindowPos(ImVec2(left, top - S(4)), ImGuiCond_Always, ImVec2(0, 1));
-    ImGui::BeginTooltip();
-    ImGui::TextUnformatted(hint);
-    ImGui::EndTooltip();
+  dl->AddRect(s0, s1, IM_COL32(255, 255, 255, focused && inMenu ? 200 : 60), S(4), 0, 1.0f);
+  if (focused && inMenu && !st.practicing) {
+    // Which section X / Y edit (its color), next to the start time.
+    std::string l = TRF("A/B %lld", {sel + 1});
+    ImVec2 p(origin.x - S(4) - ImGui::GetFont()->CalcTextSizeA(S(15), FLT_MAX, 0, l.c_str()).x - S(10), top + S(1));
+    dl->AddRectFilled(p, ImVec2(origin.x - S(4), top + laneH - S(1)), slotColor(sel, 0.9f), S(4));
+    dl->AddText(nullptr, S(15), ImVec2(p.x + S(5), top + S(1)), IM_COL32(0, 0, 0, 255), l.c_str());
   }
 }
 
@@ -517,17 +508,17 @@ void UI::buildPracticeRows(bool big) {
       return r;
     };
     if (marker("A", s.hasA)) emu->practiceSetA(s.index);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("%s", TR("Set A (make the current position the start of the section)"));
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride)) ImGui::SetTooltip("%s", TR("Set A (make the current position the start of the section)"));
     ImGui::SameLine();
     if (marker("B", s.hasB)) emu->practiceSetB(s.index);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", TR("Set B (make the current position, reached by playing on from A, the end)"));
     ImGui::SameLine();
     if (ui::IconButton("##go", active ? ui::Icon::repeat : ui::Icon::play, ImVec2(rowH * 1.3f, rowH), s.hasA)) {
       emu->startPractice(s.index);
       if (menuOpen_) setMenu(false);
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", active ? TR("Restart from A") : TR("Practice This Section"));
     if (big) {
       ImGui::SameLine();
@@ -548,7 +539,7 @@ void UI::buildPracticeOverlay(bool) {
   const EmuStatus& st = d_.emu->status();
   ImGuiIO& io = ImGui::GetIO();
   bool dockShown = menuOpen_ || st.paused || drag_ != Drag::none;
-  float bottom = io.DisplaySize.y - S(12) - (dockShown ? dockHeight(menuOpen_) : 0.0f);
+  float bottom = io.DisplaySize.y - S(12) - (menuOpen_ ? hubPanelHeight() : dockShown ? dockHeight(false) : 0.0f);
   const SessionStructure& ss = d_.emu->structure();
   std::string current = TR("Practicing");
   if (st.practiceSlot >= 0 && st.practiceSlot < int(ss.slots.size()))
@@ -613,7 +604,7 @@ void UI::buildBadges() {
   if (!show) return;
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   float fs = S(16);
-  float y = menuOpen_ ? S(116) : S(12);
+  float y = menuOpen_ ? S(68) : S(12);
   ImVec2 p(S(12), y);
   auto pill = [&](const char* t, ImU32 c) { p.x += ui::Pill(dl, p, t, c, fs) + S(6); };
   if (st.practicing) pill(TR("Practicing (not recording)"), IM_COL32(255, 149, 0, 200));

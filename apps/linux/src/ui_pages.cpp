@@ -11,6 +11,7 @@
 #include "input_router.h"
 #include "l10n.h"
 #include "library.h"
+#include "pad_nav.h"
 #include "paths.h"
 #include "settings.h"
 #include "ui.h"
@@ -169,6 +170,21 @@ void UI::buildPracticeTab() {
                        "as you like (nothing is recorded)."));
   }
   ImGui::Spacing();
+  if (!st.practicing) {
+    // The section the hub's timeline edits with X (Set A) / Y (Set B).
+    int& sel = d_.settings->timelineSlot;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(TR("Section set on the timeline (X: Set A, Y: Set B)"));
+    const SessionStructure& ss = d_.emu->structure();
+    for (const SlotInfo& slot : ss.slots) {
+      ImGui::SameLine();
+      if (ImGui::RadioButton((std::to_string(slot.index + 1) + "##tlslot").c_str(), sel == slot.index)) {
+        sel = slot.index;
+        changed();
+      }
+    }
+    ImGui::Spacing();
+  }
   buildPracticeRows(true);
 }
 
@@ -178,9 +194,20 @@ void UI::buildLibrary(double now) {
   LibraryModel* lib = d_.library;
   lib->watch(now);
   float h = ImGui::GetContentRegionAvail().y;
-  // Header: search, reload, open folder.
+  // Header: search (Y), reload, open folder.
+  bool noPopup = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && dialogs_.empty() && !chooser_;
+  if (noPopup && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) focusSearch_ = true;
   ImGui::SetNextItemWidth(S(360));
   ImGui::InputTextWithHint("##search", TR("Search ROMs"), search_, sizeof search_);
+  // Y released: start typing in the search field (Steam's on-screen keyboard in Gaming Mode). On
+  // the release, as during the press ImGui's own "Y = text input" handling targets the focused row.
+  if (focusSearch_ && !ImGui::IsKeyDown(ImGuiKey_GamepadFaceUp)) {
+    focusSearch_ = false;
+    ImGuiID sid = ImGui::GetItemID();
+    ImGui::SetFocusID(sid, ImGui::GetCurrentWindow());
+    ImGui::ActivateItemByID(sid);
+    ImGui::GetCurrentContext()->NavNextActivateFlags |= ImGuiActivateFlags_PreferInput;
+  }
   ImGui::SameLine();
   if (ImGui::Button(TR("Reload"))) lib->refresh();
   ImGui::SameLine();
@@ -188,7 +215,7 @@ void UI::buildLibrary(double now) {
     lib->ensureFolders();
     SDL_OpenURL(("file://" + lib->romDir()).c_str());
   }
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
     ImGui::SetTooltip("%s", TR("Opens the ROM folder in the file manager (Desktop Mode)"));
   if (lib->scanning()) {
     ImGui::SameLine();
@@ -208,6 +235,8 @@ void UI::buildLibrary(double now) {
   for (const LibraryROM& r : lib->roms())
     if (librarySearchMatches(search_, r)) filtered.push_back(&r);
   const LibraryROM* selected = nullptr;
+  const LibraryROM* playNow = nullptr;  // chosen this frame (played after the list is drawn)
+  const LibraryROM* focusedRom = nullptr;
   for (const LibraryROM* r : filtered)
     if (r->path == selectedRom_) selected = r;
   if (!selected && !filtered.empty()) {
@@ -244,11 +273,12 @@ void UI::buildLibrary(double now) {
     float rowH = sub ? S(56) : S(40);
     if (ImGui::Selectable("##rom", isSel, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, rowH))) {
       selectedRom_ = r->path;
-      if (ImGui::IsMouseDoubleClicked(0)) {
-        d_.app->playFromLibrary(*r);
-      } else if (!ImGui::GetIO().MouseReleased[0]) {
-        focusPlay_ = true;  // gamepad / keyboard: on to the detail's buttons
-      }
+      // Double click, or A / Enter: play (a new project). A single click selects.
+      if (ImGui::IsMouseDoubleClicked(0) || !ImGui::GetIO().MouseReleased[0]) playNow = r;
+    }
+    if (ImGui::IsItemFocused()) {
+      focusedRom = r;
+      if (!isSel && ImGui::GetIO().NavVisible) selectedRom_ = r->path;  // the detail follows the focus
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddText(ImVec2(p.x + S(8), p.y + S(8)), IM_COL32(235, 238, 245, 255), r->name.c_str());
@@ -263,6 +293,21 @@ void UI::buildLibrary(double now) {
   }
   ImGui::EndChild();
   if (focusFirst_ && filtered.empty()) focusFirst_ = false;
+  // X on a ROM: continue its latest project.
+  std::vector<LibraryProject> focusedProjects;
+  if (focusedRom) focusedProjects = lib->projectsFor(*focusedRom);
+  std::string continuePath;
+  if (!focusedProjects.empty()) {
+    const LibraryProject* latest = &focusedProjects.front();
+    for (const LibraryProject& p : focusedProjects)
+      if (p.modified > latest->modified) latest = &p;
+    continuePath = latest->path;
+  }
+  if (focusedRom) {
+    prompt({"face.south"}, TR("Play"));
+    if (!continuePath.empty()) prompt({"face.west"}, TR("Continue"));
+  }
+  prompt({"face.north"}, TR("Search ROMs"));
   ImGui::SameLine();
   // Detail.
   ImGui::BeginChild("##detail", ImVec2(0, listH), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
@@ -287,11 +332,11 @@ void UI::buildLibrary(double now) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.85f, 1));
     if (ImGui::Button((std::string("▶  ") + TR("Play")).c_str(), ImVec2(S(220), S(54)))) d_.app->playFromLibrary(r);
     ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", TR("Creates a new project and starts right away (autosaved in the Projects folder)"));
     ImGui::SameLine();
     if (ImGui::Button(TR("Try Without a Project"), ImVec2(0, S(54)))) d_.app->tryRom(r.path);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", TR("Plays without creating a project (stored temporarily; you can save it later)"));
     ImGui::Spacing();
     ImGui::Separator();
@@ -314,6 +359,11 @@ void UI::buildLibrary(double now) {
   }
   ImGui::EndChild();
   ImGui::TextDisabled("%s", TRF("ROMs: %@   Projects (autosaved): %@", {Paths::display(lib->romDir()), Paths::display(lib->projectsDir())}).c_str());
+  if (noPopup && !continuePath.empty() && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(kPadX, false)) {
+    d_.app->continueProject(continuePath);
+  } else if (playNow) {
+    d_.app->playFromLibrary(*playNow);
+  }
 }
 
 // ------------------------------------------------------------------ guide
@@ -341,22 +391,38 @@ void UI::buildGuide() {
   };
   wrappedDisabled(TR("Steam Deck / controller (defaults; can be changed in Settings)"));
   table(TR("Controller"), {
-                              {TR("D-pad / Left Stick"), TR("Move (while paused, D-pad ←/→ steps back / advances a frame)")},
+                              {TR("D-pad / Left Stick"), TR("Move")},
                               {TR("B / A (Steam Deck, Xbox)"), TR("NES A / B (Pro Controller A / B, Xbox B / A, PS ○ / ✕)")},
                               {TR("Y / X (Steam Deck, Xbox)"), TR("Turbo A / Turbo B (Pro Controller X / Y, Xbox Y / X, PS △ / □)")},
                               {TR("Menu (≡) / View (⧉)"), "START / SELECT"},
-                              {TR("R2 (hold)"), TR("Rewind")},
-                              {TR("L2 (hold)"), TR("Fast-forward (recorded range only; pauses at the end)")},
-                              {"R1", TR("Pause / Resume")},
+                              {TR("L2 (hold)"), TR("Rewind")},
+                              {TR("R2 (hold)"), TR("Fast-forward (recorded range only; pauses at the end)")},
+                              {"R1", TR("Pause and open the menu (timeline, back to the library, settings, …)")},
                               {"L1", TR("Slow 1/2 ⇔ normal speed")},
-                              {TR("R3 (right stick click)"), TR("ReplayNES menu (timeline, takes, bookmarks, practice, library, settings)")},
+                              {TR("R3 (right stick click)"), TR("Open the menu / back to the game")},
                           });
   table(TR("In the menu"), {
-                               {TR("D-pad / A"), TR("Move / choose")},
-                               {"B", TR("Back / close the menu")},
-                               {"L1 / R1", TR("Previous / next tab")},
-                               {TR("Timeline + A"), TR("Move the playhead with the D-pad (X: Set A, Y: Set B)")},
+                               {TR("D-pad / Left Stick"), TR("Move the focus (the orange frame)")},
+                               {"A", TR("Choose")},
+                               {"B", TR("Back (on the menu: resume play)")},
+                               {TR("R1 / Menu (≡)"), TR("Resume play (on a page: back to the menu)")},
+                               {TR("View (⧉)"), TR("Controls Guide on / off")},
+                               {"L1 / R1", TR("Settings tabs (other pages: previous / next page)")},
+                               {TR("Right Stick"), TR("Scroll the page")},
+                               {TR("L2 / R2 (hold)"), TR("Rewind / Fast-forward")},
                            });
+  table(TR("Timeline (move the focus up to it)"), {
+                               {TR("D-pad ← / →"), TR("Move the playhead (hold = faster; at the end of the recording: record one more frame)")},
+                               {"L1 / R1", TR("Previous / Next Bookmark (or 5 s)")},
+                               {"X / Y", TR("Set A / Set B of the section chosen on the Practice page")},
+                               {"A", TR("Play from Here")},
+                           });
+  table(TR("Library"), {
+                           {"A", TR("Play (creates a new project)")},
+                           {"X", TR("Continue the latest project of the ROM")},
+                           {"Y", TR("Search (on-screen keyboard)")},
+                           {TR("Menu (≡)"), TR("Settings")},
+                       });
   table(TR("Keyboard (only while ReplayNES is in front)"), {
                                                               {TR("Arrow keys / X / Z"), TR("Move / A / B")},
                                                               {TR("Return / Right Shift, \\"), "START / SELECT"},
@@ -366,7 +432,7 @@ void UI::buildGuide() {
                                                               {"L", TR("Slow 1/2 ⇔ normal speed")},
                                                               {", / .", TR("Step back / Frame advance")},
                                                               {"B", TR("Add Bookmark")},
-                                                              {"Esc / F1", TR("ReplayNES menu")},
+                                                              {"Esc / F1", TR("Open the menu / back to the game")},
                                                               {"F11 / F3", TR("Full screen / statistics")},
                                                           });
   ImGui::Spacing();

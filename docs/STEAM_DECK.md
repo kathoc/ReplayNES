@@ -60,27 +60,37 @@ renaming the ROM file is fine); **Try Without a Project** plays in a temporary s
 later. "Open Project…" (header) browses `~/Documents/ReplayNES`.
 
 **Playing.** Nothing is drawn over the game while it runs (status badges appear only when paused,
-rewinding, fast-forwarding, slow, practicing or reducing flashes). Pause (R1) and the **dock** appears
-at the bottom: the glowing red **Record** toggle (record mode; gray = playback mode, which plays the
-recorded take), go to start, rewind (hold), step back, play / pause, step forward, fast-forward
-(hold), Slow, Practice, Integer / FILL and "···" (bookmark, previous take, re-record from here,
-advance N frames, soft reset / power cycle). The dock is for touch / trackpad (a tap while playing
-shows it for a moment); with the controller, paused D-pad ←/→ steps frames and R2 / L2 rewind /
-fast-forward.
+rewinding, fast-forwarding, slow, practicing or reducing flashes). A tap / click shows the **dock**
+(transport + filmstrip timeline) for a moment.
 
-**The menu: R3 (press the right stick)**, or Esc / F1. The game pauses and nothing reaches it while
-the menu is open. L1 / R1 switch tabs, the D-pad moves, A chooses, B goes back / closes the menu;
-"▶ Resume" (top right) returns to the game, playing.
+**The menu (hub): pause with R1**, or press R3 (right stick) / Esc / F1. Every pause (also the
+end of a rewind / fast-forward, an opened project) shows it; the game waits and nothing reaches it.
+The game stays visible above the timeline, the transport (Record toggle, go to start, rewind,
+step back, play, step forward, fast-forward, Slow, Integer / FILL, "···") and a row of large
+buttons, controller first:
 
-| Tab | What is there |
+| Button | What it does |
 |---|---|
-| Playback | The dock with the **filmstrip timeline**: one picture per 5 s at its natural size (10 / 20 / 40 s ... once the take outgrows the width), the newest picture revealed as you record, 1-pixel playhead (red while recording), bookmarks (yellow), A/B ranges (numbered colour bands). Touch / mouse: drag the strip to move (silent, paused), drag the thin band above it to set the A/B range of the selected section, drag a range's end to adjust it, tap a range to practice it. Controller: select the timeline and press A, then ◀ ▶ move the playhead (hold = faster), ▲ ▼ ±5 s, X / Y set A / B there, B ends. Below: section picker, "Set A Here", "Set B Here", "Practice This Section", "Add Bookmark". |
-| Takes | "Re-record from Here", "Back to Previous Take", Reset Project…, and every take with its branch point ("Switch to This Take"). |
-| Bookmarks | Add (also the B key), rewind to, rename (Steam's on-screen keyboard opens), delete. |
-| Practice | The 8 A/B sections: set A / B, practice (A to B, a short hold, rewinds to A, repeats; nothing is recorded), rename, clear. While a practice run plays, a small pill shows the progress and "Stop Practicing". |
-| Library | The start screen (switching ROM asks to save first, see below). |
-| Settings | Display (Integer / FILL, 8:7, overscan, full screen, latency overlay, UI size, flash reduction, CRT display); Audio & Controls (volume, pause after rewind / fast-forward, autosave interval, paused D-pad stepping, language); Controller (a diagram of the connected pad - Steam Deck / Xbox / PlayStation / Nintendo / other layouts - where pressed buttons light up: select a button, press A and pick its action; "Reset Pad N to Defaults"); Game Input & Hotkeys (assign by pressing a key or button, turbo, SOCD, stick threshold). |
-| Controls Guide | The tables below. |
+| Resume | back to the game (also B, R1 or Menu (≡) anywhere on the hub) |
+| Back to Library | closes the game (a temporary session asks "Do you want to save?" first) and shows the start screen |
+| Settings | Display, Audio & Controls, Controller (a diagram of the connected pad: select a button, press A and pick its action), Game Input & Hotkeys; L1 / R1 switch these tabs |
+| Practice | the 8 A/B sections (set A / B, practice, rename, clear) and which section the timeline's X / Y set |
+| Takes | "Re-record from Here", "Back to Previous Take", every take with its branch point |
+| Bookmarks | add, rewind to, rename (Steam's on-screen keyboard opens), delete |
+| Export… | MP4 export (picture / processing in two columns; codec and the output folder under "Advanced") |
+| Reset… | Soft Reset, Power Cycle (recorded like the console's buttons) or Reset Project… |
+| Controls Guide | the tables below (also View (⧉) from anywhere) |
+
+Pages return to the hub with B (or Menu (≡)); on Practice / Takes / Bookmarks / Guide, L1 / R1 go to
+the previous / next page. **The timeline**: move the focus up to it - D-pad ←/→ moves the playhead
+(hold = faster; at the end of the recording it records one more frame, like the old paused frame
+stepping), L1 / R1 jump to the previous / next bookmark (or 5 s), X / Y set A / B of the selected
+section, A plays from there. Touch / mouse as before: drag the strip to move, drag the thin band
+above it to set an A/B range, drag a range's end to adjust it, tap a range to practice it. Up from
+the timeline: "Save" and "Project ▾" (Save As…, Export…, Open Project…, Reset Project…, Close
+Project, Quit). The focused item has a thick orange frame, and the bar at the bottom shows the
+buttons of the controller in use (Steam Deck / Xbox: A B X Y, PlayStation: ✕ ○ □ △, Nintendo: by
+position, so the confirm button is the bottom one, "B").
 
 Header: "Save" (a temporary session asks where, in a file chooser rooted at
 `~/Documents/ReplayNES/Projects`; an existing project of the same name is moved to the Trash first)
@@ -107,23 +117,27 @@ nor keeps sessions.
 
 ## Controls
 
-| Input | Action |
-|---|---|
-| D-pad / left stick | NES D-pad |
-| B (east) / A (south) | NES A / NES B (by position, as on macOS: Nintendo's A/B) |
-| Y (north) / X (west) | turbo A / turbo B |
-| Menu (≡) / View (⧉) | START / SELECT |
-| R2 hold | rewind |
-| L2 hold | fast-forward (recorded part only) |
-| L1 | slow motion 1/2 on/off |
-| R1 | pause / play |
-| D-pad left/right while paused | step back / forward one frame (repeats when held) |
-| R3 (right stick click) | the ReplayNES menu (reserved: cannot be assigned) |
+| Input | In play | In the menu (hub, pages, library, dialogs) |
+|---|---|---|
+| D-pad / left stick | NES D-pad | move the focus |
+| A (south) | NES B (by position, as on macOS: Nintendo's A/B) | choose |
+| B (east) | NES A | back (hub: resume play; dialogs: cancel) |
+| Y (north) / X (west) | turbo A / turbo B | library: Y search (on-screen keyboard), X continue the latest project; timeline: Y / X set B / A |
+| Menu (≡) | START | hub: resume; page: back to the hub; library: Settings |
+| View (⧉) | SELECT | Controls Guide on / off |
+| L2 hold | rewind | rewind (hub) |
+| R2 hold | fast-forward (recorded part only) | fast-forward (hub) |
+| L1 | slow motion 1/2 on/off | Settings tabs / previous page; timeline: previous bookmark (or -5 s); hub: slow on/off |
+| R1 | pause + menu (hub) | resume (hub); Settings tabs / next page; timeline: next bookmark (or +5 s) |
+| R3 (right stick click) | menu (hub) | back to the game (reserved: cannot be assigned) |
+| right stick | - | scroll the page |
 
-In the menu: D-pad move, A choose, B back / close, L1 / R1 tabs, Start close.
+Menu (≡) stays the NES START button while playing (games need it); the menu opens with R1 or R3.
+Before this version the triggers were the other way round (R2 rewind, L2 fast-forward): saved
+assignments that still have exactly those defaults are switched automatically; changed ones are kept.
 
 Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
-Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, Esc/F1 menu, F11 full
+Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, Esc/F1 menu (hub) / back to the game, F11 full
 screen, F3 statistics overlay. Every assignment can be changed in Settings (saved in
 `~/.var/app/io.github.replaynes.ReplayNES/config/ReplayNES/bindings.json`, the macOS format).
 
@@ -132,8 +146,9 @@ screen, F3 statistics overlay. Every assignment can be changed in Settings (save
 The UI is Dear ImGui drawn in the same Vulkan render pass as the game picture (one present per
 frame; gamescope composites the window as a whole anyway). While playing it costs ~0.05 ms per frame
 (an empty ImGui frame; badges and the practice pill are a few quads), and ImGui does not read the
-gamepads at all (its polling would contend with the controller thread): the controllers drive ImGui
-only while the menu, the library or a dialog is up, and the game is paused then. Work that is not
+gamepads at all (its polling would contend with the controller thread): the SDL gamepad events are
+passed to it, and it navigates only while the menu, the library or a dialog is up (the game is
+paused then). Work that is not
 frame-critical runs after the present, in the slack before the next input sample: autosave (while
 playing only with >= 8 ms of slack), the resume record (written by a background thread), library
 scan results and filmstrip thumbnails (pictures the game shows anyway; missing ones are rendered
