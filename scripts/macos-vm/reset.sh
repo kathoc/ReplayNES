@@ -1,5 +1,5 @@
 #!/bin/bash
-# Roll the VM back to its snapshot ("clean" by default; SNAPSHOT=name). The VM is stopped first.
+# Roll the VM back to a snapshot ("provisioned" by default = ready for tests; SNAPSHOT=clean for the untouched install). The VM is stopped first.
 # Everything done since the snapshot (installed apps, preferences, files) is discarded.
 #   scripts/macos-vm/reset.sh            START=1 scripts/macos-vm/reset.sh   (and boot it)
 set -euo pipefail

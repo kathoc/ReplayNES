@@ -3,7 +3,7 @@
 # except the deploy/run-app helpers. Everything can be overridden from the environment.
 
 VM="${REPLAYNES_VM:-${VM:-MacOS}}"
-SNAPSHOT="${SNAPSHOT:-clean}"                     # snapshot name reset.sh switches to
+SNAPSHOT="${SNAPSHOT:-provisioned}"               # snapshot reset.sh switches to ("clean" = untouched install)
 VM_USER="${VM_USER:-admin}"
 VM_PASS="${VM_PASS:-admin}"                       # local test account; the VM is on Parallels' shared NAT
 
