@@ -70,12 +70,14 @@ Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden whi
 
 ## Windows (preview)
 
-ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Steam Deck / Linux version's interface: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, English / Japanese, display-locked low-latency pacing (Direct3D 11). **Not yet on Windows: the CRT display, MP4 export and in-app updates.** Details: [docs/WINDOWS.md](docs/WINDOWS.md).
+ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Steam Deck / Linux version's interface: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, MP4 export, English / Japanese, display-locked low-latency pacing (Direct3D 11). Details: [docs/WINDOWS.md](docs/WINDOWS.md).
 
-1. **Install**: unzip `ReplayNES-<version>-windows-x64.zip` (`-arm64` for Windows on Arm) anywhere and run `ReplayNES.exe` (no installer, no DLLs). Not code-signed yet: SmartScreen may ask once ("More info" → "Run anyway").
+1. **Install**: unzip `ReplayNES-<version>-windows-x64.zip` (`-arm64` for Windows on Arm) into a folder you can write to (e.g. under your user folder, not `Program Files`) and run `ReplayNES.exe` (no installer; `WinSparkle.dll` next to it is the updater). Not code-signed yet: SmartScreen may ask once ("More info" → "Run anyway").
 2. **ROMs**: put `.nes` files into `Documents\ReplayNES\ROM` ("Open Folder" in the library opens it in Explorer). "Play" starts a project in `Documents\ReplayNES\Projects`. The temporary session lives in `%LOCALAPPDATA%\ReplayNES\Session`, settings in `%APPDATA%\ReplayNES`. Reset Project / Save As move replaced projects to the Recycle Bin.
 3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L2 / R2 hold = rewind / fast-forward, R1 or R3 = pause + menu, L1 = slow); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 menu, F11 full screen. Everything is reassignable in Settings.
-4. **Display**: F11 / Settings → Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen.
+4. **Display**: F11 / Settings → Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen. Settings → Display → CRT Display turns on the physical CRT model (Direct3D 11 compute; needs a Direct3D 11.0 GPU).
+5. **MP4 export**: menu → Export… (H.264 + AAC through Windows' Media Foundation; a hardware encoder when the GPU has one), saved in `Documents\ReplayNES\Exports`.
+6. **Updates**: ReplayNES checks GitHub for a new version once a day if you agree when it asks (on the second launch), or right away with Settings → Audio & Controls → "Check for Updates…". The update is downloaded, its signature checked, and ReplayNES restarts into the new version (the session is saved first). "Automatically check for updates" turns the daily check off.
 
 ## Usage
 
@@ -253,7 +255,7 @@ For that reason, each project records the core compatibility ID from when it was
 ReplayNES connects to the network only when it accesses GitHub (github.com and its download servers) to check for and download updates.
 All it sends are ordinary HTTPS requests to fetch the update information (`appcast.xml`) and the update file; it sends no system information, usage data, or the contents of ROMs or projects. There is no telemetry either.
 
-- Automatic checking is enabled only if you allowed it in the prompt shown at the second launch.
+- Automatic checking is enabled only if you allowed it in the prompt shown at the second launch (macOS and Windows; the Windows version fetches `appcast-windows.xml`).
 - If you turn off "Automatically check for updates" in the "Updates" tab of Settings, it does not connect except when you check manually from the menu.
 
 What it reads and writes is limited to the ROMs and projects you specify, the Library folder (`~/Documents/ReplayNES`), settings files, and the update cache.
@@ -267,7 +269,7 @@ What it reads and writes is limited to the ROMs and projects you specify, the Li
 - Pixel-perfect integer scaling happens only at a 1:1 pixel aspect ratio. At 8:7, the horizontal scaling width is not uniform.
 - The UI is available in English and Japanese. It has been tested only on Apple Silicon. Testing with physical game controllers has been limited.
 - Because it has not been notarized, the first launch requires some steps (see [Installation](#installation)).
-- The Steam Deck / Linux and Windows versions are previews (see [Steam Deck / Linux](#steam-deck--linux-preview) and [Windows](#windows-preview)); the Windows version has no CRT display, MP4 export or in-app updates yet.
+- The Steam Deck / Linux and Windows versions are previews (see [Steam Deck / Linux](#steam-deck--linux-preview) and [Windows](#windows-preview)); the Windows version is tested in a VM so far (no real-PC GPU / pacing measurements yet).
 
 ## Build from Source
 

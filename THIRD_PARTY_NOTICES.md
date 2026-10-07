@@ -203,7 +203,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## nesterm physical CRT model (CRT Display, macOS and Linux apps)
+## nesterm physical CRT model (CRT Display, macOS, Linux and Windows apps)
 
 - Project: nesterm by kathoc (Web version, `web/physical-*.mjs` and `vendor/crt/`). Its `vendor/crt/` modules
   were exported from the same author's research project **crt-physical-model**
@@ -211,7 +211,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   crt-physical-model has no separate license file; the code is distributed inside nesterm under nesterm's MIT license.
 - What ReplayNES contains: a Metal/Swift port (no JavaScript is shipped) in `apps/macos/Sources/Core/CRT/`
   (setup math, MSL ports of the WebGL2 shaders), its C++ / GLSL (Vulkan compute) port for Linux in
-  `apps/linux/src/render/` and `apps/linux/shaders/crt/`, the settings UI in `apps/macos/Sources/App/CRTSettings.swift`,
+  `apps/linux/src/render/` and `apps/linux/shaders/crt/`, the HLSL (Direct3D 11 compute) generated from
+  that GLSL for Windows in `apps/windows/shaders/crt/` with its host code in `apps/windows/src/crt_d3d11.*`
+  (the setup math in `apps/desktop/src/render/crt_model.*`), the settings UI in `apps/macos/Sources/App/CRTSettings.swift`,
   and `tools/crt-reference/generate-fixtures.mjs`, which imports nesterm's reference modules from a local nesterm
   checkout at test-fixture generation time (they are not copied into this repository). Mapping and deviations:
   `docs/CRT_PORT.md`.
@@ -328,8 +330,71 @@ freely, subject to the following restrictions:
 ```
 
 - Windows system components (Direct3D 11, DXGI, the D3D shader compiler `d3dcompiler_47.dll`, WASAPI,
-  XInput / GameInput) are part of Windows and not distributed with ReplayNES. Fonts: none bundled; the
+  XInput / GameInput, Media Foundation with its H.264 / AAC encoders for MP4 export, `tar.exe` used to
+  unpack updates) are part of Windows and not distributed with ReplayNES. Fonts: none bundled; the
   Windows app uses Segoe UI, Yu Gothic / Meiryo and Segoe UI Symbol from `%WINDIR%\Fonts` at run time.
+
+## WinSparkle (in-app updates, Windows app)
+
+- Project: https://winsparkle.org / https://github.com/vslavik/winsparkle, release 0.9.4 (the
+  prebuilt `WinSparkle.dll` of the official release package, x64 or ARM64, shipped unmodified next to
+  `ReplayNES.exe`; downloaded by the build with a pinned SHA-256, see `apps/windows/CMakeLists.txt`).
+- License: MIT (below). The DLL contains, statically linked, wxWidgets (wxWindows Library Licence,
+  which allows distributing binaries under the distributor's own terms), Expat (MIT, below), parts of
+  OpenSSL's libcrypto for the EdDSA (ed25519) signature check (Apache License 2.0; WinSparkle's notice
+  below), and Microsoft's WebView2 loader for release notes.
+
+```
+Copyright (c) 2009-2026 Vaclav Slavik
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+
+
+This product includes software developed by the OpenSSL Project
+for use in the OpenSSL Toolkit (http://www.openssl.org/).
+```
+
+```
+Copyright (c) 1998-2000 Thai Open Source Software Center Ltd and Clark Cooper
+Copyright (c) 2001-2025 Expat maintainers
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
 
 ## Noto Sans Black (Steam library artwork wordmark, Linux app)
 

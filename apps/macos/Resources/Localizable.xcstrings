@@ -321,6 +321,16 @@
         }
       }
     },
+    "A Direct3D 11 port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nesterm の「CRT（物理モデル・実験）」を Direct3D 11 に移植した表示です。NES の画素コード → RF/IF → 復調 → 管面（スロットマスク・散乱・残光）。未校正の実験モデルで、実在のテレビの再現ではありません。表示だけの処理で、記録・ゲームの進行・再現性には影響しません。画面は 4:3（ピクセル比の設定は使いません）です。"
+          }
+        }
+      }
+    },
     "A Metal port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used) and the screen’s internal resolution is up to 1600×1200. Frames changed by flash reduction are drawn from the reduced RGB image.": {
       "localizations": {
         "ja": {
@@ -6171,16 +6181,6 @@
         }
       }
     },
-    "The CRT display and MP4 export aren’t available in the Windows version yet.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Windows 版では、ブラウン管 (CRT) 表示と MP4 書き出しはまだ使えません。"
-          }
-        }
-      }
-    },
     "The CRT display isn’t available on this GPU: %@": {
       "localizations": {
         "ja": {
@@ -6857,6 +6857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "前の試行へ戻しました"
+          }
+        }
+      }
+    },
+    "When this is on, ReplayNES looks for a new version once a day. Updates come from the project’s GitHub releases; their signature is checked before they are installed, and ReplayNES restarts into the new version (the session is saved first).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、ReplayNES は 1 日に 1 回新しいバージョンを確認します。アップデートはプロジェクトの GitHub リリースから取得し、署名を確認してからインストールします。インストール後は新しいバージョンで再起動します（セッションは先に保存されます）。"
           }
         }
       }

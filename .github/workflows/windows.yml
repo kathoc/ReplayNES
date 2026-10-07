@@ -5,7 +5,10 @@
 #    MSVC builds upload ReplayNES.exe.
 #  - mingw-cross: the developer cross-build (macOS + llvm-mingw, docs/WINDOWS.md) with the release
 #    zips (dist/ReplayNES-<version>-windows-{x64,arm64}.zip), whose x86_64 test executables are
-#    then run on a real x64 Windows runner (mingw-run).
+#    then run on a real x64 Windows runner (mingw-run); also checks that the committed CRT HLSL
+#    matches the GLSL it is generated from.
+# The CRT conformance test (test_crt_d3d11 / ctest crt_conformance_d3d11) runs on WARP there: the
+# runners have no GPU.
 name: windows
 
 on:
@@ -67,6 +70,8 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             build/apps/windows/Release/ReplayNES.exe
+            build/apps/windows/Release/WinSparkle.dll
+            build/apps/windows/Release/replaynes-export.exe
             apps/windows/README.txt
             LICENSE
             THIRD_PARTY_NOTICES.md
@@ -87,16 +92,19 @@ jobs:
             "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal.tar.xz"
           tar -xf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
           echo "LLVM_MINGW=$RUNNER_TEMP/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal" >> "$GITHUB_ENV"
+      - name: CRT HLSL generated from the current GLSL (scripts/generate-crt-hlsl.sh)
+        run: scripts/generate-crt-hlsl.sh --check
       - name: Build x86_64 + aarch64 (+ dist zips)
         run: scripts/build-windows.sh all
       - name: Collect x86_64 test executables + the frontend
         run: |
           mkdir -p out
-          cp build/windows-x86_64/tests/*.exe build/windows-x86_64/tools/*/*.exe build/windows-x86_64/apps/windows/ReplayNES.exe out/
+          cp build/windows-x86_64/tests/*.exe build/windows-x86_64/tests/crt_reference.json build/windows-x86_64/tools/*/*.exe \
+            build/windows-x86_64/apps/windows/*.exe build/windows-x86_64/apps/windows/WinSparkle.dll out/
       - uses: actions/upload-artifact@v4
         with:
           name: mingw-x86_64
-          path: out/*.exe
+          path: out/*
           retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
@@ -131,6 +139,10 @@ jobs:
           $p = Start-Process -FilePath bin/ReplayNES.exe -ArgumentList '--version','--log','version.txt' -Wait -PassThru
           Get-Content version.txt
           if ($p.ExitCode -ne 0) { exit 1 }
+      - name: MP4 export self-test (Media Foundation; Windows Server may not have it)
+        shell: pwsh
+        run: bin/replaynes-export.exe --self-test "$env:RUNNER_TEMP/export-selftest" --frames 300
+        continue-on-error: true
       - name: Probe
         run: bin/replaynes-winprobe.exe
         continue-on-error: true

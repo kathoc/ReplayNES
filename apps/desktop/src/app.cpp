@@ -302,7 +302,7 @@ int App::run(const AppOptions& opt) {
   ui_->onSettingsChanged = [this] {
     settings_.save(paths_.settingsFile());
     applySettings();
-    if (updates_) updates_->setAutoCheck(settings_.checkForUpdates);
+    if (updates_ && !updates_->ownsDialogs()) updates_->setAutoCheck(settings_.checkForUpdates);
   };
   ui_->onFullscreen = [this](bool on) { applyFullscreen(on); };
   ui_->isFullscreen = [this] { return fullscreen_; };

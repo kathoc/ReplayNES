@@ -1,7 +1,8 @@
 // In-app updates in the UI (state: UpdateService / UpdateModel): a notice on the library (start
 // screen) with Update / Later, the download progress and Restart; an "Update" button on the hub
 // while one is waiting; Settings -> Audio & Controls -> System: "Check for updates automatically"
-// and "Check now". All controller navigable (plain buttons in the page's focus order).
+// and "Check now" (Windows: WinSparkle's own dialogs behind "Check for Updates…"). All controller
+// navigable (plain buttons in the page's focus order).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <string>
 
@@ -158,8 +159,19 @@ void UI::showUpdateDialog() {
 // Settings -> Audio & Controls -> System.
 void UI::buildUpdateSettings() {
   Settings& s = *d_.settings;
-  if (!d_.updates) {  // no in-app updates on this platform (Windows): the version only
+  if (!d_.updates) {  // no in-app updates (e.g. a Windows build without WinSparkle.dll): the version only
     wrapped(TRF("Version %@", {RNL_APP_VERSION}).c_str(), true);
+    return;
+  }
+  if (d_.updates->ownsDialogs()) {  // Windows: WinSparkle shows its own windows (under "System")
+    bool autoCheck = d_.updates->autoCheckEnabled();
+    if (ImGui::Checkbox(TR("Automatically check for updates"), &autoCheck)) d_.updates->setAutoCheck(autoCheck);
+    if (ImGui::Button((std::string(TR("Check for Updates…")) + "##updatecheck").c_str())) d_.updates->checkNow();
+    wrapped(TRF("Version %@", {RNL_APP_VERSION}).c_str(), true);
+    wrapped(TR("When this is on, ReplayNES looks for a new version once a day. Updates come from the project’s GitHub "
+               "releases; their signature is checked before they are installed, and ReplayNES restarts into the new "
+               "version (the session is saved first)."),
+            true);
     return;
   }
   ImGui::SeparatorText(TR("Updates"));

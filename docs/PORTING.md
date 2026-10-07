@@ -11,9 +11,9 @@ The desktop frontend is one C++ code base with small platform seams:
 | | Shared (`apps/desktop`) | Linux (`apps/linux`) | Windows (`apps/windows`) |
 |---|---|---|---|
 | UI, frame loop, input, audio | Dear ImGui UI, `runApp` frame loop, `DisplayScheduler`, input routing, OSK, SDL3 audio + DRC | - | - |
-| `Renderer` (`renderer.h`) | `GameRect`, present-timing interface | Vulkan FIFO + `VK_KHR_present_wait`, Vulkan CRT | Direct3D 11 flip model + DXGI frame statistics (CRT: not yet) |
+| `Renderer` (`renderer.h`) | `GameRect`, present-timing interface | Vulkan FIFO + `VK_KHR_present_wait`, Vulkan CRT | Direct3D 11 flip model + DXGI frame statistics, Direct3D 11 CRT (HLSL generated from the GLSL) |
 | Platform services (`platform/platform.h`, `paths.h`, `host_clock.h`, `fonts.h`) | | XDG folders, freedesktop Trash, `SDL_OpenURL`, CLOCK_MONOTONIC, fontconfig | Known Folders, Recycle Bin (`IFileOperation`), Explorer, QPC + high-resolution timers, `%WINDIR%\Fonts` |
-| Optional features | `update_service.h`, `export/mp4_export.h`, `render/crt_export.h`, `ui_features.h` | Flatpak portal updates, FFmpeg export, Add to Steam | not yet (stubs) |
+| Optional features | `update_service.h`, `export/mp4_export.h`, `render/crt_export.h`, `ui_features.h` | Flatpak portal updates, FFmpeg export, Add to Steam | WinSparkle updates, Media Foundation export (no Add to Steam) |
 
 New desktop platforms implement those seams; `rnl_logic` (no SDL) and its tests
 (`test_desktop_frontend`) build everywhere, also on macOS.

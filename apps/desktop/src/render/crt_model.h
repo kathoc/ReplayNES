@@ -3,7 +3,8 @@
 // apps/macos/Sources/Core/CRT/CRTModel.swift: the CPU-side SETUP math only (constants, FIR design,
 // detector/beam tables, phosphor fractions), 1:1 (same formulas, evaluation order, double
 // precision, float32 rounding points). Every per-frame operation runs on the GPU
-// (apps/linux/shaders/crt/*.comp). Uncalibrated, assumption-labelled model (ledger IDs kept in
+// (apps/linux/shaders/crt/*.comp; Direct3D 11: the HLSL generated from them in
+// apps/windows/shaders/crt). Uncalibrated, assumption-labelled model (ledger IDs kept in
 // comments), not a measured television. Mapping and deviations: docs/CRT_PORT.md.
 // SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
 #pragma once

@@ -1,6 +1,6 @@
 // CRT display parameters and the tube rectangle (no graphics API): shared by the settings UI, the
 // display post-process interface (post_process.h) and the CRT renderers (Vulkan:
-// apps/linux/src/render; Direct3D 11: not yet, docs/WINDOWS.md).
+// apps/linux/src/render; Direct3D 11: apps/windows/src/crt_d3d11.h).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 

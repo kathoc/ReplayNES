@@ -1,5 +1,6 @@
 // ReplayNES for Windows: the shared desktop frontend (apps/desktop/src/app.h) with the Direct3D 11
-// presenter (d3d11_renderer.h); SDL3 (third_party/SDL, linked statically) for the window, WASAPI
+// presenter (d3d11_renderer.h, with the CRT display), in-app updates through WinSparkle
+// (update_winsparkle.h); SDL3 (third_party/SDL, linked statically) for the window, WASAPI
 // audio and gamepads (XInput / raw input / GameInput / HIDAPI). A WIN32-subsystem program: output
 // goes to the console it was started from (if any) or to --log FILE.
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -22,6 +23,8 @@
 
 #include "app.h"
 #include "d3d11_renderer.h"
+#include "update_service.h"
+#include "update_winsparkle.h"
 
 namespace {
 
@@ -62,6 +65,8 @@ int main(int argc, char** argv) {
   using namespace rnl;
   setupOutput(argc, argv);
   dropLogArgument(&argc, argv);
+  // Started by an older ReplayNES from an unpacked update (update_winsparkle.h): install it.
+  if (argc >= 4 && std::strcmp(argv[1], "--finish-update") == 0) return finishUpdate(argc, argv);
   if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
     std::printf("ReplayNES %s\n", RNL_APP_VERSION);
     return 0;
@@ -78,5 +83,7 @@ int main(int argc, char** argv) {
   platform.sessionMode = [] { return std::string("windows"); };
   AppOptions opt;
   if (!parseAppArgs(argc, argv, platform, &opt)) return 2;
+  // In-app updates: WinSparkle (WinSparkle.dll next to the exe; none without it).
+  platform.makeUpdates = [&opt] { return makeWinSparkleUpdates(opt.argv); };
   return runApp(opt, platform);
 }

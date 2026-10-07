@@ -3,8 +3,8 @@
 // canvas (port of CRTExportRenderer in apps/macos/Sources/Core/MP4Exporter.swift). The same frame
 // sequence gives the same pictures (deterministic); the renderer hash is unaffected (display only).
 //   ExportOptions opt; opt.makeProcessor = crtExportProcessorFactory(settings);
-// Implemented with the Vulkan CRT on Linux (apps/linux/src/render/crt_export.cpp); Windows: not yet
-// (apps/windows/src/export_unavailable.cpp returns no processor).
+// Implemented with the Vulkan CRT on Linux (apps/linux/src/render/crt_export.cpp) and the Direct3D 11
+// CRT on Windows (apps/windows/src/crt_export_d3d11.cpp).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 

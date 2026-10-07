@@ -3,10 +3,12 @@ ReplayNES for Windows (preview)
 
 ReplayNES records every frame you play: rewind, replay, re-record from any point, practice
 sections with A/B repeat, takes and bookmarks. Windows 10 / 11, x64 or ARM64 (arm64 build for
-Windows on Arm). No installation: unzip anywhere and run ReplayNES.exe.
+Windows on Arm). No installation: unzip into a folder you can write to (e.g. in your user folder,
+not Program Files: updates replace the files there) and run ReplayNES.exe.
 
 Files
-  ReplayNES.exe            the app (self-contained; SDL3 is built in, no DLLs)
+  ReplayNES.exe            the app (SDL3 is built in)
+  WinSparkle.dll           in-app updates (WinSparkle, MIT)
   LICENSE.txt              GPL-2.0-or-later
   THIRD_PARTY_NOTICES.md   licenses of the components (Nestopia UE, SDL3, Dear ImGui, ...)
 
@@ -34,8 +36,19 @@ Display and timing
   control. Full screen (F11) is borderless; on a variable refresh (G-SYNC / FreeSync) display,
   start with --vrr for tearing-allowed presents at the NES's own 60.0988 Hz.
 
-Not in this preview
-  CRT display and MP4 export (the Linux / macOS versions have them), in-app updates.
+CRT display
+  Settings > Display > CRT display: nesterm's physical CRT model (NES signal > RF > TV tube) on
+  Direct3D 11 compute (a Direct3D 11.0 GPU). Display only: recordings are unaffected.
+
+MP4 export
+  Menu > Export...: H.264 + AAC through Windows' Media Foundation (a hardware encoder when the GPU
+  has one), into Documents\ReplayNES\Exports. Optional CRT effect and flash reduction.
+
+Updates
+  On the second start ReplayNES asks whether to check for updates automatically (once a day, on
+  GitHub). Settings > Audio & Controls > Check for Updates... checks right away. Updates are
+  signed; ReplayNES quits, replaces its files in this folder and starts the new version (the
+  session is saved first).
 
 Command line
   ReplayNES.exe --help    (--rom FILE, --fullscreen, --lang ja|en, --vrr, --log FILE, ...)

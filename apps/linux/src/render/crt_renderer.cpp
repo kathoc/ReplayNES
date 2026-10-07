@@ -1015,14 +1015,6 @@ void CrtRenderer::encodeShowToBuffer(VkCommandBuffer cmd, VkBuffer target, int t
   dispatch(cmd, "show_kernel", {&tube_->scatterX, &tb}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
 }
 
-void CrtRenderer::tubeSize(double dstW, double dstH, double cropFraction, int maxWidth, int* w, int* h) {
-  double fullH = dstH / std::max(0.5, 1 - 2 * cropFraction);
-  double ww = std::min(dstW, fullH * 4 / 3);
-  ww = std::max(256.0, std::min(double(maxWidth), std::round(ww / 4) * 4));
-  *w = int(ww);
-  *h = int(ww) * 3 / 4;
-}
-
 // ------------------------------------------------------------------ synchronous helpers (tests / export)
 bool CrtRenderer::runSync(const std::function<void(VkCommandBuffer)>& fn) {
   if (!syncPool_) return false;

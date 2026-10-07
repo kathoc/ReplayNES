@@ -1,5 +1,5 @@
-// "Export…" (MP4, export/mp4_export.h: FFmpeg H.264 + AAC on a worker thread, the project is never
-// touched and play continues) and the CRT display settings (render/post_process.h).
+// "Export…" (MP4, export/mp4_export.h: H.264 + AAC on a worker thread - FFmpeg on Linux, Media
+// Foundation on Windows - the project is never touched and play continues) and the CRT display settings (render/post_process.h).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -22,7 +22,6 @@ namespace fs = std::filesystem;
 namespace rnl {
 
 namespace {
-const char* const kEncoders[] = {"libx264", "h264_vaapi", "libopenh264"};
 std::string str(char* p) {
   std::string s = p ? p : "";
   rnf_string_free(p);
@@ -53,23 +52,28 @@ CrtSettings UI::crtSettings() const {
 void UI::buildCrtSettings() {
   Settings& s = *d_.settings;
   PostProcessStatus ps = d_.renderer->postProcessStatus();
-  ImGui::SeparatorText(TR("CRT Display"));
 #if !RNL_HAVE_CRT
   (void)s;
   (void)ps;
-  wrappedDisabled(unavailableOnThisPlatform());
-  return;
+  return;  // a platform without the CRT display: no section
 #endif
+  ImGui::SeparatorText(TR("CRT Display"));
   ImGui::BeginDisabled(!ps.crtAvailable);
   if (ImGui::Checkbox(TR("CRT display"), &s.crt)) changed();
   ImGui::EndDisabled();
   if (!ps.crtAvailable)
     ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s",
                        TRF("The CRT display isn’t available on this GPU: %@", {ps.crtError}).c_str());
-  wrappedDisabled(TR("A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → "
-                     "demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental "
-                     "model, not a reproduction of any real TV. It only affects the display; recording, game progress "
-                     "and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used)."));
+  if (kWindows)
+    wrappedDisabled(TR("A Direct3D 11 port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → "
+                       "demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental "
+                       "model, not a reproduction of any real TV. It only affects the display; recording, game progress "
+                       "and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used)."));
+  else
+    wrappedDisabled(TR("A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → "
+                       "demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental "
+                       "model, not a reproduction of any real TV. It only affects the display; recording, game progress "
+                       "and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used)."));
   ImGui::BeginDisabled(!s.crt);
   if (ImGui::Checkbox(TR("Thicker scanlines where brighter"), &s.crtBeamGrowth)) changed();
   if (ImGui::Checkbox(TR("Phosphor persistence"), &s.crtPersistence)) changed();
@@ -165,7 +169,8 @@ void UI::startExport() {
   eo.settings = s;
   rn_flash_level level = d_.settings->flash == RN_FLASH_OFF ? RN_FLASH_STANDARD : rn_flash_level(d_.settings->flash);
   eo.flash = exportApplyFlash_ ? level : RN_FLASH_OFF;
-  if (exportEncoder_ > 0) eo.encoder = kEncoders[exportEncoder_ - 1];
+  const auto& encoders = exportEncoderChoices();
+  if (exportEncoder_ > 0 && size_t(exportEncoder_) <= encoders.size()) eo.encoder = encoders[size_t(exportEncoder_ - 1)].id;
   if (exportApplyCRT_) eo.makeProcessor = crtExportProcessorFactory(crtSettings());
   std::string dir = d_.library->root() + "/Exports";
   std::error_code ec;
@@ -318,9 +323,10 @@ void UI::buildExportDialog() {
         ImGui::TextUnformatted(TR("Codec"));
         ImGui::SameLine();
         if (ImGui::RadioButton(TR("H.264 (automatic encoder)"), exportEncoder_ == 0)) exportEncoder_ = 0;
-        for (int i = 0; i < 3; ++i) {
+        const auto& encoders = exportEncoderChoices();
+        for (int i = 0; i < int(encoders.size()); ++i) {
           ImGui::SameLine();
-          if (ImGui::RadioButton(kEncoders[i], exportEncoder_ == i + 1)) exportEncoder_ = i + 1;
+          if (ImGui::RadioButton(encoders[size_t(i)].label, exportEncoder_ == i + 1)) exportEncoder_ = i + 1;
         }
         wrappedDisabled(TR("The export is made by re-running the recorded input from the start in a separate emulator. The "
                            "project is not changed, and you can keep playing while it exports."));

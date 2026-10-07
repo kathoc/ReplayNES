@@ -22,10 +22,12 @@ void main() {
       float fy = gmap[row * rowWidth + k].x; if (fy < 0.0) continue;
       vec3 h = hsrc[(int(fy) + parity * P.height) * P.ow + px].rgb;
       for (int c = 0; c < 3; c++) {
-        if (h[c] == 0.0 || cs[c] <= 0.0) continue;
-        precise float t = clamp(h[c] / cs[c], 0.0, 1.0) * float(P.levels - 1);
-        int kk = min(P.levels - 2, int(floor(t))); float f = t - float(kk);
-        sum[c] += h[c] * glmix1(gmap[row * rowWidth + kk * P.gCount + k].y, gmap[row * rowWidth + (kk + 1) * P.gCount + k].y, f);
+        // (no `continue` here: FXC can't compile it inside these loops for the Direct3D 11 port)
+        if (!(h[c] == 0.0 || cs[c] <= 0.0)) {
+          precise float t = clamp(h[c] / cs[c], 0.0, 1.0) * float(P.levels - 1);
+          int kk = min(P.levels - 2, int(floor(t))); float f = t - float(kk);
+          sum[c] += h[c] * glmix1(gmap[row * rowWidth + kk * P.gCount + k].y, gmap[row * rowWidth + (kk + 1) * P.gCount + k].y, f);
+        }
       }
     }
     value += sum * P.gain;

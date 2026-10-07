@@ -1,4 +1,7 @@
-// replaynes-export: headless MP4 export (the Linux exporter without the UI) + a self-test.
+// replaynes-export: headless MP4 export (the desktop exporter without the UI) + a self-test.
+// Linux: FFmpeg, and the self-test also demuxes / decodes each file with libav* (RNL_EXPORT_FFMPEG).
+// Windows: Media Foundation; the self-test writes the expected values of each file to
+// <DIR>/expect.jsonl, which scripts/windows-vm/verify-export.sh checks with ffprobe on the Mac.
 //   replaynes-export --project DIR --out FILE.mp4 [--start N] [--end N] [--preset INDEX] [--flash 0-3]
 //                    [--par87] [--no-crop] [--encoder NAME] [--bpp X] [--verify-hash] [--quiet]
 //   replaynes-export --self-test DIR [--frames N] [--encoder NAME]
@@ -20,11 +23,16 @@
 #include "render/crt_export.h"
 #endif
 
+#include <fstream>
+#include <thread>
+
+#ifdef RNL_EXPORT_FFMPEG
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/log.h>
 }
+#endif
 
 namespace fs = std::filesystem;
 using rnl::ExportOptions;
@@ -157,6 +165,7 @@ std::string resultJson(const RunOut& o, const std::string& out) {
   return j + ",\"out\":" + jsonStr(out) + "}";
 }
 
+#ifdef RNL_EXPORT_FFMPEG
 // ------------------------------------------------------------------ verification by demuxing the file
 struct Probe {
   std::string error;
@@ -277,6 +286,26 @@ int checkFile(const char* label, const std::string& path, const ExportResult& re
   return int(bad.size());
 }
 
+#else
+// No demuxer here: the expected values go to <self-test dir>/expect.jsonl for ffprobe on the Mac
+// (scripts/windows-vm/verify-export.sh).
+std::string gExpectPath;
+int checkFile(const char* label, const std::string& path, const ExportResult& res, uint64_t expectedSamples,
+              int expectWidth, int expectHeight) {
+  std::ofstream f(fs::u8path(gExpectPath), std::ios::app);
+  char b[512];
+  std::snprintf(b, sizeof b,
+                "{\"label\":\"%s\",\"file\":%s,\"frames\":%" PRIu64 ",\"audio_samples\":%" PRIu64
+                ",\"width\":%d,\"height\":%d,\"duration\":%.9f,\"encoder\":%s}\n",
+                label, jsonStr(fs::u8path(path).filename().u8string()).c_str(), res.frames, expectedSamples, expectWidth, expectHeight,
+                res.duration, jsonStr(res.encoder).c_str());
+  f << b;
+  std::printf("  %-10s written: %dx%d, %" PRIu64 " frames, %" PRIu64 " audio samples (checked by ffprobe: expect.jsonl)\n",
+              label, expectWidth, expectHeight, res.frames, expectedSamples);
+  return f ? 0 : 1;
+}
+#endif
+
 /// Test processor (stands in for the CRT): greyscale from the PPU codes when present, otherwise
 /// from the RGB picture; counts calls and checks the ordinals are consecutive.
 class TestProcessor : public rnl::ExportVideoProcessor {
@@ -313,23 +342,29 @@ class TestProcessor : public rnl::ExportVideoProcessor {
 };
 
 int selfTest(const Args& a) {
-  const fs::path dir = a.get("--self-test");
+  const fs::path dir = fs::u8path(a.get("--self-test"));
   const uint64_t frames = std::max<uint64_t>(a.num("--frames", 300), 260);
   const std::string encoder = a.get("--encoder") ? a.get("--encoder") : "";
   std::error_code ec;
   fs::create_directories(dir, ec);
   const fs::path rom = dir / "selftest.nes", proj = dir / "selftest.nesrec";
   fs::remove_all(proj, ec);
-  std::printf("replaynes-export self-test in %s (%" PRIu64 " frames)\n", dir.c_str(), frames);
+  std::printf("replaynes-export self-test in %s (%" PRIu64 " frames)\n", dir.u8string().c_str(), frames);
+#ifdef RNL_EXPORT_FFMPEG
   std::printf("  libavcodec %s, encoders: %s\n", AV_STRINGIFY(LIBAVCODEC_VERSION), rnl::availableEncodersDescription().c_str());
-  if (rn_write_test_rom(rom.c_str()) != RN_OK) {
+#else
+  std::printf("  encoders: %s\n", rnl::availableEncodersDescription().c_str());
+  gExpectPath = (dir / "expect.jsonl").u8string();
+  fs::remove(fs::u8path(gExpectPath), ec);
+#endif
+  if (rn_write_test_rom(rom.u8string().c_str()) != RN_OK) {
     std::printf("  FAIL: write test ROM: %s\n", rn_last_error());
     return 1;
   }
   rn_session_options so;
   rn_session_options_init(&so);
   rn_session* s = nullptr;
-  if (rn_session_new(rom.c_str(), proj.c_str(), &so, &s) != RN_OK) {
+  if (rn_session_new(rom.u8string().c_str(), proj.u8string().c_str(), &so, &s) != RN_OK) {
     std::printf("  FAIL: new session: %s\n", rn_last_error());
     return 1;
   }
@@ -352,12 +387,12 @@ int selfTest(const Args& a) {
   }
   rn_session_close(s);
   s = nullptr;
-  if (rn_session_open(proj.c_str(), nullptr, &so, &s) != RN_OK) {
+  if (rn_session_open(proj.u8string().c_str(), nullptr, &so, &s) != RN_OK) {
     std::printf("  FAIL: reopen: %s\n", rn_last_error());
     return 1;
   }
   const uint64_t take = rn_take_length(s);
-  std::printf("  recorded %" PRIu64 " frames into %s\n", take, proj.c_str());
+  std::printf("  recorded %" PRIu64 " frames into %s\n", take, proj.u8string().c_str());
 
   int failures = 0;
   auto expectTrue = [&](bool ok, const char* what) {
@@ -368,7 +403,7 @@ int selfTest(const Args& a) {
   // 1) whole take, defaults (1280x960, crop 8/8)
   ExportOptions base;
   base.encoder = encoder;
-  const std::string fullOut = (dir / "full.mp4").string();
+  const std::string fullOut = (dir / "full.mp4").u8string();
   RunOut full = runExport(s, base, fullOut, false);
   std::printf("  full:      %s\n", resultJson(full, fullOut).c_str());
   if (!full.ok) {
@@ -387,7 +422,7 @@ int selfTest(const Args& a) {
   uint64_t calls = 0;
   bool ordered = true, sawCodes = false;
   fx.makeProcessor = [&](std::string*) { return std::make_unique<TestProcessor>(&calls, &ordered, &sawCodes); };
-  const std::string fxOut = (dir / "flash-processor.mp4").string();
+  const std::string fxOut = (dir / "flash-processor.mp4").u8string();
   RunOut fxr = runExport(s, fx, fxOut, false);
   std::printf("  processor: %s\n", resultJson(fxr, fxOut).c_str());
   expectTrue(fxr.ok && fxr.res.rendererHash == full.res.rendererHash, "flash+processor: same renderer hash");
@@ -399,7 +434,7 @@ int selfTest(const Args& a) {
   ExportOptions sub = base;
   sub.settings.start_frame = 100;
   sub.settings.end_frame = 250;
-  const std::string subOut = (dir / "range-100-250.mp4").string();
+  const std::string subOut = (dir / "range-100-250.mp4").u8string();
   RunOut subr = runExport(s, sub, subOut, false);
   std::printf("  range:     %s\n", resultJson(subr, subOut).c_str());
   expectTrue(subr.ok && subr.res.frames == 150, "range: 150 frames");
@@ -412,7 +447,7 @@ int selfTest(const Args& a) {
   rnf_export_preset_get(0, &nat.settings.preset);
   nat.settings.pixel_aspect_87 = 1;
   nat.settings.crop_top = nat.settings.crop_bottom = 0;
-  const std::string natOut = (dir / "native-87.mp4").string();
+  const std::string natOut = (dir / "native-87.mp4").u8string();
   RunOut natr = runExport(s, nat, natOut, false);
   std::printf("  native:    %s\n", resultJson(natr, natOut).c_str());
   rnf_export_geometry g{};
@@ -421,15 +456,15 @@ int selfTest(const Args& a) {
   if (natr.ok) failures += checkFile("native", natOut, natr.res, rn_audio_samples_before(take), g.canvas_width, g.canvas_height);
 
   // 5) cancel after 50 frames: false, "cancelled", no file left
-  const std::string cancelOut = (dir / "cancelled.mp4").string();
+  const std::string cancelOut = (dir / "cancelled.mp4").u8string();
   RunOut can = runExport(s, base, cancelOut, false, 50);
-  expectTrue(!can.ok && can.error == "cancelled" && !fs::exists(cancelOut), "cancel: error \"cancelled\", partial file removed");
+  expectTrue(!can.ok && can.error == "cancelled" && !fs::exists(fs::u8path(cancelOut)), "cancel: error \"cancelled\", partial file removed");
 
   // 6) invalid settings + empty range
   ExportOptions badCrop = base;
   badCrop.settings.crop_top = 230;  // + 8 bottom > 224
   fs::remove(dir / "bad.mp4", ec);
-  RunOut bad = runExport(s, badCrop, (dir / "bad.mp4").string(), false);
+  RunOut bad = runExport(s, badCrop, (dir / "bad.mp4").u8string(), false);
   expectTrue(!bad.ok && !fs::exists(dir / "bad.mp4"), "invalid crop: rejected");
 
   // 7) ExportJob (worker thread, polled)
@@ -437,14 +472,14 @@ int selfTest(const Args& a) {
     rnl::ExportJob job;
     ExportOptions jo = base;
     jo.settings.start_frame = 30;
-    const std::string jobOut = (dir / "job.mp4").string();
+    const std::string jobOut = (dir / "job.mp4").u8string();
     bool started = job.start(s, jo, jobOut);
     while (started && !job.finished()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     job.wait();
     expectTrue(started && job.succeeded() && job.result().frames == take - 30 && job.progress() == 1.0,
                "ExportJob: worker export of [30, end)");
     rnl::ExportJob job2;
-    started = job2.start(s, base, (dir / "job-cancel.mp4").string());
+    started = job2.start(s, base, (dir / "job-cancel.mp4").u8string());
     job2.cancel();
     job2.wait();
     expectTrue(started && job2.finished() && job2.wasCancelled() && !fs::exists(dir / "job-cancel.mp4"),
@@ -480,7 +515,7 @@ int exportCmd(const Args& a) {
   if (const char* b = a.get("--bpp")) opt.videoBitsPerPixel = std::atof(b);
 #ifdef RNL_EXPORT_CRT
   if (a.has("--crt")) {
-    // "Apply CRT effect" (nesterm physical model, offline on a window-less Vulkan device).
+    // "Apply CRT effect" (nesterm physical model, offline on a window-less Vulkan / Direct3D 11 device).
     rnl::CrtSettings cs;
     if (const char* l = a.get("--crt-lines")) cs.lines = std::atoi(l);
     if (const char* d = a.get("--crt-dbuv")) cs.antennaDbuv = std::atof(d);
@@ -518,7 +553,9 @@ int exportCmd(const Args& a) {
 int main(int argc, char** argv) {
   Args a;
   for (int i = 1; i < argc; ++i) a.v.emplace_back(argv[i]);
+#ifdef RNL_EXPORT_FFMPEG
   av_log_set_level(a.has("--av-verbose") ? AV_LOG_INFO : AV_LOG_ERROR);
+#endif
   if (a.has("--encoders")) {
     std::printf("%s\n", rnl::availableEncodersDescription().c_str());
     return 0;

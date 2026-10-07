@@ -26,6 +26,7 @@
 
 #include "render/crt_model.h"
 #include "render/crt_settings.h"  // CrtSettings, CrtRect (apps/desktop/src/render)
+#include "render/crt_types.h"     // CrtInput, CrtStage, crtTubeSize (shared with Direct3D 11)
 
 namespace rnl {
 
@@ -39,15 +40,9 @@ struct CrtVulkanContext {
 
 class CrtRenderer {
  public:
-  enum class InputKind { codes, rgb, drive };
-  struct Input {
-    InputKind kind = InputKind::codes;
-    const uint16_t* codes = nullptr;  // 256x240 9-bit PPU codes (rn_video_indices): the RF path
-    uint32_t burstPhase = 0;          // Nestopia colour-burst phase of that frame
-    const uint32_t* rgb = nullptr;    // 256x240 BGRA8 (nesterm's synthetic-RGB "ascii" path: no RF)
-    const float* drive = nullptr;     // 512x240 RGBA float linear drive (verification)
-  };
-  enum class Stage { receiver, tubeInput, emission, output };
+  using InputKind = CrtInputKind;
+  using Input = CrtInput;
+  using Stage = CrtStage;
 
   /// Device extensions the pipeline needs (VK_KHR_push_descriptor). Empty `why` = supported.
   static bool supported(VkPhysicalDevice phys, std::string* why);
@@ -112,7 +107,9 @@ class CrtRenderer {
 
   /// Tube output size that maps 1:1 onto a destination rectangle of `dst` pixels showing the rows
   /// between the overscan crops, capped at `maxWidth` (4:3 full raster) - CRTRenderer.tubeSize.
-  static void tubeSize(double dstWidth, double dstHeight, double cropFraction, int maxWidth, int* w, int* h);
+  static void tubeSize(double dstWidth, double dstHeight, double cropFraction, int maxWidth, int* w, int* h) {
+    crtTubeSize(dstWidth, dstHeight, cropFraction, maxWidth, w, h);
+  }
 
   static constexpr int kInputSlots = 3;
 

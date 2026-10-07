@@ -13,11 +13,13 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
 
+#include "crt_d3d11.h"
 #include "d3d11_renderer.h"
 #include "host_clock.h"
 #include "imgui.h"
@@ -77,6 +79,8 @@ const char* featureLevelName(D3D_FEATURE_LEVEL l) {
 
 }  // namespace
 
+D3D11Renderer::D3D11Renderer(bool vrr) : vrr_(vrr) {}
+
 D3D11Renderer::~D3D11Renderer() { shutdown(); }
 
 bool D3D11Renderer::init(SDL_Window* window, std::string* error) {
@@ -91,8 +95,10 @@ bool D3D11Renderer::init(SDL_Window* window, std::string* error) {
     *error = "texture creation failed";
     return false;
   }
-  status_.crtAvailable = false;
-  status_.crtError = "not ported to Direct3D 11 yet";
+  std::string crtWhy;
+  crtSupported_ = CrtRendererD3D11::supported(device_, &crtWhy);
+  status_.crtAvailable = crtSupported_;
+  status_.crtError = crtWhy;
   waiter_ = std::thread([this] { waiterLoop(); });
   return true;
 }
@@ -298,7 +304,44 @@ bool D3D11Renderer::presentTiming() const {
   return waitable_ != nullptr;
 }
 
-uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal*) {
+uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
+  // CRT Display on / off (created on first use - compiled on a worker thread, the device is
+  // free-threaded - and freed when switched off).
+  bool crtOn = post_.crt && crtSupported_;
+  if (crtInit_.valid() && crtInit_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    CrtInit r = crtInit_.get();
+    if (r.crt) {
+      std::fprintf(stderr, "CRT: Direct3D 11 pipeline ready (shaders compiled in %.0f ms, %.0f ms in all)\n",
+                   r.crt->compileSeconds() * 1000, r.seconds * 1000);
+      if (crtOn) {
+        crt_ = std::move(r.crt);
+        crtPolicy_.reset();
+        status_.crtError.clear();
+      }
+    } else {
+      status_.crtError = r.error;
+      std::fprintf(stderr, "CRT: %s\n", r.error.c_str());
+      post_.crt = false;
+      crtOn = false;
+    }
+  }
+  if (crtOn && !crt_ && !crtInit_.valid()) {
+    ID3D11Device* device = device_;
+    ID3D11DeviceContext* ctx = ctx_;
+    crtInit_ = std::async(std::launch::async, [device, ctx] {
+      CrtInit r;
+      double t0 = nowSeconds();
+      auto c = std::make_unique<CrtRendererD3D11>();
+      if (c->init(device, ctx, true, &r.error)) r.crt = std::move(c);
+      r.seconds = nowSeconds() - t0;
+      return r;
+    });
+  }
+  if (!crtOn && crt_) {
+    crt_.reset();
+    crtPolicy_.reset();
+  }
+  crtOn = crtOn && crt_;  // compiled and ready
   status_.crtShown = false;
   int w = 0, h = 0;
   SDL_GetWindowSizeInPixels(window_, &w, &h);
@@ -319,10 +362,34 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   uploadThumbs();
   lastAcquireWait_ = nowSeconds() - t0;  // Map may wait for the GPU (the picture in use)
 
+  // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
+  // here before the show pass (or, built ahead, after this present: the next one shows it).
+  bool crtBuildAfter = false;
+  if (crtOn) {
+    crtPolicy_.update(crt_->takeGpuTimes(), gpuBudget_, post_.allowBuildAhead, post_.adaptiveResolution, crt_->outputWidth());
+    if (newPicture) crtPolicy_.store(newPicture, signal);
+    if (rect.visible) {
+      int tw = 0, th = 0;
+      crtPolicy_.tubeSize(post_, rect.crt, rect.crtCrop, &tw, &th);
+      crt_->configure(post_.crtSettings, tw, th);
+    }
+    bool changed = shownPost_ != post_ || shownCrt_.w != rect.crt.w || shownCrt_.h != rect.crt.h;
+    bool needBuild = crtPolicy_.hasFrame() && (newPicture || changed || !crt_->hasOutput() || crt_->planPending());
+    if (needBuild) {
+      if (crtPolicy_.pipelined() && crt_->hasOutput()) crtBuildAfter = true;
+      else crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal());
+    }
+    shownPost_ = post_;
+    shownCrt_ = rect.crt;
+  }
+
   ctx_->OMSetRenderTargets(1, &rtv_, nullptr);
   const float black[4] = {0, 0, 0, 1};
   ctx_->ClearRenderTargetView(rtv_, black);
-  if (rect.visible && hasPicture_) {
+  if (crtOn && rect.visible && crt_->hasOutput()) {
+    crt_->drawShow(width_, height_, rect.crt, rect.crtCrop);
+    status_.crtShown = true;
+  } else if (rect.visible && hasPicture_) {
     D3D11_MAPPED_SUBRESOURCE m{};
     if (SUCCEEDED(ctx_->Map(cb_, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
       float uv[4] = {float(rect.crop) / RN_VIDEO_WIDTH, float(rect.crop) / RN_VIDEO_HEIGHT,
@@ -371,6 +438,18 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
     if (r == DXGI_STATUS_OCCLUDED) return 0;  // nothing shown: keep time on the host clock
     swap_->GetLastPresentCount(&count);
     id = ++presentId_;
+  }
+  if (crtBuildAfter) {
+    // Built ahead: queued after this present's commands (the immediate context keeps the order),
+    // so the next present shows it.
+    crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal());
+    ctx_->Flush();
+  }
+  if (crtOn) {
+    crtPolicy_.fillStatus(&status_);
+    status_.tubeWidth = crt_->outputWidth();
+    status_.tubeHeight = crt_->outputHeight();
+    status_.usedCodes = crt_->usedCodes();
   }
   if (timing) {
     std::lock_guard<std::mutex> lk(mutex_);
@@ -582,6 +661,11 @@ void D3D11Renderer::shutdown() {
     }
     waiter_.join();
   }
+  if (crtInit_.valid()) {  // the worker uses the device
+    CrtInit pending = crtInit_.get();
+    pending.crt.reset();
+  }
+  crt_.reset();
   if (imguiReady_) ImGui_ImplDX11_Shutdown();
   imguiReady_ = false;
   releaseTargets();

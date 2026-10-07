@@ -1,4 +1,4 @@
-# Release procedure (macOS; Linux / Steam Deck in step 7)
+# Release procedure (macOS; Linux / Steam Deck in step 7; Windows in step 8)
 
 1. Bump the version by hand: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (must increase every
    release; Sparkle compares it as `sparkle:version`) in `apps/macos/project.yml`, and
@@ -25,6 +25,13 @@
    `apps/linux/flatpak/io.github.replaynes.ReplayNES.metainfo.xml`): `scripts/publish-flatpak-repo.sh`
    (see "Linux: Flatpak repository" below), then attach the bundle to the release:
    `gh release upload v<version> dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak --repo kathoc/ReplayNES`.
+8. Windows (same version, `project(ReplayNES VERSION ...)` already bumped in step 1): run the tests
+   in the VM (`scripts/build-windows.sh && scripts/windows-vm/run-tests.sh`), then
+   `scripts/release-windows.sh <version>` → `dist/ReplayNES-<version>-windows-{x64,arm64}.zip`
+   (with `WinSparkle.dll`) and `dist/appcast-windows.xml`, signed with the same EdDSA key (see
+   "Windows: WinSparkle feed" below). Upload all three to the release:
+   `gh release upload v<version> dist/ReplayNES-<version>-windows-*.zip dist/appcast-windows.xml --repo kathoc/ReplayNES`.
+   Check: `curl -sL https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml`.
 
 ## Automatic updates (Sparkle 2)
 
@@ -67,6 +74,46 @@ cp <new zip> <dir>/ && (cd <dir> && python3 -m http.server 8765 --bind 127.0.0.1
 The `-SU...` arguments live only in the argument domain (not persisted). Sparkle still writes
 `SUHasLaunchedBefore` / `SULastCheckTime` to the `io.github.replaynes.ReplayNES` defaults and caches
 to `~/Library/Caches/io.github.replaynes.ReplayNES`; remove them afterwards if needed.
+
+## Windows: WinSparkle feed
+
+- The Windows app (WinSparkle 0.9.4, `apps/windows/src/update_winsparkle.*`) reads
+  `https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml`. **Every
+  release that becomes "latest" must carry `appcast-windows.xml`** (also a macOS-only release: copy
+  the previous Windows feed and assets, or Windows installs see no feed until the next one).
+- Same format as `appcast.xml`; `sparkle:version` = the version string (`0.3.2`; WinSparkle compares
+  it with the running `ReplayNES.exe`'s), one `<enclosure>` per architecture with
+  `sparkle:os="windows-x64"` / `"windows-arm64"` and `sparkle:edSignature` = Sparkle's
+  `sign_update` signature of the zip (the same EdDSA key as macOS; the Windows build embeds
+  `SUPublicEDKey` from `apps/macos/project.yml`). WinSparkle refuses unsigned or wrongly signed
+  updates ("The update is improperly signed").
+- `scripts/release-windows.sh <version>` builds both zips (`scripts/build-windows.sh all`), checks
+  that each contains `WinSparkle.dll`, signs them from the keychain (`SPARKLE_ACCOUNT`, checked
+  against `SUPublicEDKey`) and writes the feed. The app installs a zip itself: WinSparkle verifies
+  it, ReplayNES unpacks it and replaces its own folder after quitting (docs/WINDOWS.md).
+
+### Local end-to-end update test (Windows VM, no GitHub)
+
+```
+# a throw-away key (never the release key) for both builds and the feed
+python3 -c 'from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K; from cryptography.hazmat.primitives import serialization as s; import base64; k=K.generate(); open("build/update-test/seed.txt","w").write(base64.b64encode(k.private_bytes(s.Encoding.Raw,s.PrivateFormat.Raw,s.NoEncryption())).decode()); print(base64.b64encode(k.public_key().public_bytes(s.Encoding.Raw,s.PublicFormat.Raw)).decode())'
+PUB=<printed public key>
+# old version, then the new one + its feed served from the Mac (Parallels host address 10.211.55.2)
+BUILD_BASE=$PWD/build/update-test/old DIST=$PWD/build/update-test/old-dist VERSION_OVERRIDE=0.3.1-test \
+  EXTRA_CMAKE_ARGS="-DRNW_UPDATE_PUBLIC_KEY=$PUB -DREPLAYNES_BUILD_TESTS=OFF" scripts/build-windows.sh aarch64
+VERSION_OVERRIDE=1 BUILD_BASE=$PWD/build/update-test/new DIST=$PWD/build/update-test/feed \
+  ED_KEY_FILE=$PWD/build/update-test/seed.txt DOWNLOAD_BASE=http://10.211.55.2:8765 \
+  EXTRA_CMAKE_ARGS="-DRNW_UPDATE_PUBLIC_KEY=$PUB -DREPLAYNES_BUILD_TESTS=OFF" scripts/release-windows.sh 0.3.2-test
+(cd build/update-test/feed && python3 -m http.server 8765 --bind 10.211.55.2) &
+# in the VM: unzip the old zip anywhere, then (PowerShell)
+#   $env:REPLAYNES_APPCAST_URL='http://10.211.55.2:8765/appcast-windows.xml'
+#   .\ReplayNES.exe --library-root <test library> --script "wait 5; update apply"
+# ("update apply" = check and install without asking; "Check for Updates…" asks first)
+```
+Result: the old app quits, the folder holds 0.3.2-test (`ReplayNES.exe --version`), the new version
+runs with the same arguments, `%LOCALAPPDATA%\ReplayNES\Update\update.log` lists the install. A
+feed with a corrupted signature must end in WinSparkle's "The update is improperly signed" with
+nothing installed. WinSparkle keeps its state in `HKCU\Software\ReplayNES\WinSparkle`.
 
 ## Linux: Flatpak repository (GitHub Pages)
 
@@ -163,6 +210,7 @@ After re-zipping, re-run `sign_update` / `scripts/release.sh` steps so the appca
 
 ## License compliance checklist
 
-- Release zip includes `LICENSE` (GPL-2.0) and `THIRD_PARTY_NOTICES.md`.
+- Release zips include `LICENSE` (GPL-2.0) and `THIRD_PARTY_NOTICES.md` (the Windows zips also
+  WinSparkle's notices there, as it ships `WinSparkle.dll`).
 - The tag must contain the submodule commit used for the build (corresponding source).
 - Never attach ROMs or projects containing copyrighted material to a release.

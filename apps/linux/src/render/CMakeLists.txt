@@ -21,7 +21,7 @@ foreach(sh ${CRT_SHADERS})
   list(APPEND CRT_SPV ${out})
 endforeach()
 
-add_library(rnl_render STATIC crt_model.cpp crt_renderer.cpp headless_vulkan.cpp crt_display.cpp ${CRT_SPV})
+add_library(rnl_render STATIC crt_renderer.cpp headless_vulkan.cpp crt_display.cpp ${CRT_SPV})
 target_include_directories(rnl_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/.. PRIVATE ${CRT_SHADER_OUT})
 # rnl_logic: CrtSettings / post_process.h (apps/desktop/src/render) and the frontend core.
 target_link_libraries(rnl_render PUBLIC rnl_logic replaynes_frontend Vulkan::Vulkan Threads::Threads)

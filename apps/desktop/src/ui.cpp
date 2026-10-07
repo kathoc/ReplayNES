@@ -413,8 +413,6 @@ void UI::buildHeader() {
     if (ImGui::Selectable(TR("Save As…"))) d_.app->saveAs();
     if (ImGui::Selectable(TR("Export…"), false, RNL_HAVE_MP4_EXPORT && d_.emu->status().takeLength > 0 ? 0 : ImGuiSelectableFlags_Disabled))
       openExportDialog();
-    if (!RNL_HAVE_MP4_EXPORT && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-      ImGui::SetTooltip("%s", unavailableOnThisPlatform());
     if (ImGui::Selectable(TR("Open Project…"))) d_.app->openProjectChooser();
     ImGui::Separator();
     if (ImGui::Selectable(TR("Reset Project…"))) d_.app->resetProjectPrompt();
@@ -471,7 +469,7 @@ void UI::buildHubButtons() {
       {Tab::playback, TR("Reset…"), 7, true},
       {Tab::guide, TR("Controls Guide"), 8, true},
   };
-  if (!RNL_HAVE_MP4_EXPORT)  // not on this platform yet (Settings -> Display says so)
+  if (!RNL_HAVE_MP4_EXPORT)  // a platform without the exporter
     buttons.erase(std::remove_if(buttons.begin(), buttons.end(), [](const HubButton& b) { return b.id == 6; }), buttons.end());
   // An update waiting (in-app updates): its dialog (Update / Restart).
   std::string updateLabel;

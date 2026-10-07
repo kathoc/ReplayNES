@@ -102,8 +102,10 @@ CRT Display itself is off by default (the conventional crisp display).
 ## Vulkan port (Linux / Steam Deck)
 
 `apps/linux/shaders/crt/*.comp` (GLSL 450 compute, compiled to SPIR-V by glslc at build time) +
-`apps/linux/src/render/` (`crt_model.cpp` = CRTModel.swift, `crt_renderer.cpp` = CRTRenderer.swift,
-`crt_display.cpp` = the live-view policy, `crt_export.cpp` = CRTExportRenderer). Each MSL kernel
+`apps/linux/src/render/` (`crt_renderer.cpp` = CRTRenderer.swift, `crt_display.cpp` = the live
+view, `crt_export.cpp` = CRTExportRenderer) + the graphics-API-free parts shared with Direct3D 11 in
+`apps/desktop/src/render/` (`crt_model.cpp` = CRTModel.swift, `crt_display_policy.cpp` = the
+live-view policy, `crt_conformance.h` = the conformance checks). Each MSL kernel
 has a GLSL twin with the same name, arithmetic and evaluation order; images are std430 `vec4`
 buffers, push descriptors (`VK_KHR_push_descriptor`) bind them, parameters are push constants. The
 AGC loop runs in the one-thread `rx_agc` kernel, receiver/supply/persistence state lives in GPU
@@ -142,6 +144,19 @@ GPU time on the Steam Deck (RADV VANGOGH, 1600 MHz, default effects, RF input):
 | 1144x858 (full screen 1280x800, fill) | 8.9 ms (11.0 before) | 11.7 / 11.8 ms |
 | 960x720 (integer scale) | - | 9.3 / 9.5 ms |
 | 640x480 | 6.3 ms (before) | - |
+
+## Direct3D 11 port (Windows)
+
+The Vulkan GLSL is also the source of the Windows kernels: `scripts/generate-crt-hlsl.sh` translates
+it (glslc -> SPIR-V -> SPIRV-Cross, HLSL shader model 5.0) into the committed
+`apps/windows/shaders/crt/*.hlsl`, compiled at run time by `D3DCompile` (IEEE strict; `precise`
+kept). `apps/windows/src/crt_d3d11.cpp` is `crt_renderer.cpp` on raw buffers and the immediate
+context (same passes, parameters, dispatch sizes, state resets in command order); the live view uses
+the shared policy. One GLSL edit for FXC (no `continue` in `tube_v_growth`'s per-channel loop, same
+arithmetic). Conformance (`test_crt_d3d11`, the shared checks): passes on WARP (bit-identical fast ==
+direct) and on the Parallels adapter in the development VM (which fuses `precise` multiply-adds, so
+fast == direct is checked within 2e-3 there; the test detects that). Details and numbers:
+[WINDOWS.md](WINDOWS.md#crt-display-direct3d-11-compute-appswindowssrccrt_d3d11).
 
 About 2.6 ms of it is the fixed receiver (FFT 1.6 ms); the tube passes are memory-bound
 (persistence reads 7 half-float slots per pixel). 60 fps holds at full screen without lowering the

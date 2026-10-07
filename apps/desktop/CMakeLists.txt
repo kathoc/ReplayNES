@@ -34,7 +34,9 @@ add_library(rnl_logic STATIC
   src/osk.cpp
   src/update_model.cpp
   src/platform/platform.cpp
-  src/render/crt_settings.cpp)
+  src/render/crt_settings.cpp
+  src/render/crt_model.cpp
+  src/render/crt_display_policy.cpp)
 if(WIN32)
   target_sources(rnl_logic PRIVATE src/platform/platform_windows.cpp src/platform/host_clock_windows.cpp)
   target_link_libraries(rnl_logic PUBLIC shell32 ole32 uuid)
@@ -74,7 +76,8 @@ if(RNL_DESKTOP_TESTS)
   enable_testing()
   set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
   file(MAKE_DIRECTORY ${RNL_TEST_TMP})
-  add_executable(test_desktop_frontend tests/test_desktop_frontend.cpp ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp)
+  add_executable(test_desktop_frontend tests/test_desktop_frontend.cpp ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp
+    src/export/export_frame.cpp src/export/mp4_retime.cpp)
   target_include_directories(test_desktop_frontend PRIVATE ${RNL_REPO_ROOT}/tests)
   target_link_libraries(test_desktop_frontend PRIVATE rnl_logic)
   target_compile_definitions(test_desktop_frontend PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}")

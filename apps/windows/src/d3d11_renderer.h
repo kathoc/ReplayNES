@@ -14,7 +14,9 @@
 //     The frame loop's DisplayScheduler builds the vblank grid from these.
 //   * --vrr in full screen: Present(0, DXGI_PRESENT_ALLOW_TEARING) and no present timing (the loop
 //     paces on the host clock at the NES rate; a variable refresh display follows it)
-// The CRT display is not ported yet (crtAvailable = false; docs/WINDOWS.md).
+//   * CRT display (feature level 11_0+): the compute pipeline of crt_d3d11.h driven by the shared
+//     CrtDisplayPolicy (input choice, tube size, build-ahead, adaptive resolution), its show pass
+//     drawn into the GameRect's tube rectangle instead of the picture quad.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -23,12 +25,15 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
+#include "render/crt_display_policy.h"
 #include "renderer.h"
 
 struct ID3D11Device;
@@ -47,9 +52,11 @@ struct IDXGIFactory2;
 
 namespace rnl {
 
+class CrtRendererD3D11;
+
 class D3D11Renderer final : public Renderer {
  public:
-  explicit D3D11Renderer(bool vrr) : vrr_(vrr) {}
+  explicit D3D11Renderer(bool vrr);
   ~D3D11Renderer() override;
 
   bool init(SDL_Window* window, std::string* error) override;
@@ -73,6 +80,8 @@ class D3D11Renderer final : public Renderer {
   void setPostProcess(const DisplayPostProcess& pp) override { post_ = pp; }
   const DisplayPostProcess& postProcess() const override { return post_; }
   PostProcessStatus postProcessStatus() const override { return status_; }
+  void setGpuBudget(double seconds) override { gpuBudget_ = seconds; }
+  double gpuLeadExtra() const override { return status_.crtShown && !crtPolicy_.pipelined() ? crtPolicy_.gpuP90() : 0; }
 
   void beginUIFrame() override { uiFrame_ += 1; }
   bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
@@ -134,6 +143,20 @@ class D3D11Renderer final : public Renderer {
 
   DisplayPostProcess post_;
   PostProcessStatus status_;
+  // CRT display (created on first use, freed when switched off).
+  bool crtSupported_ = false;
+  std::unique_ptr<CrtRendererD3D11> crt_;
+  // Shader compilation (~2 s in the VM) runs on a worker thread: the plain picture meanwhile.
+  struct CrtInit {
+    std::unique_ptr<CrtRendererD3D11> crt;
+    std::string error;
+    double seconds = 0;
+  };
+  std::future<CrtInit> crtInit_;
+  CrtDisplayPolicy crtPolicy_;
+  DisplayPostProcess shownPost_;
+  CrtRect shownCrt_;
+  double gpuBudget_ = 0;
   double lastAcquireWait_ = 0;
   std::string screenshotPath_;
 

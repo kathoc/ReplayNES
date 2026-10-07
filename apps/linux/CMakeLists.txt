@@ -42,12 +42,14 @@ enable_testing()
 # MP4 export (FFmpeg libav*): static library used by the app + the headless replaynes-export tool.
 # Its header is shared (apps/desktop/src/export/mp4_export.h: the UI's ExportJob).
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavformat libavutil)
-add_library(rnl_export STATIC src/export/mp4_export.cpp)
+add_library(rnl_export STATIC src/export/mp4_export.cpp ${RNL_DESKTOP_DIR}/src/export/export_frame.cpp
+  ${RNL_DESKTOP_DIR}/src/export/export_job.cpp)
 target_include_directories(rnl_export PUBLIC ${RNL_DESKTOP_DIR}/src/export)
 target_link_libraries(rnl_export PUBLIC replaynes_frontend replaynes_engine PkgConfig::FFMPEG Threads::Threads)
 target_compile_options(rnl_export PRIVATE ${RNL_WARNINGS})
-add_executable(replaynes-export src/export/export_cli.cpp)
+add_executable(replaynes-export ${RNL_DESKTOP_DIR}/src/export/export_cli.cpp)
 target_link_libraries(replaynes-export PRIVATE rnl_export)
+target_compile_definitions(replaynes-export PRIVATE RNL_EXPORT_FFMPEG=1)
 target_compile_options(replaynes-export PRIVATE ${RNL_WARNINGS})
 install(TARGETS replaynes-export RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(RNL_EXPORT_ONLY)

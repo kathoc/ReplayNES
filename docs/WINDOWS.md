@@ -5,8 +5,9 @@ the shared desktop frontend of the Steam Deck / Linux version (`apps/desktop`: D
 library, timeline / filmstrip, practice, takes, bookmarks, reset, autosave + resume, settings with
 the controller diagram, built-in on-screen keyboard, flash reduction, English / Japanese,
 display-locked pacing with just-in-time input) on SDL3 (window, WASAPI audio, gamepads) and a
-Direct3D 11 renderer (`apps/windows`). Not yet ported (step 2): the CRT display (HLSL port of the
-Vulkan compute model) and MP4 export (Media Foundation); in-app updates and "Add to Steam" are
+Direct3D 11 renderer (`apps/windows`), with the **CRT display** (the nesterm physical model on
+Direct3D 11 compute, HLSL generated from the Vulkan GLSL), **MP4 export** (Media Foundation: H.264 +
+AAC) and **in-app updates** (WinSparkle, the macOS appcast format and EdDSA key). "Add to Steam" is
 Linux-only. The engine, frontend core, desktop logic, their tests and `replaynes-cli` build and pass
 on Windows; the setup below lets a Mac build, run and test Windows binaries without a Windows
 toolchain install.
@@ -17,9 +18,9 @@ toolchain install.
 
 | Directory | What |
 |---|---|
-| `apps/desktop/` | shared SDL3 frontend: `app.cpp` (frame loop, `runApp`), `ui*.cpp`, input routing, pad navigation, OSK, audio DRC, perf stats, scripts (`rnl_app`); logic without SDL (`rnl_logic`: session lifecycle, emulation controller, library, thumbnails, settings, paths, l10n) + `test_desktop_frontend`; seams: `renderer.h` (`Renderer`), `platform/platform.h` (trash, open folder, gamescope), `update_service.h`, `fonts.h`, `export/mp4_export.h`, `render/post_process.h` / `crt_export.h`, `host_clock.h` |
+| `apps/desktop/` | shared SDL3 frontend: `app.cpp` (frame loop, `runApp`), `ui*.cpp`, input routing, pad navigation, OSK, audio DRC, perf stats, scripts (`rnl_app`); logic without SDL (`rnl_logic`: session lifecycle, emulation controller, library, thumbnails, settings, paths, l10n, the CRT setup model `render/crt_model.*` and live-view policy `render/crt_display_policy.*`) + `test_desktop_frontend`; the CRT conformance test shared by Vulkan and Direct3D 11 (`render/crt_conformance.h`); the exporters' shared parts (`export/export_frame.*`, `export_job.cpp`, `mp4_retime.*`, `export_cli.cpp` = `replaynes-export`); seams: `renderer.h` (`Renderer`), `platform/platform.h` (trash, open folder, gamescope), `update_service.h`, `fonts.h`, `export/mp4_export.h`, `render/post_process.h` / `crt_export.h`, `host_clock.h` |
 | `apps/linux/` | `main_linux.cpp`, `VkRenderer` (Vulkan FIFO + `VK_KHR_present_wait`), the Vulkan CRT (`src/render`), FFmpeg export (`src/export`), fontconfig fonts, Flatpak portal updates, Add to Steam, Flatpak manifest |
-| `apps/windows/` | `main_windows.cpp` (WIN32 subsystem, MMCSS "Games"), `D3D11Renderer`, Windows fonts, export / CRT stubs, resources (icon from `apps/macos/Resources/IconSource`, UTF-8 + per-monitor-v2 manifest, version info) |
+| `apps/windows/` | `main_windows.cpp` (WIN32 subsystem, MMCSS "Games"), `D3D11Renderer`, the CRT (`crt_d3d11.*`, `crt_export_d3d11.cpp`, `shaders/crt/*.hlsl` generated, `crt_test_d3d11.cpp`), MP4 export (`mp4_export_mf.cpp`), updates (`update_winsparkle.*`), Windows fonts, resources (icon from `apps/macos/Resources/IconSource`, UTF-8 + per-monitor-v2 manifest, version info) |
 
 Platform services on Windows (`apps/desktop/src/platform/platform_windows.cpp`): Known Folders -
 library `Documents\ReplayNES\{ROM,Projects}`, session `%LOCALAPPDATA%\ReplayNES\Session`, settings
@@ -39,9 +40,13 @@ scripts/build-windows.sh                        # Mac, llvm-mingw: build/windows
 On Windows: `cmake -S . -B build -A x64` (or `-A ARM64`, `-T ClangCL`) `&& cmake --build build
 --config Release` -> `build/apps/windows/Release/ReplayNES.exe`. SDL3 is linked statically (no
 `SDL3.dll`); llvm-mingw builds are also `-static` and stripped (one 8 MB exe). The zip holds
-`ReplayNES.exe`, `README.txt` (`apps/windows/README.txt`), `LICENSE.txt` and
-`THIRD_PARTY_NOTICES.md`. CI (`.github/workflows/windows.yml`) builds it with MSVC x64 / arm64 and
-clang-cl, starts it (`--version`) and uploads `ReplayNES.exe` (MSVC) and the llvm-mingw zips.
+`ReplayNES.exe`, `WinSparkle.dll` (in-app updates; the official prebuilt DLL of WinSparkle 0.9.4 for
+the architecture, downloaded by CMake with a pinned SHA-256 into `build/cache/`; `-DRNW_WINSPARKLE=OFF`
+builds without it), `README.txt` (`apps/windows/README.txt`), `LICENSE.txt` and
+`THIRD_PARTY_NOTICES.md`. Also built: `replaynes-export.exe` (headless MP4 export + self-test) and
+`tests/test_crt_d3d11.exe` (CRT conformance). CI (`.github/workflows/windows.yml`) builds it with
+MSVC x64 / arm64 and clang-cl, starts it (`--version`) and uploads `ReplayNES.exe` (MSVC) and the
+llvm-mingw zips.
 
 ### Run
 
@@ -82,15 +87,115 @@ keyboard is a Steam Deck feature.
   paces itself on the host clock at the NES rate (60.0988 Hz) and a G-SYNC / FreeSync display
   follows the presents. Windowed, or without tearing support, it presents with vsync as usual.
 
-### Not ported yet / limitations
+### CRT display (Direct3D 11 compute; `apps/windows/src/crt_d3d11.*`)
 
-* CRT display and MP4 export: Settings -> Display says so; Export… is not on the hub, the Project
-  menu entry is disabled with the note. The seams stay (`render/post_process.h`,
-  `export/mp4_export.h`, `render/crt_export.h`; stubs in `apps/windows/src/export_unavailable.cpp`).
-* No in-app updates (Settings shows the version only), no "Add to Steam".
-* Not code-signed (SmartScreen asks on the first start of a downloaded zip).
+The same pipeline as Metal (macOS) and Vulkan (Linux) - same passes, constants, parameters,
+temporal state and dispatch sizes ([CRT_PORT.md](CRT_PORT.md)) - as cs_5_0 compute shaders on
+Direct3D 11 feature level 11_0+ (32 KB group shared memory for the FFT, raw buffers).
+
+* **Shaders: generated, not hand-ported.** `scripts/generate-crt-hlsl.sh` translates the Vulkan GLSL
+  (`apps/linux/shaders/crt`, the single source) with glslc -> SPIR-V -> SPIRV-Cross
+  `--hlsl --shader-model 50` into `apps/windows/shaders/crt/*.hlsl`, which are committed (each records
+  the SHA-256 of its GLSL inputs; CI runs `--check`). CMake embeds them (`cmake/embed_hlsl.cmake`) and
+  the app compiles them at run time with `D3DCompile` (`d3dcompiler_47.dll` is part of Windows 10/11),
+  `D3DCOMPILE_IEEE_STRICTNESS`; `precise` (NoContraction in SPIR-V) survives the translation. Chosen
+  over committed DXBC: no Windows-only compile step in the loop (fxc / dxc aren't on the Mac), one
+  shader source for Linux and Windows, readable diffs. Cost: ~1.7-2 s of compilation when the CRT is
+  first switched on (in the VM), done on a worker thread - the plain picture shows meanwhile.
+* Storage buffers become `(RW)ByteAddressBuffer` at `t<n>` / `u<n>` (binding n); which slot of a
+  kernel is an SRV or a UAV comes from shader reflection; push constants become a 64-byte constant
+  buffer (b0). The show pass is the generated vertex / pixel shader (Vulkan's clip-space y flipped).
+* One GLSL change for FXC: `tube_v_growth` had a `continue` in the per-channel loop, which FXC cannot
+  compile inside the dynamic loops ("forced to unroll loop, but unrolling failed"); it is an `if`
+  now (same arithmetic; the Vulkan conformance is unchanged).
+* Live view: `D3D11Renderer` runs it with the shared `CrtDisplayPolicy` (`apps/desktop/src/render`,
+  also used by the Vulkan renderer): RF input from the PPU codes or the flash-filtered RGB picture,
+  tube size 1:1 with the GameRect's tube rectangle, build-ahead (`rnf_build_ahead`) and adaptive
+  resolution from GPU timestamps (`D3D11_QUERY_TIMESTAMP_DISJOINT`).
+* Conformance: `test_crt_d3d11` (ctest `crt_conformance_d3d11`) = the Vulkan test's checks and
+  tolerances (`render/crt_conformance.h`, shared) against `tests/fixtures/crt/reference.json`
+  (copied next to the exe as `crt_reference.json`); `--warp` forces WARP, `--bench WxH` measures.
+  Before the checks it probes whether the device fuses a `precise` multiply-add (it must not): the
+  Parallels adapter does (its DXBC -> Metal translation ignores `precise`), so there the
+  restructured kernels (shared-memory FFT etc.) can't be bit-identical to the direct port; that
+  check then requires agreement within 2e-3 instead. WARP and conforming drivers get the exact check.
+
+Results (2026-10-07):
+
+| Device | receiver | tube / growth | supply | persistence | fast == direct |
+|---|---|---|---|---|---|
+| Parallels Display Adapter (VM, arm64, D3D11 over Metal) | 1.3e-6 | 1.8e-7 / 1.8e-7 | 3.6e-5 | 2.4e-4 | within 2e-3 (max 8.6e-4; device fuses) |
+| WARP (VM arm64) | 8.3e-7 | 1.8e-7 / 2.4e-7 | 3.6e-5 | 4.9e-4 | bit-identical |
+| MoltenVK (Mac, Vulkan port, reference) | 7.8e-7 | 1.8e-7 / 2.4e-7 | 3.6e-5 | 2.4e-4 | bit-identical |
+
+GPU time in the VM: the Parallels adapter returns no usable timestamps (so build-ahead / adaptive
+resolution never engage there); GPU-bound throughput (`--bench`, default effects, RF input):
+**9.1 ms per frame at 1144x858, 14.9 ms at 1600x1200** (WARP: 324 ms at 1144x858). The live view in
+the 1280x800 window (tube 960x720) holds 60 fps. MP4 export with "Apply CRT effect" runs the same
+renderer on its own device (`crt_export_d3d11.cpp`; hardware, else WARP): 44 fps at 1280x960 in the VM.
+
+### MP4 export (Media Foundation; `apps/windows/src/mp4_export_mf.cpp`)
+
+Same exporter as on Linux apart from the encoder: an engine `rn_renderer` (fresh core, logical
+time), the shared export settings / presets / geometry / validation, nearest scaling or the CRT
+processor, the optional flash filter, the exact BT.709 limited-range 4:2:0 conversion (NV12 here) and
+`ExportJob` (shared: `export/export_frame.*`, `export_job.cpp`); the project is never touched, a
+failed / cancelled export removes its file.
+
+* `IMFSinkWriter` -> MPEG-4: H.264 High (hardware MFT when the system has one -
+  `MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS` - else Microsoft's software encoder; "mf_hardware" /
+  "mf_software" in Export -> Advanced force one), VBR at the shared bit rate, GOP 120, **no
+  B-frames** (no reordering delay against the audio); AAC-LC 48 kHz mono from the engine's 16-bit
+  PCM. BT.709 colour tags.
+* Timestamps from counts: frame n at n x 655171 / 39375000 s, audio sample n at n / 48000 s (in
+  Media Foundation's 100 ns units). The MPEG-4 sink stores the video at a rounded timescale (fps x
+  1000 = 60098: 999 / 1000 ticks per frame), so after `Finalize` the moov box is rewritten
+  (`export/mp4_retime.*`, unit-tested): video timescale **39375000, every frame 655171 ticks**, as the
+  FFmpeg exporter writes it.
+* Verification: `scripts/windows-vm/verify-export.sh [arch]` runs `replaynes-export --self-test` in
+  the VM (synthetic test ROM + recorded input: renderer hash == a fresh renderer, flash + processor,
+  sub-range, native 8:7, cancel, invalid settings, ExportJob), copies the files back and checks each
+  with ffprobe on the Mac: codecs / profile / size / colour tags, frame count (packets and decoded),
+  `time_base` 1/39375000, every PTS = f x 655171, `avg_frame_rate` 39375000/655171, duration, audio
+  samples. 2026-10-07, arm64 VM, software encoder: all files OK (300 frames = 4.991779 s exactly);
+  renderer hashes equal to the Linux / macOS exports of the same takes; an SMB take exported with the
+  CRT effect on Windows and on the Mac (Vulkan) differs only by the encoders (PSNR 42 dB).
+* Differences to the FFmpeg output: the AAC track ends with Media Foundation's padding (up to one
+  1024-sample frame; decoded audio is sample-aligned with the Linux export), the H.264 VUI has no
+  chroma-location (players assume left), and Microsoft's encoder needs more bits than x264 for the
+  same picture quality.
+
+### In-app updates (WinSparkle; `apps/windows/src/update_winsparkle.*`)
+
+* WinSparkle 0.9.4 (MIT), the official prebuilt `WinSparkle.dll` next to `ReplayNES.exe`, loaded at
+  run time (no import library; without the DLL there are no in-app updates). Same appcast format and
+  **the same EdDSA key** as Sparkle on macOS: the public key is `SUPublicEDKey` of
+  `apps/macos/project.yml`, read by CMake (`RNW_UPDATE_PUBLIC_KEY` overrides it for tests).
+* Feed: `https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml`
+  (`RNW_APPCAST_URL`; the environment variable `REPLAYNES_APPCAST_URL` overrides it at run time - the
+  signature is checked against the built-in key regardless). One item per version, one enclosure per
+  architecture (`sparkle:os="windows-x64"` / `"windows-arm64"`; an x64 build emulated on Arm gets
+  x64), enclosure = the release zip. `scripts/release-windows.sh` builds and signs it
+  ([RELEASE.md](RELEASE.md)).
+* Settings -> Audio & Controls -> System: "Automatically check for updates" (WinSparkle's own setting
+  in `HKCU\Software\ReplayNES\WinSparkle`; WinSparkle asks on the second launch, like Sparkle) and
+  "Check for Updates…" (WinSparkle's dialogs, Japanese / English with the app).
+* Installing: WinSparkle downloads the zip and verifies its signature, then calls the app (it
+  would only run installers): the zip is unpacked with Windows' `tar.exe` into
+  `%LOCALAPPDATA%\ReplayNES\Update\staging-<pid>`, its `ReplayNES.exe` is started as
+  `--finish-update <install folder> <pid> -- <the app's arguments>`, WinSparkle asks the app to quit
+  (the session is saved as on any quit), the helper waits for it, copies the new files over the
+  installation (backup + restore on failure; it needs write access to the folder - fine for an
+  unzipped portable app), and starts the new version with the same arguments. Log:
+  `%LOCALAPPDATA%\ReplayNES\Update\update.log`; old staging folders are removed at the next start.
+
+### Limitations
+
+* No "Add to Steam" (Linux-only).
+* Not code-signed (SmartScreen asks on the first start of a downloaded zip, also after an update).
 * Measured only in the VM (below): pacing / latency numbers of real x64 PCs with NVIDIA / AMD /
-  Intel drivers are still to be taken; `--vrr` is untested on a real VRR display.
+  Intel drivers are still to be taken; `--vrr` is untested on a real VRR display; the CRT's GPU time
+  and the hardware H.264 encoder path need a real GPU.
 
 Three ways to build, from lightest to most "native":
 

@@ -1,10 +1,12 @@
-// Offline MP4 export of the desktop frontend (port of apps/macos/Sources/Core/MP4Exporter.swift;
-// implemented for Linux in apps/linux/src/export, Windows: not yet):
-// drives an rn_renderer (fresh core, logical time) and encodes H.264 + AAC with FFmpeg's libav*.
+// Offline MP4 export of the desktop frontend (port of apps/macos/Sources/Core/MP4Exporter.swift):
+// drives an rn_renderer (fresh core, logical time) and encodes H.264 + AAC
+//   Linux    FFmpeg's libav* (apps/linux/src/export/mp4_export.cpp)
+//   Windows  Media Foundation's sink writer (apps/windows/src/mp4_export_mf.cpp)
 // Timestamps come only from frame / sample counts, never from the wall clock:
-//   video PTS of frame f = (f - start) * 655171 in time base 1/39375000 (exact, the MP4 track
-//   timescale is 39375000), audio PTS = rn_audio_samples_before(f) - rn_audio_samples_before(start)
-//   at 48 kHz mono.
+//   video PTS of frame f = (f - start) * 655171 in time base 1/39375000 (FFmpeg: exact, the MP4
+//   track timescale is 39375000; Media Foundation: the same instants in its 100 ns units, rounded),
+//   audio PTS = rn_audio_samples_before(f) - rn_audio_samples_before(start) at 48 kHz mono.
+// Shared by both: the frame helpers (export_frame.h) and ExportJob (export_job.cpp).
 // Geometry (presets, crops, 8:7, nearest-neighbour column/row maps, bit rate) comes from the shared
 // frontend core (frontend.h, "export + streaming geometry"). UI-free: replaynes-export (export_cli.cpp)
 // exercises it headlessly.
@@ -19,6 +21,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "replaynes/frontend.h"
 #include "replaynes/replaynes.h"
@@ -55,8 +58,9 @@ struct ExportOptions {
   rn_flash_level flash = RN_FLASH_OFF;
   int audioBitrate = 192000;
   double videoBitsPerPixel = 0.25;  // per frame; pixel art needs more than camera footage
-  /// "" = auto: libx264, then h264_vaapi, then libopenh264 (first one that opens). Otherwise that
-  /// encoder only (any FFmpeg H.264 encoder name).
+  /// "" = auto. Linux: libx264, then h264_vaapi, then libopenh264 (first one that opens), or that
+  /// FFmpeg encoder only. Windows: a hardware H.264 MFT when there is one, else Microsoft's
+  /// software encoder; "mf_hardware" / "mf_software" force one.
   std::string encoder;
   /// Empty = plain nearest scaling (black borders). Called once on the export thread.
   std::function<std::unique_ptr<ExportVideoProcessor>(std::string* error)> makeProcessor;
@@ -65,8 +69,15 @@ struct ExportOptions {
 struct ExportResult {
   uint64_t frames = 0, audioSamples = 0, rendererHash = 0;
   double duration = 0;  // frames * 655171 / 39375000 s
-  std::string encoder;  // FFmpeg encoder that was used ("libx264", "h264_vaapi", ...)
+  std::string encoder;  // encoder that was used ("libx264", "h264_vaapi", "H264 Encoder MFT", ...)
 };
+
+/// The encoders the Export dialog offers besides "automatic" (id for ExportOptions::encoder, label).
+struct ExportEncoderChoice {
+  const char* id;
+  const char* label;
+};
+const std::vector<ExportEncoderChoice>& exportEncoderChoices();
 
 using ExportProgressFn = std::function<void(uint64_t done, uint64_t total)>;
 using ExportCancelFn = std::function<bool()>;

@@ -27,6 +27,8 @@
 #include "display_scheduler.h"
 #include "dialogs.h"
 #include "emulation.h"
+#include "export/export_frame.h"
+#include "export/mp4_retime.h"
 #include "l10n.h"
 #include "library.h"
 #include "manifest.h"
@@ -1130,4 +1132,122 @@ TEST_CASE("thumbnails: live capture and background batches") {
   CHECK(bool(thumbs.imageAt(rnf_thumb_picture_frame(2, step))));
   emu.closeSession();
   rn_input_free(in);
+}
+
+// ------------------------------------------------------------------ MP4 export helpers (export/)
+
+TEST_CASE("export: frame / sample times in 100 ns units from counts") {
+  using namespace rnl::exportframe;
+  CHECK_EQ(frameTime100ns(0), int64_t(0));
+  CHECK_EQ(frameTime100ns(1), int64_t(166393));      // 655171 / 39375000 s = 16.6392635 ms
+  CHECK_EQ(frameTime100ns(63), int64_t(10482736));   // exact: 63 * 655171 * 16 / 63
+  CHECK_EQ(frameTime100ns(39375000), int64_t(655171) * 10000000);
+  for (uint64_t n = 0; n < 5000; ++n) {
+    const int64_t d = frameTime100ns(n + 1) - frameTime100ns(n);
+    if (d < 166392 || d > 166393) {
+      CHECK(false);
+      break;
+    }
+  }
+  CHECK_EQ(sampleTime100ns(48000), int64_t(10000000));
+  CHECK_EQ(sampleTime100ns(1), int64_t(208));  // 208.33
+  CHECK_EQ(sampleTime100ns(2), int64_t(417));  // 416.67
+}
+
+TEST_CASE("export: NV12 and I420 conversion agree, BT.709 limited range") {
+  using namespace rnl::exportframe;
+  const int w = 8, h = 4;
+  std::vector<uint32_t> px(size_t(w) * h);
+  uint32_t seed = 12345;
+  for (auto& p : px) {
+    seed = seed * 1664525u + 1013904223u;
+    p = 0xFF000000u | (seed >> 8);
+  }
+  px[0] = px[1] = px[w] = px[w + 1] = 0xFFFFFFFFu;  // a white 2x2 block
+  px[2] = px[3] = px[w + 2] = px[w + 3] = 0xFF000000u;  // a black one
+  std::vector<uint8_t> y1(size_t(w) * h), u(size_t(w / 2) * h / 2), v(size_t(w / 2) * h / 2), y2(size_t(w) * h), uv(size_t(w) * h / 2);
+  const auto* canvas = reinterpret_cast<const uint8_t*>(px.data());
+  convertToYuv(canvas, size_t(w) * 4, w, h, y1.data(), w, u.data(), w / 2, v.data(), w / 2);
+  convertToYuv(canvas, size_t(w) * 4, w, h, y2.data(), w, uv.data(), w, nullptr, 0);
+  CHECK(y1 == y2);
+  bool same = true;
+  for (size_t i = 0; i < u.size(); ++i) same &= uv[i * 2] == u[i] && uv[i * 2 + 1] == v[i];
+  CHECK(same);
+  CHECK_EQ(int(y1[0]), 235);
+  CHECK_EQ(int(y1[2]), 16);
+  CHECK_EQ(int(u[0]), 128);
+  CHECK_EQ(int(v[0]), 128);
+  CHECK_EQ(int(u[1]), 128);
+}
+
+namespace {
+void be32(std::string& o, uint32_t v) {
+  for (int s = 24; s >= 0; s -= 8) o += char(uint8_t(v >> s));
+}
+std::string box(const char* type, const std::string& body) {
+  std::string o;
+  be32(o, uint32_t(body.size() + 8));
+  o += type;
+  return o + body;
+}
+uint32_t rd(const std::string& s, size_t at) {
+  return uint32_t(uint8_t(s[at])) << 24 | uint32_t(uint8_t(s[at + 1])) << 16 | uint32_t(uint8_t(s[at + 2])) << 8 | uint8_t(s[at + 3]);
+}
+/// Payload of the first box of `type` anywhere in `s` (no validation; the test files are tiny).
+std::string findBox(const std::string& s, const char* type) {
+  size_t at = s.find(type);
+  if (at == std::string::npos || at < 4) return "";
+  return s.substr(at + 4, rd(s, at - 4) - 8);
+}
+}  // namespace
+
+TEST_CASE("export: MP4 video track retimed to 39375000 / 655171 per frame") {
+  // What Media Foundation's sink writes: video at timescale 60098 (999 / 1000 per frame), zero
+  // composition offsets; audio at 48000; movie timescale 48000; moov after mdat.
+  auto mvhd = [&](uint32_t ts, uint32_t dur) { std::string b(12, '\0'); be32(b, ts); be32(b, dur); return box("mvhd", b + std::string(80, '\0')); };
+  auto mdhd = [&](uint32_t ts, uint32_t dur) { std::string b(12, '\0'); be32(b, ts); be32(b, dur); b += std::string(4, '\0'); return box("mdhd", b); };
+  auto tkhd = [&](uint32_t dur) { std::string b(20, '\0'); be32(b, dur); return box("tkhd", b + std::string(60, '\0')); };
+  auto hdlr = [&](const char* t) { return box("hdlr", std::string(8, '\0') + t + std::string(13, '\0')); };
+  std::string stts(4, '\0');
+  be32(stts, 2);
+  be32(stts, 2);
+  be32(stts, 1000);
+  be32(stts, 1);
+  be32(stts, 999);
+  std::string ctts(4, '\0');
+  be32(ctts, 1);
+  be32(ctts, 3);
+  be32(ctts, 0);
+  std::string video = box("trak", tkhd(2400) + box("mdia", mdhd(60098, 2999) + hdlr("vide") +
+                                                              box("minf", box("stbl", box("stts", stts) + box("ctts", ctts)))));
+  std::string audio = box("trak", tkhd(2400) + box("mdia", mdhd(48000, 2400) + hdlr("soun")));
+  std::string file = box("ftyp", "isom") + box("mdat", std::string(16, 'x')) + box("moov", mvhd(48000, 2400) + video + audio);
+  const std::string path = tmpDir("retime") + "/a.mp4";
+  {
+    std::ofstream f(fs::u8path(path), std::ios::binary);
+    f << file;
+  }
+  std::string err;
+  CHECK(!rnl::retimeMp4Video(path, 4, RN_FPS_NUM, RN_FPS_DEN, &err));  // 3 samples, not 4
+  CHECK(err.find("expected 4") != std::string::npos);
+  REQUIRE(rnl::retimeMp4Video(path, 3, RN_FPS_NUM, RN_FPS_DEN, &err));
+  std::ifstream f(fs::u8path(path), std::ios::binary);
+  std::string out((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  CHECK(out.compare(0, 36, file, 0, 36) == 0);  // ftyp + mdat untouched
+  const std::string md = findBox(out, "mdhd");
+  REQUIRE(md.size() >= 32);
+  CHECK_EQ(int(uint8_t(md[0])), 1);
+  CHECK_EQ(rd(md, 20), uint32_t(RN_FPS_NUM));
+  CHECK_EQ((uint64_t(rd(md, 24)) << 32 | rd(md, 28)), uint64_t(3) * RN_FPS_DEN);
+  const std::string st = findBox(out, "stts");
+  CHECK_EQ(rd(st, 4), 1u);
+  CHECK_EQ(rd(st, 8), 3u);
+  CHECK_EQ(rd(st, 12), uint32_t(RN_FPS_DEN));
+  CHECK(findBox(out, "ctts").empty());  // all-zero offsets dropped
+  const std::string tk = findBox(out, "tkhd");
+  CHECK_EQ(rd(tk, 20), uint32_t(std::llround(3.0 * RN_FPS_DEN * 48000 / RN_FPS_NUM)));  // 2396
+  const std::string mv = findBox(out, "mvhd");
+  CHECK_EQ(rd(mv, 16), 2400u);  // the audio track is longer
+  // The audio track is unchanged.
+  CHECK(out.find(audio) != std::string::npos);
 }
