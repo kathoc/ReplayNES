@@ -244,10 +244,11 @@ SOFTWARE.
 - The model cites published measurements and papers for its assumed values (NESdev NTSC video levels,
   Kuhn 2002 phosphor decay fits, etc.); no third-party code from those sources is included.
 
-## Dear ImGui (user interface, Linux app)
+## Dear ImGui (user interface, Linux and Windows apps)
 
 - Project: https://github.com/ocornut/imgui
-- Version: 1.92.9b (vendored unmodified in `third_party/imgui`: core files and the SDL3 / Vulkan backends)
+- Version: 1.92.9b (vendored unmodified in `third_party/imgui`: core files and the SDL3 / Vulkan /
+  Direct3D 11 backends)
 - License: MIT
 
 ```
@@ -298,6 +299,37 @@ SOFTWARE.
 - Fonts: no font is bundled. The UI uses the runtime's DejaVu Sans (Bitstream Vera / DejaVu license) and,
   for Japanese, a CJK font of the host system found through fontconfig (on SteamOS: Noto Sans CJK,
   SIL Open Font License 1.1), read at run time from `/run/host/fonts`.
+
+## SDL3 (window, audio, gamepads, Windows app)
+
+- Project: https://libsdl.org, release 3.4.18 (git submodule `third_party/SDL`, unmodified), built from
+  source and **statically linked** into `ReplayNES.exe` (no SDL3.dll is shipped). Its HIDAPI gamepad
+  code is part of SDL (BSD-style / zlib, see the SDL source tree).
+- License: zlib
+
+```
+Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
+  
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+  
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required. 
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+```
+
+- Windows system components (Direct3D 11, DXGI, the D3D shader compiler `d3dcompiler_47.dll`, WASAPI,
+  XInput / GameInput) are part of Windows and not distributed with ReplayNES. Fonts: none bundled; the
+  Windows app uses Segoe UI, Yu Gothic / Meiryo and Segoe UI Symbol from `%WINDIR%\Fonts` at run time.
 
 ## Noto Sans Black (Steam library artwork wordmark, Linux app)
 

@@ -261,7 +261,8 @@ from the take's checkpoints on idle-priority worker threads).
 
 ## Pacing (how it works)
 
-`apps/linux/src/main.cpp`, `display_scheduler.h`, `cadence.h`, `vk_renderer.cpp`; the decisions
+`apps/desktop/src/app.cpp` (the frame loop shared with Windows), `display_scheduler.h`, `cadence.h`,
+`apps/linux/src/vk_renderer.cpp`; the decisions
 shared with macOS come from the frontend core (`rnf_refreshes_per_frame`, `rnf_input_deadline` with
 Linux limits, `rnf_audio_rate`); `cadence.h` adds the 3:2 lock and the refresh estimate from
 present timestamps. See `docs/FRAME_PACING.md` for the macOS design this follows.
@@ -349,6 +350,10 @@ After the CRT / flash / sub-60 Hz work (same Deck, Gaming Mode, SMB unless noted
 | nested gamescope `-r 45`, CRT off | 8.35 / 9.03 | 60.03 | 8 | 0 | 45.0 Hz presents, 1131 of 2698 with 2 frames (60 s) |
 | nested gamescope `-r 45`, CRT on (fill) | 17.02 / 18.02 | 60.04 | 4 | 0 | GPU p90 11.8 ms |
 
+After the desktop frontend restructure (Linux and Windows share `apps/desktop`; dev build, Gaming
+Mode, 90 Hz 3:2, SMB, 20 s warm-up + 30 s, `--no-crt`): sample -> on screen 4.79 / 5.22 ms, emulated
+60.01 fps, judder 4/min, 0 underruns, CPU 14.9 % - no regression.
+
 Nested gamescope only offers divisors of the 90 Hz panel (`-r 40` also ran at 45 Hz); Gaming
 Mode's own 40-59 Hz settings need a Steam-launched game and were not measured. Earlier 45 Hz runs
 (before the audio level fix, and one 45 s run after it) had 2-7 underruns around nested-compositor
@@ -372,6 +377,7 @@ Measure yourself:
 scripts/perf-smoke-deck.sh 30                       # generated test ROM, the Deck's current session
 ROM=smb WARMUP=20 INPUT=1 scripts/perf-smoke-deck.sh 30
 EXTRA_ARGS=--fullscreen SESSION=desktop scripts/perf-smoke-deck.sh 30
+EXTRA_ARGS=--no-crt ROM=smb scripts/perf-smoke-deck.sh 30   # CRT off whatever the saved setting is
 ```
 
 Or from a Steam shortcut in Gaming Mode (launch options), then read the JSON line:

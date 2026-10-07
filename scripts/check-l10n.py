@@ -9,15 +9,17 @@
    used. Keys without any letters (e.g. "%lld", "#%llu") need no translation and are skipped.
    Strings of the shared frontend core (frontend/src, marked RNF_L("...")) count as used too: the
    core resolves them at run time from a table generated from the same catalog. So do the Linux
-   frontend's (apps/linux/src, TR("...") / TRF("...", ...), adjacent literals concatenated), which
-   must all be in the catalog (also without --stringsdata) and contain no Japanese.
+   frontends' (apps/desktop/src, apps/linux/src, apps/windows/src: TR("...") / TRF("...", ...),
+   adjacent literals concatenated), which must all be in the catalog (also without --stringsdata)
+   and contain no Japanese.
 """
 import glob, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "apps", "macos")
 CORE = os.path.join(ROOT, "frontend", "src")
-LINUX = os.path.join(ROOT, "apps", "linux", "src")
+# The desktop frontends (Linux / Windows): the shared UI and the platform parts.
+DESKTOP = [os.path.join(ROOT, "apps", d, "src") for d in ("desktop", "linux", "windows")]
 RNF_L = re.compile(r'RNF_L\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 LINUX_TR = re.compile(r'\bTRF?\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)[,)]')
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -51,11 +53,17 @@ def core_keys():
 def unescape(lit):
     return re.sub(r'\\(.)', lambda e: {"n": "\n", "t": "\t"}.get(e.group(1), e.group(1)), lit)
 
-def linux_keys():
-    """(key, file, line) for every TR("...") / TRF("...") of the Linux frontend."""
+def desktop_sources():
     out = []
-    for path in sorted(glob.glob(os.path.join(LINUX, "**", "*.[ch]pp"), recursive=True) +
-                       glob.glob(os.path.join(LINUX, "**", "*.h"), recursive=True)):
+    for d in DESKTOP:
+        out += glob.glob(os.path.join(d, "**", "*.[ch]pp"), recursive=True)
+        out += glob.glob(os.path.join(d, "**", "*.h"), recursive=True)
+    return sorted(out)
+
+def linux_keys():
+    """(key, file, line) for every TR("...") / TRF("...") of the desktop frontends."""
+    out = []
+    for path in desktop_sources():
         text = open(path, encoding="utf-8").read()
         for m in LINUX_TR.finditer(text):
             key = "".join(unescape(l) for l in LITERAL.findall(m.group(1)))
@@ -66,8 +74,7 @@ def main():
     errors = []
     sources = glob.glob(os.path.join(APP, "Sources", "**", "*.swift"), recursive=True)
     sources += glob.glob(os.path.join(CORE, "**", "*.[ch]pp"), recursive=True)
-    sources += glob.glob(os.path.join(LINUX, "**", "*.[ch]pp"), recursive=True)
-    sources += glob.glob(os.path.join(LINUX, "**", "*.h"), recursive=True)
+    sources += desktop_sources()
     for path in sorted(sources):
         for n, line in enumerate(open(path, encoding="utf-8"), 1):
             if JAPANESE.search(line):

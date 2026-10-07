@@ -331,6 +331,16 @@
         }
       }
     },
+    "A backup copy of the project is moved to the Recycle Bin first, so you can still recover it from there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にプロジェクトのバックアップコピーをごみ箱に移すので、そこから元に戻せます。"
+          }
+        }
+      }
+    },
     "A new version of ReplayNES is available (menu: Update).": {
       "localizations": {
         "ja": {
@@ -1357,6 +1367,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作ガイドの表示／非表示"
+          }
+        }
+      }
+    },
+    "Copy them into the ROM folder (Open Folder shows it in Explorer), then press Reload.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM フォルダ（「フォルダを開く」でエクスプローラーに表示）にコピーしてから「再読み込み」を押してください。"
           }
         }
       }
@@ -3721,6 +3741,16 @@
         }
       }
     },
+    "Opens the ROM folder in Explorer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM フォルダをエクスプローラーで開きます"
+          }
+        }
+      }
+    },
     "Opens the ROM folder in the file manager (Desktop Mode)": {
       "localizations": {
         "ja": {
@@ -4307,6 +4337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロジェクトをリセットしました"
+          }
+        }
+      }
+    },
+    "Project reset (a backup is in the Recycle Bin)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトをリセットしました（バックアップはごみ箱にあります）"
           }
         }
       }
@@ -6131,6 +6171,16 @@
         }
       }
     },
+    "The CRT display and MP4 export aren’t available in the Windows version yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows 版では、ブラウン管 (CRT) 表示と MP4 書き出しはまだ使えません。"
+          }
+        }
+      }
+    },
     "The CRT display isn’t available on this GPU: %@": {
       "localizations": {
         "ja": {
@@ -6947,6 +6997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ZR / R2 / RT（押している間）"
+          }
+        }
+      }
+    },
+    "“%@” already exists. Replace it? (The existing project is moved to the Recycle Bin.)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」はすでにあります。置き換えますか？（既存のプロジェクトはごみ箱に移動します）"
           }
         }
       }

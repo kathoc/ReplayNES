@@ -22,77 +22,55 @@
 
 #include "render/crt_display.h"
 #include "render/post_process.h"
+#include "renderer.h"
 
 struct ImDrawData;
 
 namespace rnl {
 
-struct PresentDone {
-  uint64_t id = 0;
-  double time = 0;  // CLOCK_MONOTONIC s when vkWaitForPresentKHR returned (just after the flip)
-  bool ok = false;  // false: never confirmed (timeout, swapchain recreated, hidden window)
-  int result = 0;   // last VkResult of vkWaitForPresentKHR
-};
-
-struct GameRect {
-  bool visible = false;
-  float x = 0, y = 0, w = 0, h = 0;  // pixels, origin top-left
-  int crop = 0;                      // source pixels hidden on every side
-  // CRT Display: the 4:3 tube face (no 8:7), fitted to the same height (MetalView.crtViewport).
-  CrtRect crt;
-  double crtCrop = 0;                // tube rows hidden at the top and bottom (fraction)
-};
-
-/// Destination rectangle of the game picture in a drawable (MetalView.viewport on macOS).
-GameRect computeGameRect(int width, int height, bool integerScale, bool par87, bool hideOverscan);
-
-class VkRenderer {
+class VkRenderer final : public Renderer {
  public:
-  bool init(SDL_Window* window, std::string* error);
-  void shutdown();
-  bool initImGui();
+  bool init(SDL_Window* window, std::string* error) override;
+  void shutdown() override;
+  /// ImGui_ImplSDL3_InitForVulkan + ImGui_ImplVulkan_Init.
+  bool initImGui() override;
+  void newImGuiFrame() override;
 
-  bool presentWait() const { return presentWait_; }
-  const std::string& description() const { return description_; }
-  VkExtent2D extent() const { return extent_; }
+  /// VK_KHR_present_wait is available (present timestamps for the vblank grid).
+  bool presentTiming() const override { return presentWait_; }
+  std::string description() const override { return description_; }
+  int width() const override { return int(extent_.width); }
+  int height() const override { return int(extent_.height); }
   uint32_t imageCount() const { return uint32_t(images_.size()); }
 
-  /// Draws (newPicture: upload it first; nullptr keeps the last one) and presents. Returns the
-  /// present id (0 when nothing was presented, e.g. a minimised window). `signal`: the CRT side
-  /// channel of newPicture (render/post_process.h).
   uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui,
-                          const FrameSignal* signal = nullptr);
+                          const FrameSignal* signal = nullptr) override;
 
   /// Display post-process (CRT on/off + parameters). Takes effect with the next draw; switching
   /// the CRT off frees its GPU resources.
-  void setPostProcess(const DisplayPostProcess& pp) { post_ = pp; }
-  const DisplayPostProcess& postProcess() const { return post_; }
-  PostProcessStatus postProcessStatus() const { return status_; }
+  void setPostProcess(const DisplayPostProcess& pp) override { post_ = pp; }
+  const DisplayPostProcess& postProcess() const override { return post_; }
+  PostProcessStatus postProcessStatus() const override { return status_; }
   /// Seconds the GPU may spend on a new picture between the commit and its target vblank at the
   /// maximum input lead (build-ahead decision; 0 = unknown, never build ahead).
-  void setGpuBudget(double seconds) { gpuBudget_ = seconds; }
+  void setGpuBudget(double seconds) override { gpuBudget_ = seconds; }
   /// GPU time a new picture's build adds before it can be shown (CRT on, not built ahead): the
   /// frame loop samples input that much earlier (it is part of the sample -> screen work).
-  double gpuLeadExtra() const { return status_.crtShown && !crt_.pipelined() ? crt_.gpuP90() : 0; }
+  double gpuLeadExtra() const override { return status_.crtShown && !crt_.pipelined() ? crt_.gpuP90() : 0; }
 
   /// Presents confirmed on screen since the last call, in present order. A waiter thread calls
   /// vkWaitForPresentKHR for every present id (the frame loop never blocks on it, so the input
   /// lead may exceed one refresh).
-  std::vector<PresentDone> takeCompleted();
+  std::vector<PresentDone> takeCompleted() override;
   /// Waits for the GPU to finish the last submitted frame (fallback without present wait).
   void waitLastSubmit();
   /// Seconds the last drawAndPresent spent waiting for its slot fence + the swapchain image.
-  double lastAcquireWait() const { return lastAcquireWait_; }
+  double lastAcquireWait() const override { return lastAcquireWait_; }
 
   // ---- UI resources (vk_ui_resources.cpp) ----
-  /// Once per UI frame, before thumbTexture() calls.
-  void beginUIFrame() { uiFrame_ += 1; }
-  /// Filmstrip thumbnails: a 128x120 BGRA picture identified by `key` in the thumbnail atlas
-  /// (uploaded before this frame's render pass if new). false: no room this frame (draw a
-  /// placeholder, it is uploaded on a later frame).
-  bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]);
-  /// Saves the next presented frame (game + UI) as PNG (tests, docs screenshots).
-  void requestScreenshot(const std::string& path);
+  void beginUIFrame() override { uiFrame_ += 1; }
+  bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
+  void requestScreenshot(const std::string& path) override;
 
  private:
   void waiterLoop();

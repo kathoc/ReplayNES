@@ -3,8 +3,20 @@
 The engine (`engine/`) is portable C++17 with no UI or OS media APIs. Frontends use the C API
 in `engine/include/replaynes/replaynes.h` plus the shared frontend core (`frontend/`, C API
 `frontend/include/replaynes/frontend.h`) for everything a frontend decides that is not
-platform-specific. The macOS app (Swift) is one such frontend; the Linux (SDL3 + Vulkan) frontend
-and future Windows / iOS frontends follow the same pattern.
+platform-specific. The macOS app (Swift) is one such frontend; the desktop frontend for Linux
+and Windows is another, and future iOS frontends follow the same pattern.
+
+The desktop frontend is one C++ code base with small platform seams:
+
+| | Shared (`apps/desktop`) | Linux (`apps/linux`) | Windows (`apps/windows`) |
+|---|---|---|---|
+| UI, frame loop, input, audio | Dear ImGui UI, `runApp` frame loop, `DisplayScheduler`, input routing, OSK, SDL3 audio + DRC | - | - |
+| `Renderer` (`renderer.h`) | `GameRect`, present-timing interface | Vulkan FIFO + `VK_KHR_present_wait`, Vulkan CRT | Direct3D 11 flip model + DXGI frame statistics (CRT: not yet) |
+| Platform services (`platform/platform.h`, `paths.h`, `host_clock.h`, `fonts.h`) | | XDG folders, freedesktop Trash, `SDL_OpenURL`, CLOCK_MONOTONIC, fontconfig | Known Folders, Recycle Bin (`IFileOperation`), Explorer, QPC + high-resolution timers, `%WINDIR%\Fonts` |
+| Optional features | `update_service.h`, `export/mp4_export.h`, `render/crt_export.h`, `ui_features.h` | Flatpak portal updates, FFmpeg export, Add to Steam | not yet (stubs) |
+
+New desktop platforms implement those seams; `rnl_logic` (no SDL) and its tests
+(`test_desktop_frontend`) build everywhere, also on macOS.
 
 ## Build
 

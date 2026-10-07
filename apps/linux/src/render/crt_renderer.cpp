@@ -154,19 +154,6 @@ static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(S
 uint32_t groups(int n, uint32_t local) { return uint32_t((std::max(0, n) + int(local) - 1) / int(local)); }
 }  // namespace
 
-// ------------------------------------------------------------------ settings
-CrtSettings CrtSettings::sanitized() const {
-  CrtSettings s = *this;
-  if (!validLines(s.lines)) s.lines = 240;
-  s.antennaDbuv = std::min(90.0, std::max(20.0, s.antennaDbuv));
-  s.ambientLux = std::min(500.0, std::max(0.0, s.ambientLux));
-  return s;
-}
-bool CrtSettings::operator==(const CrtSettings& o) const {
-  return lines == o.lines && beamGrowth == o.beamGrowth && persistence == o.persistence && supply == o.supply &&
-         antennaDbuv == o.antennaDbuv && ambientLux == o.ambientLux;
-}
-
 // ------------------------------------------------------------------ setup
 const char* const* CrtRenderer::requiredDeviceExtensions(uint32_t* count) {
   *count = uint32_t(sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));

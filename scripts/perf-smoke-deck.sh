@@ -2,7 +2,7 @@
 # Frame pacing / latency measurement of the Linux frontend ON THE STEAM DECK (the counterpart of
 # scripts/perf-smoke.sh for macOS). Runs replaynes-linux --perf-seconds over ssh in the Deck's
 # current graphical session and prints its summary (sample -> on screen, judder, missed targets,
-# audio underruns, CPU; see apps/linux/src/perf_stats.h).
+# audio underruns, CPU; see apps/desktop/src/perf_stats.h).
 #
 #   scripts/perf-smoke-deck.sh [seconds] [rom-on-deck]      (default 30 s, generated test ROM)
 #   ROM=smb ...           ~/Documents/ReplayNES/ROM/Super Mario Bros. (World).NES on the Deck

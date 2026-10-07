@@ -1,15 +1,19 @@
-# Windows: the portable engine + shared frontend core + tests (no Windows frontend yet).
-#  - msvc: MSVC (cl) and clang-cl on real x64 hardware, plus MSVC on Windows on Arm (arm64).
-#  - mingw-cross: the developer cross-build (macOS + llvm-mingw, docs/WINDOWS.md), whose x86_64
-#    test executables are then run on a real x64 Windows runner (mingw-run).
+# Windows: the frontend (replaynes-win -> ReplayNES.exe: apps/windows + apps/desktop, SDL3 from the
+# third_party/SDL submodule) + the portable engine, shared frontend core, desktop frontend logic
+# and their tests.
+#  - msvc: MSVC (cl) and clang-cl on real x64 hardware, plus MSVC on Windows on Arm (arm64); the
+#    MSVC builds upload ReplayNES.exe.
+#  - mingw-cross: the developer cross-build (macOS + llvm-mingw, docs/WINDOWS.md) with the release
+#    zips (dist/ReplayNES-<version>-windows-{x64,arm64}.zip), whose x86_64 test executables are
+#    then run on a real x64 Windows runner (mingw-run).
 name: windows
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'apps/macos/**', 'dist/**']
+    paths-ignore: ['**.md', 'docs/**', 'apps/macos/Sources/**', 'dist/**']
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'apps/macos/**', 'dist/**']
+    paths-ignore: ['**.md', 'docs/**', 'apps/macos/Sources/**', 'dist/**']
   workflow_dispatch:
 
 permissions:
@@ -26,18 +30,18 @@ jobs:
   msvc:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: 'MSVC x64', os: windows-latest, arch: x64, toolset: '' }
-          - { name: 'clang-cl x64', os: windows-latest, arch: x64, toolset: ClangCL }
-          - { name: 'MSVC arm64', os: windows-11-arm, arch: ARM64, toolset: '' }
+          - { name: 'MSVC x64', os: windows-latest, arch: x64, toolset: '', artifact: 'ReplayNES-msvc-x64' }
+          - { name: 'clang-cl x64', os: windows-latest, arch: x64, toolset: ClangCL, artifact: '' }
+          - { name: 'MSVC arm64', os: windows-11-arm, arch: ARM64, toolset: '', artifact: 'ReplayNES-msvc-arm64' }
     steps:
       - uses: actions/checkout@v4
-      - name: Nestopia submodule (pinned)
-        run: git submodule update --init --depth 1 third_party/nestopia
+      - name: Submodules (Nestopia core, SDL3; pinned)
+        run: git submodule update --init --depth 1 third_party/nestopia third_party/SDL
       - name: Configure
         shell: pwsh
         run: |
@@ -48,9 +52,25 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --parallel 4
+      - name: Frontend starts (--version) and exits
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath build/apps/windows/Release/ReplayNES.exe -ArgumentList '--version','--log','version.txt' -Wait -PassThru
+          Get-Content version.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
       - name: Probe (graphics / audio / input APIs of the runner)
         run: build/tools/windows-probe/Release/replaynes-winprobe.exe
         continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: matrix.artifact != ''
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            build/apps/windows/Release/ReplayNES.exe
+            apps/windows/README.txt
+            LICENSE
+            THIRD_PARTY_NOTICES.md
+          retention-days: 14
 
   mingw-cross:
     name: llvm-mingw cross-build (macOS)
@@ -58,8 +78,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Nestopia submodule (pinned)
-        run: git submodule update --init --depth 1 third_party/nestopia
+      - name: Submodules (Nestopia core, SDL3; pinned)
+        run: git submodule update --init --depth 1 third_party/nestopia third_party/SDL
       - name: Install llvm-mingw + Ninja
         run: |
           brew list ninja >/dev/null 2>&1 || brew install ninja
@@ -67,17 +87,22 @@ jobs:
             "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal.tar.xz"
           tar -xf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
           echo "LLVM_MINGW=$RUNNER_TEMP/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal" >> "$GITHUB_ENV"
-      - name: Build x86_64 + aarch64
+      - name: Build x86_64 + aarch64 (+ dist zips)
         run: scripts/build-windows.sh all
-      - name: Collect x86_64 test executables
+      - name: Collect x86_64 test executables + the frontend
         run: |
           mkdir -p out
-          cp build/windows-x86_64/tests/*.exe build/windows-x86_64/tools/*/*.exe out/
+          cp build/windows-x86_64/tests/*.exe build/windows-x86_64/tools/*/*.exe build/windows-x86_64/apps/windows/ReplayNES.exe out/
       - uses: actions/upload-artifact@v4
         with:
           name: mingw-x86_64
           path: out/*.exe
           retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReplayNES-windows-zips
+          path: dist/ReplayNES-*-windows-*.zip
+          retention-days: 14
 
   mingw-run:
     name: llvm-mingw x86_64 tests on Windows
@@ -100,6 +125,12 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failed += $t.Name }
           }
           if ($failed) { Write-Error "failed: $($failed -join ', ')"; exit 1 }
+      - name: Frontend starts (--version) and exits
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath bin/ReplayNES.exe -ArgumentList '--version','--log','version.txt' -Wait -PassThru
+          Get-Content version.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
       - name: Probe
         run: bin/replaynes-winprobe.exe
         continue-on-error: true

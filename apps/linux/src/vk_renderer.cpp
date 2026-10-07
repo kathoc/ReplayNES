@@ -11,6 +11,7 @@
 
 #include "host_clock.h"
 #include "imgui.h"
+#include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
 #include "replaynes/replaynes.h"
 
@@ -33,31 +34,6 @@ bool hasExtension(const std::vector<VkExtensionProperties>& list, const char* na
   return false;
 }
 }  // namespace
-
-GameRect computeGameRect(int width, int height, bool integerScale, bool par87, bool hideOverscan) {
-  GameRect r;
-  if (width <= 0 || height <= 0) return r;
-  r.crop = hideOverscan ? 8 : 0;
-  double srcH = RN_VIDEO_HEIGHT - 2 * r.crop, srcW = RN_VIDEO_WIDTH - 2 * r.crop;
-  double par = par87 ? 8.0 / 7.0 : 1.0;
-  double scale = std::min(width / (srcW * par), height / srcH);
-  if (integerScale && scale >= 1) scale = std::floor(scale);
-  double dw = std::round(srcW * par * scale), dh = std::round(srcH * scale);
-  r.x = float(std::round((width - dw) / 2));
-  r.y = float(std::round((height - dh) / 2));
-  r.w = float(dw);
-  r.h = float(dh);
-  r.visible = dw > 0 && dh > 0;
-  // CRT: full 4:3 raster minus the cropped rows, at the plain (1:1 pixel) viewport's height.
-  r.crtCrop = (hideOverscan ? 8.0 : 0.0) / 240;
-  double aspect = (4.0 / 3.0) / (1 - 2 * r.crtCrop);
-  double ps = std::min(width / srcW, height / srcH);
-  if (integerScale && ps >= 1) ps = std::floor(ps);
-  double ch = std::round(srcH * ps), cw = std::round(ch * aspect);
-  if (cw > width) { cw = width; ch = std::round(cw / aspect); }
-  r.crt = CrtRect{float(std::round((width - cw) / 2)), float(std::round((height - ch) / 2)), float(cw), float(ch)};
-  return r;
-}
 
 bool VkRenderer::init(SDL_Window* window, std::string* error) {
   window_ = window;
@@ -493,6 +469,7 @@ bool VkRenderer::createPipeline() {
 }
 
 bool VkRenderer::initImGui() {
+  ImGui_ImplSDL3_InitForVulkan(window_);
   ImGui_ImplVulkan_InitInfo ii{};
   ii.ApiVersion = apiVersion_;
   ii.Instance = instance_;
@@ -510,6 +487,8 @@ bool VkRenderer::initImGui() {
   if (imguiReady_) registerAtlasWithImGui();
   return imguiReady_;
 }
+
+void VkRenderer::newImGuiFrame() { ImGui_ImplVulkan_NewFrame(); }
 
 uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
   // CRT Display on / off (created on first use, freed when switched off).

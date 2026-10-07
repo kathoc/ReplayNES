@@ -1,9 +1,96 @@
-# Windows development
+# Windows
 
-There is no Windows frontend yet. What exists: the portable engine (`engine/`), the shared
-frontend core (`frontend/`), their tests and `replaynes-cli` build and pass on Windows, and the
-setup below lets a Mac build, run and test Windows binaries without a Windows toolchain install.
-The Windows frontend will follow (see [Rendering backend](#recommendation-for-the-windows-frontend)).
+Status 2026-10-07: **Windows frontend preview** (`ReplayNES.exe`, CMake target `replaynes-win`):
+the shared desktop frontend of the Steam Deck / Linux version (`apps/desktop`: Dear ImGui UI,
+library, timeline / filmstrip, practice, takes, bookmarks, reset, autosave + resume, settings with
+the controller diagram, built-in on-screen keyboard, flash reduction, English / Japanese,
+display-locked pacing with just-in-time input) on SDL3 (window, WASAPI audio, gamepads) and a
+Direct3D 11 renderer (`apps/windows`). Not yet ported (step 2): the CRT display (HLSL port of the
+Vulkan compute model) and MP4 export (Media Foundation); in-app updates and "Add to Steam" are
+Linux-only. The engine, frontend core, desktop logic, their tests and `replaynes-cli` build and pass
+on Windows; the setup below lets a Mac build, run and test Windows binaries without a Windows
+toolchain install.
+
+## The Windows frontend
+
+### Layout (shared with Linux)
+
+| Directory | What |
+|---|---|
+| `apps/desktop/` | shared SDL3 frontend: `app.cpp` (frame loop, `runApp`), `ui*.cpp`, input routing, pad navigation, OSK, audio DRC, perf stats, scripts (`rnl_app`); logic without SDL (`rnl_logic`: session lifecycle, emulation controller, library, thumbnails, settings, paths, l10n) + `test_desktop_frontend`; seams: `renderer.h` (`Renderer`), `platform/platform.h` (trash, open folder, gamescope), `update_service.h`, `fonts.h`, `export/mp4_export.h`, `render/post_process.h` / `crt_export.h`, `host_clock.h` |
+| `apps/linux/` | `main_linux.cpp`, `VkRenderer` (Vulkan FIFO + `VK_KHR_present_wait`), the Vulkan CRT (`src/render`), FFmpeg export (`src/export`), fontconfig fonts, Flatpak portal updates, Add to Steam, Flatpak manifest |
+| `apps/windows/` | `main_windows.cpp` (WIN32 subsystem, MMCSS "Games"), `D3D11Renderer`, Windows fonts, export / CRT stubs, resources (icon from `apps/macos/Resources/IconSource`, UTF-8 + per-monitor-v2 manifest, version info) |
+
+Platform services on Windows (`apps/desktop/src/platform/platform_windows.cpp`): Known Folders -
+library `Documents\ReplayNES\{ROM,Projects}`, session `%LOCALAPPDATA%\ReplayNES\Session`, settings
+`%APPDATA%\ReplayNES\{settings.ini,bindings.json}`; trash = Recycle Bin through `IFileOperation`
+(`FOFX_RECYCLEONDELETE`; the system asks before deleting permanently on a drive without a Recycle
+Bin); "Open Folder" = Explorer. Paths are UTF-8 strings: the executables (also the tests) declare
+`activeCodePage` UTF-8 in their manifest, so narrow file APIs and `std::filesystem` take them.
+
+### Build
+
+```bash
+git submodule update --init third_party/SDL     # SDL 3.4.18 (pinned release), built with the app
+scripts/build-windows.sh                        # Mac, llvm-mingw: build/windows-<arch>/apps/windows/ReplayNES.exe
+                                                # + dist/ReplayNES-<version>-windows-{x64,arm64}.zip
+```
+
+On Windows: `cmake -S . -B build -A x64` (or `-A ARM64`, `-T ClangCL`) `&& cmake --build build
+--config Release` -> `build/apps/windows/Release/ReplayNES.exe`. SDL3 is linked statically (no
+`SDL3.dll`); llvm-mingw builds are also `-static` and stripped (one 8 MB exe). The zip holds
+`ReplayNES.exe`, `README.txt` (`apps/windows/README.txt`), `LICENSE.txt` and
+`THIRD_PARTY_NOTICES.md`. CI (`.github/workflows/windows.yml`) builds it with MSVC x64 / arm64 and
+clang-cl, starts it (`--version`) and uploads `ReplayNES.exe` (MSVC) and the llvm-mingw zips.
+
+### Run
+
+`ReplayNES.exe [--rom FILE] [--fullscreen] [--lang ja|en] [--vrr] [--log FILE] ...` (`--help`; the
+same options as `replaynes-linux`, plus `--vrr` / `--log`). A WIN32-subsystem program: output goes to
+the console it was started from, or to `--log FILE`. Language: Japanese when the first Windows
+display language is Japanese (`--lang` / `REPLAYNES_LANG` override it). Fonts: Segoe UI, Yu Gothic
+(then Meiryo / BIZ UDGothic / MS Gothic) and Segoe UI Symbol from `%WINDIR%\Fonts`.
+
+Controls: the shared bindings (Steam Deck / Xbox layout by button position) - see the table in
+[STEAM_DECK.md](STEAM_DECK.md#controls) and `apps/windows/README.txt`; gamepads through SDL3
+(XInput, GameInput, raw input / HIDAPI for PlayStation and Switch Pro). Keyboard as on Linux (F11
+full screen, F3 statistics). The built-in on-screen keyboard works with a controller; Steam's
+keyboard is a Steam Deck feature.
+
+### Rendering and pacing (`apps/windows/src/d3d11_renderer.*`)
+
+* D3D11 device (hardware, FL 11_1 ... 10_0; WARP fallback, `REPLAYNES_D3D11_WARP=1` forces it),
+  flip-model swap chain `DXGI_SWAP_EFFECT_FLIP_DISCARD`, 3 buffers, B8G8R8A8, frame latency waitable
+  object + `SetMaximumFrameLatency(1)`, `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING` when supported. Full
+  screen is SDL's borderless full screen (independent flip when nothing covers it); no exclusive mode,
+  no DXGI Alt+Enter.
+* The picture: a dynamic 256x240 BGRA texture drawn nearest-neighbour into the shared `GameRect`
+  (integer / FILL, 8:7, overscan crop) by a quad shader (HLSL compiled at start with `D3DCompile`),
+  then `imgui_impl_dx11`. Filmstrip thumbnails: one 1024x1024 atlas (`UpdateSubresource`).
+* Pacing source (the Linux `vkWaitForPresentKHR` counterpart): a waiter thread reads
+  `IDXGISwapChain::GetFrameStatistics` whenever the waitable object signals (a frame left the queue)
+  and every 2 ms while presents are pending. A present is on screen when the statistics'
+  `PresentCount` reaches its `GetLastPresentCount()`, at `SyncQPCTime` - the vblank, on the QPC
+  clock that `nowSeconds()` uses on Windows. The refresh period comes from `SyncRefreshCount` /
+  `SyncQPCTime` differences over 1-3 s (`Renderer::refreshPeriod()`, used by the shared
+  `DisplayScheduler` instead of its timestamp estimate). Without statistics the waitable object's
+  signal time stands in. The shared frame loop then works as on Linux: cadence (60 Hz every refresh,
+  120 Hz every 2nd, 3:2, ...), `rnf_input_deadline` lead, input sampled just in time, DRC audio.
+* Timing on the host: `host_clock.h` = QPC; sleeps use a high-resolution waitable timer and a short
+  spin (the last 0.4 ms); the frame thread joins MMCSS "Games".
+* `--vrr`: in full screen, `Present(0, DXGI_PRESENT_ALLOW_TEARING)` and no present timing - the loop
+  paces itself on the host clock at the NES rate (60.0988 Hz) and a G-SYNC / FreeSync display
+  follows the presents. Windowed, or without tearing support, it presents with vsync as usual.
+
+### Not ported yet / limitations
+
+* CRT display and MP4 export: Settings -> Display says so; Export… is not on the hub, the Project
+  menu entry is disabled with the note. The seams stay (`render/post_process.h`,
+  `export/mp4_export.h`, `render/crt_export.h`; stubs in `apps/windows/src/export_unavailable.cpp`).
+* No in-app updates (Settings shows the version only), no "Add to Steam".
+* Not code-signed (SmartScreen asks on the first start of a downloaded zip).
+* Measured only in the VM (below): pacing / latency numbers of real x64 PCs with NVIDIA / AMD /
+  Intel drivers are still to be taken; `--vrr` is untested on a real VRR display.
 
 Three ways to build, from lightest to most "native":
 
@@ -14,6 +101,9 @@ Three ways to build, from lightest to most "native":
 | CMake on Windows itself | any Windows PC | MSVC / clang-cl | `cmake -S . -B build && cmake --build build --config Release && ctest --test-dir build -C Release` |
 
 No Visual Studio is installed in the VM; MSVC is only exercised by CI.
+
+The test executables include `test_desktop_frontend` (the shared desktop logic; also on macOS:
+`ctest` in a root build, and on the Deck: `ctest` in the `apps/linux` build).
 
 ## Cross-compiling on the Mac (llvm-mingw)
 
@@ -33,8 +123,8 @@ scripts/build-windows.sh aarch64    # one architecture
 
 CMake toolchain files: `cmake/toolchains/windows-{x86_64,aarch64}-llvm-mingw.cmake` (shared part
 `windows-llvm-mingw.cmake`). Executables are linked `-static` (no libc++/libunwind DLLs to copy).
-Built: engine, frontend core, the 20 test executables, `replaynes-cli.exe` and
-`replaynes-winprobe.exe` (below). Version-bump llvm-mingw in one place: `LLVM_MINGW_VERSION` in
+Built: the frontend `apps/windows/ReplayNES.exe` (+ the zips in `dist/`), engine, frontend core, the
+21 test executables, `replaynes-cli.exe` and `replaynes-winprobe.exe` (below). Version-bump llvm-mingw in one place: `LLVM_MINGW_VERSION` in
 the workflow plus the line above.
 
 ## The Windows VM (Parallels)
@@ -83,16 +173,31 @@ Mac shares). That is enough for building/test automation, so the built-in OpenSS
 |---|---|
 | `start.sh` | start / resume the VM, wait for the user session |
 | `stop.sh` | graceful shutdown (forced after `TIMEOUT`, default 120 s) |
-| `deploy.sh [arch\|all]` | copy `build/windows-<arch>/` executables to `%USERPROFILE%\ReplayNES-dev\<arch>` |
+| `deploy.sh [arch\|all]` | copy `build/windows-<arch>/` executables (tests, tools, `ReplayNES.exe`) to `%USERPROFILE%\ReplayNES-dev\<arch>` (stops a running `ReplayNES.exe` first) |
+| `run-app.sh [--arch a] [--wait] [--fresh-session] [args]` | start `ReplayNES.exe` in the desktop session with the guest-local library `%USERPROFILE%\ReplayNES-dev\Library` (`--wait`: until it exits, then its log; `APP_ENV="REPLAYNES_LANG=en ..."`) |
 | `run-tests.sh [arch\|all] [filter]` | deploy + run every test executable (ctest equivalent); logs in `build/windows-<arch>/vm-test-logs/`; exit status = failed count |
 | `probe.sh [arch] [--wait-input N]` | run `replaynes-winprobe` (graphics / audio / input report) |
 | `ssh.sh <cmd>` / `--ps <script>` / `--system <cmd>` | run a cmd.exe / PowerShell command in the guest |
-| `screenshot.sh [out.png]` | `prlctl capture` of the guest screen (`build/vm-shots/`) |
+| `screenshot.sh [--guest] [out.png]` | `prlctl capture` of the guest screen (`build/vm-shots/`); `--guest`: captured inside the guest (`guest-capture.ps1`, run hidden by `run-hidden.vbs`) - needed while `ReplayNES.exe` is on screen |
 
 ```bash
 scripts/build-windows.sh && scripts/windows-vm/start.sh && scripts/windows-vm/run-tests.sh
 scripts/windows-vm/stop.sh
 ```
+
+VM quirks met with the frontend:
+
+* **The VM's Documents folder is the Mac's** (`C:\Mac\Home\Documents`, Parallels shared profile):
+  `ReplayNES.exe` with its default library would read and write the Mac user's
+  `~/Documents/ReplayNES` (the macOS app's library). `run-app.sh` therefore always passes
+  `--library-root %USERPROFILE%\ReplayNES-dev\Library`; ROMs for testing are copied there (never
+  into the repository).
+* **`prlctl capture` returns a black screen while a Direct3D flip-model window is visible** (also
+  with the window not covering the screen). `screenshot.sh --guest` captures from inside the guest
+  instead; the frontend's own `--script "shot FILE"` (the presented frame, as on the Deck) is used
+  for the UI screenshots.
+* Every `prlctl exec` of a console program opens a Windows Terminal window in the user's session
+  (closed when it ends); `run-hidden.vbs` (wscript) avoids it for the capture.
 
 Tests take their scratch directory from `RN_TEST_TMP` at run time (the build tree's `tests/tmp`
 otherwise). `test_local_roms` / the ROM part of `test_flash_filter` skip in the VM: ROMs are never
@@ -110,7 +215,46 @@ Emulated x64 runs the CPU-heavy tests ~3x slower than native arm64 (`test_flash_
 171 s vs 63 s, `test_determinism` 104 s vs 35 s). That says nothing about a real x64 PC: use CI for
 x64 hardware.
 
+With the frontend (same day, later): aarch64 21/21 (with `test_desktop_frontend`, 187 s); x86_64
+`test_desktop_frontend` passed; `RN_TEST_RECYCLE_BIN=1` (moves a real file with a Japanese name
+to the Recycle Bin) passed; macOS root build `ctest` 21/21.
+
+### The frontend in the VM (2026-10-07; **VM numbers, not representative of a PC**)
+
+`scripts/windows-vm/run-app.sh --wait --fresh-session --perf-seconds 20 --warmup 8 --rom <SMB>`
+(Super Mario Bros. on the title / attract screen, 1280x800 window unless noted; the VM's display:
+1998x1594 at 120 Hz, "Parallels Display Adapter (WDDM)", D3D11 FL 11_1, tearing supported; WASAPI
+48 kHz). Ran: library, settings, hub, play, Japanese / English (`--lang`), window and full screen,
+`--vrr`, arm64 native and x64 emulated.
+
+| Run | cadence (refresh) | emulated fps | sample -> on screen p50 / p99 (ms) | judder/min | audio underruns |
+|---|---|---|---|---|---|
+| arm64, window | locked k=2 (120.20 Hz) | 59.86 | 17.4 / 28.9 | 822 | 6 |
+| arm64, full screen | free (118.3 Hz) | 59.81 | 17.3 / 29.2 | 897 | 7 |
+| arm64, full screen, `--vrr` | host clock | 60.12 | - (no present timing) | - | 0 |
+| x64 (emulated), window | locked k=2 (120.20 Hz) | 59.91 | 17.4 / 26.6 | 513 | 0 |
+
+What the VM shows: the presents reach the screen on a virtual vblank whose timestamps (DXGI
+`SyncQPCTime`) jitter by +-2 ms, presents miss their vblank often (the input lead sits at its
+16.7 ms maximum) and the guest's audio clock runs ~0.5 % slow against QPC (the DRC ratio sits at
+its 0.995 limit with `--vrr`). Found and fixed with it: present times taken from the frame
+statistics instead of the waitable object's signal (the signal comes when DWM takes the frame, a
+refresh before it is shown), the refresh period from vblank counts (the timestamp estimate flapped
+between 118 and 121 Hz, i.e. between "locked" and "free"), no catch-up frame when the cadence leaves
+"locked" (the shared `DisplayScheduler`; emulation ran at 63 fps), and a steady host-clock schedule
+for `--vrr` (58.5 -> 60.1 fps). Frame pacing, latency and VRR still need a real PC.
+
+Screenshots (in-app `--script "... shot FILE"`, the presented frames; `build/vm-shots/app/`):
+`library-{en,ja}`, `playing-{en,ja}`, `hub-{en,ja}`, `settings-display-{en,ja}`,
+`settings-audio-{en,ja}`, `settings-audio-playing-{en,ja}`; the desktop with the window:
+`build/vm-shots/desktop-playing.png` (`screenshot.sh --guest`).
+
 ### CI (`.github/workflows/windows.yml`)
+
+Since the frontend the jobs also build `replaynes-win` (MSVC x64 / arm64, clang-cl x64, llvm-mingw
+x86_64 + aarch64 with the release zips), start it once (`--version`) and upload `ReplayNES.exe` /
+the zips. Not run yet for this change (it was not pushed); the results below are the first run
+before the frontend.
 
 | Job | Runner | Result (first run) |
 |---|---|---|
@@ -146,10 +290,10 @@ through to the guest (the user's games work with them); none was attached during
 check one: attach it to the VM (Devices > USB), then `scripts/windows-vm/probe.sh aarch64
 --wait-input 15` and press a button (XInput slot + raw-input VID/PID are printed).
 
-## Recommendation for the Windows frontend
+## Rendering backend: why Direct3D 11
 
 **SDL3 for window / input / audio + a small Direct3D 11 renderer (Dear ImGui `imgui_impl_dx11`),
-not Vulkan.**
+not Vulkan** - the recommendation made before the port, now implemented.
 
 - D3D11 FL 11_0+ exists on every Windows 10/11 PC (x64 and arm64), in VMs, over Remote Desktop
   and on WARP; in this VM it is the only API with a real hardware path at full capability. ReplayNES

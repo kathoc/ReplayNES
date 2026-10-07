@@ -1,7 +1,10 @@
-# ReplayNES Linux / Steam Deck frontend (SDL3 + Vulkan + Dear ImGui) on the engine C API and the
-# shared frontend core (frontend/, rnf_*).
+# ReplayNES Linux / Steam Deck frontend: the shared desktop frontend (apps/desktop: SDL3 + Dear
+# ImGui UI, frame loop, logic) with the Linux parts here - the Vulkan renderer + CRT (src/render),
+# MP4 export (FFmpeg, src/export), fontconfig fonts, in-app updates through the Flatpak portal and
+# "Add to Steam".
 # Standalone project: configure this directory (the Flatpak manifest does, see
-# apps/linux/flatpak/io.github.replaynes.ReplayNES.yml); the engine comes from the repository root.
+# apps/linux/flatpak/io.github.replaynes.ReplayNES.yml); the engine, the frontend core and
+# apps/desktop come from the repository root.
 #   cmake -S apps/linux -B build-linux -G Ninja && cmake --build build-linux && ctest --test-dir build-linux
 # Needs SDL3 (>= 3.2), Vulkan headers + loader, glslc, fontconfig and FFmpeg's libavcodec /
 # libavformat / libavutil (MP4 export; FFmpeg 7.1 in the SDK, 8 on Homebrew) - all in
@@ -23,19 +26,24 @@ option(RNL_ENGINE_TESTS "Also build the engine + frontend core tests" OFF)
 option(RNL_EXPORT_ONLY "Build only the MP4 exporter (rnl_export, replaynes-export), no SDL/Vulkan app" OFF)
 
 set(REPLAYNES_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-# Engine + frontend core static libraries + replaynes-cli (make-test-rom for the perf runs).
+# Engine + frontend core static libraries + replaynes-cli (make-test-rom for the perf runs) + the
+# shared desktop frontend logic (apps/desktop: rnl_logic, test_desktop_frontend).
 set(REPLAYNES_BUILD_TESTS ${RNL_ENGINE_TESTS} CACHE BOOL "" FORCE)
+set(REPLAYNES_BUILD_WINDOWS_APP OFF CACHE BOOL "" FORCE)
+set(RNL_DESKTOP_TESTS ${RNL_BUILD_TESTS})
 option(REPLAYNES_BUILD_CLI "Build replaynes-cli" ON)
 add_subdirectory(${REPLAYNES_ROOT} replaynes)
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 include(GNUInstallDirs)
 set(RNL_WARNINGS -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+enable_testing()
 
 # MP4 export (FFmpeg libav*): static library used by the app + the headless replaynes-export tool.
+# Its header is shared (apps/desktop/src/export/mp4_export.h: the UI's ExportJob).
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavformat libavutil)
 add_library(rnl_export STATIC src/export/mp4_export.cpp)
-target_include_directories(rnl_export PUBLIC src/export)
+target_include_directories(rnl_export PUBLIC ${RNL_DESKTOP_DIR}/src/export)
 target_link_libraries(rnl_export PUBLIC replaynes_frontend replaynes_engine PkgConfig::FFMPEG Threads::Threads)
 target_compile_options(rnl_export PRIVATE ${RNL_WARNINGS})
 add_executable(replaynes-export src/export/export_cli.cpp)
@@ -50,7 +58,6 @@ find_package(Vulkan REQUIRED)
 find_program(GLSLC glslc REQUIRED)
 
 # CRT (Vulkan compute port of the nesterm physical model) + its headless conformance test.
-enable_testing()
 add_subdirectory(src/render)
 if(APPLE)
   # Development on a Mac (MoltenVK): only the platform-independent Vulkan parts build here.
@@ -74,61 +81,28 @@ foreach(sh blit.vert blit.frag)
   list(APPEND SHADER_INCS ${out})
 endforeach()
 
-# Dear ImGui (vendored, MIT, third_party/imgui): core + SDL3 / Vulkan backends.
-set(IMGUI_DIR ${REPLAYNES_ROOT}/third_party/imgui)
-add_library(rn_imgui STATIC
-  ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
-  ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp)
-target_include_directories(rn_imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
-target_compile_definitions(rn_imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS)
-target_link_libraries(rn_imgui PUBLIC SDL3::SDL3 Vulkan::Vulkan)
-
-# Frontend logic without SDL / Vulkan / ImGui (unit-tested headless): session lifecycle, the
-# emulation controller, library, thumbnails, settings, trash, l10n helpers.
-add_library(rnl_logic STATIC
-  src/app_model.cpp
-  src/emulation.cpp
-  src/l10n.cpp
-  src/library.cpp
-  src/manifest.cpp
-  src/paths.cpp
-  src/png_writer.cpp
-  src/settings.cpp
-  src/thumbnails.cpp
-  src/trash.cpp
-  src/ui_logic.cpp
-  src/osk.cpp
-  src/update_model.cpp)
-target_include_directories(rnl_logic PUBLIC src)
-target_link_libraries(rnl_logic PUBLIC replaynes_frontend replaynes_engine Threads::Threads)
-target_compile_options(rnl_logic PRIVATE ${RNL_WARNINGS})
-
-add_executable(replaynes-linux
-  src/main.cpp
-  src/vk_renderer.cpp
-  src/vk_ui_resources.cpp
-  src/audio_out.cpp
-  src/fonts.cpp
-  src/input_router.cpp
-  src/perf_stats.cpp
-  src/script.cpp
-  src/ui.cpp
-  src/ui_pages.cpp
-  src/ui_play.cpp
-  src/ui_settings.cpp
-  src/ui_export.cpp
-  src/ui_osk.cpp
-  src/ui_update.cpp
-  src/update_service.cpp
-  ${SHADER_INCS})
-target_include_directories(replaynes-linux PRIVATE src ${SHADER_OUT})
-target_link_libraries(replaynes-linux PRIVATE rnl_logic rnl_crt_export rnl_render rnl_export rn_imgui SDL3::SDL3 Vulkan::Vulkan
-  PkgConfig::FONTCONFIG Threads::Threads)
-target_compile_options(replaynes-linux PRIVATE ${RNL_WARNINGS})
 # The version of the release (root CMakeLists.txt): --version, the update notice.
 file(STRINGS ${REPLAYNES_ROOT}/CMakeLists.txt RNL_ROOT_PROJECT REGEX "^project\\(ReplayNES VERSION")
 string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" RNL_APP_VERSION "${RNL_ROOT_PROJECT}")
-target_compile_definitions(replaynes-linux PRIVATE RNL_APP_VERSION="${RNL_APP_VERSION}")
+
+# The shared application (apps/desktop/app.cmake): rn_imgui + rnl_app.
+set(RNL_SDL3_TARGET SDL3::SDL3)
+set(RNL_APP_FEATURES RNL_HAVE_STEAM=1 RNL_HAVE_MP4_EXPORT=1 RNL_HAVE_CRT=1)
+include(${RNL_DESKTOP_DIR}/app.cmake)
+target_include_directories(rnl_app PUBLIC src)  # steam_shortcut.h (RNL_HAVE_STEAM)
+
+add_executable(replaynes-linux
+  src/main_linux.cpp
+  src/vk_renderer.cpp
+  src/vk_ui_resources.cpp
+  src/fonts_fontconfig.cpp
+  src/update_service_flatpak.cpp
+  ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+  ${SHADER_INCS})
+target_include_directories(replaynes-linux PRIVATE src ${SHADER_OUT})
+target_link_libraries(replaynes-linux PRIVATE rnl_app rnl_crt_export rnl_render rnl_export SDL3::SDL3 Vulkan::Vulkan
+  PkgConfig::FONTCONFIG Threads::Threads)
+target_compile_options(replaynes-linux PRIVATE ${RNL_WARNINGS})
 # In-app updates through the XDG Flatpak portal (GDBus; GLib is in org.freedesktop.Platform).
 pkg_check_modules(GIO IMPORTED_TARGET gio-2.0 gio-unix-2.0)
 if(GIO_FOUND)
@@ -138,16 +112,8 @@ else()
   message(STATUS "gio-2.0 not found: in-app updates (Flatpak portal) disabled")
 endif()
 
-if(RNL_BUILD_TESTS)
-  set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
-  file(MAKE_DIRECTORY ${RNL_TEST_TMP})
-  add_executable(test_linux_frontend tests/test_linux_frontend.cpp ${REPLAYNES_ROOT}/tests/support/rn_test_main.cpp)
-  target_include_directories(test_linux_frontend PRIVATE ${REPLAYNES_ROOT}/tests)
-  target_link_libraries(test_linux_frontend PRIVATE rnl_logic)
-  target_compile_definitions(test_linux_frontend PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}")
-  add_test(NAME test_linux_frontend COMMAND test_linux_frontend)
-  set_tests_properties(test_linux_frontend PROPERTIES TIMEOUT 300)
-endif()
+set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
+file(MAKE_DIRECTORY ${RNL_TEST_TMP})
 
 install(TARGETS replaynes-linux RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(REPLAYNES_BUILD_CLI)

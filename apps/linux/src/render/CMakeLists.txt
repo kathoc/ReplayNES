@@ -23,7 +23,8 @@ endforeach()
 
 add_library(rnl_render STATIC crt_model.cpp crt_renderer.cpp headless_vulkan.cpp crt_display.cpp ${CRT_SPV})
 target_include_directories(rnl_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/.. PRIVATE ${CRT_SHADER_OUT})
-target_link_libraries(rnl_render PUBLIC replaynes_frontend Vulkan::Vulkan Threads::Threads)
+# rnl_logic: CrtSettings / post_process.h (apps/desktop/src/render) and the frontend core.
+target_link_libraries(rnl_render PUBLIC rnl_logic replaynes_frontend Vulkan::Vulkan Threads::Threads)
 target_compile_options(rnl_render PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 
 add_executable(replaynes-crt-test crt_test.cpp)

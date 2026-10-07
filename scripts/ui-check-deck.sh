@@ -12,7 +12,7 @@
 #   LIBRARY=scratch       a scratch library (~/.var/app/<id>/data/ui-check/library) whose ROM folder
 #                         hard-links Super Mario Bros. and the generated test ROM (two games to switch
 #                         between; projects made by the run stay out of the user's library)
-# Script commands: apps/linux/src/script.h. "shot NAME" writes into the remote shots folder;
+# Script commands: apps/desktop/src/script.h. "shot NAME" writes into the remote shots folder;
 # "pad a|b|x|y|up|down|left|right|l1|r1|l2|r2|menu|view|r3" injects a controller press (SDL events
 # of pad 0, through the same path as a real press).
 # The app runs with a scratch session folder (~/.var/app/<id>/data/ui-check/session), so the

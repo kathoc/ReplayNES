@@ -68,6 +68,15 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
 
 Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden while you play, so it does not add latency.
 
+## Windows (preview)
+
+ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Steam Deck / Linux version's interface: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, English / Japanese, display-locked low-latency pacing (Direct3D 11). **Not yet on Windows: the CRT display, MP4 export and in-app updates.** Details: [docs/WINDOWS.md](docs/WINDOWS.md).
+
+1. **Install**: unzip `ReplayNES-<version>-windows-x64.zip` (`-arm64` for Windows on Arm) anywhere and run `ReplayNES.exe` (no installer, no DLLs). Not code-signed yet: SmartScreen may ask once ("More info" → "Run anyway").
+2. **ROMs**: put `.nes` files into `Documents\ReplayNES\ROM` ("Open Folder" in the library opens it in Explorer). "Play" starts a project in `Documents\ReplayNES\Projects`. The temporary session lives in `%LOCALAPPDATA%\ReplayNES\Session`, settings in `%APPDATA%\ReplayNES`. Reset Project / Save As move replaced projects to the Recycle Bin.
+3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L2 / R2 hold = rewind / fast-forward, R1 or R3 = pause + menu, L1 = slow); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 menu, F11 full screen. Everything is reassignable in Settings.
+4. **Display**: F11 / Settings → Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen.
+
 ## Usage
 
 ### Getting Started
@@ -258,7 +267,7 @@ What it reads and writes is limited to the ROMs and projects you specify, the Li
 - Pixel-perfect integer scaling happens only at a 1:1 pixel aspect ratio. At 8:7, the horizontal scaling width is not uniform.
 - The UI is available in English and Japanese. It has been tested only on Apple Silicon. Testing with physical game controllers has been limited.
 - Because it has not been notarized, the first launch requires some steps (see [Installation](#installation)).
-- There is no Windows version yet (planned). The Steam Deck / Linux version is a preview (see [Steam Deck / Linux](#steam-deck--linux-preview)).
+- The Steam Deck / Linux and Windows versions are previews (see [Steam Deck / Linux](#steam-deck--linux-preview) and [Windows](#windows-preview)); the Windows version has no CRT display, MP4 export or in-app updates yet.
 
 ## Build from Source
 
@@ -278,7 +287,7 @@ The engine and tests (common to macOS / Linux / Windows) are as follows.
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && ninja -C build && ctest --test-dir build
 ```
 
-Windows: the engine, frontend core and tests build with MSVC / clang-cl, or are cross-compiled on a Mac with llvm-mingw (`scripts/build-windows.sh`) and run in a Windows VM; see [docs/WINDOWS.md](docs/WINDOWS.md).
+Windows: the app (`ReplayNES.exe`, target `replaynes-win`; SDL3 comes from the submodule `third_party/SDL`), engine, frontend core and tests build with MSVC / clang-cl (`cmake -S . -B build && cmake --build build --config Release`), or are cross-compiled on a Mac with llvm-mingw (`scripts/build-windows.sh`, which also makes `dist/ReplayNES-<version>-windows-{x64,arm64}.zip`) and run in a Windows VM; see [docs/WINDOWS.md](docs/WINDOWS.md). The Linux and Windows apps share their UI and frame loop (`apps/desktop`).
 
 With the command-line tool `replaynes-cli`, you can verify determinism (`determinism`), verify projects (`verify`), generate test ROMs (`make-test-rom`), and more.
 

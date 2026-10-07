@@ -68,6 +68,15 @@ ReplayNES は Steam Deck（SteamOS 3、ゲームモード / デスクトップ�
 
 日本語の表示にはシステムの CJK フォントを使います（SteamOS には入っています）。プレイ中は UI を表示しないので、遅延は増えません。
 
+## Windows（プレビュー版）
+
+ReplayNES は Windows 10 / 11（x64 と ARM64）でも、インストール不要のアプリとして動きます。画面と機能は Steam Deck / Linux 版と同じです：ライブラリ、テイク付きの巻き戻しと録り直し、フィルムストリップのタイムライン、練習（A/B）、ブックマーク、自動保存と再開、フラッシュ低減、英語 / 日本語、画面に同期した低遅延の進行（Direct3D 11）。**Windows 版にまだないもの：ブラウン管 (CRT) 表示、MP4 書き出し、アプリ内アップデート。** 詳しくは [docs/WINDOWS.md](docs/WINDOWS.md)。
+
+1. **インストール**：`ReplayNES-<version>-windows-x64.zip`（Windows on Arm は `-arm64`）を好きな場所に展開して `ReplayNES.exe` を起動します（インストーラーも DLL もありません）。まだコード署名していないため、初回に SmartScreen が確認することがあります（「詳細情報」→「実行」）。
+2. **ROM**：`.nes` ファイルを `ドキュメント\ReplayNES\ROM` に入れます（ライブラリの「フォルダを開く」でエクスプローラーが開きます）。「プレイ」で `ドキュメント\ReplayNES\Projects` にプロジェクトが作られます。一時セッションは `%LOCALAPPDATA%\ReplayNES\Session`、設定は `%APPDATA%\ReplayNES` にあります。プロジェクトのリセットや「別名で保存」で置き換えたプロジェクトはごみ箱に移ります。
+3. **操作**：Xbox 系コントローラー（XInput / GameInput）、PlayStation、Switch Pro コントローラーに対応し、割り当ては Steam Deck 版と同じです（位置で A = NES の B、B = NES の A、メニュー / ビュー = START / SELECT、L2 / R2 長押し = 巻き戻し / 早送り、R1 か R3 = 一時停止してメニュー、L1 = スロー）。キーボードは矢印、X / Z、Enter、右 Shift、Space 一時停止、Backspace 巻き戻し、Tab 早送り、Esc / F1 メニュー、F11 全画面。すべて設定で変更できます。
+4. **表示**：F11 か 設定 → 全画面（ボーダーレス）。G-SYNC / FreeSync のディスプレイでは `ReplayNES.exe --vrr` で、全画面時にテアリングを許可して NES 本来の 60.0988 Hz で表示します。
+
 ## 使い方
 
 ### はじめる
@@ -258,7 +267,7 @@ ReplayNES がネットワークに接続するのは、アップデートの確�
 - 画素がぴったり揃った整数倍の拡大になるのは、ピクセル比 1:1 のときだけです。8:7 では横方向の拡大幅が均一になりません。
 - UI は英語と日本語に対応しています（システムの言語設定に従います）。動作確認は Apple Silicon でしか行っていません。実機のゲームコントローラーでの確認は限られています。
 - 公証を受けていないため、初回の起動に手順が必要です（[インストール](#インストール)を参照）。
-- Windows 版はまだありません（予定しています）。Steam Deck / Linux 版はプレビュー版です（[Steam Deck / Linux](#steam-deck--linuxプレビュー版) を参照）。
+- Steam Deck / Linux 版と Windows 版はプレビュー版です（[Steam Deck / Linux](#steam-deck--linuxプレビュー版)、[Windows](#windowsプレビュー版) を参照）。Windows 版にはブラウン管 (CRT) 表示、MP4 書き出し、アプリ内アップデートがまだありません。
 
 ## ソースからビルド
 
@@ -278,7 +287,7 @@ cd ReplayNES && scripts/build-macos.sh
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && ninja -C build && ctest --test-dir build
 ```
 
-Windows 向けには、エンジン・フロントエンドコア・テストを MSVC / clang-cl でビルドするか、Mac 上で llvm-mingw によりクロスビルド（`scripts/build-windows.sh`）して Windows VM で実行できます。詳しくは [docs/WINDOWS.md](docs/WINDOWS.md) を参照してください。
+Windows 向けには、アプリ（`ReplayNES.exe`、ターゲット `replaynes-win`。SDL3 はサブモジュール `third_party/SDL` から）・エンジン・フロントエンドコア・テストを MSVC / clang-cl でビルドするか（`cmake -S . -B build && cmake --build build --config Release`）、Mac 上で llvm-mingw によりクロスビルド（`scripts/build-windows.sh`。`dist/ReplayNES-<version>-windows-{x64,arm64}.zip` も作ります）して Windows VM で実行できます。詳しくは [docs/WINDOWS.md](docs/WINDOWS.md) を参照してください。Linux 版と Windows 版は UI とフレームループを共有しています（`apps/desktop`）。
 
 コマンドラインツール `replaynes-cli` で、決定論の検証（`determinism`）、プロジェクトの検証（`verify`）、テスト ROM の生成（`make-test-rom`）などができます。
 
