@@ -130,9 +130,12 @@ Results (2026-10-07):
 
 GPU time in the VM: the Parallels adapter returns no usable timestamps (so build-ahead / adaptive
 resolution never engage there); GPU-bound throughput (`--bench`, default effects, RF input):
-**9.1 ms per frame at 1144x858, 14.9 ms at 1600x1200** (WARP: 324 ms at 1144x858). The live view in
-the 1280x800 window (tube 960x720) holds 60 fps. MP4 export with "Apply CRT effect" runs the same
-renderer on its own device (`crt_export_d3d11.cpp`; hardware, else WARP): 44 fps at 1280x960 in the VM.
+**9.1 ms per frame at 1144x858, 14.9 ms at 1600x1200** (WARP: 324 ms at 1144x858). Live view, SMB,
+1280x800 window (tube 960x720), `--perf-seconds 20`: 59.0 fps presented with the CRT vs 59.4 without
+it in the same session (the VM's own pacing noise dominates; see below). Shader compilation: 1.8 s
+(arm64 and emulated x64). MP4 export with "Apply CRT effect" runs the same renderer on its own
+device (`crt_export_d3d11.cpp`; hardware, else WARP): 44 fps at 1280x960 in the VM. CI (WARP on the
+x64 / arm64 runners): the conformance passes with fast == direct bit-identical (40-49 s).
 
 ### MP4 export (Media Foundation; `apps/windows/src/mp4_export_mf.cpp`)
 
@@ -320,8 +323,9 @@ Emulated x64 runs the CPU-heavy tests ~3x slower than native arm64 (`test_flash_
 171 s vs 63 s, `test_determinism` 104 s vs 35 s). That says nothing about a real x64 PC: use CI for
 x64 hardware.
 
-With the frontend (same day, later): aarch64 21/21 (with `test_desktop_frontend`, 187 s); x86_64
-`test_desktop_frontend` passed; `RN_TEST_RECYCLE_BIN=1` (moves a real file with a Japanese name
+With the CRT / export / update work (same day, later): aarch64 22/22 (with `test_crt_d3d11`, 210 s),
+x86_64 22/22 (590 s; `test_crt_d3d11` 30 s on the Parallels adapter). With the frontend (earlier):
+aarch64 21/21 (with `test_desktop_frontend`, 187 s); x86_64 `test_desktop_frontend` passed; `RN_TEST_RECYCLE_BIN=1` (moves a real file with a Japanese name
 to the Recycle Bin) passed; macOS root build `ctest` 21/21.
 
 ### The frontend in the VM (2026-10-07; **VM numbers, not representative of a PC**)
@@ -353,13 +357,21 @@ Screenshots (in-app `--script "... shot FILE"`, the presented frames; `build/vm-
 `library-{en,ja}`, `playing-{en,ja}`, `hub-{en,ja}`, `settings-display-{en,ja}`,
 `settings-audio-{en,ja}`, `settings-audio-playing-{en,ja}`; the desktop with the window:
 `build/vm-shots/desktop-playing.png` (`screenshot.sh --guest`).
+CRT / export / updates: `play-plain`, `play-crt`, `play-crt-off` (arm64), `x64-plain`, `x64-crt`,
+`x64-crt-off`, `settings-display-crt-{en,ja}`, `final-system-{en,ja}` (Settings -> System with the
+update controls), `final-export-{en,ja}`; WinSparkle's error for a wrongly signed update:
+`build/vm-shots/update-bad-signature.png` (`prlctl capture` worked here - the app was behind
+WinSparkle's window).
 
 ### CI (`.github/workflows/windows.yml`)
 
 Since the frontend the jobs also build `replaynes-win` (MSVC x64 / arm64, clang-cl x64, llvm-mingw
 x86_64 + aarch64 with the release zips), start it once (`--version`) and upload `ReplayNES.exe` /
-the zips. Not run yet for this change (it was not pushed); the results below are the first run
-before the frontend.
+the zips. Since the CRT / export / updates: ctest includes `crt_conformance_d3d11` (WARP), the
+macOS job checks the generated HLSL against the GLSL (`generate-crt-hlsl.sh --check`), the x64 runner
+also runs `replaynes-export --self-test` (Media Foundation is present on the Server 2025 runner;
+informational step) and the artifacts include `WinSparkle.dll`. All jobs green (22/22 tests); the
+table below is the first run before the frontend.
 
 | Job | Runner | Result (first run) |
 |---|---|---|
