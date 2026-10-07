@@ -89,6 +89,7 @@ ssh "$HOST" "set -e; cd ~  # paths are relative to the home folder
 G=\$HOME/$SIGN_HOME
 [ -d \"\$G\" ] || { echo 'no signing key at '\$G' (docs/RELEASE.md: Flatpak repository)' >&2; exit 1; }
 [ -f $DEST/config ] || ostree init --mode=archive-z2 --repo=$DEST
+mkdir -p $DEST/refs/heads $DEST/refs/remotes $DEST/refs/mirrors  # git does not keep empty dirs; ostree needs them
 flatpak build-commit-from --src-repo=$RDIR/repo --gpg-sign=$GPG_KEY --gpg-homedir=\"\$G\" --no-update-summary \
   --subject='ReplayNES $VERSION' $DEST app/$APP_ID/x86_64/master
 flatpak build-update-repo --title=ReplayNES --homepage=https://github.com/$GH_REPO --default-branch=master \
