@@ -152,9 +152,9 @@ buttons, controller first:
 | Resume | back to the game (also B, R1 or Menu (≡) anywhere on the hub) |
 | Back to Library | closes the game (a temporary session asks "Do you want to save?" first) and shows the start screen |
 | Settings | Display, Audio & Controls, Controller (a diagram of the connected pad: select a button, press A and pick its action), Game Input & Hotkeys; L1 / R1 switch these tabs |
-| Practice | the 8 A/B sections (set A / B, practice, rename, clear) and which section the timeline's X / Y set |
+| Practice | the 8 A/B sections (set A / B, practice, rename - Y on a row or "Rename…" -, clear) and which section the timeline's X / Y set |
 | Takes | "Re-record from Here", "Back to Previous Take", every take with its branch point |
-| Bookmarks | add, rewind to, rename (Steam's on-screen keyboard opens), delete |
+| Bookmarks | add, rewind to, rename (Y on a row, or "Rename…"; an on-screen keyboard opens), delete |
 | Export… | MP4 export (picture / processing in two columns; codec and the output folder under "Advanced") |
 | Reset… | Soft Reset, Power Cycle (recorded like the console's buttons) or Reset Project… |
 | Controls Guide | the tables below (also View (⧉) from anywhere) |
@@ -189,6 +189,33 @@ recorded content (Save… / Don't Save) or a project has unsaved changes; a temp
 from an earlier run is offered for saving first. A second running copy of ReplayNES neither resumes
 nor keeps sessions.
 
+**Typing: on-screen keyboards.** A text field (Search ROMs, a bookmark / section name, Save As, the
+export file name) brings an on-screen keyboard; Settings → Audio & Controls → "On-screen keyboard"
+chooses which:
+
+- **Auto** (default): Steam's keyboard where it can be asked for (Steam on a Steam Deck: SDL opens
+  `steam://open/keyboard`, which goes through the OpenURI portal to Steam), otherwise the built-in
+  one; a hardware keyboard / mouse outside Gaming Mode gets none. While Steam's keyboard is up, Steam
+  Input has the controller, so a button press that still reaches ReplayNES means it did not appear:
+  A (and the others) then bring the built-in keyboard, B / Menu (≡) end the input keeping the text. A
+  hint under the field says so.
+- **Built-in**: ReplayNES's controller keyboard (QWERTY + digits, a symbols page): D-pad / left stick
+  move between keys, A types, B deletes (on an empty field: closes the keyboard, restoring the text),
+  X space, Y Shift (twice: Caps Lock), L1 / R1 move the text cursor, View (⧉) letters / symbols,
+  Menu (≡) done. Taps on its keys work too. It sits at the bottom, or at the top when the field
+  would be under it. With Auto on a Deck it has a "Steam Keyboard" key (for Japanese).
+- **Steam**: Steam's keyboard only (a press that reaches ReplayNES asks for it again).
+
+Why the fallback: on the Deck (SteamOS 3.8, gamescope 3.16) Steam received ReplayNES's request
+(`ExecuteSteamURL: "steam://open/keyboard?..."` in `~/.local/share/Steam/logs/console_log.txt`) but
+showed nothing in one long-running session (no switch of the controller to Steam's UI config, the
+overlay stayed hidden; STEAM+X did not show it either), while freshly started ReplayNES instances got
+Steam's keyboard every time. ReplayNES runs as an X11 client of gamescope's Xwayland there
+(`DISPLAY=:1`, no `WAYLAND_DISPLAY`), so the video driver is not the cause; the Flatpak sandbox drops
+Steam's overlay (`LD_PRELOAD` of `gameoverlayrenderer.so`), which Steam's keyboard does not need
+here. **Renaming**: Bookmarks and Practice pages - Y on the focused row (the prompt bar shows "Y
+Rename") or its "Rename…" button. Takes have numbers only; a project's name is its file name (Save As).
+
 **Language:** Japanese when the system's first language is Japanese, English otherwise
 (`REPLAYNES_LANG=ja|en` overrides it). Japanese text uses the system's CJK font through fontconfig
 (SteamOS: Noto Sans CJK); without one the UI stays in English.
@@ -200,7 +227,7 @@ nor keeps sessions.
 | D-pad / left stick | NES D-pad | move the focus |
 | A (south) | NES B (by position, as on macOS: Nintendo's A/B) | choose |
 | B (east) | NES A | back (hub: resume play; dialogs: cancel) |
-| Y (north) / X (west) | turbo A / turbo B | library: Y search (on-screen keyboard), X continue the latest project; timeline: Y / X set B / A |
+| Y (north) / X (west) | turbo A / turbo B | library: Y search (on-screen keyboard), X continue the latest project; Bookmarks / Practice: Y rename the focused row; timeline: Y / X set B / A |
 | Menu (≡) | START | hub: resume; page: back to the hub; library: Settings |
 | View (⧉) | SELECT | Controls Guide on / off |
 | L2 hold | rewind | rewind (hub) |
@@ -396,8 +423,10 @@ Renderer hashes are identical on the Deck and on macOS.
 2. 90 Hz shows the 3:2 pattern; 60 Hz (QAM) is recommended until a measured comparison exists.
 3. Gamepad navigation was verified with scripted ImGui gamepad events and screenshots of the
    presented frames (`scripts/ui-check-deck.sh`); a hands-on pass with the built-in controls
-   (Steam Input template, R3, holding A on the rewind / fast-forward buttons) and Steam's on-screen
-   keyboard for renaming (SDL_StartTextInput from the Flatpak) is still to do.
+   (Steam Input template, R3, holding A on the rewind / fast-forward buttons) is still to do. The
+   on-screen keyboards were checked on the Deck with injected presses: the built-in one types and
+   renames; Steam's keyboard opens from the Flatpak and the A fallback closes it; typing on Steam's
+   keyboard itself (and Japanese through it) needs a hands-on check.
 4. Japanese needs a CJK font on the host (SteamOS has Noto Sans CJK); no font is bundled. Without
    one the UI stays in English.
 5. CRT at full screen costs ~11.8 ms of GPU per frame on the Deck (RADV, 1600 MHz): 60 fps holds,

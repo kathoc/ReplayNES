@@ -30,6 +30,9 @@ struct Settings {
   bool pauseAfterRewind = true;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
+  // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),
+  // "builtin" (ReplayNES's controller keyboard), "steam" (Steam's only). See osk.h.
+  std::string onScreenKeyboard = "auto";
   // System
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
   // Input layout version of the saved bindings (RNF_CONTROLLER_LAYOUT_VERSION; 0 = never saved).

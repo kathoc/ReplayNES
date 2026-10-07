@@ -4,7 +4,11 @@
 // events carry everything already. All pads are merged; the left stick also drives the D-pad keys
 // (focus moves with either), with hysteresis. X (west) is fed as kPadX instead of
 // ImGuiKey_GamepadFaceLeft: ImGui uses that key to open its window switcher when held, which the
-// UI never wants (X sets A on the timeline / continues a project in the library).
+// UI never wants (X sets A on the timeline / continues a project in the library). Y (north) is fed
+// as kPadY instead of ImGuiKey_GamepadFaceUp: ImGui activates the focused item with it ("text
+// input" - a press on a button clicks it), while the UI uses Y for its own actions (search, rename,
+// set B). While a text field has the controller (the on-screen keyboard, ui_osk.cpp) nothing is
+// fed (setSuppressed); buttons still held when that ends are fed only after their release.
 // Frame-loop thread only (events are polled there).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
@@ -15,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <set>
 #include <utility>
 
 #include "imgui.h"
@@ -23,6 +28,8 @@ namespace rnl {
 
 /// The UI's key for the controller's X (west) button (see above).
 constexpr ImGuiKey kPadX = ImGuiKey_F24;
+/// The UI's key for the controller's Y (north) button (see above).
+constexpr ImGuiKey kPadY = ImGuiKey_F23;
 
 class PadNavFeed {
  public:
@@ -52,6 +59,20 @@ class PadNavFeed {
     publish();
   }
 
+  /// Feeds nothing to ImGui while on (all keys released); the pads' state is still followed.
+  void setSuppressed(bool on) {
+    if (on == suppressed_) return;
+    suppressed_ = on;
+    if (!on) {
+      // Keys held now (e.g. Menu (≡) that ended the text input) wait for their release.
+      held_.clear();
+      for (const auto& [k, v] : current_)
+        if (v.first) held_.insert(k);
+    }
+    publish();
+  }
+  bool suppressed() const { return suppressed_; }
+
   /// A controller button / stick moved since the last call (the UI shows its prompts then).
   bool takeActivity() {
     bool a = activity_;
@@ -75,7 +96,7 @@ class PadNavFeed {
     };
     static const Map maps[] = {
         {ImGuiKey_GamepadFaceDown, SDL_GAMEPAD_BUTTON_SOUTH, -1},  {ImGuiKey_GamepadFaceRight, SDL_GAMEPAD_BUTTON_EAST, -1},
-        {kPadX, SDL_GAMEPAD_BUTTON_WEST, -1},                      {ImGuiKey_GamepadFaceUp, SDL_GAMEPAD_BUTTON_NORTH, -1},
+        {kPadX, SDL_GAMEPAD_BUTTON_WEST, -1},                      {kPadY, SDL_GAMEPAD_BUTTON_NORTH, -1},
         {ImGuiKey_GamepadStart, SDL_GAMEPAD_BUTTON_START, -1},     {ImGuiKey_GamepadBack, SDL_GAMEPAD_BUTTON_BACK, -1},
         {ImGuiKey_GamepadL1, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, -1}, {ImGuiKey_GamepadR1, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, -1},
         {ImGuiKey_GamepadL3, SDL_GAMEPAD_BUTTON_LEFT_STICK, -1},   {ImGuiKey_GamepadR3, SDL_GAMEPAD_BUTTON_RIGHT_STICK, -1},
@@ -116,6 +137,12 @@ class PadNavFeed {
   }
 
   void emit(ImGuiIO& io, ImGuiKey key, bool down, float value) {
+    current_[key] = {down, value};
+    if (suppressed_) down = false, value = 0.0f;
+    if (held_.count(key)) {
+      if (down) down = false, value = 0.0f;
+      else held_.erase(key);
+    }
     auto it = sent_.find(key);
     if (it != sent_.end() && it->second.first == down && std::fabs(it->second.second - value) < 0.02f) return;
     sent_[key] = {down, value};
@@ -125,6 +152,9 @@ class PadNavFeed {
 
   std::map<SDL_JoystickID, Pad> pads_;
   std::map<ImGuiKey, std::pair<bool, float>> sent_;
+  std::map<ImGuiKey, std::pair<bool, float>> current_;  // the pads' state (also while suppressed)
+  std::set<ImGuiKey> held_;                             // down when suppression ended: fed after release
+  bool suppressed_ = false;
   bool activity_ = false;
 };
 

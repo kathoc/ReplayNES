@@ -125,6 +125,7 @@ bool UI::interactive() const {
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
 
 void UI::padUsed() {
+  lastInputKeyboardOrMouse_ = false;
   if (ImGui::GetCurrentContext()) ImGui::SetNavCursorVisible(true);
 }
 
@@ -252,6 +253,7 @@ GameRect UI::gameRect(int w, int h) const {
 void UI::build(double now) {
   if (noticeTime_ < 0) noticeTime_ = now;
   prompts_.clear();
+  renamePrompt_.clear();
   refreshUpdate();
   // Hold buttons (rewind / fast-forward) set these again while they are held.
   d_.emu->setRewindHeld(false);
@@ -293,6 +295,7 @@ void UI::build(double now) {
   buildAssignPicker();
   buildExportDialog();
   buildExportProgressPill();
+  updateTextEntry(now);  // after every text field of the frame (ui_osk.cpp)
   if (interactive()) drawFocusRing();
   popupLastFrame_ = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
   activeLastFrame_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput;
@@ -628,6 +631,7 @@ void UI::buildMenu(double now) {
     bool session = hasSession();
     if (tab_ != Tab::library) {
       prompt({"face.south"}, TR("Select"));
+      if (!renamePrompt_.empty()) prompt({"face.north"}, renamePrompt_);
       prompt({"face.east"}, session ? TR("Back to Menu") : TR("Back to Library"));
       if (tab_ == Tab::settings) prompt({"leftShoulder", "rightShoulder"}, TR("Switch Tabs"));
       else if (session) prompt({"leftShoulder", "rightShoulder"}, TR("Previous / Next Page"));
@@ -1013,8 +1017,10 @@ void UI::buildChooser() {
     } else {
       if (ImGui::Button(TR("Cancel"))) cancelled = true;
     }
-    ImGui::SameLine(0, S(24));
-    inlinePrompts(TR("Back"));
+    if (!textEntryOwnsPad()) {  // the on-screen keyboard shows its own buttons
+      ImGui::SameLine(0, S(24));
+      inlinePrompts(TR("Back"));
+    }
     if (!ImGui::GetIO().WantTextInput && !appearing &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
       if (!c.confirmReplace.empty()) c.confirmReplace.clear();
@@ -1057,8 +1063,8 @@ void UI::buildRename() {
     if (ImGui::Button(TR("OK"), ImVec2(S(120), 0))) ok = true;
     ImGui::SameLine();
     if (ImGui::Button(TR("Cancel"), ImVec2(S(120), 0))) cancel = true;
-    ImGui::TextDisabled("%s", TR("Y: type with the on-screen keyboard · Enter / OK: done"));
-    inlinePrompts(TR("Cancel"));
+    ImGui::TextDisabled("%s", TR("Type with the on-screen keyboard. Menu (≡) / Enter: done"));
+    if (!textEntryOwnsPad()) inlinePrompts(TR("Cancel"));  // the keyboard shows its own buttons
     if (!io.WantTextInput && !ImGui::IsWindowAppearing() &&
         (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
       cancel = true;

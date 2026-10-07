@@ -8,6 +8,8 @@
 //                           a = south, b = east, x = west, y = north), up down left right, l1 r1 l2 r2,
 //                           menu (= start, ≡), view (= back, ⧉), l3 r3
 //   padhold <button> <s>    the same, held for <s> seconds (the script goes on meanwhile)
+//   osktype <text>          types <text> on the built-in on-screen keyboard (its D-pad / A / Y / View
+//                           presses, as "pad" commands; a text field must have the built-in keyboard)
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | panel | shot <file.png> | quit
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)

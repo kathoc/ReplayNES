@@ -13,8 +13,9 @@
 //    B / R / Menu (≡) on the hub resume play. Emulation is paused while the menu is open and
 //    nothing reaches the game. Controller conventions: ui_logic.h; button prompts for the
 //    controller in use are shown at the bottom of every screen.
-// Dialogs / file chooser / rename are modal popups (DialogHost); text fields start SDL text
-// input, which shows Steam's on-screen keyboard in Gaming Mode.
+// Dialogs / file chooser / rename are modal popups (DialogHost). A text field that becomes active
+// gets an on-screen keyboard (ui_osk.cpp, Settings -> On-screen keyboard): Steam's (SDL text input
+// asks Steam for it in Gaming Mode) or the built-in controller keyboard (osk.h).
 // Frame-loop thread only.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
@@ -33,6 +34,7 @@
 #include "dialogs.h"
 #include "mp4_export.h"
 #include "imgui.h"
+#include "osk.h"
 #include "replaynes/frontend.h"
 #include "steam_shortcut.h"
 #include "ui_logic.h"
@@ -117,6 +119,22 @@ class UI : public DialogHost {
   CrtSettings crtSettings() const;
   /// A controller button / stick was used (the focus ring shows).
   void padUsed();
+  /// A key / mouse button (not touch) was used: a text field activated by them gets no on-screen
+  /// keyboard in Auto outside Gaming Mode.
+  void keyboardOrMouseUsed() { lastInputKeyboardOrMouse_ = true; }
+  void touchUsed() { lastInputKeyboardOrMouse_ = false; }
+
+  // On-screen keyboard (ui_osk.cpp).
+  /// The active text field has the controller (the built-in keyboard, or Steam's was asked for):
+  /// PadNavFeed feeds ImGui nothing then.
+  bool textEntryOwnsPad() const { return textEntry_ == TextEntry::builtin || textEntry_ == TextEntry::steam; }
+  /// An SDL event while a text field is active: controller presses and taps on the built-in
+  /// keyboard. True when it took the event (ImGui and the game must not see it).
+  bool textEntryEvent(const SDL_Event& e, double now);
+  /// Script: the controller presses ("a", "up", ...) that type `text` on the built-in keyboard.
+  std::vector<std::string> oskPresses(const std::string& text) const;
+  /// "none", "builtin", "steam", "external" (scripts / logs).
+  const char* textEntryName() const;
 
   // DialogHost
   void showDialog(Dialog d) override;
@@ -166,6 +184,14 @@ class UI : public DialogHost {
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
   std::vector<Tab> tabs() const;
+  // ui_osk.cpp
+  void updateTextEntry(double now);
+  void buildOsk();
+  void buildSteamKeyboardHint();
+  void applyOsk(const OskAction& a);
+  void requestSteamKeyboard(bool show);
+  void sendKey(ImGuiKey k);
+  bool textFieldEmpty() const;
   // ui_export.cpp
   void buildExportDialog();
   void buildExportProgressPill();
@@ -175,7 +201,7 @@ class UI : public DialogHost {
   void buildTransport(bool inMenu);
   void buildTimeline(float width, bool inMenu, double now, float navLeft = 0, float navRight = 0);
   void buildPracticeOverlay(bool interactiveNav);
-  void buildPracticeRows(bool compactButtons);
+  int buildPracticeRows(bool compactButtons);  // the slot whose row has the focus (-1 none)
   void buildBadges();
   float dockHeight(bool inMenu) const;
   // ui_pages.cpp
@@ -221,6 +247,7 @@ class UI : public DialogHost {
   bool activeLastFrame_ = false;
   bool timelineFocused_ = false;  // the hub's timeline had the focus last frame
   std::vector<Prompt> prompts_;
+  std::string renamePrompt_;  // the page has something to rename with Y (its prompt text)
   double lastPointer_ = -10;
   bool practicePanel_ = false;
   // Notices.
@@ -267,6 +294,22 @@ class UI : public DialogHost {
   bool hasPreview_ = false;
   rnf_timeline_range preview_{};
   double previewUntil_ = 0;
+  // On-screen keyboard (ui_osk.cpp).
+  OskModel osk_;
+  OskRepeater oskRepeat_;
+  TextEntry textEntry_ = TextEntry::none;  // what the active text field got
+  ImGuiID textEntryId_ = 0;                // that field (0: none active)
+  int steamClosingFrames_ = 0;             // keep asking SDL to hide Steam's keyboard this long
+  int sdlOskHint_ = -1;                    // SDL_HINT_ENABLE_SCREEN_KEYBOARD as last set (-1: not yet)
+  bool lastInputKeyboardOrMouse_ = false;
+  float oskX0_ = 0, oskY0_ = 0, oskX1_ = 0, oskY1_ = 0;  // where the built-in keyboard is (taps)
+  struct OskKeyRect {
+    int row, col;
+    float x0, y0, x1, y1;
+  };
+  std::vector<OskKeyRect> oskKeys_;
+  bool oskTapDown_ = false;     // a tap on the keyboard is down (its release is the keyboard's too)
+  bool oskStick_[4] = {false, false, false, false};  // left stick as D-pad (left, right, up, down)
   // Library.
   char search_[128] = {0};
   std::string selectedRom_;

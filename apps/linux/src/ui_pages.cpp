@@ -129,7 +129,11 @@ void UI::buildBookmarks() {
   ImGui::Spacing();
   const SessionStructure& ss = emu->structure();
   if (ss.bookmarks.empty()) wrappedDisabled(TR("No bookmarks yet. Press B to add one."));
+  const BookmarkInfo* focused = nullptr;  // the row with the focus: Y renames it
   for (const BookmarkInfo& b : ss.bookmarks) {
+    auto noteFocus = [&] {
+      if (ImGui::IsItemFocused()) focused = &b;
+    };
     ImGui::PushID(int(b.id));
     ImGui::Separator();
     ImGui::TextUnformatted(b.name.c_str());
@@ -141,17 +145,28 @@ void UI::buildBookmarks() {
     if (ImGui::Button(TR("Rewind to Here"))) {
       emu->gotoBookmark(b.id);
     }
+    noteFocus();
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(TR("Rename…"))) {
       uint64_t id = b.id;
-      askRename(TR("Name"), b.name, [emu, id](const std::string& n) { emu->renameBookmark(id, n); });
+      askRename(TR("Bookmark Name"), b.name, [emu, id](const std::string& n) { emu->renameBookmark(id, n); });
     }
+    noteFocus();
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.16f, 0.16f, 1));
     if (ImGui::Button(TR("Delete"))) emu->removeBookmark(b.id);
+    noteFocus();
     ImGui::PopStyleColor();
     ImGui::PopID();
+  }
+  // Y: rename the focused bookmark (also "Rename…" on its row).
+  if (focused) {
+    renamePrompt_ = TR("Rename");
+    if (!ImGui::GetIO().WantTextInput && !rename_ && ImGui::IsKeyPressed(kPadY, false)) {
+      uint64_t id = focused->id;
+      askRename(TR("Bookmark Name"), focused->name, [emu, id](const std::string& n) { emu->renameBookmark(id, n); });
+    }
   }
 }
 
@@ -185,7 +200,18 @@ void UI::buildPracticeTab() {
     }
     ImGui::Spacing();
   }
-  buildPracticeRows(true);
+  // Y: rename the focused section (also "Rename…" on its row).
+  int focused = buildPracticeRows(true);
+  const SessionStructure& ss = d_.emu->structure();
+  if (focused >= 0 && focused < int(ss.slots.size()) && ss.slots[size_t(focused)].hasA) {
+    renamePrompt_ = TR("Rename");
+    if (!ImGui::GetIO().WantTextInput && !rename_ && ImGui::IsKeyPressed(kPadY, false)) {
+      EmulationController* emu = d_.emu;
+      const SlotInfo& s = ss.slots[size_t(focused)];
+      int idx = s.index;
+      askRename(TR("Section Name"), s.name, [emu, idx](const std::string& n) { emu->practiceRename(idx, n); });
+    }
+  }
 }
 
 // ------------------------------------------------------------------ library
@@ -197,12 +223,12 @@ void UI::buildLibrary(double now) {
   float h = ImGui::GetContentRegionAvail().y;
   // Header: search (Y), reload, open folder.
   bool noPopup = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) && dialogs_.empty() && !chooser_;
-  if (noPopup && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) focusSearch_ = true;
+  if (noPopup && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(kPadY, false)) focusSearch_ = true;
   ImGui::SetNextItemWidth(S(360));
   ImGui::InputTextWithHint("##search", TR("Search ROMs"), search_, sizeof search_);
-  // Y released: start typing in the search field (Steam's on-screen keyboard in Gaming Mode). On
-  // the release, as during the press ImGui's own "Y = text input" handling targets the focused row.
-  if (focusSearch_ && !ImGui::IsKeyDown(ImGuiKey_GamepadFaceUp)) {
+  // Y released: start typing in the search field (an on-screen keyboard comes with it, ui_osk.cpp).
+  // On the release: the press must not reach the keyboard.
+  if (focusSearch_ && !ImGui::IsKeyDown(kPadY)) {
     focusSearch_ = false;
     ImGuiID sid = ImGui::GetItemID();
     ImGui::SetFocusID(sid, ImGui::GetCurrentWindow());
@@ -409,6 +435,7 @@ void UI::buildGuide() {
                                {TR("R1 / Menu (≡)"), TR("Resume play (on a page: back to the menu)")},
                                {TR("View (⧉)"), TR("Controls Guide on / off")},
                                {"L1 / R1", TR("Settings tabs (other pages: previous / next page)")},
+                               {"Y", TR("Rename the focused bookmark / practice section (also “Rename…” on its row)")},
                                {TR("Right Stick"), TR("Scroll the page")},
                                {TR("L2 / R2 (hold)"), TR("Rewind / Fast-forward")},
                            });
@@ -424,6 +451,19 @@ void UI::buildGuide() {
                            {"Y", TR("Search (on-screen keyboard)")},
                            {TR("Menu (≡)"), TR("Settings")},
                        });
+  table(TR("On-screen keyboard (text fields: search, names)"), {
+                                                                 {TR("D-pad / Left Stick"), TR("Move between the keys")},
+                                                                 {"A", TR("Type the key")},
+                                                                 {"B", TR("Delete (on an empty field: close the keyboard)")},
+                                                                 {"X", TR("Space")},
+                                                                 {"Y", TR("Shift (twice: Caps Lock)")},
+                                                                 {"L1 / R1", TR("Move the text cursor")},
+                                                                 {TR("View (⧉)"), TR("Letters / symbols")},
+                                                                 {TR("Menu (≡)"), TR("Done")},
+                                                             });
+  wrappedDisabled(TR("Settings → Audio & Controls → On-screen keyboard: Auto, Built-in or Steam. Steam’s keyboard can type "
+                     "Japanese; with Auto, a button press that still reaches ReplayNES while Steam’s keyboard was asked for "
+                     "brings the built-in one."));
   table(TR("Keyboard (only while ReplayNES is in front)"), {
                                                               {TR("Arrow keys / X / Z"), TR("Move / A / B")},
                                                               {TR("Return / Right Shift, \\"), "START / SELECT"},

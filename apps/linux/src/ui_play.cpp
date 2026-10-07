@@ -349,7 +349,7 @@ void UI::buildTimeline(float width, bool inMenu, double now, float navLeft, floa
       emu->seek(timelineJumpTarget(st.frame, len, marks, jump));
     }
     if (!st.practicing && ImGui::IsKeyPressed(kPadX, false)) emu->timelineMarkA(sel);
-    if (!st.practicing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) emu->timelineMarkB(sel);
+    if (!st.practicing && ImGui::IsKeyPressed(kPadY, false)) emu->timelineMarkB(sel);
     if (pressed && !io.MouseReleased[0]) closeHubAndResume();  // A: play from here
     prompt({"dpad.lr"}, TR("Move (hold = faster)"));
     prompt({"leftShoulder", "rightShoulder"}, TR("Previous / Next Bookmark (or 5 s)"));
@@ -477,12 +477,16 @@ void UI::buildTimeline(float width, bool inMenu, double now, float navLeft, floa
 
 // ------------------------------------------------------------------ practice OSD
 
-void UI::buildPracticeRows(bool big) {
+int UI::buildPracticeRows(bool big) {
   const EmuStatus& st = d_.emu->status();
   const SessionStructure& ss = d_.emu->structure();
   EmulationController* emu = d_.emu;
   float rowH = big ? S(44) : S(32);
+  int focused = -1;
   for (const SlotInfo& s : ss.slots) {
+    auto noteFocus = [&] {
+      if (ImGui::IsItemFocused()) focused = s.index;
+    };
     ImGui::PushID(s.index);
     bool active = st.practicing && st.practiceSlot == s.index;
     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -508,9 +512,11 @@ void UI::buildPracticeRows(bool big) {
       return r;
     };
     if (marker("A", s.hasA)) emu->practiceSetA(s.index);
+    noteFocus();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride)) ImGui::SetTooltip("%s", TR("Set A (make the current position the start of the section)"));
     ImGui::SameLine();
     if (marker("B", s.hasB)) emu->practiceSetB(s.index);
+    noteFocus();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", TR("Set B (make the current position, reached by playing on from A, the end)"));
     ImGui::SameLine();
@@ -518,6 +524,7 @@ void UI::buildPracticeRows(bool big) {
       emu->startPractice(s.index);
       if (menuOpen_) setMenu(false);
     }
+    noteFocus();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoNavOverride))
       ImGui::SetTooltip("%s", active ? TR("Restart from A") : TR("Practice This Section"));
     if (big) {
@@ -527,12 +534,15 @@ void UI::buildPracticeRows(bool big) {
         int idx = s.index;
         askRename(TR("Section Name"), s.name, [emu, idx](const std::string& n) { emu->practiceRename(idx, n); });
       }
+      noteFocus();
       ImGui::SameLine();
       if (ImGui::Button(TR("Clear"), ImVec2(0, rowH))) emu->practiceClear(s.index);
+      noteFocus();
       ImGui::EndDisabled();
     }
     ImGui::PopID();
   }
+  return focused;
 }
 
 void UI::buildPracticeOverlay(bool) {

@@ -24,6 +24,7 @@
 #include "l10n.h"
 #include "library.h"
 #include "manifest.h"
+#include "osk.h"
 #include "png_writer.h"
 #include "settings.h"
 #include "support/rn_test.h"
@@ -176,6 +177,152 @@ TEST_CASE("settings round trip and tolerant parsing") {
   CHECK_FALSE(old.integerScale);
   CHECK(old.showStats);
   CHECK_EQ(old.flash, 1);
+  // On-screen keyboard: auto by default, the three modes round-trip, anything else is ignored.
+  CHECK_EQ(d.onScreenKeyboard, std::string("auto"));
+  for (const char* m : {"auto", "builtin", "steam"}) {
+    Settings k;
+    k.onScreenKeyboard = m;
+    CHECK_EQ(Settings::parse(k.serialize()).onScreenKeyboard, std::string(m));
+  }
+  CHECK_EQ(Settings::parse("onScreenKeyboard=qwerty\n").onScreenKeyboard, std::string("auto"));
+}
+
+// ------------------------------------------------------------------ on-screen keyboard
+
+namespace {
+// Applies a model's actions to a plain string (cursor at the end; ←/→ not used here).
+std::string typeWith(OskModel& m, const std::vector<OskButton>& presses) {
+  std::string out;
+  for (OskButton b : presses) {
+    OskAction a = m.press(b, out.empty());
+    if (a.op == OskAction::Op::insert) out += a.text;
+    else if (a.op == OskAction::Op::backspace && !out.empty()) out.pop_back();
+  }
+  return out;
+}
+}  // namespace
+
+TEST_CASE("on-screen keyboard: layout, navigation, shift and actions") {
+  OskModel m;
+  // Every row is 11 units wide (keys line up), on both pages, with and without the Steam key.
+  for (bool steam : {false, true}) {
+    OskModel k(steam);
+    for (int page = 0; page < 2; ++page) {
+      for (const auto& row : k.rows()) {
+        float w = 0;
+        for (const OskKey& key : row) w += key.width;
+        CHECK(std::fabs(w - OskModel::kRowUnits) < 1e-4f);
+      }
+      k.press(OskButton::view, false);
+    }
+    bool hasSteam = false;
+    for (const auto& row : k.rows())
+      for (const OskKey& key : row) hasSteam = hasSteam || key.kind == OskKey::Kind::steam;
+    CHECK_EQ(hasSteam, steam);
+  }
+  // Starts on "q"; left wraps to the end of the row, up from the top row wraps to the bottom.
+  CHECK_EQ(m.keyText(m.rows()[size_t(m.row())][size_t(m.col())]), std::string("q"));
+  m.press(OskButton::left, false);
+  CHECK_EQ(m.col(), int(m.rows()[1].size()) - 1);
+  m.press(OskButton::right, false);
+  CHECK_EQ(m.col(), 0);
+  m.press(OskButton::up, false);
+  m.press(OskButton::up, false);
+  CHECK_EQ(m.row(), int(m.rows().size()) - 1);
+  // Down from "q": "a" (nearest center).
+  m.reset(false);
+  m.press(OskButton::down, false);
+  CHECK_EQ(m.keyText(m.rows()[size_t(m.row())][size_t(m.col())]), std::string("a"));
+  // Buttons: B deletes (empty field: cancel), X space, Menu done, L1 / R1 cursor, A types.
+  m.reset(false);
+  CHECK(m.press(OskButton::b, false).op == OskAction::Op::backspace);
+  CHECK(m.press(OskButton::b, true).op == OskAction::Op::cancel);
+  OskAction sp = m.press(OskButton::x, true);
+  CHECK(sp.op == OskAction::Op::insert);
+  CHECK_EQ(sp.text, std::string(" "));
+  CHECK(m.press(OskButton::start, false).op == OskAction::Op::done);
+  CHECK(m.press(OskButton::l1, false).op == OskAction::Op::cursorLeft);
+  CHECK(m.press(OskButton::r1, false).op == OskAction::Op::cursorRight);
+  OskAction q = m.press(OskButton::a, true);
+  CHECK(q.op == OskAction::Op::insert);
+  CHECK_EQ(q.text, std::string("q"));
+  // Shift: once (one capital), locked (until Y again).
+  m.press(OskButton::y, false);
+  CHECK(m.shift() == OskModel::Shift::once);
+  CHECK_EQ(m.press(OskButton::a, false).text, std::string("Q"));
+  CHECK(m.shift() == OskModel::Shift::off);
+  m.press(OskButton::y, false);
+  m.press(OskButton::y, false);
+  CHECK(m.shift() == OskModel::Shift::locked);
+  CHECK_EQ(m.press(OskButton::a, false).text, std::string("Q"));
+  CHECK_EQ(m.press(OskButton::a, false).text, std::string("Q"));
+  m.press(OskButton::y, false);
+  CHECK(m.shift() == OskModel::Shift::off);
+  // Special keys by activation (taps): Delete never cancels, Done, Steam.
+  OskModel s(true);
+  for (int r = 0; r < int(s.rows().size()); ++r)
+    for (int c = 0; c < int(s.rows()[size_t(r)].size()); ++c) {
+      OskKey::Kind kind = s.rows()[size_t(r)][size_t(c)].kind;
+      OskModel t(true);
+      OskAction a = t.activate(r, c);
+      if (kind == OskKey::Kind::backspace) CHECK(a.op == OskAction::Op::backspace);
+      if (kind == OskKey::Kind::done) CHECK(a.op == OskAction::Op::done);
+      if (kind == OskKey::Kind::steam) CHECK(a.op == OskAction::Op::steam);
+      if (kind == OskKey::Kind::symbols) CHECK(t.symbolsPage());
+    }
+}
+
+TEST_CASE("on-screen keyboard: the presses for a text type it") {
+  for (bool steam : {false, true}) {
+    for (const char* text : {"mario", "Super Mario Bros. 3", "A/B #1 (best)", "x_y-z", "Hello, World!", "\"\\|~`"}) {
+      OskModel m(steam);
+      std::vector<OskButton> presses = m.pressesFor(text);
+      REQUIRE(!presses.empty());
+      OskModel run(steam);
+      CHECK_EQ(typeWith(run, presses), std::string(text));
+    }
+  }
+  // Not on the keyboard (Japanese comes from Steam's keyboard / an IME): no presses.
+  OskModel m;
+  CHECK(m.pressesFor("マリオ").empty());
+  // From a state that is not the start (symbols page, Shift locked) too.
+  OskModel s;
+  s.press(OskButton::view, false);
+  s.press(OskButton::y, false);
+  s.press(OskButton::y, false);
+  std::vector<OskButton> p = s.pressesFor("ab");
+  CHECK_EQ(typeWith(s, p), std::string("ab"));
+}
+
+TEST_CASE("on-screen keyboard: repeat of held buttons") {
+  OskRepeater r;
+  r.set(OskButton::right, true, 10.0);
+  CHECK(r.due(10.2).empty());
+  std::vector<OskButton> d = r.due(10.0 + OskRepeater::kDelay + OskRepeater::kRate * 2 + 1e-6);
+  CHECK_EQ(d.size(), size_t(3));
+  r.set(OskButton::right, false, 10.6);
+  CHECK(r.due(20.0).empty());
+}
+
+TEST_CASE("which keyboard a text field gets") {
+  TextEntryContext c;
+  // Auto: Steam's where it can be asked for (the Deck), the built-in one otherwise; nothing for a
+  // hardware keyboard / mouse outside Gaming Mode.
+  c.steamAvailable = true;
+  CHECK(textEntryFor(c) == TextEntry::steam);
+  c.steamAvailable = false;
+  CHECK(textEntryFor(c) == TextEntry::builtin);
+  c.lastInputKeyboardOrMouse = true;
+  CHECK(textEntryFor(c) == TextEntry::external);
+  c.gamingMode = true;  // Gaming Mode: the trackpad is a mouse, there is no keyboard
+  CHECK(textEntryFor(c) == TextEntry::builtin);
+  c.mode = "builtin";
+  c.steamAvailable = true;
+  CHECK(textEntryFor(c) == TextEntry::builtin);
+  c.mode = "steam";
+  CHECK(textEntryFor(c) == TextEntry::steam);
+  c.steamAvailable = false;
+  CHECK(textEntryFor(c) == TextEntry::external);
 }
 
 // ------------------------------------------------------------------ in-app updates (Flatpak portal)

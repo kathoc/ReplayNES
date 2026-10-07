@@ -95,6 +95,15 @@ void Script::step(double now) {
         if (arg(1) == n) ui_->selectTab(t);
     } else if (op == "settings") {
       if (onSettingsPage) onSettingsPage(std::atoi(arg(1, "0").c_str()));
+    } else if (op == "osktype") {
+      // Types the rest of the command on the built-in keyboard: its presses, one per frame.
+      std::string text;
+      for (size_t i = 1; i < c.size(); ++i) text += (i > 1 ? " " : "") + c[i];
+      std::vector<std::string> presses = ui_->oskPresses(text);
+      if (presses.empty()) std::fprintf(stderr, "script: osktype: cannot type \"%s\"\n", text.c_str());
+      std::vector<std::vector<std::string>> ins;
+      for (const std::string& b : presses) ins.push_back({"pad", b});
+      cmds_.insert(cmds_.begin() + long(next_), ins.begin(), ins.end());
     } else if (op == "pad" || op == "padhold") {
       if (pushPad(arg(1), true)) releases_.push_back({op == "pad" ? now : now + std::atof(arg(2, "1").c_str()), arg(1)});
       return;  // one press per frame (the release goes out with the next step)

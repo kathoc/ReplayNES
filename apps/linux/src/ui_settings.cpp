@@ -167,6 +167,22 @@ void UI::buildAudioControlSettings() {
       changed();
     }
   }
+  // Text fields (ui_osk.cpp).
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(TR("On-screen keyboard"));
+  const std::pair<const char*, const char*> oskModes[] = {
+      {"auto", TR("Auto (Steam’s if available, otherwise built-in)")}, {"builtin", TR("Built-in")}, {"steam", "Steam"}};
+  for (const auto& [v, l] : oskModes) {
+    ImGui::SameLine();
+    if (ImGui::RadioButton((std::string(l) + "##osk").c_str(), s.onScreenKeyboard == v)) {
+      s.onScreenKeyboard = v;
+      changed();
+    }
+  }
+  wrappedDisabled(TR("For text fields (Search ROMs, names). Built-in: ReplayNES’s controller keyboard (A type, B delete, X space, "
+                     "Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Steam: Steam’s on-screen keyboard "
+                     "(Gaming Mode; it can type Japanese). Auto asks for Steam’s and shows the built-in one when a button "
+                     "press still reaches ReplayNES (Steam’s keyboard did not open)."));
   ImGui::SeparatorText(TR("Language"));
   ImGui::TextUnformatted(std::string(rnf_l10n_language()) == "ja" ? TR("Japanese (follows the system language)")
                                                                    : TR("English (follows the system language)"));

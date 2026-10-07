@@ -221,8 +221,24 @@ void App::updateNavigation() {
 }
 
 void App::handleEvent(const SDL_Event& e, double now) {
-  ImGui_ImplSDL3_ProcessEvent(&e);
+  // A text field with an on-screen keyboard takes the controller and taps on the keyboard
+  // (ui_osk.cpp); PadNavFeed still follows the pads (it feeds ImGui nothing meanwhile).
+  bool textEntry = ui_->textEntryEvent(e, now);
+  if (!textEntry) ImGui_ImplSDL3_ProcessEvent(&e);
+  padNav_.setSuppressed(ui_->textEntryOwnsPad());
   padNav_.handle(e);
+  if (textEntry) return;
+  switch (e.type) {  // which input activated a text field (Auto: no on-screen keyboard for a hardware keyboard)
+    case SDL_EVENT_KEY_DOWN:
+      if (!e.key.repeat) ui_->keyboardOrMouseUsed();
+      break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+      if (e.button.which == SDL_TOUCH_MOUSEID) ui_->touchUsed();
+      else ui_->keyboardOrMouseUsed();
+      break;
+    case SDL_EVENT_FINGER_DOWN: ui_->touchUsed(); break;
+    default: break;
+  }
   // SDL event timestamps (SDL_GetTicksNS) -> our CLOCK_MONOTONIC seconds.
   double evTime = now - double(SDL_GetTicksNS() - e.common.timestamp) * 1e-9;
   switch (e.type) {
@@ -546,6 +562,7 @@ int App::run(const Options& opt) {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;  // fed from the events (PadNavFeed)
+    padNav_.setSuppressed(ui_->textEntryOwnsPad());
     if (padNav_.takeActivity()) ui_->padUsed();
     ImGui::NewFrame();
     ui_->build(rec.sample);

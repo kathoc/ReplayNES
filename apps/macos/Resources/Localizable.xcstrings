@@ -711,6 +711,16 @@
         }
       }
     },
+    "Auto (Steam’s if available, otherwise built-in)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動（使えれば Steam、なければ内蔵）"
+          }
+        }
+      }
+    },
     "Automatic": {
       "localizations": {
         "ja": {
@@ -901,6 +911,16 @@
         }
       }
     },
+    "Bookmark Name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブックマークの名前"
+          }
+        }
+      }
+    },
     "Bookmarks": {
       "localizations": {
         "ja": {
@@ -937,6 +957,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "明るい画面で幅が広がり暗くなる"
+          }
+        }
+      }
+    },
+    "Built-in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵"
           }
         }
       }
@@ -1781,6 +1811,16 @@
         }
       }
     },
+    "Delete (on an empty field: close the keyboard)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1文字削除（空のときはキーボードを閉じる）"
+          }
+        }
+      }
+    },
     "Detects earlier than the thresholds and limits flashes of 20% or more of the screen to 2 per second (recommended).": {
       "localizations": {
         "ja": {
@@ -1897,6 +1937,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存しますか？"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了"
           }
         }
       }
@@ -2287,6 +2337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "WCAG 2.x の基準どおり、画面の 25% 以上が 1 秒に 3 回を超えて明滅しないように抑えます。"
+          }
+        }
+      }
+    },
+    "For text fields (Search ROMs, names). Built-in: ReplayNES’s controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Steam: Steam’s on-screen keyboard (Gaming Mode; it can type Japanese). Auto asks for Steam’s and shows the built-in one when a button press still reaches ReplayNES (Steam’s keyboard did not open).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字入力欄（ROMを検索、名前）で使います。内蔵：ReplayNES のコントローラー用キーボード（A 入力、B 削除、X スペース、Y シフト、L1 / R1 カーソル移動、ビュー（⧉）記号、メニュー（≡）完了）。Steam：Steam のスクリーンキーボード（ゲームモード。日本語を入力できます）。自動は Steam のキーボードを呼び出し、それでもボタン操作が ReplayNES に届いたとき（Steam のキーボードが開かなかったとき）は内蔵キーボードを表示します。"
           }
         }
       }
@@ -3031,6 +3091,16 @@
         }
       }
     },
+    "Letters / symbols": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "英字 / 記号の切り替え"
+          }
+        }
+      }
+    },
     "Level: %@ (Settings → Display). Off: exactly as recorded.": {
       "localizations": {
         "ja": {
@@ -3261,6 +3331,26 @@
         }
       }
     },
+    "Move between the keys": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーを選ぶ"
+          }
+        }
+      }
+    },
+    "Move Cursor": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーソル移動"
+          }
+        }
+      }
+    },
     "Move the focus (the orange frame)": {
       "localizations": {
         "ja": {
@@ -3277,6 +3367,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "再生位置を動かす（長押しで速く。録画の終わりでは1フレーム録る）"
+          }
+        }
+      }
+    },
+    "Move the text cursor": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字カーソルを移動"
           }
         }
       }
@@ -3517,6 +3617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Steam Deck では、デスクトップモード（Dolphin）やネットワーク経由でコピーしてから「再読み込み」を押してください。"
+          }
+        }
+      }
+    },
+    "On-screen keyboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンキーボード"
+          }
+        }
+      }
+    },
+    "On-screen keyboard (text fields: search, names)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンキーボード（文字入力欄：検索、名前）"
           }
         }
       }
@@ -4331,6 +4451,16 @@
         }
       }
     },
+    "Rename the focused bookmark / practice section (also “Rename…” on its row)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーカス中のブックマーク / 練習区間の名前を変更（各行の「名前変更…」でも可）"
+          }
+        }
+      }
+    },
     "ReplayNES %@ is installed. Restart to use it.": {
       "localizations": {
         "ja": {
@@ -5071,6 +5201,16 @@
         }
       }
     },
+    "Settings → Audio & Controls → On-screen keyboard: Auto, Built-in or Steam. Steam’s keyboard can type Japanese; with Auto, a button press that still reaches ReplayNES while Steam’s keyboard was asked for brings the built-in one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定 → 音声・操作 → スクリーンキーボード：自動 / 内蔵 / Steam。Steam のキーボードは日本語を入力できます。自動では、Steam のキーボードを呼び出したあともボタン操作が ReplayNES に届くと、内蔵キーボードに切り替わります。"
+          }
+        }
+      }
+    },
     "SHA-256 %@…": {
       "localizations": {
         "ja": {
@@ -5461,6 +5601,26 @@
         }
       }
     },
+    "Shift": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シフト"
+          }
+        }
+      }
+    },
+    "Shift (twice: Caps Lock)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シフト（2回で Caps Lock）"
+          }
+        }
+      }
+    },
     "Show Latency": {
       "localizations": {
         "ja": {
@@ -5661,6 +5821,16 @@
         }
       }
     },
+    "Space": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スペース"
+          }
+        }
+      }
+    },
     "Standard": {
       "localizations": {
         "ja": {
@@ -5727,6 +5897,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Steam が起動中です。先に Steam を終了してください（デスクトップモード: Steam メニュー → 終了）。そのあと、もう一度お試しください。導入できたアートワークは Steam の再起動後に表示されます。"
+          }
+        }
+      }
+    },
+    "Steam Keyboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam キーボード"
+          }
+        }
+      }
+    },
+    "Steam’s on-screen keyboard was asked for. No keyboard? Press A for the built-in one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam のスクリーンキーボードを呼び出しました。表示されないときは A で内蔵キーボードを使います。"
+          }
+        }
+      }
+    },
+    "Steam’s on-screen keyboard was asked for. No keyboard? Press A to ask again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam のスクリーンキーボードを呼び出しました。表示されないときは A でもう一度呼び出します。"
           }
         }
       }
@@ -6391,6 +6591,36 @@
         }
       }
     },
+    "Type": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力"
+          }
+        }
+      }
+    },
+    "Type the key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選んだキーを入力"
+          }
+        }
+      }
+    },
+    "Type with the on-screen keyboard. Menu (≡) / Enter: done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンキーボードで入力します。メニュー（≡）/ Enter：完了"
+          }
+        }
+      }
+    },
     "UI Size": {
       "localizations": {
         "ja": {
@@ -6667,16 +6897,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Y / X（Steam Deck・Xbox）"
-          }
-        }
-      }
-    },
-    "Y: type with the on-screen keyboard · Enter / OK: done": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Y: スクリーンキーボードで入力 · Enter / OK: 完了"
           }
         }
       }

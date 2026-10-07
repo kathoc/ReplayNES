@@ -60,8 +60,11 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
    | L2 / R2 hold | rewind / fast-forward |
    | Timeline (focus it with ↑) | ←/→ move the playhead (hold = faster), L1 / R1 previous / next bookmark (or 5 s), X / Y set A / B, A play from here |
    | Library | A play, X continue the latest project, Y search (on-screen keyboard), Menu (≡) Settings |
+   | Bookmarks / Practice pages | Y renames the focused bookmark / section (also "Rename…" on its row) |
 
    Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
+
+   **Typing (search, names)**: a text field brings an on-screen keyboard. In Gaming Mode ReplayNES asks Steam for its keyboard (it can type Japanese); if it does not appear, press A for ReplayNES's built-in controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Settings → Audio & Controls → "On-screen keyboard": Auto, Built-in or Steam.
 
 Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden while you play, so it does not add latency.
 

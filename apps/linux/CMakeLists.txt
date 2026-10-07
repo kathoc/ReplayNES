@@ -97,6 +97,7 @@ add_library(rnl_logic STATIC
   src/thumbnails.cpp
   src/trash.cpp
   src/ui_logic.cpp
+  src/osk.cpp
   src/update_model.cpp)
 target_include_directories(rnl_logic PUBLIC src)
 target_link_libraries(rnl_logic PUBLIC replaynes_frontend replaynes_engine Threads::Threads)
@@ -116,6 +117,7 @@ add_executable(replaynes-linux
   src/ui_play.cpp
   src/ui_settings.cpp
   src/ui_export.cpp
+  src/ui_osk.cpp
   src/ui_update.cpp
   src/update_service.cpp
   ${SHADER_INCS})
