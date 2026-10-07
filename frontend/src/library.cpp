@@ -20,9 +20,10 @@
 #include <sys/stat.h>
 
 #ifdef _WIN32
-#ifndef S_ISDIR
-#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#ifndef NOMINMAX
+#define NOMINMAX
 #endif
+#include <windows.h>
 #else
 #include <dirent.h>
 #endif
@@ -50,19 +51,18 @@ struct Entry {
 Entry inspect(const std::string& path) {
   Entry e;
 #ifdef _WIN32
-  std::error_code ec;
-  auto st = stdfs::symlink_status(stdfs::u8path(path), ec);
-  if (ec) return e;
+  // Wide API (UTF-8 paths); the reparse point itself, like lstat. The modification time comes
+  // straight from the FILETIME so repeated calls are bit-identical (it keys the ROM hash cache).
+  WIN32_FILE_ATTRIBUTE_DATA a;
+  if (!GetFileAttributesExW(stdfs::u8path(path).c_str(), GetFileExInfoStandard, &a)) return e;
   e.ok = true;
-  e.isDir = stdfs::is_directory(st);
-  e.isRegular = stdfs::is_regular_file(st);
-  if (e.isRegular) e.size = int64_t(stdfs::file_size(stdfs::u8path(path), ec));
-  auto t = stdfs::last_write_time(stdfs::u8path(path), ec);
-  if (!ec) {
-    auto sys = std::chrono::time_point_cast<std::chrono::nanoseconds>(t - decltype(t)::clock::now() +
-                                                                      std::chrono::system_clock::now());
-    e.modified = double(sys.time_since_epoch().count()) / 1e9;
-  }
+  bool reparse = (a.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+  e.isDir = !reparse && (a.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+  e.isRegular = !reparse && !e.isDir;
+  e.size = int64_t((uint64_t(a.nFileSizeHigh) << 32) | a.nFileSizeLow);
+  // 100 ns ticks since 1601-01-01 -> seconds since 1970-01-01.
+  int64_t ticks = int64_t((uint64_t(a.ftLastWriteTime.dwHighDateTime) << 32) | a.ftLastWriteTime.dwLowDateTime);
+  e.modified = double(ticks - 116444736000000000LL) / 1e7;
 #else
   struct stat st;
   if (::lstat(path.c_str(), &st) != 0) return e;
@@ -83,8 +83,11 @@ bool isHidden(const std::string& dir, const std::string& name) {
   if (name.empty() || name[0] == '.') return true;
 #ifdef __APPLE__
   struct stat st;
-  std::string p = dir + "/" + name;
+  std::string p = joinPath(dir, name);
   if (::lstat(p.c_str(), &st) == 0 && (st.st_flags & UF_HIDDEN)) return true;
+#elif defined(_WIN32)
+  DWORD attr = GetFileAttributesW(stdfs::u8path(joinPath(dir, name)).c_str());
+  if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_HIDDEN)) return true;
 #else
   (void)dir;
 #endif
@@ -119,28 +122,14 @@ bool listDir(const std::string& dir, std::vector<std::string>& names, std::strin
   return true;
 }
 
-std::string join(const std::string& dir, const std::string& name) {
-  if (dir.empty()) return name;
-  return dir.back() == '/' ? dir + name : dir + "/" + name;
-}
+std::string join(const std::string& dir, const std::string& name) { return joinPath(dir, name); }
 
-std::string stripTrailing(std::string s) {
-  while (s.size() > 1 && s.back() == '/') s.pop_back();
-  return s;
-}
+std::string stripTrailing(std::string s) { return stripTrailingSeps(std::move(s)); }
 
 std::string lastComponent(const std::string& p) {
   std::string s = stripTrailing(p);
-  size_t slash = s.rfind('/');
+  size_t slash = lastPathSep(s);
   return slash == std::string::npos ? s : s.substr(slash + 1);
-}
-
-std::string parentDir(const std::string& p) {
-  std::string s = stripTrailing(p);
-  size_t slash = s.rfind('/');
-  if (slash == std::string::npos) return ".";
-  if (slash == 0) return "/";
-  return s.substr(0, slash);
 }
 
 // URL.pathExtension / deletingPathExtension on a file name (a leading dot is not an extension).
@@ -253,8 +242,13 @@ std::string localTime(double date, const char* fmt) {
 }
 
 bool exists(const std::string& p) {
+#ifdef _WIN32
+  std::error_code ec;
+  return stdfs::exists(stdfs::u8path(p), ec);
+#else
   struct stat st;
   return ::stat(p.c_str(), &st) == 0;
+#endif
 }
 
 }  // namespace
@@ -289,9 +283,9 @@ rn_status rnf_library_ensure(const char* root, char** failed_path) {
   RNF_GUARD_BEGIN
   for (const char* sub : {RNF_LIBRARY_ROM_DIR, RNF_LIBRARY_PROJECTS_DIR}) {
     std::string dir = join(root, sub);
-    struct stat st;
-    if (::stat(dir.c_str(), &st) == 0) {
-      if (!S_ISDIR(st.st_mode)) {
+    if (exists(dir)) {
+      std::error_code dec;
+      if (!stdfs::is_directory(stdfs::u8path(dir), dec)) {
         if (failed_path) *failed_path = dup(dir);
         return fail(RN_ERR_ALREADY_EXISTS, "not a directory: " + dir);
       }
@@ -472,10 +466,13 @@ char* rnf_backup_path(const char* project_path, double date, rnf_exists_fn exist
   std::string name = stem(file);
   std::string ext = extensionOf(file);
   if (ext.empty()) ext = "nesrec";
-  std::string dir = parentDir(project_path);
+  // Sibling of the project, spelled with the project path's own separator ("C:/x/a" stays "/").
+  std::string trimmed = stripTrailing(project_path);
+  size_t slash = lastPathSep(trimmed);
+  std::string dir = slash == std::string::npos ? std::string(".") + kPathSep : trimmed.substr(0, slash + 1);
   std::string base = trf(RNF_L("%@ (Before Reset %@)"), {argS(name), argS(stamp)});
   for (int n = 1;; ++n) {
-    std::string candidate = join(dir, (n == 1 ? base : base + " " + std::to_string(n)) + "." + ext);
+    std::string candidate = dir + (n == 1 ? base : base + " " + std::to_string(n)) + "." + ext;
     bool taken = exists_fn ? exists_fn(candidate.c_str(), ctx) != 0 : exists(candidate);
     if (!taken) return dup(candidate);
   }

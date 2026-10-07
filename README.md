@@ -278,6 +278,8 @@ The engine and tests (common to macOS / Linux / Windows) are as follows.
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && ninja -C build && ctest --test-dir build
 ```
 
+Windows: the engine, frontend core and tests build with MSVC / clang-cl, or are cross-compiled on a Mac with llvm-mingw (`scripts/build-windows.sh`) and run in a Windows VM; see [docs/WINDOWS.md](docs/WINDOWS.md).
+
 With the command-line tool `replaynes-cli`, you can verify determinism (`determinism`), verify projects (`verify`), generate test ROMs (`make-test-rom`), and more.
 
 For the design, see [docs/ARCHITECTURE_DECISION.md](docs/ARCHITECTURE_DECISION.md); for the file format, [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md); and for porting to other OSes, [docs/PORTING.md](docs/PORTING.md).

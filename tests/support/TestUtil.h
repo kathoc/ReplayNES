@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -15,10 +16,17 @@
 
 namespace rntest {
 
+// Scratch root: $RN_TEST_TMP at run time (tests copied to another machine, e.g. the Windows VM),
+// else the build tree's tests/tmp baked in at compile time.
+inline std::string tempRoot() {
+  const char* env = std::getenv("RN_TEST_TMP");
+  return env && *env ? std::string(env) : std::string(RN_TEST_TMP);
+}
+
 // Fresh, empty scratch directory unique to this process + name.
 inline std::string tempDir(const std::string& name) {
   static std::atomic<int> counter{0};
-  std::string d = rn::fs::join(RN_TEST_TMP, name + "-" + std::to_string(counter++));
+  std::string d = rn::fs::join(tempRoot(), name + "-" + std::to_string(counter++));
   rn::fs::removeAll(d);
   rn::fs::createDirs(d);
   return d;

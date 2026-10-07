@@ -12,6 +12,9 @@ function(rn_add_test name)
   add_executable(${name} ${name}.cpp)
   target_link_libraries(${name} PRIVATE ${libs} rn_test_main)
   target_compile_definitions(${name} PRIVATE RN_TEST_TMP="${RN_TEST_TMP}")
+  if(MSVC)
+    target_compile_options(${name} PRIVATE /utf-8)  # UTF-8 string literals in the sources
+  endif()
   add_test(NAME ${name} COMMAND ${name})
   # macOS malloc fills new allocations with garbage: uninitialised core state cannot hide.
   set_tests_properties(${name} PROPERTIES TIMEOUT 300 ENVIRONMENT "MallocPreScribble=1;MallocScribble=1")

@@ -278,6 +278,8 @@ cd ReplayNES && scripts/build-macos.sh
 cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && ninja -C build && ctest --test-dir build
 ```
 
+Windows 向けには、エンジン・フロントエンドコア・テストを MSVC / clang-cl でビルドするか、Mac 上で llvm-mingw によりクロスビルド（`scripts/build-windows.sh`）して Windows VM で実行できます。詳しくは [docs/WINDOWS.md](docs/WINDOWS.md) を参照してください。
+
 コマンドラインツール `replaynes-cli` で、決定論の検証（`determinism`）、プロジェクトの検証（`verify`）、テスト ROM の生成（`make-test-rom`）などができます。
 
 設計については [docs/ARCHITECTURE_DECISION.md](docs/ARCHITECTURE_DECISION.md)、ファイル形式は [docs/FILE_FORMAT.md](docs/FILE_FORMAT.md)、他の OS への移植は [docs/PORTING.md](docs/PORTING.md) を参照してください。

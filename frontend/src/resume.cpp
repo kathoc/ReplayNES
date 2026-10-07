@@ -48,12 +48,6 @@ bool pathExists(const std::string& p) {
 #endif
 }
 
-std::string joinPath(const std::string& dir, const std::string& name) {
-  if (dir.empty()) return name;
-  if (dir.back() == '/') return dir + name;
-  return dir + "/" + name;
-}
-
 std::string stripTrailing(std::string s) {
   while (s.size() > 1 && (s.back() == '/' || s.back() == '\\')) s.pop_back();
   return s;

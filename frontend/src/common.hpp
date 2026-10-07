@@ -35,6 +35,37 @@ inline rnf_arg argU(uint64_t v) { rnf_arg a{}; a.type = RNF_ARG_UINT; a.u = v; r
 // tr(key) formatted with args.
 std::string trf(const char* key, const std::vector<rnf_arg>& args);
 
+// Paths are UTF-8 strings. Windows accepts both separators and joins with '\\' (as the engine's
+// rn::fs::join does); elsewhere only '/' is a separator.
+#ifdef _WIN32
+constexpr char kPathSep = '\\';
+inline bool isPathSep(char c) { return c == '/' || c == '\\'; }
+#else
+constexpr char kPathSep = '/';
+inline bool isPathSep(char c) { return c == '/'; }
+#endif
+// dir + separator + name (no doubled separator; empty dir -> name).
+inline std::string joinPath(const std::string& dir, const std::string& name) {
+  if (dir.empty()) return name;
+  return isPathSep(dir.back()) ? dir + name : dir + kPathSep + name;
+}
+// Without trailing separators; a root ("/", "C:\\") is kept.
+inline std::string stripTrailingSeps(std::string s) {
+  while (s.size() > 1 && isPathSep(s.back())) {
+#ifdef _WIN32
+    if (s.size() == 3 && s[1] == ':') break;
+#endif
+    s.pop_back();
+  }
+  return s;
+}
+// Index of the last separator, npos if none.
+inline size_t lastPathSep(const std::string& s) {
+  for (size_t i = s.size(); i-- > 0;)
+    if (isPathSep(s[i])) return i;
+  return std::string::npos;
+}
+
 bool hasPrefix(const std::string& s, const std::string& p);
 bool hasSuffix(const std::string& s, const std::string& p);
 std::string lower(const std::string& s);  // ASCII

@@ -1,0 +1,105 @@
+# Windows: the portable engine + shared frontend core + tests (no Windows frontend yet).
+#  - msvc: MSVC (cl) and clang-cl on real x64 hardware, plus MSVC on Windows on Arm (arm64).
+#  - mingw-cross: the developer cross-build (macOS + llvm-mingw, docs/WINDOWS.md), whose x86_64
+#    test executables are then run on a real x64 Windows runner (mingw-run).
+name: windows
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'apps/macos/**', 'dist/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'apps/macos/**', 'dist/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LLVM_MINGW_VERSION: '20260922'
+
+jobs:
+  msvc:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'MSVC x64', os: windows-latest, arch: x64, toolset: '' }
+          - { name: 'clang-cl x64', os: windows-latest, arch: x64, toolset: ClangCL }
+          - { name: 'MSVC arm64', os: windows-11-arm, arch: ARM64, toolset: '' }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nestopia submodule (pinned)
+        run: git submodule update --init --depth 1 third_party/nestopia
+      - name: Configure
+        shell: pwsh
+        run: |
+          $toolset = @()
+          if ('${{ matrix.toolset }}') { $toolset = @('-T', '${{ matrix.toolset }}') }
+          cmake -S . -B build -A ${{ matrix.arch }} @toolset
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel 4
+      - name: Probe (graphics / audio / input APIs of the runner)
+        run: build/tools/windows-probe/Release/replaynes-winprobe.exe
+        continue-on-error: true
+
+  mingw-cross:
+    name: llvm-mingw cross-build (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nestopia submodule (pinned)
+        run: git submodule update --init --depth 1 third_party/nestopia
+      - name: Install llvm-mingw + Ninja
+        run: |
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal.tar.xz"
+          tar -xf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
+          echo "LLVM_MINGW=$RUNNER_TEMP/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal" >> "$GITHUB_ENV"
+      - name: Build x86_64 + aarch64
+        run: scripts/build-windows.sh all
+      - name: Collect x86_64 test executables
+        run: |
+          mkdir -p out
+          cp build/windows-x86_64/tests/*.exe build/windows-x86_64/tools/*/*.exe out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mingw-x86_64
+          path: out/*.exe
+          retention-days: 3
+
+  mingw-run:
+    name: llvm-mingw x86_64 tests on Windows
+    needs: mingw-cross
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mingw-x86_64
+          path: bin
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $env:RN_TEST_TMP = Join-Path $env:RUNNER_TEMP 'rn-tests'
+          New-Item -ItemType Directory -Force $env:RN_TEST_TMP | Out-Null
+          $failed = @()
+          foreach ($t in Get-ChildItem bin/test_*.exe) {
+            & $t.FullName
+            if ($LASTEXITCODE -ne 0) { $failed += $t.Name }
+          }
+          if ($failed) { Write-Error "failed: $($failed -join ', ')"; exit 1 }
+      - name: Probe
+        run: bin/replaynes-winprobe.exe
+        continue-on-error: true

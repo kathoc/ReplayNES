@@ -161,3 +161,42 @@ TEST_CASE("backup name next to the project") {
            "/x/Mario（リセット前 2026-10-06 20.05）.nesrec");
   rnf_l10n_set_language("en");
 }
+
+// UTF-8 paths reach the file system intact (Windows: wide APIs, not the ANSI code page), and a
+// file's modification time is reported identically on every scan (it keys the ROM hash cache).
+TEST_CASE("non-ASCII folder and file names") {
+  std::string tmp = rntest::tempDir("frontend-lib-utf8");
+  std::string root = rn::fs::join(tmp, "リプレイ Äö");
+  REQUIRE_EQ(rnf_library_ensure(root.c_str(), nullptr), RN_OK);
+  REQUIRE_EQ(rnf_library_ensure(root.c_str(), nullptr), RN_OK);
+  std::string romDir = rn::fs::join(root, RNF_LIBRARY_ROM_DIR);
+  std::string sub = rn::fs::join(romDir, "ゲーム");
+  REQUIRE(rn::fs::createDirs(sub).ok());
+  REQUIRE(rn::fs::writeFileAtomic(rn::fs::join(sub, "マリオ.nes"), "NES\x1a", 4).ok());
+  double modified[2] = {0, 0};
+  for (double& m : modified) {
+    rnf_rom_list* l = nullptr;
+    REQUIRE_EQ(rnf_library_scan_roms(romDir.c_str(), nullptr, nullptr, &l), RN_OK);
+    auto r = roms(l);
+    REQUIRE_EQ(r.size(), size_t(1));
+    CHECK_EQ(std::string(r[0].name), "マリオ");
+    CHECK_EQ(std::string(r[0].relative_path), "ゲーム/マリオ.nes");
+    CHECK_EQ(std::string(r[0].path), rn::fs::join(sub, "マリオ.nes"));
+    CHECK_EQ(r[0].size, int64_t(4));
+    m = r[0].modified;
+    rnf_rom_list_free(l);
+  }
+  CHECK(modified[0] > 1.5e9);
+  CHECK_EQ(modified[0], modified[1]);
+}
+
+#ifdef _WIN32
+TEST_CASE("backup name keeps Windows separators") {
+  const double d = localDate(2026, 10, 6, 20, 5);
+  auto none = [](const char*, void*) { return 0; };
+  CHECK_EQ(take(rnf_backup_path("C:\\x\\Mario.nesrec", d, none, nullptr)),
+           "C:\\x\\Mario (Before Reset 2026-10-06 20.05).nesrec");
+  CHECK_EQ(take(rnf_backup_path("C:\\Mario.nesrec", d, none, nullptr)), "C:\\Mario (Before Reset 2026-10-06 20.05).nesrec");
+  CHECK_EQ(take(rnf_backup_path("C:\\x\\NoExt\\", d, none, nullptr)), "C:\\x\\NoExt (Before Reset 2026-10-06 20.05).nesrec");
+}
+#endif
