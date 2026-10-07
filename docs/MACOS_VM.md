@@ -81,8 +81,9 @@ GameController.framework is checked with `guest` (not verified end to end for Pr
 
 - **GPU is paravirtualized.** Metal works, but frame pacing, latency and performance numbers are not
   representative; use `scripts/perf-smoke.sh` on the host. No ProMotion / VRR.
-- Audio is the VM's virtual device (plays on the host's output unless the VM's sound is disabled in
-  its Parallels configuration).
+- Silent by design: `start.sh` disables the VM's sound device (`prlctl set <vm> --device-set sound0
+  --disable`, re-applied on every start because a snapshot switch may restore it) and provisioning mutes
+  the guest's output. Audio behaviour therefore can't be checked in the VM.
 - No Xcode in the VM: it runs built apps, not `scripts/test-macos.sh`.
 - Notification banners cannot be fully disabled from the command line.
 - Apple's license allows macOS VMs only on Apple hardware, at most 2 at a time.

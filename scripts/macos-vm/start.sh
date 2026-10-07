@@ -11,6 +11,7 @@ case "$(vm_status)" in
   suspended|paused) "$PRLCTL" resume "$VM" >/dev/null ;;
   *)
     "$PRLCTL" set "$VM" --startup-view headless >/dev/null 2>&1 || true   # no Parallels window
+    "$PRLCTL" set "$VM" --device-set sound0 --disable >/dev/null 2>&1 || true   # silent: no guest audio on the host
     "$PRLCTL" start "$VM" >/dev/null ;;
 esac
 wait_ssh

@@ -47,4 +47,6 @@ if [ "$CONSOLE" != "$VM_USER" ]; then
   for _ in $(seq 1 60); do [ "$(vm_ssh 'stat -f %Su /dev/console')" = "$VM_USER" ] && break; sleep 2; done
   [ "$(vm_ssh 'stat -f %Su /dev/console')" = "$VM_USER" ] || { echo "guest never logged in" >&2; exit 1; }
 fi
+# Belt and braces for the disabled sound device: mute the guest's output in the desktop session.
+vm_ssh 'osascript -e "set volume output volume 0" -e "set volume output muted true"' >/dev/null 2>&1 || true
 echo "provisioned: $(vm_ssh 'sw_vers -productVersion'), desktop session for $VM_USER"
