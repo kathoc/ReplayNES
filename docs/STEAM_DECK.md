@@ -28,7 +28,7 @@ Or from the release bundle (`io.github.replaynes.ReplayNES-<version>-x86_64.flat
 (remote `replaynes-origin`), so it updates the same way:
 
 ```sh
-flatpak install --user io.github.replaynes.ReplayNES-0.3.1-x86_64.flatpak   # fetches the runtime from Flathub
+flatpak install --user io.github.replaynes.ReplayNES-0.4.0-x86_64.flatpak   # fetches the runtime from Flathub
 flatpak remotes --user                                                      # replaynes-origin  https://kathoc.github.io/ReplayNES/flatpak/
 ```
 

@@ -34,7 +34,7 @@ provision.sh writes `/etc/kcpassword` itself. The guest needs a desktop session 
 ```sh
 scripts/macos-vm/start.sh                         # boot (headless), provision, wait for SSH + desktop session
 scripts/macos-vm/deploy.sh                        # build/ReplayNES.app -> guest /Applications
-scripts/macos-vm/deploy.sh dist/ReplayNES-0.3.1-macOS-arm64.zip    # or a release zip
+scripts/macos-vm/deploy.sh dist/ReplayNES-0.4.0-macOS-arm64.zip    # or a release zip
 build/tools/replaynes-cli/replaynes-cli make-test-rom /tmp/test.nes
 ROM=/tmp/test.nes scripts/macos-vm/run-app.sh     # copy the ROM in, launch --rom ... --autoplay
 UI_LANG=en ROM=/tmp/test.nes scripts/macos-vm/run-app.sh            # other UI language, this run only

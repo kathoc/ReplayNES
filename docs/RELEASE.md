@@ -99,7 +99,7 @@ to `~/Library/Caches/io.github.replaynes.ReplayNES`; remove them afterwards if n
 python3 -c 'from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K; from cryptography.hazmat.primitives import serialization as s; import base64; k=K.generate(); open("build/update-test/seed.txt","w").write(base64.b64encode(k.private_bytes(s.Encoding.Raw,s.PrivateFormat.Raw,s.NoEncryption())).decode()); print(base64.b64encode(k.public_key().public_bytes(s.Encoding.Raw,s.PublicFormat.Raw)).decode())'
 PUB=<printed public key>
 # old version, then the new one + its feed served from the Mac (Parallels host address 10.211.55.2)
-BUILD_BASE=$PWD/build/update-test/old DIST=$PWD/build/update-test/old-dist VERSION_OVERRIDE=0.3.1-test \
+BUILD_BASE=$PWD/build/update-test/old DIST=$PWD/build/update-test/old-dist VERSION_OVERRIDE=0.4.0-test \
   EXTRA_CMAKE_ARGS="-DRNW_UPDATE_PUBLIC_KEY=$PUB -DREPLAYNES_BUILD_TESTS=OFF" scripts/build-windows.sh aarch64
 VERSION_OVERRIDE=1 BUILD_BASE=$PWD/build/update-test/new DIST=$PWD/build/update-test/feed \
   ED_KEY_FILE=$PWD/build/update-test/seed.txt DOWNLOAD_BASE=http://10.211.55.2:8765 \
