@@ -13,13 +13,20 @@ enum UILanguage {
 
     /// Must run before any localized string is resolved (App.init).
     static func apply() {
-        let global = UserDefaults(suiteName: UserDefaults.globalDomain)?.stringArray(forKey: "AppleLanguages") ?? []
-        let lang = choose(systemPreferred: global)
+        let lang = choose(systemPreferred: systemLanguages())
         let defaults = UserDefaults.standard
         if defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String] != [lang] {
             defaults.set([lang], forKey: "AppleLanguages")
         }
         syncCore()
+    }
+
+    /// The user's system-wide language list (global domain). `UserDefaults(suiteName:
+    /// UserDefaults.globalDomain)` returns nil, and `UserDefaults.standard` would see the value this
+    /// app pins in its own domain, so read the global domain through CFPreferences.
+    static func systemLanguages() -> [String] {
+        CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
+                               kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String] ?? []
     }
 
     /// The shared frontend core resolves its strings in the language the bundle uses.

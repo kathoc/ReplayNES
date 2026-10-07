@@ -141,4 +141,13 @@ final class FrontendBridgeTests: XCTestCase {
         XCTAssertEqual(tail.count, 8)
         XCTAssertEqual(tail.last, 0)
     }
+
+    /// Regression (0.3.0): the global language list was read through
+    /// UserDefaults(suiteName: globalDomain), which is nil, so the UI was always pinned to English.
+    func testSystemLanguagesReadsTheGlobalDomain() {
+        let global = CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
+                                            kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String] ?? []
+        XCTAssertEqual(UILanguage.systemLanguages(), global)
+        XCTAssertFalse(UILanguage.systemLanguages().isEmpty, "a logged-in user always has a language list")
+    }
 }
