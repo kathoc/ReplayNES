@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.3.1" date="2026-10-07">
+      <description>
+        <p>Built-in on-screen keyboard for the Steam Deck controller, and Rename (Y) on the Bookmarks and Practice lists.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-07"/>
     <release version="0.2.0" date="2026-10-07"/>
   </releases>

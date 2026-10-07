@@ -78,7 +78,7 @@ listens on a random port with a random one-time password printed to
 scripts/macos-vm/reset.sh                         # fresh replaynes-test from the clean snapshot
 scripts/macos-vm/start.sh                         # boot headless (+ VNC); waits for SSH
 scripts/macos-vm/deploy.sh                        # build/ReplayNES.app -> guest /Applications
-scripts/macos-vm/deploy.sh dist/ReplayNES-0.3.0-macOS-arm64.zip    # or a release zip
+scripts/macos-vm/deploy.sh dist/ReplayNES-0.3.1-macOS-arm64.zip    # or a release zip
 build/tools/replaynes-cli/replaynes-cli make-test-rom /tmp/test.nes
 ROM=/tmp/test.nes scripts/macos-vm/run-app.sh     # copy the ROM in, launch --rom ... --autoplay
 UI_LANG=ja ROM=/tmp/test.nes scripts/macos-vm/run-app.sh            # Japanese UI, this run only
