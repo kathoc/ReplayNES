@@ -103,11 +103,25 @@ copied there.
 | Build | How it runs | Result | Wall time |
 |---|---|---|---|
 | aarch64 (llvm-mingw) | native arm64 | 20/20 passed | 193 s (sequential) |
-| x86_64 (llvm-mingw) | Windows x64 emulation (Prism) on arm64 | 20/20 passed | RESULT_X |
+| x86_64 (llvm-mingw) | Windows x64 emulation (Prism) on arm64 | 20/20 passed | 565 s (sequential) |
 | macOS arm64 (host, reference) | native, `ctest -j6` | 20/20 | ~60 s |
 
-Emulated x64 runs the CPU-heavy tests 3-4x slower than native arm64 (`test_flash_filter_exact`
-205 s vs 64 s). That says nothing about a real x64 PC: use CI (below) for x64 hardware.
+Emulated x64 runs the CPU-heavy tests ~3x slower than native arm64 (`test_flash_filter_exact`
+171 s vs 63 s, `test_determinism` 104 s vs 35 s). That says nothing about a real x64 PC: use CI for
+x64 hardware.
+
+### CI (`.github/workflows/windows.yml`)
+
+| Job | Runner | Result (first run) |
+|---|---|---|
+| MSVC x64 | `windows-latest` (Windows Server 2025, x64) | build + ctest 20/20 |
+| clang-cl x64 | `windows-latest`, `-T ClangCL` | build + ctest 20/20 (after the narrowing fix below) |
+| MSVC arm64 | `windows-11-arm` | build + ctest 20/20 |
+| llvm-mingw cross-build | `macos-latest` | x86_64 + aarch64 build |
+| llvm-mingw x86_64 tests | `windows-latest`, executables from the cross-build | 20/20 |
+
+Runner probe: no GPU (DXGI adapter = Microsoft Basic Render Driver / WARP: D3D11 FL 11_1, D3D12
+FL 12_1 with shader model 6.8), Vulkan loader only, OpenGL 1.1 (GDI), no audio endpoint.
 
 ## Graphics / audio / input in the VM (`replaynes-winprobe`)
 

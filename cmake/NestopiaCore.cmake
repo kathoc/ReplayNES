@@ -31,11 +31,11 @@ if(MSVC)
 else()
   # Third-party code: silence warnings; never allow value-changing float optimizations.
   target_compile_options(nestopia_core PRIVATE -w -fno-fast-math -ffp-contract=off)
-  if(WIN32)
-    # 16-bit wchar_t: NstCore.hpp's StringCompare narrows int -> wchar_t in a braced initializer
-    # (a hard error in clang/gcc; MSVC only warns). Behaviour is unchanged (upstream relies on it).
-    target_compile_options(nestopia_core PRIVATE $<IF:$<CXX_COMPILER_ID:GNU>,-Wno-narrowing,-Wno-c++11-narrowing>)
-  endif()
+endif()
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  # 16-bit wchar_t: NstCore.hpp's StringCompare narrows int -> wchar_t in a braced initializer
+  # (a hard error in clang / clang-cl / gcc; MSVC only warns). Behaviour is unchanged.
+  target_compile_options(nestopia_core PRIVATE $<IF:$<CXX_COMPILER_ID:GNU>,-Wno-narrowing,-Wno-c++11-narrowing>)
 endif()
 
 # ---- Core revision pin -----------------------------------------------------------------
