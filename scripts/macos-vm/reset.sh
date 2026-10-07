@@ -1,16 +1,20 @@
 #!/bin/bash
-# Throw the working VM away and re-clone it from the clean snapshot (APFS copy-on-write: seconds,
-# almost no extra disk). Every test run can start from a freshly provisioned macOS this way.
+# Roll the VM back to its snapshot ("clean" by default; SNAPSHOT=name). The VM is stopped first.
+# Everything done since the snapshot (installed apps, preferences, files) is discarded.
 #   scripts/macos-vm/reset.sh            START=1 scripts/macos-vm/reset.sh   (and boot it)
 set -euo pipefail
-. "$(dirname "$0")/common.sh"
-vm_exists "$CLEAN_VM" || { echo "clean snapshot $CLEAN_VM is missing (scripts/macos-vm/create.sh)" >&2; exit 1; }
-vm_running "$CLEAN_VM" && { echo "$CLEAN_VM is running; stop it first (VM=$CLEAN_VM scripts/macos-vm/stop.sh)" >&2; exit 1; }
-if vm_exists "$VM"; then
-  vm_running "$VM" && "$(dirname "$0")/stop.sh"
-  "$TART" delete "$VM"
-fi
-"$TART" clone "$CLEAN_VM" "$VM"
-echo "$VM re-cloned from $CLEAN_VM"
-[ "${START:-0}" = 1 ] && exec "$(dirname "$0")/start.sh"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/common.sh"
+vm_exists || { echo "VM $VM does not exist" >&2; exit 1; }
+# snapshot-list -j: {"{id}": {"name": "...", ...}, ...}
+ID="$("$PRLCTL" snapshot-list "$VM" -j | SNAP="$SNAPSHOT" python3 -c '
+import json,os,sys
+d=json.load(sys.stdin)
+for k,v in d.items():
+    if v.get("name")==os.environ["SNAP"]: print(k); break' 2>/dev/null || true)"
+[ -n "$ID" ] || { echo "snapshot \"$SNAPSHOT\" not found on $VM (prlctl snapshot-list $VM)" >&2; exit 1; }
+[ "$(vm_status)" = stopped ] || "$HERE/stop.sh"
+"$PRLCTL" snapshot-switch "$VM" --id "$ID" >/dev/null
+echo "$VM reset to snapshot \"$SNAPSHOT\" $ID ($(vm_status))"
+[ "${START:-0}" = 1 ] && exec "$HERE/start.sh"
 exit 0

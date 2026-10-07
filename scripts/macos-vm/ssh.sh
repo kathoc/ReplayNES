@@ -1,5 +1,5 @@
 #!/bin/bash
-# ssh into the running test VM (key auth set up by create.sh). Extra arguments run as a command.
+# ssh into the running VM (key auth, see docs/MACOS_VM.md). Extra arguments run as a command.
 #   scripts/macos-vm/ssh.sh              scripts/macos-vm/ssh.sh 'sw_vers'
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
