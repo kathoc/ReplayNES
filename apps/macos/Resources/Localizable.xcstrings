@@ -121,16 +121,6 @@
         }
       }
     },
-    "%lld projects · %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld件・%2$@"
-          }
-        }
-      }
-    },
     "%lldA": {
       "localizations": {
         "ja": {
