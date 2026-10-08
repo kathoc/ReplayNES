@@ -6,6 +6,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <system_error>
 
@@ -62,11 +63,91 @@ bool librarySearchMatches(const std::string& query, const LibraryROM& rom) {
   return fold(rom.name).find(q) != std::string::npos || fold(rom.relativePath).find(q) != std::string::npos;
 }
 
-LibraryModel::LibraryModel(std::string root) : root_(std::move(root)), hashes_(rnf_rom_hash_cache_new()) {}
+namespace {
+std::string takeString(char* s) {
+  std::string out = s ? s : "";
+  rnf_string_free(s);
+  return out;
+}
+}  // namespace
+
+std::string LibraryROM::title() const { return takeString(rnf_game_title(info(), name.c_str())); }
+std::string LibraryROM::byline() const { return takeString(rnf_game_byline(info())); }
+std::string LibraryROM::details() const { return takeString(rnf_game_details(info())); }
+
+LibraryModel::LibraryModel(std::string root)
+    : root_(std::move(root)), hashes_(rnf_rom_hash_cache_new()), prefs_(rnf_library_prefs_new()) {}
 
 LibraryModel::~LibraryModel() {
   if (worker_.joinable()) worker_.join();
   rnf_rom_hash_cache_free(hashes_);
+  rnf_library_prefs_free(prefs_);
+}
+
+// ------------------------------------------------------------------ favourites / history / order
+
+void LibraryModel::setPrefsFile(const std::string& path) {
+  prefsFile_ = path;
+  if (rnf_library_prefs_load(prefs_, path.c_str()) != RN_OK)
+    std::fprintf(stderr, "library prefs: %s (starting empty)\n", rnf_last_error());
+  prefsVersion_ += 1;
+}
+
+void LibraryModel::savePrefs() {
+  prefsVersion_ += 1;
+  if (prefsFile_.empty()) return;
+  if (rnf_library_prefs_save(prefs_, prefsFile_.c_str()) != RN_OK) std::fprintf(stderr, "library prefs: %s\n", rnf_last_error());
+}
+
+const LibraryROM* LibraryModel::romWithSHA(const std::string& sha256) const {
+  if (sha256.empty()) return nullptr;
+  for (const LibraryROM& r : roms_)
+    if (r.sha256 == sha256) return &r;
+  return nullptr;
+}
+
+bool LibraryModel::isFavorite(const LibraryROM& rom) const { return rnf_library_prefs_is_favorite(prefs_, rom.sha256.c_str()) != 0; }
+
+bool LibraryModel::toggleFavorite(const LibraryROM& rom) {
+  if (rom.sha256.empty()) return false;
+  bool on = rnf_library_prefs_toggle_favorite(prefs_, rom.sha256.c_str()) != 0;
+  savePrefs();
+  return on;
+}
+
+void LibraryModel::recordPlay(const std::string& sha256, double start, double seconds) {
+  if (sha256.empty()) return;
+  rnf_library_prefs_record_play(prefs_, sha256.c_str(), start, seconds);
+  savePrefs();
+}
+
+bool LibraryModel::history(const LibraryROM& rom, rnf_library_history_entry* out) const {
+  return rnf_library_prefs_history_find(prefs_, rom.sha256.c_str(), out) != 0;
+}
+
+void LibraryModel::setSort(rnf_library_sort s) {
+  rnf_library_prefs_set_sort(prefs_, s);
+  savePrefs();
+}
+
+void LibraryModel::setFilter(rnf_library_filter f) {
+  rnf_library_prefs_set_filter(prefs_, f);
+  savePrefs();
+}
+
+const std::vector<const LibraryROM*>& LibraryModel::arranged(const std::string& query) const {
+  std::string key = std::to_string(version_) + "/" + std::to_string(prefsVersion_) + "/" + rnf_l10n_language() + "/" + query;
+  if (key == arrangedKey_) return arranged_;
+  std::vector<rnf_library_item> items;
+  items.reserve(roms_.size());
+  for (const LibraryROM& r : roms_) items.push_back({r.sha256.c_str(), r.name.c_str(), r.relativePath.c_str(), r.info()});
+  size_t n = rnf_library_arrange(items.data(), items.size(), sort(), filter(), query.c_str(), prefs_, nullptr, 0);
+  std::vector<size_t> order(n);
+  rnf_library_arrange(items.data(), items.size(), sort(), filter(), query.c_str(), prefs_, order.data(), order.size());
+  arranged_.clear();
+  for (size_t i : order) arranged_.push_back(&roms_[i]);
+  arrangedKey_ = key;
+  return arranged_;
 }
 
 std::string LibraryModel::romDir() const { return root_ + "/" + RNF_LIBRARY_ROM_DIR; }
@@ -120,6 +201,7 @@ void LibraryModel::scanThread() {
         LibraryROM rom{e.path, e.name, e.relative_path, e.size, e.modified, ""};
         char hex[65] = {0};
         if (rnf_rom_hash_cache_sha256(hashes_, e.path, e.size, e.modified, hex) == RN_OK) rom.sha256 = hex;
+        rom.known = rnf_rom_hash_cache_identify(hashes_, e.path, e.size, e.modified, &rom.game) != RNF_GAME_MATCH_NONE;
         r.roms.push_back(std::move(rom));
       }
       rnf_rom_list_free(roms);
@@ -159,10 +241,11 @@ bool LibraryModel::poll() {
   scanError_ = r.error;
   bool changed = r.roms.size() != roms_.size() || r.projects.size() != projects_.size();
   for (size_t i = 0; !changed && i < r.roms.size(); ++i)
-    changed = r.roms[i].path != roms_[i].path || r.roms[i].sha256 != roms_[i].sha256;
+    changed = r.roms[i].path != roms_[i].path || r.roms[i].sha256 != roms_[i].sha256 || r.roms[i].known != roms_[i].known;
   for (size_t i = 0; !changed && i < r.projects.size(); ++i)
     changed = r.projects[i].path != projects_[i].path || r.projects[i].modified != projects_[i].modified;
   roms_ = std::move(r.roms);
+  arrangedKey_.clear();  // the cached order points into roms_
   projects_ = std::move(r.projects);
   bySHA_.clear();
   for (size_t i = 0; i < projects_.size(); ++i) bySHA_[projects_[i].romSHA256].push_back(i);

@@ -1,14 +1,25 @@
-// Library = the start screen (docs/design/UI_REDESIGN.md, "Library"): a large "Continue" card,
-// then big game cards (4 per row, paged with L / R instead of scrolling), or one card saying where
-// to put ROMs. ROMs live in ~/Documents/ReplayNES/ROM, their projects (matched by SHA-256) in
-// Projects. Controller / keyboard: D-pad moves, A plays, X = projects of the game, Y = search.
+// Library = the start screen (docs/design/UI_REDESIGN.md, "Library"): a large "Continue" card (the
+// last session - also after a crash - else the latest project), a row of filter chips (All /
+// Favorites / Recent), the sort and the search, then big game cards (4 per row, paged with L / R
+// instead of scrolling; the title from the game database in the UI language, "maker · year" under
+// it, a star on favourites), or one card saying where to put ROMs. ROMs live in
+// ~/Documents/ReplayNES/ROM, their projects (matched by SHA-256) in Projects. Controller / keyboard:
+// D-pad moves, A plays, Y = favourite, X = projects of the game, View / S = next sort, / = search.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
 /// Focus and paging of the library (main thread).
 final class LibraryNav: ObservableObject {
-    /// -1 = the Continue card.
+    static let heroFocus = -1
+    static let barFocus = -3
+    /// The filter / sort / search row: filters, then the sort, then the search.
+    static let barItems = Int(RNF_LIBRARY_FILTER_COUNT.rawValue) + 2
+    static var barSort: Int { Int(RNF_LIBRARY_FILTER_COUNT.rawValue) }
+    static var barSearch: Int { barSort + 1 }
+
+    /// -1 = the Continue card, -3 = the filter / sort / search row, else a game (all pages).
     @Published var focus = 0
+    @Published var barFocus = 0
     @Published var page = 0
     @Published var search = ""
     @Published var searchRequested = 0
@@ -20,12 +31,23 @@ final class LibraryNav: ObservableObject {
     var perPage = 8
 
     func entries(_ library: LibraryModel) -> [LibraryROM] {
-        let q = search.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return library.roms }
-        return library.roms.filter { $0.name.localizedStandardContains(q) || $0.relativePath.localizedStandardContains(q) }
+        library.arranged(query: search.trimmingCharacters(in: .whitespaces))
     }
 
     func pageCount(_ n: Int) -> Int { QuickMenuNav.pageCount(items: n, perPage: perPage) }
+
+    /// A filter chip, the sort (cycles) or the search.
+    func barAction(_ item: Int, library: LibraryModel) {
+        if item < Self.barSort {
+            library.filter = rnf_library_filter(rawValue: UInt32(item))
+            page = 0
+        } else if item == Self.barSort {
+            library.sort = rnf_library_sort(rawValue: (library.sort.rawValue + 1) % RNF_LIBRARY_SORT_COUNT.rawValue)
+            page = 0
+        } else {
+            searchRequested += 1
+        }
+    }
 
     func handle(_ n: NavInput, model m: AppModel) {
         let library = m.library
@@ -42,13 +64,12 @@ final class LibraryNav: ObservableObject {
         }
         let list = entries(library)
         let hero = LibraryHome.continueItem(m) != nil
-        if list.isEmpty {
+        if library.roms.isEmpty {
             // The Continue card (if any) and the "where to put ROMs" card.
             switch n {
-            case .up: if hero { focus = -1 }
+            case .up: if hero { focus = Self.heroFocus }
             case .down: focus = 0
             case .confirm: if focus < 0 && hero { LibraryHome.continueItem(m)?.run() } else { library.revealROMFolder() }
-            case .y: searchRequested += 1
             case .back, .escape: if m.status.hasSession { m.hideLibraryScreen() }
             default: break
             }
@@ -56,14 +77,22 @@ final class LibraryNav: ObservableObject {
         }
         let range = QuickMenuNav.pageRange(items: list.count, perPage: perPage, page: page)
         let local = focus - range.lowerBound
+        let firstCard: Int? = range.isEmpty ? nil : range.lowerBound
         switch n {
         case .up:
-            if focus < 0 { return }
-            if local < columns { if hero { focus = -1 } } else { focus -= columns }
+            // Top to bottom: the filter / sort / search row, the Continue card, the game cards.
+            if focus == Self.barFocus { return }
+            if focus == Self.heroFocus { focus = Self.barFocus; return }
+            if local < columns { focus = hero ? Self.heroFocus : Self.barFocus } else { focus -= columns }
         case .down:
-            if focus < 0 { if !range.isEmpty { focus = range.lowerBound } ; return }
+            if focus == Self.barFocus { focus = hero ? Self.heroFocus : (firstCard ?? Self.barFocus); return }
+            if focus == Self.heroFocus { if let f = firstCard { focus = f }; return }
             if let j = QuickMenuNav.move(local, count: range.count, columns: columns, .down) { focus = range.lowerBound + j }
         case .left, .right:
+            if focus == Self.barFocus {
+                barFocus = max(0, min(Self.barItems - 1, barFocus + (n == .left ? -1 : 1)))
+                return
+            }
             guard focus >= 0 else { return }
             let d: NavDirection = n == .left ? .left : .right
             if let j = QuickMenuNav.move(local, count: range.count, columns: columns, d) { focus = range.lowerBound + j }
@@ -71,14 +100,20 @@ final class LibraryNav: ObservableObject {
         case .pagePrev, .pageNext:
             flip(n == .pagePrev ? -1 : 1, count: list.count)
         case .confirm:
-            if focus < 0 { LibraryHome.continueItem(m)?.run() }
+            if focus == Self.heroFocus { LibraryHome.continueItem(m)?.run() }
+            else if focus == Self.barFocus { barAction(barFocus, library: library) }
             else if list.indices.contains(focus) { LibraryHome.play(list[focus], model: m) }
         case .x:
             if focus >= 0, list.indices.contains(focus) { projectsFocus = 0; projectsOf = list[focus] }
         case .y:
+            if focus >= 0, list.indices.contains(focus) { library.toggleFavorite(list[focus]) }  // the focus stays
+        case .options:
+            barAction(Self.barSort, library: library)
+        case .search:
             searchRequested += 1
         case .back, .escape:
-            if m.status.hasSession { m.hideLibraryScreen() }
+            if !search.isEmpty { search = ""; focus = 0; page = 0 }
+            else if m.status.hasSession { m.hideLibraryScreen() }
         case .menu:
             break
         }
@@ -96,8 +131,9 @@ final class LibraryNav: ObservableObject {
     /// Keeps focus and page valid when the list changes.
     func clamp(count: Int, hero: Bool) {
         let pages = pageCount(count)
-        if page >= pages { page = pages - 1 }
-        if count == 0 { focus = hero ? -1 : 0; return }
+        if page >= pages { page = max(0, pages - 1) }
+        if focus == Self.barFocus { return }
+        if count == 0 { focus = hero ? Self.heroFocus : Self.barFocus; return }
         if focus < 0 && !hero { focus = 0 }
         if focus >= count { focus = count - 1 }
         if focus >= 0 {
@@ -115,7 +151,7 @@ struct LibraryHome: View {
     @FocusState private var searchFocused: Bool
 
     static let gap: CGFloat = 14
-    static let heroHeight: CGFloat = 150
+    static let heroHeight: CGFloat = 140
 
     struct ContinueItem {
         let title: String
@@ -138,17 +174,17 @@ struct LibraryHome: View {
                 header
                     .padding(.trailing, 150)   // the menu pill
                 if let err = library.folderError { banner(err, retry: true) } else if let err = library.scanError { banner(err, retry: false) }
-                if list.isEmpty && hero == nil && nav.search.isEmpty {
+                if library.roms.isEmpty && hero == nil {
                     emptyCard.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     if let hero { heroCard(hero) }
-                    if list.isEmpty && nav.search.isEmpty {
+                    if library.roms.isEmpty {
                         emptyCard.frame(maxWidth: .infinity)
                     } else {
                         grid(list, cardW: cardW, cardH: cardH, perPage: per)
                     }
                     Spacer(minLength: 0)
-                    footer(list.count)
+                    footer(list)
                 }
             }
             .padding(QMStyle.margin)
@@ -161,41 +197,95 @@ struct LibraryHome: View {
         .overlay { if let rom = nav.projectsOf { projectsPanel(rom) } }
         .environment(\.colorScheme, .dark)
         .foregroundStyle(.white)
-        .onChange(of: nav.searchRequested) { _, _ in searchFocused = true }
+        .onChange(of: nav.searchRequested) { _, _ in nav.focus = LibraryNav.barFocus; nav.barFocus = LibraryNav.barSearch; searchFocused = true }
     }
 
     // MARK: header / footer
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("ReplayNES").font(.system(size: 22, weight: .bold))
+            (Text(verbatim: "Replay") + Text(verbatim: "NES").foregroundColor(QMStyle.brand)).font(.system(size: 22, weight: .bold))
             if library.scanning { ProgressView().controlSize(.small) }
-            Spacer()
-            if !library.roms.isEmpty { searchField }
+            Spacer(minLength: 12)
+            if !library.roms.isEmpty { toolbar }
         }
         .frame(height: 34)
     }
 
-    private var searchField: some View {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.5))
-                TextField("Search", text: $nav.search)
-                    .textFieldStyle(.plain).frame(width: 150)
-                    .focused($searchFocused)
-                    .onSubmit { searchFocused = false; nav.focus = 0; nav.page = 0 }
-                if !nav.search.isEmpty {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.5))
-                        .onTapGesture { nav.search = "" }
-                }
+    /// Filter chips, the sort and the search (reached with up from the cards).
+    private var toolbar: some View {
+        let _ = library.catalogRevision
+        let icons = ["square.grid.2x2", "star.fill", "clock.arrow.circlepath"]
+        return HStack(spacing: 8) {
+            ForEach(0..<LibraryCatalog.filters.count, id: \.self) { i in
+                chip(i, icon: icons[i], text: LibraryCatalog.name(LibraryCatalog.filters[i]),
+                     selected: library.filter == LibraryCatalog.filters[i])
             }
-            .font(.system(size: 13))
-            .padding(.horizontal, 10).frame(height: 30)
-            .background(Capsule().fill(Color.white.opacity(searchFocused ? 0.14 : 0.08)))
+            chip(LibraryNav.barSort, icon: "arrow.up.arrow.down", text: LibraryCatalog.name(library.sort), selected: false)
+                .padding(.leading, 10)
+            searchField
+        }
     }
 
-    private func footer(_ count: Int) -> some View {
+    private func chip(_ i: Int, icon: String, text: String, selected: Bool) -> some View {
+        let focused = nav.focus == LibraryNav.barFocus && nav.barFocus == i
+        return HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Text(text).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+        }
+        .foregroundStyle(.white.opacity(selected || focused ? 1 : 0.7))
+        .padding(.horizontal, 12).frame(height: 30)
+        .background(Capsule().fill(selected ? QMStyle.brand : (focused ? QMStyle.tileFocused : QMStyle.tile)))
+        .overlay(Capsule().strokeBorder(focused ? QMStyle.brand : .clear, lineWidth: 2))
+        .fixedSize()
+        .contentShape(Capsule())
+        .onHover { if $0 { nav.focus = LibraryNav.barFocus; nav.barFocus = i } }
+        .onTapGesture { nav.focus = LibraryNav.barFocus; nav.barFocus = i; nav.barAction(i, library: library) }
+        .animation(QMStyle.anim, value: focused)
+    }
+
+    private var searchField: some View {
+        let focused = nav.focus == LibraryNav.barFocus && nav.barFocus == LibraryNav.barSearch
+        return HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.5))
+            TextField("Search", text: $nav.search)
+                .textFieldStyle(.plain).frame(width: 130)
+                .focused($searchFocused)
+                .onSubmit { searchFocused = false; nav.focus = 0; nav.page = 0 }
+            if !nav.search.isEmpty {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.5))
+                    .onTapGesture { nav.search = "" }
+            }
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 10).frame(height: 30)
+        .background(Capsule().fill(Color.white.opacity(searchFocused ? 0.14 : 0.08)))
+        .overlay(Capsule().strokeBorder(focused && !searchFocused ? QMStyle.brand : .clear, lineWidth: 2))
+        .onHover { if $0 { nav.focus = LibraryNav.barFocus; nav.barFocus = LibraryNav.barSearch } }
+    }
+
+    /// The View / Select button of the controller in use ("S" on the keyboard).
+    private func optionsGlyph() -> String {
+        guard let c = monitor.controllers.min(by: { $0.slot < $1.slot }) else { return "S" }
+        let l = c.family.label("options")
+        return l.isEmpty ? "⧉" : l
+    }
+
+    private func footer(_ list: [LibraryROM]) -> some View {
         let g = HintGlyphs.current(monitor.controllers)
+        let count = list.count
         let pages = nav.pageCount(count)
+        let focusedRom: LibraryROM? = nav.focus >= 0 && list.indices.contains(nav.focus) ? list[nav.focus] : nil
+        let description: String = {
+            if nav.focus == LibraryNav.heroFocus { return String(localized: "Pick up where you left off") }
+            if nav.focus == LibraryNav.barFocus {
+                if nav.barFocus < LibraryNav.barSort { return LibraryCatalog.name(LibraryCatalog.filters[nav.barFocus]) }
+                if nav.barFocus == LibraryNav.barSort { return String(localized: "Sort by \(LibraryCatalog.name(library.sort))") }
+                return String(localized: "Search ROMs")
+            }
+            guard let r = focusedRom else { return "" }
+            return r.details.isEmpty ? r.relativePath : r.details
+        }()
         return HStack(spacing: 14) {
             if pages > 1 {
                 KeyCap(g.l).onTapGesture { nav.handle(.pagePrev, model: model) }
@@ -206,12 +296,17 @@ struct LibraryHome: View {
                 }
                 KeyCap(g.r).onTapGesture { nav.handle(.pageNext, model: model) }
             }
+            Text(description).font(QMStyle.hint).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
             Spacer()
-            if count > 0 {
+            if nav.focus == LibraryNav.barFocus {
+                hint(g.confirm, String(localized: "Select"))
+            } else if let r = focusedRom {
                 hint(g.confirm, String(localized: "Play"))
+                hint(g.y, library.isFavorite(r) ? String(localized: "Unfavorite") : String(localized: "Favorite"))
                 hint(g.x, String(localized: "Projects"))
-                hint(g.y, String(localized: "Search"))
             }
+            hint(optionsGlyph(), LibraryCatalog.name(library.sort))
+                .onTapGesture { nav.barAction(LibraryNav.barSort, library: library) }
         }
         .frame(height: 28)
     }
@@ -233,24 +328,36 @@ struct LibraryHome: View {
 
     // MARK: Continue
 
+    /// The game open now, else the last session (resume record: also after a crash or force quit),
+    /// else the latest library project.
     static func continueItem(_ m: AppModel) -> ContinueItem? {
         if m.status.hasSession {
-            let rom = URL(fileURLWithPath: m.status.romPath).deletingPathExtension().lastPathComponent
+            let rom = m.library.rom(sha256: m.current?.romSHA256)?.title
+                ?? GameInfo.title(fileName: URL(fileURLWithPath: m.status.romPath).lastPathComponent)
             return ContinueItem(title: rom, subtitle: String(localized: "Playing now"),
                                 image: ThumbnailStore.image(project: m.status.projectPath) ?? ThumbnailStore.image(romSHA: m.current?.romSHA256),
                                 run: { m.hideLibraryScreen() })
         }
+        if let r = m.pendingResume {
+            let title = m.library.rom(sha256: r.romSHA256)?.title
+                ?? GameInfo.title(fileName: URL(fileURLWithPath: r.romPath.isEmpty ? r.projectPath : r.romPath).lastPathComponent)
+            var sub = r.updated.formatted(.relative(presentation: .named))
+            if r.isTemp { sub += String(localized: " · ") + String(localized: "Not saved as a project") }
+            return ContinueItem(title: title, subtitle: sub,
+                                image: ThumbnailStore.image(project: r.projectPath) ?? ThumbnailStore.image(romSHA: r.romSHA256),
+                                run: { m.continueLast() })
+        }
         let all = m.library.projectsBySHA.values.flatMap { $0 }
         guard let p = all.max(by: { $0.modified < $1.modified }) else { return nil }
-        let name = URL(fileURLWithPath: p.romName).deletingPathExtension().lastPathComponent
-        return ContinueItem(title: name.isEmpty ? p.name : name,
+        let name = m.library.rom(sha256: p.romSHA256)?.title ?? GameInfo.title(fileName: p.romName.isEmpty ? p.name : p.romName)
+        return ContinueItem(title: name,
                             subtitle: p.modified.formatted(.relative(presentation: .named)),
                             image: ThumbnailStore.image(project: p.url.path) ?? ThumbnailStore.image(romSHA: p.romSHA256),
                             run: { m.continueProject(p.url) })
     }
 
     private func heroCard(_ c: ContinueItem) -> some View {
-        let focused = nav.focus < 0
+        let focused = nav.focus == LibraryNav.heroFocus
         let g = HintGlyphs.current(monitor.controllers)
         return HStack(spacing: 18) {
             GameArt(image: c.image, name: c.title)
@@ -271,8 +378,8 @@ struct LibraryHome: View {
         .background(RoundedRectangle(cornerRadius: QMStyle.radius).fill(focused ? QMStyle.tileFocused : QMStyle.tile))
         .overlay(RoundedRectangle(cornerRadius: QMStyle.radius).strokeBorder(focused ? QMStyle.brand : .clear, lineWidth: 2))
         .contentShape(Rectangle())
-        .onHover { if $0 { nav.focus = -1 } }
-        .onTapGesture { nav.focus = -1; c.run() }
+        .onHover { if $0 { nav.focus = LibraryNav.heroFocus } }
+        .onTapGesture { nav.focus = LibraryNav.heroFocus; c.run() }
         .animation(QMStyle.anim, value: focused)
     }
 
@@ -282,9 +389,11 @@ struct LibraryHome: View {
         let range = QuickMenuNav.pageRange(items: list.count, perPage: perPage, page: nav.page)
         let idx = Array(range)
         let rows = stride(from: 0, to: idx.count, by: 4).map { Array(idx[$0..<min(idx.count, $0 + 4)]) }
+        let empty: String = !nav.search.isEmpty ? String(localized: "No games match “\(nav.search)”")
+            : library.filter == RNF_LIBRARY_FILTER_FAVORITES ? String(localized: "No favorites yet") : String(localized: "Nothing played yet")
         return VStack(alignment: .leading, spacing: Self.gap) {
             if list.isEmpty {
-                Text("No games match “\(nav.search)”").foregroundStyle(.white.opacity(0.6)).frame(height: cardH)
+                Text(empty).foregroundStyle(.white.opacity(0.6)).frame(height: cardH)
             }
             ForEach(rows, id: \.first) { row in
                 HStack(spacing: Self.gap) {
@@ -298,17 +407,34 @@ struct LibraryHome: View {
         .transition(.opacity)
     }
 
+    static func playTime(_ seconds: Double) -> String {
+        let m = max(1, Int(seconds / 60))
+        return m < 60 ? String(localized: "\(m) min") : String(localized: "\(m / 60) h \(m % 60) min")
+    }
+
     private func gameCard(_ rom: LibraryROM, index i: Int, width: CGFloat, artHeight: CGFloat) -> some View {
         let focused = nav.focus == i
         let projects = library.projects(for: rom)
-        let sub = projects.isEmpty ? String(localized: "New")
-            : String(localized: "\(projects.count) projects · \(projects[0].modified.formatted(.relative(presentation: .named)))")
+        let title = rom.title
+        var sub = rom.byline
+        if library.filter == RNF_LIBRARY_FILTER_RECENT || library.sort == RNF_LIBRARY_SORT_RECENT,
+           let h = library.catalog.history(rom.sha256) {
+            sub = h.lastPlayed.formatted(date: .abbreviated, time: .shortened) + String(localized: " · ") + Self.playTime(h.playSeconds)
+        }
+        if sub.isEmpty { sub = projects.isEmpty ? String(localized: "New") : projects[0].modified.formatted(.relative(presentation: .named)) }
+        let favorite = library.isFavorite(rom)
         return VStack(alignment: .leading, spacing: 0) {
-            GameArt(image: ThumbnailStore.image(romSHA: rom.sha256), name: rom.name)
+            GameArt(image: ThumbnailStore.image(romSHA: rom.sha256), name: title)
                 .frame(width: width, height: artHeight)
                 .clipped()
+                .overlay(alignment: .topTrailing) {
+                    if favorite {
+                        Image(systemName: "star.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.yellow)
+                            .frame(width: 26, height: 26).background(Circle().fill(Color.black.opacity(0.65))).padding(6)
+                    }
+                }
             VStack(alignment: .leading, spacing: 2) {
-                Text(rom.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(title).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 Text(sub).font(QMStyle.hint).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
@@ -323,6 +449,7 @@ struct LibraryHome: View {
         .onHover { if $0 { nav.focus = i } }
         .onTapGesture { nav.focus = i; Self.play(rom, model: model) }
         .contextMenu {
+            Button(favorite ? "Unfavorite" : "Favorite") { library.toggleFavorite(rom) }
             Button("Projects…") { nav.projectsFocus = 0; nav.projectsOf = rom }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([rom.url]) }
         }
@@ -357,7 +484,7 @@ struct LibraryHome: View {
         return ZStack {
             Color.black.opacity(0.55).contentShape(Rectangle()).onTapGesture { nav.projectsOf = nil }
             VStack(alignment: .leading, spacing: 12) {
-                Text(rom.name).font(QMStyle.title).lineLimit(1)
+                Text(rom.title).font(QMStyle.title).lineLimit(1)
                 VStack(spacing: QMStyle.rowGap) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
                         let f = i == nav.projectsFocus

@@ -594,7 +594,7 @@ float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_contro
   if (!controllerConnected()) {
     std::string k = element == "face.south" ? "Enter" : element == "face.east" ? "Bksp" : element == "face.west" ? "Del"
                     : element == "face.north" ? "F2" : element == "leftShoulder" ? "PgUp" : element == "rightShoulder" ? "PgDn"
-                    : element == "menu" ? "Esc" : element == "dpad.lr" ? "\xE2\x86\x90 \xE2\x86\x92"
+                    : element == "menu" ? "Esc" : element == "options" ? "Tab" : element == "dpad.lr" ? "\xE2\x86\x90 \xE2\x86\x92"
                     : element == "dpad.ud" ? "\xE2\x86\x91 \xE2\x86\x93" : "";
     if (!k.empty()) return keycap(dl, p, h, k, false, draw);
   }

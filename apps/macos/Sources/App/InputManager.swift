@@ -26,6 +26,8 @@ final class ControllerMonitor: ObservableObject {
 /// "Input model"). `menu` = the L+R chord (open / close the Quick Menu); `escape` = the Esc key.
 enum NavInput: Equatable {
     case up, down, left, right, confirm, back, x, y, pagePrev, pageNext, menu, escape
+    case options  // View / Select / − (the library: next sort order)
+    case search   // "/" (the library: search)
 }
 
 final class InputManager {
@@ -232,6 +234,7 @@ final class InputManager {
         case "face.west": post(.x)
         case "face.north": post(.y)
         case "menu": post(.menu)
+        case "options": post(.options)
         case "leftShoulder": post(.pagePrev)    // pads 2-4 (pad 1's come through the chord detector)
         case "rightShoulder": post(.pageNext)
         default: break
@@ -533,6 +536,8 @@ final class InputManager {
         case 48: return ev.modifierFlags.contains(.shift) ? .pagePrev : .pageNext
         case 7: return .x
         case 16: return .y
+        case 1: return .options   // S
+        case 44: return .search   // /
         default: return nil
         }
     }

@@ -101,12 +101,22 @@
         }
       }
     },
-    "%lld projects · %@": {
+    "%lld h %lld min": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld件・%2$@"
+            "value": "%1$lld時間%2$lld分"
+          }
+        }
+      }
+    },
+    "%lld min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分"
           }
         }
       }
@@ -471,6 +481,22 @@
         }
       }
     },
+    "Action (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクション"
+          }
+        }
+      }
+    },
     "Action for this button": {
       "localizations": {
         "ja": {
@@ -581,12 +607,44 @@
         }
       }
     },
+    "Adventure (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adventure"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドベンチャー"
+          }
+        }
+      }
+    },
     "Afterglow": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "残光"
+          }
+        }
+      }
+    },
+    "All (games)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
           }
         }
       }
@@ -1998,6 +2056,22 @@
         }
       }
     },
+    "Educational (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Educational"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "教育"
+          }
+        }
+      }
+    },
     "Eisu": {
       "localizations": {
         "ja": {
@@ -2208,12 +2282,48 @@
         }
       }
     },
+    "Favorite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
+    "Favorites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
     "Fewer": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "少なめ"
+          }
+        }
+      }
+    },
+    "Fighting (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fighting"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "格闘"
           }
         }
       }
@@ -2454,6 +2564,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゲームの入力（記録されます）"
+          }
+        }
+      }
+    },
+    "Genre": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンル"
           }
         }
       }
@@ -3038,6 +3158,16 @@
         }
       }
     },
+    "Last Played": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近遊んだ"
+          }
+        }
+      }
+    },
     "Last Wins": {
       "localizations": {
         "ja": {
@@ -3378,6 +3508,16 @@
         }
       }
     },
+    "Maker": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メーカー"
+          }
+        }
+      }
+    },
     "Mark the current position": {
       "localizations": {
         "ja": {
@@ -3508,6 +3648,22 @@
         }
       }
     },
+    "Music (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Music"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音楽"
+          }
+        }
+      }
+    },
     "Muted while paused, rewinding, in slow motion or fast-forward": {
       "localizations": {
         "ja": {
@@ -3614,6 +3770,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nintendo（Proコン / Joy-Con）"
+          }
+        }
+      }
+    },
+    "No favorites yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りはまだありません"
           }
         }
       }
@@ -3758,6 +3924,16 @@
         }
       }
     },
+    "Not saved as a project": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト未保存"
+          }
+        }
+      }
+    },
     "Nothing has been recorded yet": {
       "localizations": {
         "ja": {
@@ -3784,6 +3960,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "まだありません"
+          }
+        }
+      }
+    },
+    "Nothing played yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ遊んだゲームはありません"
           }
         }
       }
@@ -3930,6 +4116,22 @@
     },
     "Other": {
       "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        }
+      }
+    },
+    "Other (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
@@ -4608,6 +4810,22 @@
         }
       }
     },
+    "Puzzle (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puzzle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パズル"
+          }
+        }
+      }
+    },
     "Quick Menu": {
       "localizations": {
         "ja": {
@@ -4684,6 +4902,32 @@
           "stringUnit": {
             "state": "translated",
             "value": "R3 / ガイド: ReplayNES のメニュー（予約済み）"
+          }
+        }
+      }
+    },
+    "Racing (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Racing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レース"
+          }
+        }
+      }
+    },
+    "Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
           }
         }
       }
@@ -5275,6 +5519,22 @@
         }
       }
     },
+    "RPG (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RPG"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RPG"
+          }
+        }
+      }
+    },
     "Run in Background": {
       "localizations": {
         "ja": {
@@ -5785,6 +6045,22 @@
         }
       }
     },
+    "Shooter (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shooter"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シューティング"
+          }
+        }
+      }
+    },
     "Show a badge while flashing is being reduced": {
       "localizations": {
         "ja": {
@@ -5965,6 +6241,16 @@
         }
       }
     },
+    "Sort by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替え：%@"
+          }
+        }
+      }
+    },
     "Sound": {
       "localizations": {
         "ja": {
@@ -6001,6 +6287,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "スペース"
+          }
+        }
+      }
+    },
+    "Sports (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sports"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スポーツ"
           }
         }
       }
@@ -6215,6 +6517,22 @@
         }
       }
     },
+    "Strategy (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strategy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シミュレーション"
+          }
+        }
+      }
+    },
     "Stream Output": {
       "localizations": {
         "ja": {
@@ -6281,6 +6599,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "システム"
+          }
+        }
+      }
+    },
+    "Table Games (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Table Games"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーブル"
           }
         }
       }
@@ -6795,6 +7129,16 @@
         }
       }
     },
+    "Unfavorite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り解除"
+          }
+        }
+      }
+    },
     "Unsaved work was restored": {
       "localizations": {
         "ja": {
@@ -7041,6 +7385,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Y(旧設定)"
+          }
+        }
+      }
+    },
+    "Year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "発売年"
           }
         }
       }

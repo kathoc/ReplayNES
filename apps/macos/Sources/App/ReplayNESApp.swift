@@ -73,8 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !pendingOpen.isEmpty {
             open(pendingOpen)
         } else {
-            // Next turn: a document open event delivered right after launch wins over the resume.
-            DispatchQueue.main.async { self.model.resumeLastSession(explicitOpen: self.openedAtLaunch) }
+            // Next turn: a document open event delivered right after launch wins over Continue.
+            DispatchQueue.main.async { self.model.loadPendingResume(explicitOpen: self.openedAtLaunch) }
         }
         pendingOpen = []
         if let keys = arg("--inject-keys") { model.scheduleInjectedKeys(keys) }

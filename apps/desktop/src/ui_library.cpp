@@ -1,13 +1,17 @@
-// The library (start screen, docs/design/UI_REDESIGN.md): a "Continue" hero card (the latest
-// project: its picture, game name and when it was played - A resumes it) and pages of large game
-// cards, four per row (picture of the last session of the game, else a tile made from its name).
-// A plays the focused game (a new project), X lists its projects, Y searches (on-screen keyboard),
-// L / R turn the pages, the Menu pill (L+R / Esc) opens Settings. An empty library is one card
-// saying where the games go. Nothing scrolls.
+// The library (start screen, docs/design/UI_REDESIGN.md): a "Continue" hero card (the last
+// session - also after a crash - else the latest project: its picture, game name and when it was
+// played; A resumes it), a row of filter chips (All / Favorites / Recent), the sort (Name / Last
+// Played / Maker / Year / Genre) and the search, and pages of large game cards, four per row
+// (picture of the last session of the game, else a tile made from its name; the title from the
+// game database in the UI language, "maker · year" under it, a star on favourites).
+// A plays the focused game (a new project), Y marks it as a favourite, X lists its projects,
+// View / Select (Tab) cycles the sort, L / R turn the pages, the Menu pill (L+R / Esc) opens
+// Settings. An empty library is one card saying where the games go. Nothing scrolls.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 #include "app_model.h"
 #include "emulation.h"
@@ -35,6 +39,17 @@ void icon(ImDrawList* dl, const char* name, ImVec2 center, float size, ImU32 col
   if (!*g) return;
   ImVec2 ts = measure(size, g);
   dl->AddText(ImGui::GetFont(), size, ImVec2(center.x - ts.x / 2, center.y - ts.y / 2), col, g);
+}
+
+std::string takeString(char* s) {
+  std::string out = s ? s : "";
+  rnf_string_free(s);
+  return out;
+}
+
+std::string fileName(const std::string& path) {
+  size_t i = path.find_last_of("/\\");
+  return i == std::string::npos ? path : path.substr(i + 1);
 }
 
 uint32_t hashOf(const std::string& s) {
@@ -99,17 +114,41 @@ void coverImage(ImDrawList* dl, ImTextureID tex, ImVec2 uv0, ImVec2 uv1, const L
 }
 }  // namespace
 
-std::vector<const LibraryROM*> UI::libraryRoms() const {
-  std::vector<const LibraryROM*> out;
-  for (const LibraryROM& r : d_.library->roms())
-    if (librarySearchMatches(search_, r)) out.push_back(&r);
-  return out;
+namespace {
+constexpr int kFocusHero = -1;
+constexpr int kFocusPageStart = -2;  // L / R: the first card of the new page
+constexpr int kFocusBar = -3;        // the filter / sort / search row
+constexpr int kBarItems = RNF_LIBRARY_FILTER_COUNT + 2;  // filters, sort, search
+constexpr int kBarSort = RNF_LIBRARY_FILTER_COUNT, kBarSearch = RNF_LIBRARY_FILTER_COUNT + 1;
+constexpr ImU32 kStar = IM_COL32(255, 200, 40, 255);
+
+std::string playTime(double seconds) {
+  int64_t m = int64_t(seconds / 60);
+  if (m < 60) return TRF("%lld min", {m < 1 ? int64_t(1) : m});
+  return TRF("%lld h %lld min", {m / 60, m % 60});
 }
+}  // namespace
+
+std::vector<const LibraryROM*> UI::libraryRoms() const { return d_.library->arranged(search_); }
 
 const LibraryROM* UI::projectsRom() const {
   for (const LibraryROM& r : d_.library->roms())
     if (r.path == projectsRomPath_) return &r;
   return nullptr;
+}
+
+void UI::libraryBarAction(int item) {
+  LibraryModel* lib = d_.library;
+  if (item < RNF_LIBRARY_FILTER_COUNT) {
+    lib->setFilter(rnf_library_filter(item));
+    libPage_ = 0;
+  } else if (item == kBarSort) {
+    lib->setSort(rnf_library_sort((int(lib->sort()) + 1) % RNF_LIBRARY_SORT_COUNT));
+    libPage_ = 0;
+  } else {
+    focusSearch_ = true;
+    searchShown_ = true;
+  }
 }
 
 void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool hero) {
@@ -126,8 +165,13 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   if (pressed(ImGuiKey_PageDown, false)) shoulder(1);
   int n = int(cardCount);
   if (dx || dy) libMoved_ = true;
-  if (libFocus_ == -1) {
-    if (dy > 0 && n > 0) libFocus_ = libPage_ * perPage;
+  // Top to bottom: the filter / sort / search row (top bar), the Continue card, the game cards.
+  if (libFocus_ == kFocusHero) {
+    if (dy < 0) libFocus_ = kFocusBar;
+    else if (dy > 0 && n > 0) libFocus_ = std::min(n - 1, libPage_ * perPage);
+  } else if (libFocus_ == kFocusBar) {
+    if (dx) libBar_ = std::clamp(libBar_ + dx, 0, kBarItems - 1);
+    if (dy > 0) libFocus_ = hero ? kFocusHero : n > 0 ? std::min(n - 1, libPage_ * perPage) : kFocusBar;
   } else if (n > 0) {
     int page = libFocus_ / perPage, in = libFocus_ % perPage, row = in / cols, col = in % cols;
     if (dx < 0) {
@@ -138,40 +182,47 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
       else if (page + 1 < int(pages)) libFocus_ = std::min(n - 1, (page + 1) * perPage + row * cols);
     } else if (dy < 0) {
       if (row > 0) libFocus_ -= cols;
-      else if (hero) libFocus_ = -1;
+      else libFocus_ = hero ? kFocusHero : kFocusBar;
     } else if (dy > 0) {
       if (row == 0 && libFocus_ + cols < n && in + cols < perPage) libFocus_ += cols;
     }
-    libPage_ = libFocus_ / perPage;
+    if (libFocus_ >= 0) libPage_ = libFocus_ / perPage;
+  } else if (dy < 0) {
+    libFocus_ = kFocusBar;
   }
   bool confirm = pressed(ImGuiKey_GamepadFaceDown, false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
   bool keyX = pressed(kPadX, false) || pressed(ImGuiKey_Delete, false);
-  bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false) || (ImGui::GetIO().KeyCtrl && pressed(ImGuiKey_F, false));
+  bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false);
+  bool keySort = pressed(ImGuiKey_GamepadBack, false) || pressed(ImGuiKey_Tab, false);
+  bool keySearch = (ImGui::GetIO().KeyCtrl && pressed(ImGuiKey_F, false)) || pressed(ImGuiKey_Slash, false);
   bool back = pressed(ImGuiKey_GamepadFaceRight, false) || pressed(ImGuiKey_Backspace, false);
-  std::vector<const LibraryROM*> roms = libraryRoms();
+  const std::vector<const LibraryROM*>& roms = libraryRoms();
+  const LibraryROM* focused = libFocus_ >= 0 && libFocus_ < n ? roms[size_t(libFocus_)] : nullptr;
   if (confirm) {
-    if (libFocus_ == -1) {
-      const LibraryProject* latest = nullptr;
-      for (const LibraryProject& p : d_.library->allProjects())
-        if (!latest || p.modified > latest->modified) latest = &p;
-      if (latest) d_.app->continueProject(latest->path);
-    } else if (libFocus_ >= 0 && libFocus_ < n) {
-      d_.app->playFromLibrary(*roms[size_t(libFocus_)]);
+    if (libFocus_ == kFocusHero) {
+      d_.app->continueLast();
+    } else if (libFocus_ == kFocusBar) {
+      libraryBarAction(libBar_);
+    } else if (focused) {
+      d_.app->playFromLibrary(*focused);
     } else if (n == 0 && d_.library->roms().empty()) {
       d_.library->ensureFolders();
       openFolder(d_.library->romDir());
     }
   } else if (keyX) {
-    if (libFocus_ >= 0 && libFocus_ < n) {
-      projectsRomPath_ = roms[size_t(libFocus_)]->path;
+    if (focused) {
+      projectsRomPath_ = focused->path;
       openPage("library.projects");
     } else if (d_.library->roms().empty()) {
       d_.library->ensureFolders();
       d_.library->refresh();
     }
   } else if (keyY) {
-    focusSearch_ = true;
-    searchShown_ = true;
+    if (focused) d_.library->toggleFavorite(*focused);  // the focus stays (a Favorites list may shrink)
+  } else if (keySort) {
+    libraryBarAction(kBarSort);
+  } else if (keySearch) {
+    libraryBarAction(kBarSearch);
   } else if (back && search_[0]) {
     search_[0] = 0;
     searchShown_ = false;
@@ -180,26 +231,111 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   }
 }
 
+void UI::buildLibraryBar(ImDrawList* dl, const LRect& bar, double now) {
+  // Filter chips (All / Favorites / Recent), the sort (cycles) and the search: one row, each a
+  // button; the controller reaches it with up from the cards.
+  LibraryModel* lib = d_.library;
+  const UiMetrics& m = metrics_;
+  ImGuiIO& io = ImGui::GetIO();
+  float h = bar.h, gap = S(10), fs = m.label();
+  struct Item {
+    std::string text;
+    bool selected;
+  };
+  std::vector<Item> items;
+  static const char* const kFilterIcons[RNF_LIBRARY_FILTER_COUNT] = {"layout-grid", "star-filled", "history"};
+  for (int i = 0; i < RNF_LIBRARY_FILTER_COUNT; ++i)
+    items.push_back({std::string(icons::glyph(kFilterIcons[i])) + "  " + rnf_library_filter_name(rnf_library_filter(i)),
+                     lib->filter() == rnf_library_filter(i)});
+  items.push_back({std::string(icons::glyph("list")) + "  " + rnf_library_sort_name(lib->sort()), false});
+  std::string searchText = search_[0] ? std::string(search_) : std::string(TR("Search"));
+  items.push_back({std::string(icons::glyph("search")) + "  " + searchText, search_[0] != 0});
+  // Natural widths, shrunk together when the row is narrow (labels are then cut).
+  std::vector<float> widths;
+  float total = gap * 2 + gap * float(items.size() - 1);
+  for (int i = 0; i < int(items.size()); ++i) {
+    float w = measure(fs, items[size_t(i)].text.c_str()).x + h * 0.9f;
+    if (i == kBarSearch) w = std::max(w, searchShown_ ? S(260) : S(150));
+    widths.push_back(w);
+    total += w;
+  }
+  float k = total > bar.w && total > 0 ? std::max(0.3f, (bar.w - gap * 2 - gap * float(items.size() - 1)) / (total - gap * 2 - gap * float(items.size() - 1))) : 1.0f;
+  float x = bar.x;
+  for (int i = 0; i < int(items.size()); ++i) {
+    float w = widths[size_t(i)] * k;
+    if (i == kBarSort) x += gap * 2;  // a little apart from the filters
+    LRect r{x, bar.y, w, h};
+    if (i == kBarSearch && searchShown_) {
+      buildSearchField(r);
+      x += w + gap;
+      continue;
+    }
+    ImGui::SetCursorScreenPos(tl(r));
+    ImGui::PushID(1000 + i);
+    bool clicked = ImGui::InvisibleButton("##bar", ImVec2(r.w, r.h));
+    bool hovered = ImGui::IsItemHovered();
+    ImGui::PopID();
+    if (hovered && (io.MouseDelta.x || io.MouseDelta.y)) libFocus_ = kFocusBar, libBar_ = i, libMoved_ = true;
+    bool f = libFocus_ == kFocusBar && libBar_ == i;
+    bool sel = items[size_t(i)].selected;
+    dl->AddRectFilled(tl(r), br(r), sel ? kBrand : f ? kTileFocus : kTile, h / 2);
+    textFit(dl, fs, ImVec2(r.x + h * 0.45f, r.y + (h - fs) / 2), r.w - h * 0.9f, sel || f ? kText : kTextDim, items[size_t(i)].text);
+    if (f) drawFocus(r, h / 2, now);
+    if (clicked) {
+      libFocus_ = kFocusBar;
+      libBar_ = i;
+      libraryBarAction(i);
+    }
+    x += w + gap;
+  }
+}
+
+void UI::buildSearchField(const LRect& r) {
+  // The search chip becomes the field (an on-screen keyboard comes with it, ui_osk.cpp).
+  ImGui::PopItemFlag();
+  ImGui::SetCursorScreenPos(ImVec2(r.x, r.y + (r.h - ImGui::GetFrameHeight()) / 2));
+  ImGui::SetNextItemWidth(r.w);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetFrameHeight() / 2);
+  std::string hint = std::string(icons::glyph("search")) + "  " + TR("Search ROMs");
+  ImGui::InputTextWithHint("##search", hint.c_str(), search_, sizeof search_);
+  ImGui::PopStyleVar();
+  ImGuiID sid = ImGui::GetItemID();
+  bool held = ImGui::IsKeyDown(ImGuiKey_GamepadFaceDown) || ImGui::IsKeyDown(ImGuiKey_GamepadFaceRight) ||
+              ImGui::IsKeyDown(ImGuiKey_Enter) || ImGui::IsKeyDown(ImGuiKey_KeypadEnter) || ImGui::IsKeyDown(ImGuiKey_Slash);
+  if (focusSearch_ && !held) {
+    // On the release of the button that asked for it: the press must not reach the keyboard.
+    focusSearch_ = false;
+    ImGui::SetFocusID(sid, ImGui::GetCurrentWindow());
+    ImGui::ActivateItemByID(sid);
+    ImGui::GetCurrentContext()->NavNextActivateFlags |= ImGuiActivateFlags_PreferInput;
+  }
+  if (ImGui::IsItemDeactivated()) {
+    if (!search_[0]) searchShown_ = false;
+    libFocus_ = search_[0] ? 0 : kFocusBar;
+    libMoved_ = true;
+    libPage_ = 0;
+  }
+  ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+}
+
 void UI::buildLibrary(double now) {
   LibraryModel* lib = d_.library;
   lib->watch(now);
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
-  std::vector<const LibraryROM*> roms = libraryRoms();
-  const LibraryProject* latest = nullptr;
-  for (const LibraryProject& p : lib->allProjects())
-    if (!latest || p.modified > latest->modified) latest = &p;
-  bool hero = latest != nullptr && !search_[0];
+  const std::vector<const LibraryROM*> roms = libraryRoms();  // a copy: actions below may re-sort
+  std::optional<AppModel::ContinueTarget> cont = d_.app->continueTarget();
+  bool hero = cont.has_value() && !search_[0];
   LibraryGeometry g = layoutLibrary(m, hero);
   const int perPage = int(g.cards.size());
   int n = int(roms.size());
   int pages = std::max(1, (n + perPage - 1) / perPage);
   // L / R (shoulder) moved the page: focus its first card.
   libPage_ = std::clamp(libPage_, 0, pages - 1);
-  if (libFocus_ == -2) libFocus_ = n > 0 ? std::min(n - 1, libPage_ * perPage) : (hero ? -1 : 0);
-  if (!libMoved_ && hero) libFocus_ = -1;  // the Continue card until the user moves (the scan may finish late)
-  if (libFocus_ == -1 && !hero) libFocus_ = 0;
-  if (libFocus_ >= n) libFocus_ = n > 0 ? n - 1 : (hero ? -1 : 0);
+  if (libFocus_ == kFocusPageStart) libFocus_ = n > 0 ? std::min(n - 1, libPage_ * perPage) : kFocusBar;
+  if (!libMoved_) libFocus_ = hero ? kFocusHero : (n > 0 ? 0 : kFocusBar);  // until the user moves (the scan may finish late)
+  if (libFocus_ == kFocusHero && !hero) libFocus_ = n > 0 ? 0 : kFocusBar;
+  if (libFocus_ >= n) libFocus_ = n > 0 ? n - 1 : kFocusBar;
   if (libFocus_ >= 0 && n > 0) libPage_ = libFocus_ / perPage;
   handleLibraryInput(now, size_t(n), size_t(pages), hero);
   if (!hasSession() && menuOpen_) return;  // Settings over the library draw everything
@@ -218,7 +354,7 @@ void UI::buildLibrary(double now) {
   // A soft brand glow from the top.
   dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(io.DisplaySize.x, io.DisplaySize.y * 0.5f), IM_COL32(58, 20, 24, 150),
                               IM_COL32(58, 20, 24, 150), IM_COL32(16, 16, 19, 0), IM_COL32(16, 16, 19, 0));
-  // Top bar: the name, an update notice, the search.
+  // Top bar: the name, an update notice, the search field (while searching).
   LRect bar = m.topBar();
   float cy = bar.y + bar.h / 2;
   float x = bar.x;
@@ -235,30 +371,10 @@ void UI::buildLibrary(double now) {
       x += w + S(16);
     }
   }
-  // Search: Y opens it (an on-screen keyboard comes with the field, ui_osk.cpp).
-  if (searchShown_ || search_[0]) {
-    float sw = std::min(S(360), std::max(S(160), pill_.x - S(24) - x));
-    ImGui::SetCursorScreenPos(ImVec2(pill_.x - S(24) - sw, cy - ImGui::GetFrameHeight() / 2));
-    ImGui::PopItemFlag();
-    ImGui::SetNextItemWidth(sw);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetFrameHeight() / 2);
-    std::string hint = std::string(icons::glyph("search")) + "  " + TR("Search ROMs");
-    ImGui::InputTextWithHint("##search", hint.c_str(), search_, sizeof search_);
-    ImGui::PopStyleVar();
-    ImGuiID sid = ImGui::GetItemID();
-    if (focusSearch_ && !ImGui::IsKeyDown(kPadY)) {
-      // On the Y release: the press must not reach the keyboard.
-      focusSearch_ = false;
-      ImGui::SetFocusID(sid, ImGui::GetCurrentWindow());
-      ImGui::ActivateItemByID(sid);
-      ImGui::GetCurrentContext()->NavNextActivateFlags |= ImGuiActivateFlags_PreferInput;
-    }
-    if (ImGui::IsItemDeactivated()) {
-      if (!search_[0]) searchShown_ = false;
-      libFocus_ = 0;
-      libPage_ = 0;
-    }
-    ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+  // Filter chips, sort and search between the name and the Menu pill.
+  if (!lib->roms().empty()) {
+    float h = m.label() + S(16);
+    buildLibraryBar(dl, LRect{x, cy - h / 2, std::max(0.0f, pill_.x - S(16) - x), h}, now);
   }
   // Empty library: one card saying where the games go.
   if (lib->roms().empty()) {
@@ -293,29 +409,33 @@ void UI::buildLibrary(double now) {
     prompt({"face.south"}, TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
   } else {
-    // Continue.
+    // Continue: the last session (also after a crash), else the latest project.
     if (hero) {
       const LRect& r = g.hero;
-      bool f = libFocus_ == -1;
+      bool f = libFocus_ == kFocusHero;
       ImGui::SetCursorScreenPos(tl(r));
-      if (ImGui::InvisibleButton("##hero", ImVec2(r.w, r.h))) d_.app->continueProject(latest->path);
-      if (ImGui::IsItemHovered() && (io.MouseDelta.x || io.MouseDelta.y)) libFocus_ = -1;
+      if (ImGui::InvisibleButton("##hero", ImVec2(r.w, r.h))) d_.app->continueLast();
+      if (ImGui::IsItemHovered() && (io.MouseDelta.x || io.MouseDelta.y)) libFocus_ = kFocusHero, libMoved_ = true;
       dl->AddRectFilled(tl(r), br(r), f ? kTileFocus : kTile, m.panelRadius());
       LRect pic{r.x + S(12), r.y + S(12), (r.h - S(24)) * 16.0f / 15.0f, r.h - S(24)};
-      ThumbRef img = d_.libraryThumbs ? d_.libraryThumbs->forProject(latest->path) : ThumbRef();
+      const LibraryROM* rom = lib->romWithSHA(cont->romSHA256);
+      ThumbRef img = d_.libraryThumbs ? d_.libraryThumbs->forProject(cont->projectPath) : ThumbRef();
+      if (!img && d_.libraryThumbs && !cont->romPath.empty()) img = d_.libraryThumbs->forRom(cont->romPath);
+      std::string game = rom ? rom->title()
+                         : !cont->romPath.empty() ? takeString(rnf_game_title(nullptr, fileName(cont->romPath).c_str()))
+                                                  : takeString(rnf_game_title(nullptr, cont->projectName.c_str()));
       ImTextureID tex{};
       ImVec2 uv0, uv1;
       if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius());
-      else nameTile(dl, pic, latest->romName.empty() ? latest->name : latest->romName, m.tileRadius(), pic.h * 0.4f);
+      else nameTile(dl, pic, game, m.tileRadius(), pic.h * 0.4f);
       float tx = pic.right() + S(24), tw = r.right() - S(24) - tx;
       float ty = r.y + (r.h - (m.hint() + m.title() + m.hint() + S(16))) / 2;
-      std::string cont = std::string(icons::glyph("player-play-filled")) + "  " + TR("Continue");
-      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty), tw, kBrand, cont);
-      std::string game = latest->romName.empty() ? latest->name : latest->romName;
-      if (game.size() > 4 && (game.compare(game.size() - 4, 4, ".nes") == 0 || game.compare(game.size() - 4, 4, ".NES") == 0))
-        game.resize(game.size() - 4);
+      std::string label = std::string(icons::glyph("player-play-filled")) + "  " + TR("Continue");
+      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty), tw, kBrand, label);
       textFit(dl, m.title(), ImVec2(tx, ty + m.hint() + S(8)), tw, kText, game);
-      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty + m.hint() + m.title() + S(16)), tw, kTextDim, localDateTime(latest->modified));
+      std::string when = cont->date > 0 ? localDateTime(cont->date) : std::string();
+      if (cont->isTemp) when = when.empty() ? std::string(TR("Not saved as a project")) : when + TR(" · ") + TR("Not saved as a project");
+      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty + m.hint() + m.title() + S(16)), tw, kTextDim, when);
       if (f) {
         drawFocus(r, m.panelRadius(), now);
         description_ = TR("Pick up where you left off");
@@ -324,6 +444,7 @@ void UI::buildLibrary(double now) {
     // Game cards.
     int first = libPage_ * perPage;
     float textH = libraryCardTextHeight(m);
+    bool recentView = lib->filter() == RNF_LIBRARY_FILTER_RECENT || lib->sort() == RNF_LIBRARY_SORT_RECENT;
     for (int k = 0; k < perPage && first + k < n; ++k) {
       const LibraryROM& rom = *roms[size_t(first + k)];
       const LRect& r = g.cards[size_t(k)];
@@ -348,23 +469,37 @@ void UI::buildLibrary(double now) {
           if (p.modified > lp->modified) lp = &p;
         img = d_.libraryThumbs->forProject(lp->path);
       }
+      std::string title = rom.title();
       ImTextureID tex{};
       ImVec2 uv0, uv1;
       if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4));
-      else nameTile(dl, pic, rom.name, m.tileRadius() - S(4), pic.h * 0.45f);
+      else nameTile(dl, pic, title, m.tileRadius() - S(4), pic.h * 0.45f);
+      if (lib->isFavorite(rom)) {
+        float d = m.label() * 1.7f;
+        ImVec2 c(pic.right() - d * 0.5f - S(6), pic.y + d * 0.5f + S(6));
+        dl->AddCircleFilled(c, d * 0.5f, IM_COL32(0, 0, 0, 170));
+        icon(dl, "star-filled", c, m.label() * 1.05f, kStar);
+      }
       float ty = pic.bottom() + S(8);
-      textFit(dl, m.label(), ImVec2(r.x + S(12), ty), r.w - S(24), kText, rom.name);
-      // When it was played last (its latest project), or "New".
-      double last = 0;
-      for (const LibraryProject& p : projects) last = std::max(last, p.modified);
-      std::string sub = projects.empty() ? std::string(TR("New")) : localDateTime(last);
+      textFit(dl, m.label(), ImVec2(r.x + S(12), ty), r.w - S(24), kText, title);
+      // Maker · year (the last play while looking at the history).
+      std::string sub = rom.byline();
+      rnf_library_history_entry h{};
+      if (recentView && lib->history(rom, &h)) sub = localDateTime(h.last_played) + TR(" · ") + playTime(h.play_seconds);
+      if (sub.empty()) sub = projects.empty() ? std::string(TR("New")) : std::string();
       textFit(dl, m.hint(), ImVec2(r.x + S(12), ty + m.label() * 1.2f), r.w - S(24), kTextDim, sub);
       if (f) {
         drawFocus(r, m.tileRadius(), now);
-        description_ = rom.relativePath;
+        std::string d = rom.details();
+        description_ = d.empty() ? rom.relativePath : d;
       }
     }
-    if (n == 0) textCentered(dl, m.label(), g.content, g.cards.front().y + S(40), kTextDim, TRF("No ROMs match “%@”", {std::string(search_)}));
+    if (n == 0) {
+      std::string empty = search_[0] ? TRF("No ROMs match “%@”", {std::string(search_)})
+                           : lib->filter() == RNF_LIBRARY_FILTER_FAVORITES ? std::string(TR("No favorites yet"))
+                                                                           : std::string(TR("Nothing played yet"));
+      textCentered(dl, m.label(), g.content, g.cards.front().y + S(40), kTextDim, empty);
+    }
     // Pages: dots under the grid.
     if (pages > 1) {
       float dot = S(7), gap = S(10), total = float(pages) * dot + float(pages - 1) * gap;
@@ -373,16 +508,23 @@ void UI::buildLibrary(double now) {
         for (int p = 0; p < pages; ++p)
           dl->AddCircleFilled(ImVec2(dx0 + float(p) * (dot + gap) + dot / 2, dy0 + dot / 2), dot / 2, p == libPage_ ? kText : kTextFaint);
     }
-    if (libFocus_ == -1) prompt({"face.south"}, TR("Continue"));
-    else if (n > 0) {
+    if (libFocus_ == kFocusHero) {
+      prompt({"face.south"}, TR("Continue"));
+    } else if (libFocus_ == kFocusBar) {
+      prompt({"face.south"}, TR("Select"));
+      if (libBar_ < RNF_LIBRARY_FILTER_COUNT) description_ = rnf_library_filter_name(rnf_library_filter(libBar_));
+      else if (libBar_ == kBarSort) description_ = TRF("Sort by %@", {std::string(rnf_library_sort_name(lib->sort()))});
+      else description_ = TR("Search ROMs");
+    } else if (n > 0) {
+      const LibraryROM* fr = libFocus_ >= 0 && libFocus_ < n ? roms[size_t(libFocus_)] : nullptr;
       prompt({"face.south"}, TR("Play"));
+      if (fr) prompt({"face.north"}, lib->isFavorite(*fr) ? TR("Unfavorite") : TR("Favorite"));
       prompt({"face.west"}, TR("Projects"));
     }
-    prompt({"face.north"}, TR("Search"));
+    prompt({"options"}, rnf_library_sort_name(lib->sort()));
     if (pages > 1) prompt({"leftShoulder", "rightShoulder"}, TR("Page"));
     if (!lib->scanError().empty()) description_ = lib->scanError();
   }
-  for (const LRect& c : g.cards) (void)c;
   layoutRecord(g.content);
   buildHintBar(m.bottomBar());
   ImGui::PopItemFlag();

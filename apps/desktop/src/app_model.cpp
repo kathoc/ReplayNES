@@ -146,6 +146,7 @@ void AppModel::flushWrites() {
 }
 
 void AppModel::writeResume(const std::optional<ResumeRec>& r) {
+  if (!r) pendingResume_.reset();  // nothing to continue any more
   if (!persist_) return;
   lastResume_ = r;
   {
@@ -179,7 +180,76 @@ void AppModel::startup(const std::string& romArg, bool resume) {
     tryRom(romArg);
     return;
   }
-  if (resume) resumeLastSession();
+  if (resume) loadPendingResume();
+}
+
+std::optional<AppModel::ContinueTarget> AppModel::continueTarget() const {
+  if (emu_->session()) return std::nullopt;
+  ContinueTarget t;
+  if (pendingResume_) {
+    t.projectPath = pendingResume_->projectPath;
+    t.romPath = pendingResume_->romPath;
+    t.romSHA256 = pendingResume_->romSHA256;
+    t.isTemp = pendingResume_->isTemp;
+    t.fromRecord = true;
+    t.date = pendingResume_->updated;
+    if (t.romSHA256.empty() || t.romPath.empty()) {
+      ManifestInfo m = readManifest(t.projectPath);
+      if (t.romSHA256.empty() && m.romSHA256 != "?") t.romSHA256 = m.romSHA256;
+      if (t.romPath.empty() && m.romName != "?") t.projectName = stem(m.romName);
+    }
+    return t;
+  }
+  const LibraryProject* latest = nullptr;
+  for (const LibraryProject& p : library_->allProjects())
+    if (!latest || p.modified > latest->modified) latest = &p;
+  if (!latest) return std::nullopt;
+  t.projectPath = latest->path;
+  t.romSHA256 = latest->romSHA256;
+  t.projectName = latest->romName.empty() ? latest->name : stem(latest->romName);
+  t.date = latest->modified;
+  return t;
+}
+
+void AppModel::continueLast() {
+  if (emu_->session()) return;
+  if (pendingResume_) {
+    ResumeRec r = *pendingResume_;
+    openProject(r.projectPath, "", false, false, r);
+    return;
+  }
+  if (std::optional<ContinueTarget> t = continueTarget()) continueProject(t->projectPath);
+}
+
+void AppModel::settlePendingTemp(std::function<void()> then) {
+  // Idle on the library with a temporary session left (resumable by "Continue"): starting
+  // something else asks first whether to save it (prepareTempSlot).
+  if (emu_->session() || !persist_ || !exists(paths_.tempProject())) return then();
+  prepareTempSlot(std::move(then));
+}
+
+// ------------------------------------------------------------------ play history
+
+namespace {
+double steadySeconds() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}  // namespace
+
+void AppModel::beginPlay(const std::string& sha256) {
+  if (!playSHA_.empty() && playSHA_ == sha256) return flushPlay();  // the same session reopened (Save As)
+  flushPlay();
+  playSHA_ = sha256;
+  playStart_ = now1970();
+  playMark_ = steadySeconds();
+  library_->recordPlay(playSHA_, playStart_, 0);
+}
+
+void AppModel::flushPlay() {
+  if (playSHA_.empty()) return;
+  double t = steadySeconds();
+  library_->recordPlay(playSHA_, playStart_, t - playMark_);
+  playMark_ = t;
 }
 
 bool AppModel::isTempPath(const std::string& p) const {
@@ -245,6 +315,8 @@ void AppModel::confirmDiscardIfNeeded(std::function<void()> then) {
 }
 
 void AppModel::releaseSession() {
+  flushPlay();
+  playSHA_.clear();
   emu_->install(nullptr);
   current_.reset();
 }
@@ -344,14 +416,16 @@ void AppModel::prepareTempSlot(std::function<void()> then) {
 void AppModel::playFromLibrary(const LibraryROM& rom) {
   LibraryROM r = rom;
   confirmDiscardIfNeeded([this, r] {
-    if (!library_->ensureFolders()) {
-      error(TR("The library folder isn’t available"), library_->folderError());
-      return;
-    }
-    char* dir = rnf_library_new_project_path(library_->projectsDir().c_str(), r.name.c_str(), now1970());
-    std::string d = dir ? dir : "";
-    rnf_string_free(dir);
-    createSession(r.path, d, false);
+    settlePendingTemp([this, r] {
+      if (!library_->ensureFolders()) {
+        error(TR("The library folder isn’t available"), library_->folderError());
+        return;
+      }
+      char* dir = rnf_library_new_project_path(library_->projectsDir().c_str(), r.name.c_str(), now1970());
+      std::string d = dir ? dir : "";
+      rnf_string_free(dir);
+      createSession(r.path, d, false);
+    });
   });
 }
 
@@ -363,7 +437,9 @@ void AppModel::tryRom(const std::string& romPath) {
 }
 
 void AppModel::continueProject(const std::string& projectPath) {
-  confirmDiscardIfNeeded([this, projectPath] { openProject(projectPath, "", false, false, std::nullopt); });
+  confirmDiscardIfNeeded([this, projectPath] {
+    settlePendingTemp([this, projectPath] { openProject(projectPath, "", false, false, std::nullopt); });
+  });
 }
 
 void AppModel::openProjectChooser() {
@@ -549,6 +625,8 @@ void AppModel::install(rn_session* s, bool recovered, const std::optional<Resume
     record.practiceSlot = resume->practiceSlot;
   }
   current_ = Identity{dir, isTemp, record.romSHA256};
+  pendingResume_.reset();  // superseded by this session (its record is written below)
+  beginPlay(record.romSHA256);
   // Practice is never persisted: a session left while practicing reopens with the panel shown.
   practicePanelRequested_ = resume && resume->practiceSlot.has_value();
   emu_->tempSession = isTemp;
@@ -716,7 +794,8 @@ void AppModel::performProjectReset(bool keepSlots, bool backup) {
 
 // ------------------------------------------------------------------ resume
 
-void AppModel::resumeLastSession() {
+void AppModel::loadPendingResume() {
+  pendingResume_.reset();
   if (!persist_) return;
   rnf_resume_record r{};
   rnf_resume_decision d = rnf_resume_decide(paths_.sessionRoot.c_str(), 0, nullptr, &r);
@@ -731,7 +810,7 @@ void AppModel::resumeLastSession() {
                 "%@\n\nChoose it again from the library, or use “Open Project…”.",
                 {fileName(rec.projectPath), rec.projectPath}));
       return;
-    case RNF_RESUME_RESUME: openProject(rec.projectPath, "", false, false, rec); return;
+    case RNF_RESUME_RESUME: pendingResume_ = rec; return;  // the library's "Continue" card
   }
 }
 
@@ -766,6 +845,10 @@ void AppModel::updateResumeRecord() {
 }
 
 void AppModel::update(double now) {
+  if (now >= nextPlayFlush_) {
+    nextPlayFlush_ = now + 60.0;
+    flushPlay();  // play time survives a crash (within a minute)
+  }
   if (now < nextResumeUpdate_) return;
   nextResumeUpdate_ = now + 1.0;
   updateResumeRecord();
@@ -779,6 +862,7 @@ void AppModel::persistNow() {
 }
 
 void AppModel::quitNow() {
+  flushPlay();
   if (current_ && persist_) {
     std::string err = emu_->flushForResume(current_->isTemp);
     if (!err.empty()) std::fprintf(stderr, "saving at quit failed: %s\n", err.c_str());
@@ -791,6 +875,7 @@ void AppModel::quitNow() {
 }
 
 void AppModel::requestQuit(std::function<void()> quit) {
+  flushPlay();
   if (!persist_) {
     confirmDiscardIfNeeded([this, quit] {
       emu_->closeSession();

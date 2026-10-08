@@ -2,7 +2,8 @@
 // launch; scans run on a background thread (ROM SHA-256 via the core's hash cache, project
 // manifests) and are swapped in on the frame thread by poll(). Folders are re-checked every few
 // seconds while the library is on screen (modification times only), so files copied in from
-// Desktop Mode appear without a restart.
+// Desktop Mode appear without a restart. Each ROM is looked up in the core's game database (title,
+// maker, year, genre); favourites / play history / the chosen order live in library.json.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -23,6 +24,14 @@ struct LibraryROM {
   int64_t size = 0;
   double modified = 0;
   std::string sha256;  // "" when it can't be computed
+  bool known = false;  // found in the game database (game is valid)
+  rnf_game_info game{};
+
+  const rnf_game_info* info() const { return known ? &game : nullptr; }
+  /// Display strings in the current language (the core's game database; file name when unknown).
+  std::string title() const;
+  std::string byline() const;   // "Konami · 1986"
+  std::string details() const;  // "Konami · 1986 · Shooter"
 };
 
 struct LibraryProject {
@@ -57,6 +66,22 @@ class LibraryModel {
   bool scanning() const { return scanning_.load(); }
   const std::string& scanError() const { return scanError_; }
   const std::vector<LibraryROM>& roms() const { return roms_; }
+  const LibraryROM* romWithSHA(const std::string& sha256) const;
+
+  // Favourites, play history and the chosen order (the core's library catalog, saved as
+  // library.json in the settings folder; nothing is saved until setPrefsFile).
+  void setPrefsFile(const std::string& path);
+  bool isFavorite(const LibraryROM& rom) const;
+  bool toggleFavorite(const LibraryROM& rom);  // the new state
+  /// A session of the ROM with this SHA-256 started at start (seconds since 1970); adds seconds.
+  void recordPlay(const std::string& sha256, double start, double seconds);
+  bool history(const LibraryROM& rom, rnf_library_history_entry* out) const;
+  rnf_library_sort sort() const { return rnf_library_prefs_sort(prefs_); }
+  void setSort(rnf_library_sort s);
+  rnf_library_filter filter() const { return rnf_library_prefs_filter(prefs_); }
+  void setFilter(rnf_library_filter f);
+  /// The ROMs to show in order: the chosen filter and sort, then the search query (cached).
+  const std::vector<const LibraryROM*>& arranged(const std::string& query) const;
   std::vector<LibraryProject> projectsFor(const LibraryROM& rom) const;
   const std::vector<LibraryProject>& allProjects() const { return projects_; }
   uint64_t version() const { return version_; }
@@ -86,6 +111,12 @@ class LibraryModel {
   uint64_t version_ = 0;
   double lastWatch_ = 0;
   std::map<std::string, double> times_;
+  rnf_library_prefs* prefs_ = nullptr;
+  std::string prefsFile_;
+  uint64_t prefsVersion_ = 0;
+  mutable std::string arrangedKey_;
+  mutable std::vector<const LibraryROM*> arranged_;
+  void savePrefs();
 };
 
 }  // namespace rnl

@@ -228,6 +228,9 @@ class UI : public DialogHost {
   // ---- ui_library.cpp
   void buildLibrary(double now);
   void handleLibraryInput(double now, size_t cardCount, size_t pages, bool hero);
+  void buildLibraryBar(ImDrawList* dl, const LRect& bar, double now);
+  void libraryBarAction(int item);
+  void buildSearchField(const LRect& r);  // a filter chip, the sort (cycles) or the search
   std::vector<const LibraryROM*> libraryRoms() const;
   const LibraryROM* projectsRom() const;
 
@@ -286,7 +289,8 @@ class UI : public DialogHost {
   std::string notice_;
   double noticeTime_ = 0;
   // Library.
-  int libFocus_ = -1;  // -1: the Continue card, else a game card index (all pages)
+  int libFocus_ = -1;  // -1: the Continue card, -3: the filter / sort / search row, else a game card index (all pages)
+  int libBar_ = 0;     // focused item of that row
   int libPage_ = 0;
   bool libMoved_ = false;  // the user moved the focus since the library showed
   std::string projectsRomPath_;  // the projects page's ROM

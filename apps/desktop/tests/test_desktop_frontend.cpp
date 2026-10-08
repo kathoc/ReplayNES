@@ -1024,8 +1024,17 @@ TEST_CASE("session: temporary session is resumed where it was") {
   }
   {
     World w(dir + "/w", false);
+    // The launch shows the library; its Continue card offers the temporary session.
     w.app->startup("", true);
+    CHECK(w.emu->session() == nullptr);
+    std::optional<AppModel::ContinueTarget> t = w.app->continueTarget();
+    REQUIRE(t.has_value());
+    CHECK(t->isTemp);
+    CHECK(t->fromRecord);
+    CHECK_EQ(t->romPath, rom);
+    w.app->continueLast();
     REQUIRE(w.emu->session() != nullptr);
+    CHECK_FALSE(w.app->continueTarget().has_value());  // none while playing
     CHECK(w.app->isTempSession());
     CHECK(w.emu->paused());
     CHECK_EQ(w.emu->status().frame, frame);
@@ -1159,6 +1168,74 @@ TEST_CASE("session: Reset Project backs a saved project up to the Trash") {
 #endif
 }
 
+TEST_CASE("session: after a crash the Continue card recovers the session from the journal") {
+  std::string dir = tmpDir("crash");
+  std::string rom = testRom(dir + "/roms");
+  {
+    World w(dir + "/w", true);
+    w.app->tryRom(rom);
+    tickN(*w.emu, 120);
+    w.app->update(1e9);
+    w.app->persistNow();  // what the autosave / focus loss wrote before the crash
+    w.settle();
+    // No quitNow: the process ends here without persisting.
+  }
+  World w(dir + "/w", false);
+  w.app->startup("", true);
+  CHECK(w.emu->session() == nullptr);
+  std::optional<AppModel::ContinueTarget> t = w.app->continueTarget();
+  REQUIRE(t.has_value());
+  CHECK(t->isTemp);
+  w.app->continueLast();
+  REQUIRE(w.emu->session() != nullptr);
+  CHECK(w.app->isTempSession());
+  CHECK_EQ(w.emu->status().takeLength, uint64_t(120));
+}
+
+TEST_CASE("session: another game while a temporary session waits on the Continue card asks first") {
+  std::string dir = tmpDir("pendingtemp");
+  std::string rom = testRom(dir + "/roms");
+  {
+    World w(dir + "/w", true);
+    w.app->tryRom(rom);
+    tickN(*w.emu, 60);
+    w.app->update(1e9);
+    w.app->quitNow();
+    w.settle();
+  }
+  World w(dir + "/w", false);
+  w.library->setPrefsFile(w.paths.configDir + "/" + RNF_LIBRARY_PREFS_FILE);
+  w.app->startup("", true);
+  REQUIRE(w.app->continueTarget().has_value());
+  LibraryROM r;
+  r.path = rom;
+  r.name = "testrom";
+  w.host.answers = {2};  // Cancel: nothing happens
+  w.app->playFromLibrary(r);
+  CHECK(w.host.sawTitle(TR("An unsaved previous session remains")));
+  CHECK(w.emu->session() == nullptr);
+  CHECK(fs::exists(w.paths.tempProject()));
+  REQUIRE(w.app->continueTarget().has_value());
+  w.host.answers = {1};  // Don't Save: discarded, the new game starts
+  w.app->playFromLibrary(r);
+  REQUIRE(w.emu->session() != nullptr);
+  CHECK_FALSE(w.app->isTempSession());
+  CHECK_FALSE(fs::exists(w.paths.tempProject()));
+  // The play history has the game.
+  r.sha256 = rn_session_rom_sha256(w.emu->session());
+  rnf_library_history_entry h{};
+  CHECK(w.library->history(r, &h));
+  CHECK(h.plays >= 1);
+  // Back to the library: the Continue card is the project just played.
+  w.app->closeProject();
+  w.library->refresh();
+  for (int i = 0; i < 100 && (w.library->scanning() || !w.library->poll()); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  std::optional<AppModel::ContinueTarget> t = w.app->continueTarget();
+  REQUIRE(t.has_value());
+  CHECK_FALSE(t->isTemp);
+  CHECK_FALSE(t->fromRecord);
+}
+
 TEST_CASE("session: a second instance neither persists nor resumes") {
   std::string dir = tmpDir("lock");
   World a(dir + "/w", true);
@@ -1181,6 +1258,9 @@ TEST_CASE("session: a missing ROM offers Locate ROM; cancelling keeps the resume
   fs::remove(rom);
   World w(dir + "/w", false);
   w.app->startup("", true);
+  CHECK(w.emu->session() == nullptr);
+  CHECK(w.host.dialogs.empty());  // nothing is opened at launch
+  w.app->continueLast();
   CHECK(w.emu->session() == nullptr);
   CHECK(w.host.sawTitle(TR("ROM not found")));
   CHECK(w.host.sawTitle(TR("Couldn’t resume where you left off")));

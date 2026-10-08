@@ -89,7 +89,7 @@ final class AppModel: ObservableObject {
 
     var flashLevel: FlashLevel { FlashLevel(rawValue: flashReduction) ?? .standard }
 
-    /// Crash marker of versions before resume.json (read once at launch, see resumeLastSession).
+    /// Crash marker of versions before resume.json (read once at launch, see loadPendingResume).
     @AppStorage("openProjectPath") private var openProjectPath = ""
 
     // Session persistence (SessionResume.swift): every session is on disk and resumed at launch.
@@ -102,6 +102,14 @@ final class AppModel: ObservableObject {
     /// The installed session (main-thread view of what the emulation thread owns).
     private(set) var current: SessionIdentity?
     private var lastResume: ResumeRecord?
+    /// The launch's resume record (also after a crash / force quit): offered by the library's
+    /// "Continue" card instead of being reopened by itself.
+    @Published private(set) var pendingResume: ResumeRecord?
+    // Play history (library.json): the session's ROM, its start, the time not yet recorded.
+    private var playSHA = ""
+    private var playStart = Date()
+    private var playMark = ProcessInfo.processInfo.systemUptime
+    private var playFlushTicks = 0
     private var resumeTimer: Timer?
     private let resumeQueue = DispatchQueue(label: "replaynes.resume", qos: .utility)
 
@@ -427,7 +435,7 @@ final class AppModel: ObservableObject {
     /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec (no save panel). Returns false if cancelled.
     @discardableResult
     func playFromLibrary(_ rom: LibraryROM) -> Bool {
-        guard confirmDiscardIfNeeded() else { return false }
+        guard confirmDiscardIfNeeded(), settlePendingTemp() else { return false }
         guard library.ensureFolders() else {
             showError(String(localized: "The library folder isn’t available"), library.folderError ?? "")
             return false
@@ -440,9 +448,45 @@ final class AppModel: ObservableObject {
     /// "Continue": opens a library project (the usual save prompt first).
     @discardableResult
     func continueProject(_ url: URL) -> Bool {
-        guard confirmDiscardIfNeeded() else { return false }
+        guard confirmDiscardIfNeeded(), settlePendingTemp() else { return false }
         openProject(url)
         return true
+    }
+
+    /// The library's "Continue" (no session open): the recorded last session where it was (a
+    /// temporary session or a project, journal recovered after a crash), else the latest project.
+    func continueLast() {
+        guard !status.hasSession else { hideLibraryScreen(); return }
+        if let r = pendingResume {
+            openProject(URL(fileURLWithPath: r.projectPath), resume: r)
+        } else if let p = library.projectsBySHA.values.flatMap({ $0 }).max(by: { $0.modified < $1.modified }) {
+            continueProject(p.url)
+        }
+    }
+
+    /// Idle on the library with a temporary session left (resumable by "Continue"): starting
+    /// something else asks first whether to save it. False: cancelled.
+    private func settlePendingTemp() -> Bool {
+        guard current == nil, persistSessions, sessionPaths.tempProjectExists else { return true }
+        return prepareTempSlot()
+    }
+
+    // MARK: play history
+
+    private func beginPlay(_ sha: String) {
+        if !playSHA.isEmpty && playSHA == sha { flushPlay(); return }  // the same session reopened (Save As)
+        flushPlay()
+        playSHA = sha
+        playStart = Date()
+        playMark = ProcessInfo.processInfo.systemUptime
+        library.recordPlay(sha, start: playStart, seconds: 0)
+    }
+
+    private func flushPlay() {
+        guard !playSHA.isEmpty else { return }
+        let t = ProcessInfo.processInfo.systemUptime
+        library.recordPlay(playSHA, start: playStart, seconds: t - playMark)
+        playMark = t
     }
 
     func openProjectPanel() {
@@ -582,6 +626,8 @@ final class AppModel: ObservableObject {
             record.practiceSlot = resume.practiceSlot
         }
         current = SessionIdentity(projectPath: dir, isTemp: isTemp, romSHA256: record.romSHA256)
+        pendingResume = nil  // superseded by this session (its record is written below)
+        beginPlay(record.romSHA256)
         showPracticePanel = resume?.practiceSlot != nil
         emu.perform { e in
             e.tempSession = isTemp
@@ -674,6 +720,8 @@ final class AppModel: ObservableObject {
 
     /// Stops the emulation thread from using the installed session and closes it (files released).
     private func releaseSession() {
+        flushPlay()
+        playSHA = ""
         _ = emu.sync(timeout: 30) { e in e.install(nil) }
         current = nil
     }
@@ -696,16 +744,24 @@ final class AppModel: ObservableObject {
         }
         sessionLock = lock
         persistSessions = true
-        resumeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateResumeRecord() }
+        library.setCatalogFile(sessionPaths.root.deletingLastPathComponent().appendingPathComponent(RNF_LIBRARY_PREFS_FILE))
+        resumeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.updateResumeRecord()
+            self.playFlushTicks += 1
+            if self.playFlushTicks >= 60 { self.playFlushTicks = 0; self.flushPlay() }  // play time survives a crash
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.persistNow()
         }
     }
 
-    /// Launch: reopens the last session where it was, paused (unless the launch opens something).
-    func resumeLastSession(explicitOpen: Bool) {
+    /// Launch: the library shows; the last session (resume record, also after a crash) is offered by
+    /// its "Continue" card (unless the launch opens something). Nothing is reopened by itself.
+    func loadPendingResume(explicitOpen: Bool) {
         let legacy = openProjectPath
         openProjectPath = ""
+        pendingResume = nil
         guard persistSessions else { return }
         switch SessionResume.decide(paths: sessionPaths, explicitOpen: explicitOpen, legacyProjectPath: legacy) {
         case .none:
@@ -715,7 +771,8 @@ final class AppModel: ObservableObject {
             showError(String(localized: "The last project can’t be found"),
                       String(localized: "“\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” was moved or deleted, so ReplayNES couldn’t resume where you left off.\nOriginal location: \(r.projectPath)\n\nChoose it again from the library, or use “Open Project…”."))
         case .resume(let r):
-            openProject(URL(fileURLWithPath: r.projectPath), resume: r)
+            pendingResume = r
+            libraryNav.focus = LibraryNav.heroFocus
         }
     }
 
@@ -736,6 +793,7 @@ final class AppModel: ObservableObject {
     /// project: full save; project: autosave journal) and resume.json is final. Returns false if
     /// persisting failed and the user chose not to quit.
     func prepareForQuit() -> Bool {
+        flushPlay()
         guard persistSessions else { return confirmDiscardIfNeeded() }
         guard let c = current else { return true }
         captureThumbnail()
@@ -776,6 +834,7 @@ final class AppModel: ObservableObject {
 
     /// nil clears the record. Writes are serialized off the main thread.
     private func writeResume(_ r: ResumeRecord?) {
+        if r == nil { pendingResume = nil }  // nothing to continue any more
         guard persistSessions else { return }
         lastResume = r
         let url = sessionPaths.resumeFile

@@ -5,7 +5,8 @@
 //    the temporary project $XDG_DATA_HOME/ReplayNES/Session/current.nesrec.
 //  * Always-on session persistence (the shared core's resume record + single-instance lock): the
 //    session is autosaved while playing, persisted at quit without asking (temporary project: full
-//    save; project: journal) and reopened at the next launch where it was, paused.
+//    save; project: journal). The next launch starts on the library, whose "Continue" card reopens
+//    it where it was, paused (also after a crash: the journal is recovered).
 //  * Before another ROM / project replaces the session: "Do you want to save?" (a temporary
 //    session with recorded content: Save… / Don't Save; a project with unsaved changes: Save /
 //    Don't Save); a temporary project left from an earlier run is offered for saving first.
@@ -64,9 +65,24 @@ class AppModel {
   /// resumed then and temporary sessions stay in memory).
   void setupSessionPersistence(bool enabled);
   bool persistSessions() const { return persist_; }
-  /// Launch: --rom opens a temporary session (explicit open, no resume); otherwise the last
-  /// session is resumed (paused) if there is one.
+  /// Launch: --rom opens a temporary session (explicit open); otherwise the library shows and the
+  /// last session (resume record: also after a crash / force quit) is offered by its "Continue"
+  /// card (resume = false: not offered). Nothing is opened by itself.
   void startup(const std::string& romArg, bool resume);
+
+  /// The library's "Continue" card: the session the resume record points to (a temporary session
+  /// or a project), else the latest library project. None while a session is open.
+  struct ContinueTarget {
+    std::string projectPath;
+    std::string romPath, romSHA256;  // from the record ("" for a library project)
+    std::string projectName;         // library project: its ROM name / project name
+    bool isTemp = false;
+    bool fromRecord = false;
+    double date = 0;  // last played / saved, seconds since 1970
+  };
+  std::optional<ContinueTarget> continueTarget() const;
+  /// "Continue": resumes the recorded session where it was, else opens the latest project.
+  void continueLast();
 
   // Library / projects.
   void playFromLibrary(const LibraryROM& rom);
@@ -117,7 +133,7 @@ class AppModel {
   void prepareTempSlot(std::function<void()> then);
   void askProjectDestination(const std::string& name, std::function<void(const std::string&)> then);
   void saveTempAs(std::function<void()> then);
-  void resumeLastSession();
+  void loadPendingResume();
   void resumeFailed(const ResumeRec& r);
   void performProjectReset(bool keepSlots, bool backup);
   void updateResumeRecord();
@@ -134,6 +150,14 @@ class AppModel {
   rnf_session_lock* lock_ = nullptr;
   std::optional<Identity> current_;
   std::optional<ResumeRec> lastResume_;
+  std::optional<ResumeRec> pendingResume_;  // the launch's resume record, offered by "Continue"
+  // Play history (library.json): the session's ROM, its start and the time not yet recorded.
+  std::string playSHA_;
+  double playStart_ = 0, playMark_ = 0;
+  void beginPlay(const std::string& sha256);
+  void flushPlay();
+  double nextPlayFlush_ = 0;
+  void settlePendingTemp(std::function<void()> then);
   bool practicePanelRequested_ = false;
   double nextResumeUpdate_ = 0;
   // resume.json writes off the frame thread (latest wins).

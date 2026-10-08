@@ -195,16 +195,16 @@ P	Q139797350	Epoch	Epoch
 G	Q11168	Super Mario Bros.	スーパーマリオブラザーズ	スーパーマリオブラザーズ	Q8093	1985	action	JP,NA,EU	SMB|SMB 1|SMB.|SMB. 1|SMB1|Super Mario Bros. 1|Super Mario Brothers|スーパーマリオ
 G	Q12384	Donkey Kong	ドンキーコング	ドンキーコング	Q8093	1983	action	JP,NA,EU	1981 Donkey Kong
 G	Q12395	The Legend of Zelda	ゼルダの伝説	ゼルダノデンセツ	Q8093	1986	action	JP,NA,EU	Legend of Zelda|LoZ|TLoZ|The Hyrule Fantasy|The Hyrule Fantasy: Zelda no Densetsu|Zelda|Zelda 1|Zelda no Densetsu
-G	Q24170	Doki! Doki! Yūenchi: Crazy Land Daisakusen	ドキ!ドキ!遊園地		Q2723301	1991	action	JP,EU	Doki! Doki! Amusement Park|Doki! Doki! Yuuenchi: Crazy Land Daisakusen|Trolls in Crazyland
+G	Q24170	Doki! Doki! Yūenchi: Crazy Land Daisakusen	ドキ!ドキ!遊園地	ドキドキユウエンチ	Q2723301	1991	action	JP,EU	Doki! Doki! Amusement Park|Doki! Doki! Yuuenchi: Crazy Land Daisakusen|Trolls in Crazyland
 G	Q27296	Bio Miracle Bokutte Upa	バイオミラクル ぼくってウパ	バイオミラクルボクッテウパ	Q45700	1993	action	JP	ぼくってウパ|ぼくウパ|バイオミラクルぼくってウパ
 G	Q54319	Star Wars	スター・ウォーズ	スターウォーズ	Q309996	1987	action	JP	1987 Star Wars|Namco Star Wars|Star Wars (1987)
 G	Q54320	Star Wars	スター・ウォーズ	スターウォーズ	Q2748676	1991	action	JP,NA,EU	1991 Star Wars|Game Boy Star Wars|NES Star Wars
 G	Q54329	Star Wars: The Empire Strikes Back	Star Wars: The Empire Strikes Back		Q215901	1992	action	NA,EU	1992 The Empire Strikes Back
 G	Q55532	1942	1942		Q14428	1984	shooter		Capcom 1942
-G	Q55535	1943: The Battle of Midway	1943 ミッドウェイ海戦		Q14428	1988	shooter	JP,NA	Capcom 1943
+G	Q55535	1943: The Battle of Midway	1943 ミッドウェイ海戦	1943ミッドウェイカイセン	Q14428	1988	shooter	JP,NA	Capcom 1943
 G	Q55605	Boulder Dash	バルダーダッシュ	バルダーダッシュ	Q5453814	1990	puzzle	JP,NA,EU	
 G	Q55610	Athena	アテナ	アテナ	Q1073880	1987	action	JP	
-G	Q55622	Bionic Commando	ヒットラーの復活 トップシークレット		Q14428	1988	action	JP,EU	1987 Bionic Commando
+G	Q55622	Bionic Commando	ヒットラーの復活 トップシークレット	ヒットラーノフッカツトップシークレット	Q14428	1988	action	JP,EU	1987 Bionic Commando
 G	Q55815	Elite	Elite		Q2736040	1984	other	EU	
 G	Q81288	Dragon Quest III	ドラゴンクエストIII そして伝説へ…	ドラゴンクエストスリーソシテデンセツヘ	Q1343212	1988	rpg	NA	DQ3|DQIII|Dragon Quest 3|Dragon Quest III: The Seeds of Salvation|Dragon Warrior 3|Dragon Warrior III|ゲームボーイ ドラゴンクエストIII そして伝説へ…|スーパーファミコン ドラゴンクエストIII そして伝説へ…
 G	Q88240	720°	720°			1986	sports	NA	720 Degrees
@@ -213,7 +213,7 @@ G	Q88759	Bubble Bobble	バブルボブル	バブルボブル	Q1054844	1987	actio
 G	Q88855	California Games	カリフォルニアゲームス	カリフォルニアゲームス	Q1347787	1987	sports	NA,EU	
 G	Q88921	Cabal	カベール	カベール	Q1054844	1988	shooter	NA	
 G	Q88947	Renegade	熱血硬派くにおくん	ネッケツコウハクニオクン	Q1054844	1987	action	JP,NA	Nekketsu Kōha Kunio-kun
-G	Q90994	Chase H.Q.	チェイスH.Q.		Q1054844	1989	racing	JP	
+G	Q90994	Chase H.Q.	チェイスH.Q.	チェイスエイチキュー	Q1054844	1989	racing	JP	
 G	Q91220	Yie Ar Kung-Fu	イー・アル・カンフー	イーアルカンフー	Q3148930	1985	fighting	JP	
 G	Q91268	Archon: The Light and the Dark	アーコン	アーコン	Q173941	1983	fighting	NA	
 G	Q91282	Arkanoid	アルカノイド	アルカノイド	Q3441266	1986	action	JP	
@@ -235,23 +235,23 @@ G	Q281924	Battletank	Battletank		Q2822030	1990	strategy	NA	Battle Tank
 G	Q285402	Panic Restaurant	わんぱくコックンのグルメワールド	ワンパクコックンノグルメワールド	Q1054844	1992	action	JP,EU	Wanpaku Kokkun no Gourmet World
 G	Q288754	Dragon Buster	ドラゴンバスター	ドラゴンバスター	Q309996	1987	rpg	JP	
 G	Q288958	Operation Wolf	オペレーションウルフ	オペレーションウルフ	Q1054844	1987	shooter	NA,EU	
-G	Q300339	A Boy and His Blob: Trouble on Blobolonia	ふしぎなブロビー ブロバニアの危機		Q1344080	1990	puzzle	JP,NA,EU	A Boy & His Blob: Trouble on Blobolonia|A Boy and His Blob: Jelly's Cosmic Adventure|A Boy and His Blob:Trouble on Blobolonia|Blobert|Blobonia|David Crane's A Boy and His Blob|Fushigi na Blobby|Trouble on Blobolonia
+G	Q300339	A Boy and His Blob: Trouble on Blobolonia	ふしぎなブロビー ブロバニアの危機	フシギナブロビーブロバニアノキキ	Q1344080	1990	puzzle	JP,NA,EU	A Boy & His Blob: Trouble on Blobolonia|A Boy and His Blob: Jelly's Cosmic Adventure|A Boy and His Blob:Trouble on Blobolonia|Blobert|Blobonia|David Crane's A Boy and His Blob|Fushigi na Blobby|Trouble on Blobolonia
 G	Q333477	Jaws	ジョーズ	ジョーズ	Q3206072	1987	action	NA	
-G	Q349327	The Adventures of Tom Sawyer	トム・ソーヤーの冒険		Q954877	1989	action	JP,NA	
-G	Q372774	Xexyz	亀の恩返し〜ウラシマ伝説〜		Q1049502	1988	action	JP	Kame no Ongaeshi: Urashima Densetsu
+G	Q349327	The Adventures of Tom Sawyer	トム・ソーヤーの冒険	トムソーヤーノボウケン	Q954877	1989	action	JP,NA	
+G	Q372774	Xexyz	亀の恩返し〜ウラシマ伝説〜	カメノオンガエシウラシマデンセツ	Q1049502	1988	action	JP	Kame no Ongaeshi: Urashima Densetsu
 G	Q376785	F-1 Hero MD	フェラーリ・グランプリチャレンジ	フェラーリグランプリチャレンジ	Q7915854	1992	racing	NA	Ferrari Grand Prix Challenge|フェラーリ Grand Prix Challenge|中嶋悟監修 F1 HERO MD
 G	Q386925	Empire City: 1931	エンパイア シティ:1931	エンパイアシティ1931	Q1365614	1987	shooter	JP	
 G	Q388168	Bokosuka Wars	ボコスカウォーズ	ボコスカウォーズ	Q297303	1985	rpg	JP	
 G	Q390291	Donkey Kong 3	ドンキーコング3	ドンキーコング3	Q8093	1984	shooter	JP,NA,EU	DK 3|DK3
-G	Q423722	Akuma-kun	悪魔くん		Q507269	1990	rpg	JP	Akuma-kun: Makai no Wana|悪魔くん 千年王国|悪魔くん千年王国
+G	Q423722	Akuma-kun	悪魔くん	アクマクン	Q507269	1990	rpg	JP	Akuma-kun: Makai no Wana|悪魔くん 千年王国|悪魔くん千年王国
 G	Q445221	Stargate	スターゲート	スターゲート	Q1403157	1987	shooter	JP,NA	Defender 2|Defender II|Defender Stargate|ディフェンダー II (ゲーム)
-G	Q507742	Amagon	突然! マッチョマン		Q3116102	1988	action	JP,NA	Totsuzen! Machoman
+G	Q507742	Amagon	突然! マッチョマン	トツゼンマッチョマン	Q3116102	1988	action	JP,NA	Totsuzen! Machoman
 G	Q508004	Kick Off	Kick Off		Q3781101	1989	sports	EU	
 G	Q511995	Pinball	ピンボール	ピンボール	Q8093	1984	table	JP,NA,EU	NES Pinball|VS. Pinball
 G	Q512624	Loopz	スーパーループス	スーパーループス	Q1570468	1990	puzzle	NA	
 G	Q515649	Adventures of Lolo 2	アドベンチャーズ オブ ロロ	アドベンチャーズオブロロ	Q1068734	1990	puzzle	JP,NA,EU	
 G	Q518547	Bases Loaded	燃えろ!!プロ野球	モエロプロヤキュウ	Q1344080	1987	sports	JP	Moero!! Pro Yakyū
-G	Q521272	Digital Devil Story: Megami Tensei II	デジタル・デビル物語 女神転生II		Q309996	1990	rpg	JP	Digital-Devil-MONOGATARI : MEGAMI-TENNSEI II|Megami Tensei II|女神転生II
+G	Q521272	Digital Devil Story: Megami Tensei II	デジタル・デビル物語 女神転生II	デジタルデビルストーリーメガミテンセイツー	Q309996	1990	rpg	JP	Digital-Devil-MONOGATARI : MEGAMI-TENNSEI II|Megami Tensei II|女神転生II
 G	Q532200	Hyper Sports	ハイパーオリンピック'84	ハイパーオリンピック84	Q45700	1985	sports	JP	Hyper Olympic'84
 G	Q537381	Shadowgate	シャドウゲイト	シャドウゲイト	Q1570468	1989	adventure	JP,NA,EU	
 G	Q541988	Ultima IV: Quest of the Avatar	ウルティマ4: クエスト・オブ・ジ・アバタール	ウルティマ4クエストオブジアバタール	Q513712	1989	rpg	JP	Ultima IV|ウルティマ 聖者への道
@@ -259,15 +259,15 @@ G	Q545211	Holy Diver	ホーリー・ダイヴァー	ホーリーダイヴァー	
 G	Q553054	Gimmick!	ギミック!	ギミック	Q2298387	1992	action	JP,EU	Mr. Gimmick
 G	Q555897	Batman: Return of the Joker	ダイナマイトバットマン	ダイナマイトバットマン	Q2298387	1991	action	JP,NA,EU	Dynamite Batman
 G	Q568489	Hudson's Adventure Island	高橋名人の冒険島	タカハシメイジンノボウケンジマ	Q1049502	1986	action	JP,NA,EU	Adventure Island|Takahashi meijin-no bōkenjima|たかはしめいじんのぼうけんじま|高橋名人の冒険島II|高橋名人の冒険島III|高橋名人の冒険島IV
-G	Q581614	Track & Field II	科樂美ックスポーツ イン ソウル		Q45700	1988	sports	JP,NA,EU	
+G	Q581614	Track & Field II	科樂美ックスポーツ イン ソウル	コナミックスポーツインソウル	Q45700	1988	sports	JP,NA,EU	
 G	Q582642	Marble Madness	マーブルマッドネス	マーブルマッドネス	Q1061580	1984	racing	NA,EU	
 G	Q591171	Elevator Action	エレベーターアクション	エレベーターアクション	Q1054844	1985	action	JP,NA	
 G	Q591978	Fantastic Dizzy	Fantastic Dizzy		Q23901	1991	adventure		Fantastic Adventures of Dizzy|The Fantastic Adventures of Dizzy
-G	Q597005	Yume Penguin Monogatari	夢ペンギン物語		Q45700	1991	action	JP	
+G	Q597005	Yume Penguin Monogatari	夢ペンギン物語	ユメペンギンモノガタリ	Q45700	1991	action	JP	
 G	Q597781	Battletoads	バトルトード	バトルトード	Q2447732	1991	action	JP,NA,EU	1991 Battletoads|NES Battletoads
 G	Q603874	Ice Hockey	アイスホッケー	アイスホッケー	Q8093	1988	sports	NA,EU	1988 Ice Hockey|NES Ice Hockey|Nintendo Ice Hockey
 G	Q608480	Knight Rider	ナイトライダー	ナイトライダー	Q339228	1988	racing	JP,NA,EU	
-G	Q610785	Dragon Power	ドラゴンボール 神龍の謎		Q507269	1986	action	EU	
+G	Q610785	Dragon Power	ドラゴンボール 神龍の謎	ドラゴンボールシェンロンノナゾ	Q507269	1986	action	EU	
 G	Q610968	Mario Bros.	マリオブラザーズ	マリオブラザーズ	Q8093	1984	action	NA,EU	
 G	Q611289	Crazy Climber	クレージー・クライマー	クレージークライマー		1986	action	JP	Arcade Archives Crazy Climber|アーケードアーカイブス クレイジークライマー|クレイジークライマー|クレイジー・クライマー|クレージークライマー
 G	Q625283	Double Dribble	ダブルドリブル	ダブルドリブル	Q45700	1987	sports	JP,NA,EU	Exciting Basket|エキサイティングバスケット
@@ -275,7 +275,7 @@ G	Q630393	Wacky Races	チキチキマシン猛レース	チキチキマシンモ
 G	Q631331	Super Mario Bros.: The Lost Levels	スーパーマリオブラザーズ2	スーパーマリオブラザーズ2	Q8093	1986	action	JP	SMB: The Lost Levels|Super Mario Bros. 1.1|Super Mario Bros. 2|Super Mario Bros. 2 (JP)|Super Mario Bros. 2 (Japan)|Super Mario Bros. 2 JP|Super Mario Bros. 2 Japan|Super Mario Brothers 1.1
 G	Q634502	Master Takahashi's Adventure Island IV	高橋名人の冒険島IV	タカハシメイジンノボウケンジマフォー	Q1049502	1994	action	JP	Takahashi Meijin no Bōken Jima IV
 G	Q636411	Might and Magic Book One: The Secret of the Inner Sanctum	Might and Magic Book One: The Secret of the Inner Sanctum		Q2664679	1990	rpg	NA	MM1
-G	Q638828	Dr. Jekyll and Mr. Hyde	ジーキル博士の彷魔が刻		Q875920	1988	action	JP	彷魔が刻
+G	Q638828	Dr. Jekyll and Mr. Hyde	ジーキル博士の彷魔が刻	ジーキルハカセノホウマガトキ	Q875920	1988	action	JP	彷魔が刻
 G	Q639619	Super Mario Bros. 3	スーパーマリオブラザーズ3	スーパーマリオブラザーズ3	Q8093	1988	action	JP,NA,EU	Mario 3|Mario Bros. 3|SMB 3|SMB3|Super Mario 3|Super Mario Bros 3|Super Mario Brothers 3|スーパーマリオ3
 G	Q646691	Teenage Mutant Ninja Turtles III: The Manhattan Project	ティーンエージ ミュータント ニンジャ タートルズ2 ザ マンハッタン プロジェクト	ティーンエージミュータントニンジャタートルズ2ザマンハッタンプロジェクト	Q45700	1991	action	JP	Manhattan Project|TMNT 3: Manhattan Project|TMNT 3: The Manhattan Project|TMNT III: Manhattan Project|TMNT: Manhattan Project|TMNT: The Manhattan Project|Teenage Mutant Ninja Turtles 3: Manhattan Project|Teenage Mutant Ninja Turtles 3: The Manhattan Project
 G	Q649422	Caesars Palace	Caesars Palace		Q1481820	1992	table	NA	Caesar's Palace
@@ -285,7 +285,7 @@ G	Q669784	Digital Devil Story: Megami Tensei	デジタル・デビル物語 女�
 G	Q674227	Ninja Gaiden III: The Ancient Ship of Doom	忍者龍剣伝III 黄泉の方船	ニンジャリュウケンデンスリーヨミノハコブネ	Q1423789	1991	action	JP,NA	Ninja Gaiden 3: The Ancient Ship of Doom
 G	Q677353	Stinger	もえろツインビー シナモン博士を救え!	モエロツインビーシナモンハカセヲスクエ	Q45700	1993	shooter	JP	Moero TwinBee: Cinnamon-hakase o Sukue!
 G	Q677764	Klax	クラックス	クラックス	Q1061580	1990	puzzle	JP	
-G	Q684629	F-15 Strike Eagle	F15ストライクイーグル		Q652421	1984	shooter	NA,EU	
+G	Q684629	F-15 Strike Eagle	F15ストライクイーグル	エフジュウゴストライクイーグル	Q652421	1984	shooter	NA,EU	
 G	Q687559	Final Fantasy III	ファイナルファンタジーIII	ファイナルファンタジースリー	Q739552	1990	rpg	JP	FF3|FF3 JP|FF3 NES|FFIII|Final Fantasy 3
 G	Q698705	Double Dragon	ダブルドラゴン	ダブルドラゴン	Q1054844	1988	action	JP,NA,EU	双截龍
 G	Q716880	Miracle Piano Teaching System	Miracle Piano Teaching System		Q1570468	1990	music	NA	The Miracle Piano Teaching System
@@ -303,31 +303,31 @@ G	Q851532	Momoko 120%	モモコ120%	モモコ120	Q1344080	1986	action	JP	モモ�
 G	Q854479	Super Mario Bros. 2	スーパーマリオUSA	スーパーマリオユーエスエー	Q8093	1988	action	JP,NA,EU	Mario 2|Mario Bros 2|Mario Bros. 2|SMB 2|SMB2|Super Mario 2|Super Mario Bros 2|Super Mario Brothers 2
 G	Q856305	Bible Adventures	Bible Adventures		Q3569449	1991	action		
 G	Q864177	Lemmings	レミングス	レミングス	Q1933462	1991	puzzle	NA,EU	Lemmings (1991)|The Lemmings
-G	Q869113	Kid Kool	カケフくんのジャンプ天国 スピード地獄		Q3116102	1988	action	JP,NA	Kakefu-kun no Jump Tengoku: Speed Jigoku|Kid Kool and the Quest for the Seven Wonder Herbs|カケフくんのジャンプ天国|カケフ君のジャンプ天国|カケフ君のジャンプ天国 スピード地獄
+G	Q869113	Kid Kool	カケフくんのジャンプ天国 スピード地獄	カケフクンノジャンプテンゴクスピードジゴク	Q3116102	1988	action	JP,NA	Kakefu-kun no Jump Tengoku: Speed Jigoku|Kid Kool and the Quest for the Seven Wonder Herbs|カケフくんのジャンプ天国|カケフ君のジャンプ天国|カケフ君のジャンプ天国 スピード地獄
 G	Q869138	Cosmic Wars	コズミックウォーズ	コズミックウォーズ	Q45700	1989	strategy	JP	
 G	Q869558	Gyromite	Gyromite		Q8093	1985	puzzle	JP,NA,EU	
 G	Q887280	Kart Fighter	カートファイター	カートファイター		1993	fighting		
 G	Q887289	Dian Shi Mali	Dian Shi Mali			1989	table		
 G	Q887292	Somari	ソマリ	ソマリ		1994	action		Somari the adventurer
-G	Q907618	Ys III: Wanderers from Ys	イースIII		Q840550	1991	rpg	JP	Wanderers from Ys|YsIII|イース2 異界からの挑戦|イース3|イースIII -ワンダラーズフロムイース-|イースIII ワンダラーズ フロム イース|イースIII ワンダラーズフロムイース|イースIII 友にささげる鎮魂歌
+G	Q907618	Ys III: Wanderers from Ys	イースIII	イーススリー	Q840550	1991	rpg	JP	Wanderers from Ys|YsIII|イース2 異界からの挑戦|イース3|イースIII -ワンダラーズフロムイース-|イースIII ワンダラーズ フロム イース|イースIII ワンダラーズフロムイース|イースIII 友にささげる鎮魂歌
 G	Q907744	Street Fighter 2010: The Final Fight	2010 ストリートファイター	2010ストリートファイター	Q14428	1990	action	JP	Street Fighter 2010|2010ストリートファイター|ストリートファイター2010
-G	Q911802	Parodius! From Myth to Laughter	パロディウスだ! 〜神話からお笑いへ〜		Q45700	1990	shooter	JP,EU	Parodius|Parodius Da!|Parodius Da! Shinwa kara Owarai e|Parodius: Non-Sense Fantasy|パロディウスだ|パロディウスだ!|パロディウスだ! -神話からお笑いへ-|パロディウスだ! 神話からお笑いへ
+G	Q911802	Parodius! From Myth to Laughter	パロディウスだ! 〜神話からお笑いへ〜	パロディウスダシンワカラオワライヘ	Q45700	1990	shooter	JP,EU	Parodius|Parodius Da!|Parodius Da! Shinwa kara Owarai e|Parodius: Non-Sense Fantasy|パロディウスだ|パロディウスだ!|パロディウスだ! -神話からお笑いへ-|パロディウスだ! 神話からお笑いへ
 G	Q912286	NES Open Tournament Golf	マリオオープンゴルフ	マリオオープンゴルフ	Q8093	1991	sports	JP,NA,EU	Mario Open Golf
 G	Q917503	Gyruss	ジャイラス	ジャイラス	Q45700	1988	shooter	NA	
 G	Q921957	Final Fantasy II	ファイナルファンタジーII	ファイナルファンタジーツー	Q739552	1988	rpg	JP	FF2|FF2 JP|FF2 NES|FFII|Final Fantasy 2|ファイナルファンタジー2
 G	Q923597	Bases Loaded 4	Bases Loaded 4		Q1344080	1991	sports	JP,NA	
 G	Q928439	World Games	World Games		Q1930918	1986	sports	NA	
-G	Q933328	DuckTales	わんぱくダック夢冒険		Q14428	1989	action	JP,NA,EU	Disney's DuckTales|Wanpaku Duck Yume Bōken
+G	Q933328	DuckTales	わんぱくダック夢冒険	ワンパクダックユメボウケン	Q14428	1989	action	JP,NA,EU	Disney's DuckTales|Wanpaku Duck Yume Bōken
 G	Q938696	Murder on the Mississippi	ミシシッピー殺人事件	ミシシッピーサツジンジケン	Q200491	1986	adventure	JP	The Adventures of Sir Charles Foxworth
 G	Q940168	Chiller	Chiller		Q539425	1986	shooter	NA,EU	
 G	Q945899	Spy vs. Spy	スパイvsスパイ		Q4035073	1986	table	JP,NA,EU	
-G	Q947239	Doraemon: Giga Zombie no Gyakushū	ドラえもん ギガゾンビの逆襲		Q132358	1990	rpg	JP	
+G	Q947239	Doraemon: Giga Zombie no Gyakushū	ドラえもん ギガゾンビの逆襲	ドラエモンギガゾンビノギャクシュウ	Q132358	1990	rpg	JP	
 G	Q950084	Trojan	闘いの挽歌	タタカイノバンカ	Q14428	1987	action	NA,EU	Tatakai no Banka
 G	Q956303	Ghosts 'n Goblins	魔界村	マカイムラ	Q14428	1986	action	JP,NA,EU	Makaimura
 G	Q968020	Millipede	ミリピード	ミリピード	Q13409231	1987	shooter	JP,NA	Milli-Pede|ミリピード 巨大昆虫の逆襲
 G	Q968105	Wild Gunman	ワイルドガンマン	ワイルドガンマン	Q8093	1984	shooter	JP,NA,EU	
 G	Q972995	Ganso Saiyūki: Super Monkey Daibōken	元祖西遊記スーパーモンキー大冒険	ガンソサイユウキスーパーモンキーダイボウケン	Q62056385	1986	action	JP	元祖西遊記 スーパーモンキー大冒険
-G	Q1010202	Ghost Lion	ピラミッドの彼方に ホワイト・ライオン伝説		Q174561	1989	rpg	JP,NA	
+G	Q1010202	Ghost Lion	ピラミッドの彼方に ホワイト・ライオン伝説	ピラミッドノカナタニホワイトライオンデンセツ	Q174561	1989	rpg	JP,NA	
 G	Q1010211	Ghoul School	Ghoul School		Q5357928	1992	adventure	NA	
 G	Q1011612	Golf Grand Slam	ゴルフグランドスラム	ゴルフグランドスラム	Q5696520	1991	sports	JP,NA	
 G	Q1014915	BurgerTime	バーガータイム	バーガータイム	Q309996	1985	puzzle	JP,NA	Burger Time|ハンバーガー (ゲーム)
@@ -346,16 +346,16 @@ G	Q1081036	Rocket Ranger	ロケットレンジャー	ロケットレンジャー
 G	Q1089369	Captain Comic	Captain Comic		Q2984363	1988	action		The Adventures of Captain Comic
 G	Q1090190	F-1 Race	F1レース	エフワンレース	Q8093	1984	racing	JP	1984 F-1 Race|NES F-1 Race
 G	Q1094360	Destiny of an Emperor	天地を喰らう	テンチヲクラウ	Q14428	1989	rpg	JP,NA	
-G	Q1098180	Battle Kid: Fortress of Peril	バトルキッド 危険な罠		Q110193156	2010	action		バトルキッド
+G	Q1098180	Battle Kid: Fortress of Peril	バトルキッド 危険な罠	バトルキッドキケンナワナ	Q110193156	2010	action		バトルキッド
 G	Q1098202	Block Hole	クォース	クォース	Q45700	1990	shooter	JP	Arcade Archives: Quarth|Quarth
-G	Q1114374	Captain Tsubasa	キャプテン翼		Q1423789	1988	sports	JP,NA,EU	
+G	Q1114374	Captain Tsubasa	キャプテン翼	キャプテンツバサ	Q1423789	1988	sports	JP,NA,EU	
 G	Q1115150	Commando	戦場の狼	センジョウノオオカミ	Q14428	1986	shooter	JP	Commando (1985)|Senjou no Ookami|Senjō no Ōkami|Wolf of the Battlefield: Commando|コマンド|戦場の狼2|戦場の狼II
 G	Q1131067	Pipe Mania	パイプドリーム	パイプドリーム	Q216611	1989	puzzle	NA	Pipe Dream
 G	Q1133627	Pool of Radiance	プール・オブ・レイディアンス	プールオブレイディアンス	Q513712	1988	strategy	JP,NA	Advanced Dungeons & Dragons: Pool of Radiance|Advanced Dungeons and Dragons: Pool of Radiance|Pools of Radiance
 G	Q1139287	Lunar Pool	ルナーボール	ルナーボール	Q513712	1985	sports	JP,NA,EU	
 G	Q1141199	Super Sprint	スーパースプリント	スーパースプリント	Q1061580	1986	racing		
 G	Q1142493	Kid Icarus	光神話 パルテナの鏡	ヒカリシンワパルテナノカガミ	Q8093	1986	action	NA,EU	Hikari Shinwa: Palutena no Kagami|パルテナの鏡
-G	Q1142839	Ys I	イースI		Q1142226	1988	rpg	JP	Ancient Land of Ys|Ancient Ys Vanished: Omen|Y's|Y's: The Vanished Omens|Ys|Ys - The Vanished Omens|Ys 1|Ys I: Ancient Ys Vanished
+G	Q1142839	Ys I	イースI	イースワン	Q1142226	1988	rpg	JP	Ancient Land of Ys|Ancient Ys Vanished: Omen|Y's|Y's: The Vanished Omens|Ys|Ys - The Vanished Omens|Ys 1|Ys I: Ancient Ys Vanished
 G	Q1143274	Wizards & Warriors	伝説の騎士エルロンド	デンセツノキシエルロンド	Q339228	1987	action	JP,NA,EU	Wizards and Warriors
 G	Q1145485	Nintendo World Cup	熱血高校ドッジボール部 サッカー編	ネッケツコウコウドッジボールブサッカーヘン	Q1358743	1990	sports	JP,NA,EU	Nekketsu High School Dodgeball Club: Soccer|熱血高校ドッジボール部サッカー編
 G	Q1151856	Rygar	アルゴスの戦士	アルゴスノセンシ	Q1423789	1987	action	JP,NA,EU	Argos no Senshi|アルゴスの戦士 はちゃめちゃ大進撃
@@ -375,7 +375,7 @@ G	Q1198580	Dr. Mario	ドクターマリオ	ドクターマリオ	Q8093	1990	puzz
 G	Q1199765	Pooyan	プーヤン	プーヤン	Q45700	1985	action	JP	ぷーやん
 G	Q1201014	Balloon Fight	バルーンファイト	バルーンファイト	Q8093	1985	action	JP,NA,EU	
 G	Q1214813	Challenger	チャレンジャー	チャレンジャー	Q1049502	1985	action	JP	
-G	Q1217906	Niji no Silkroad	虹のシルクロード		Q2748676	1991	rpg	JP	
+G	Q1217906	Niji no Silkroad	虹のシルクロード	ニジノシルクロード	Q2748676	1991	rpg	JP	
 G	Q1224575	Dig Dug II	ディグダグII	ディグダグツー	Q309996	1986	action	JP,NA	
 G	Q1284570	M.U.L.E.	M.U.L.E.		Q173941	1983	strategy	NA	
 G	Q1308649	Skate or Die!	Skate or Die!		Q173941	1987	sports	NA,EU	
@@ -388,10 +388,10 @@ G	Q1328124	Yoshi's Cookie	ヨッシーのクッキー	ヨッシーノクッキ�
 G	Q1330205	Paperboy	ペーパーボーイ	ペーパーボーイ	Q1061580	1990	action	JP,EU	
 G	Q1330641	Adventures of Lolo	Adventures of Lolo		Q1068734	1989	puzzle	NA,EU	
 G	Q1353918	Thexder	テグザー	テグザー	Q1493042	1985	adventure	JP	
-G	Q1355850	Altered Beast	獣王記		Q580866	1990	action	JP	獣王記 -PROJECT ALTERED BEAST-
+G	Q1355850	Altered Beast	獣王記	ジュウオウキ	Q580866	1990	action	JP	獣王記 -PROJECT ALTERED BEAST-
 G	Q1370988	Salamander	沙羅曼蛇	サラマンダ	Q45700	1986	shooter	JP	Life Force|Life Force Salamander|Lifeforce|Lifeforce Salamander|さらまんだ|沙羅慢蛇|沙羅曼陀
 G	Q1398972	Faxanadu	ファザナドゥ	ファザナドゥ	Q1049502	1987	rpg	JP,NA,EU	
-G	Q1399011	Bonk's Adventure	PC原人		Q1049502	1993	action	JP,NA	BC-Kid|FC-Kid|GB-Kid|PC-Caveman|PC-Genjin|PC-Kid
+G	Q1399011	Bonk's Adventure	PC原人	ピーシーゲンジン	Q1049502	1993	action	JP,NA	BC-Kid|FC-Kid|GB-Kid|PC-Caveman|PC-Genjin|PC-Kid
 G	Q1406611	Bram Stoker's Dracula	Bram Stoker's Dracula		Q1933462	1993	shooter	NA,EU	
 G	Q1415070	The Bard's Tale	バーズテイル	バーズテイル	Q173941	1985	rpg	NA	Bard's Tale|Tales of the Unknown: Volume 1|バーズ・テイル
 G	Q1415970	Final Fantasy	ファイナルファンタジー	ファイナルファンタジー	Q739552	1987	rpg	JP	FF|FF1|Final Fantasy 1|Final Fantasy I|FinalFantasy|セーラ・コーネリア|ファイナルファンタジー アニバーサリーエディション|ファイナルファンタジー1
@@ -400,14 +400,14 @@ G	Q1421178	Super Cars	Super Cars		Q2274654	1990	racing	NA
 G	Q1436430	Don Doko Don	ドンドコドン	ドンドコドン	Q1054844	1990	action	JP	
 G	Q1439706	Famicom Wars	ファミコンウォーズ	ファミコンウォーズ	Q8093	1988	strategy	JP	
 G	Q1439988	Karate Champ	空手道	カラテドウ	Q1172213	1984	sports	NA	
-G	Q1440134	Rod Land	妖精物語ロッドランド		Q1344080	1992	action	JP,EU	ロッドランド
-G	Q1450279	Flying Shark	飛翔鮫		Q1054844	1989	shooter	NA	Hi Sho Zame|Hishou Zame|Sky Shark
+G	Q1440134	Rod Land	妖精物語ロッドランド	ヨウセイモノガタリロッドランド	Q1344080	1992	action	JP,EU	ロッドランド
+G	Q1450279	Flying Shark	飛翔鮫	ヒショウザメ	Q1054844	1989	shooter	NA	Hi Sho Zame|Hishou Zame|Sky Shark
 G	Q1514023	Rush'n Attack	グリーンベレー	グリーンベレー	Q45700	1985	action	NA,EU	Green Beret
-G	Q1523204	Uninvited	悪魔の招待状		Q1570468	1989	adventure	JP	Devil's Invitation
+G	Q1523204	Uninvited	悪魔の招待状	アクマノショウタイジョウ	Q1570468	1989	adventure	JP	Devil's Invitation
 G	Q1523333	Sweet Home	スウィートホーム	スウィートホーム	Q14428	1989	rpg	JP	
 G	Q1531134	Die Hard	ダイ・ハード	ダイハード	Q200491	1991	action	JP,NA,EU	
 G	Q1535509	Rampart	ランパート	ランパート	Q1061580	1991	puzzle	JP,NA,EU	
-G	Q1565343	Q*bert	Qバート		Q1151411	1989	puzzle	NA	
+G	Q1565343	Q*bert	Qバート	キューバート	Q1151411	1989	puzzle	NA	
 G	Q1567550	Joust	ジャウスト	ジャウスト	Q1068734	1987	action	JP,NA	
 G	Q1571488	Déjà Vu	ディジャブ	ディジャブ	Q1570468	1985	adventure	EU	Deja Vu|Deja Vu: A Nightmare Comes True|Deja Vu: A Nightmare Comes True!|Deja Vu: A Nightmare Comes True!!|ディジャブ 悪夢は本当にやって来た|デジャヴ ～引き裂かれた記憶
 G	Q1584331	Adventure Island II	高橋名人の冒険島II	タカハシメイジンノボウケンジマツー	Q1049502	1991	action	JP,NA,EU	
@@ -416,9 +416,9 @@ G	Q1618401	King's Quest V	King's Quest V		Q494614	1990	adventure	NA	King's Quest
 G	Q1630875	Track & Field	ハイパーオリンピック	ハイパーオリンピック	Q45700	1985	sports	JP,NA,EU	Hyper Olympic|Track & Field Barcelona|Hyper Olympic: Gentai Ban!|トラック・アンド・フィールド
 G	Q1648866	The Bugs Bunny Birthday Blowout	ハッピーバースディ バックス	ハッピーバースディバックス	Q174561	1990	action	NA,EU	
 G	Q1658492	Ninja Gaiden II: The Dark Sword of Chaos	忍者龍剣伝 II 暗黒の邪神剣	ニンジャリュウケンデンツーアンコクノジャシンケン	Q1423789	1990	action	JP,NA,EU	Ninja Ryūkenden II: Ankoku no Jashin Ken|Shadow Warriors II: Ninja Gaiden II|Shadow Warriors II: The Dark Sword of Chaos
-G	Q1668079	Smash TV	スマッシュT.V.		Q1403157	1990	action	NA,EU	Smash T.V.
+G	Q1668079	Smash TV	スマッシュT.V.	スマッシュティーブイ	Q1403157	1990	action	NA,EU	Smash T.V.
 G	Q1707792	Space Harrier	スペースハリアー	スペースハリアー	Q122741	1989	shooter	JP	Super Space Harrier|スペハリ|スペースハリヤー
-G	Q1711616	Wai Wai World 2: SOS!! Parsley Jō	ワイワイワールド2 SOS!!パセリ城		Q45700	1991	action	JP	コナミワイワイワールド2|ワイワイワールド2|ワイワイワールド2 SOSパセリ城
+G	Q1711616	Wai Wai World 2: SOS!! Parsley Jō	ワイワイワールド2 SOS!!パセリ城	ワイワイワールド2エスオーエスパセリジョウ	Q45700	1991	action	JP	コナミワイワイワールド2|ワイワイワールド2|ワイワイワールド2 SOSパセリ城
 G	Q1748800	Hogan's Alley	ホーガンズアレイ	ホーガンズアレイ	Q8093	1984	shooter	JP,EU	
 G	Q1756741	Star Soldier	スターソルジャー	スターソルジャー	Q1049502	1986	shooter	JP	
 G	Q1759528	Snake Rattle 'n' Roll	Snake Rattle 'n' Roll		Q8093	1990	action	NA,EU	Snake Rattle N Roll
@@ -431,19 +431,19 @@ G	Q1807428	Monster in My Pocket	Monster in My Pocket		Q45700	1992	action	NA,EU
 G	Q1835554	Fester's Quest	Fester's Quest	フェスターズクエスト	Q2298387	1989	action	NA,EU	Uncle Fester's Quest: The Addams Family|フェスターの冒険|フェスターズクエスト
 G	Q1837699	Mega Man 4	ロックマン4 新たなる野望!!	ロックマン4アラタナルヤボウ	Q14428	1991	action	JP,NA,EU	Rockman 4|Rockman 4 Aratanaru Yabō|Rockman4|ロックマン4：新たなる野望！！
 G	Q1837967	The Simpsons: Bart vs. the Space Mutants	ザ・シンプソンズ バートVSザ・スペースミュータンツ		Q339228	1991	action	NA,EU	Bart vs the Space Mutants|Bart vs. the Space Mutants|The Simpsons: Bart vs the Space Mutants
-G	Q1865060	Gauntlet II	ガントレットII		Q1061580	1986	action	NA,EU	
-G	Q1888364	The Battle of Olympus	オリュンポスの戦い -愛の伝説-		Q995863	1988	rpg	NA,EU	
+G	Q1865060	Gauntlet II	ガントレットII	ガントレットツー	Q1061580	1986	action	NA,EU	
+G	Q1888364	The Battle of Olympus	オリュンポスの戦い -愛の伝説-	オリュンポスノタタカイアイノデンセツ	Q995863	1988	rpg	NA,EU	
 G	Q1890670	Last Ninja 2	Last Ninja 2		Q200491	1988	action	NA	The Last Ninja
-G	Q1896803	A Week of Garfield	ガーフィールドの一週間		Q3739267	1989	action	JP	Garfield no Isshūkan
+G	Q1896803	A Week of Garfield	ガーフィールドの一週間	ガーフィールドノイッシュウカン	Q3739267	1989	action	JP	Garfield no Isshūkan
 G	Q1903593	Defenders of Dynatron City	Defenders of Dynatron City		Q215901	1992	action	NA	
 G	Q1906269	Parasol Stars: The Story Of Rainbow Islands 2	パラソルスター	パラソルスター	Q1054844	1991	action	EU	Parasol Stars
-G	Q1920147	Super Contra	スーパー魂斗羅 エイリアンの逆襲		Q45700	1990	shooter	JP,NA,EU	Probotector 2: Return of the Evil Forces|Probotector II: Return of the Evil Forces|Super C
-G	Q1925552	Ikari III: The Rescue	怒III		Q1073880	1990	action	JP,NA	
-G	Q1932678	Chip 'n Dale Rescue Rangers	チップとデールの大作戦		Q14428	1990	action	JP,NA,EU	Chip to Dale no Daisakusen
-G	Q1935772	Chip 'n Dale Rescue Rangers 2	チップとデールの大作戦2		Q14428	1993	action	JP,NA,EU	Chip to Dale no Daisakusen 2
+G	Q1920147	Super Contra	スーパー魂斗羅 エイリアンの逆襲	スーパーコントラエイリアンノギャクシュウ	Q45700	1990	shooter	JP,NA,EU	Probotector 2: Return of the Evil Forces|Probotector II: Return of the Evil Forces|Super C
+G	Q1925552	Ikari III: The Rescue	怒III	イカリスリー	Q1073880	1990	action	JP,NA	
+G	Q1932678	Chip 'n Dale Rescue Rangers	チップとデールの大作戦	チップトデールノダイサクセン	Q14428	1990	action	JP,NA,EU	Chip to Dale no Daisakusen
+G	Q1935772	Chip 'n Dale Rescue Rangers 2	チップとデールの大作戦2	チップトデールノダイサクセン2	Q14428	1993	action	JP,NA,EU	Chip to Dale no Daisakusen 2
 G	Q1942249	Back to the Future Part II & III	Back to the Future Part II & III		Q3206072	1990	puzzle	NA	Back to the Future Part II and III
 G	Q1946500	World Champ	World Champ		Q3441266	1990	sports	JP,NA,EU	
-G	Q1950716	The Guardian Legend	ガーディック外伝		Q617752	1988	shooter	JP,NA,EU	Guardian Legend|Guardic Gaiden
+G	Q1950716	The Guardian Legend	ガーディック外伝	ガーディックガイデン	Q617752	1988	shooter	JP,NA,EU	Guardian Legend|Guardic Gaiden
 G	Q1953575	Qix	QIX	クイックス	Q1054844	1990	action	NA	キックス|クイックス
 G	Q1955712	Super Mario Bros. / Duck Hunt	Super Mario Bros. / Duck Hunt		Q8093	1986		NA,EU	
 G	Q1967469	RoadBlasters	ロードブラスターズ	ロードブラスターズ	Q1930918	1987	racing	NA,EU	
@@ -457,14 +457,14 @@ G	Q1985756	RoboCop	ロボコップ	ロボコップ	Q1172213	1989	shooter	JP,NA,E
 G	Q1990991	Toobin'	Toobin'		Q1235040	1988	action		
 G	Q1992811	The Adventures of Bayou Billy	マッド・シティ	マッドシティ	Q45700	1988	action	NA,EU	
 G	Q1995635	Gun.Smoke	ガンスモーク	ガンスモーク	Q3441266	1985	shooter	NA,EU	Desperado|Gun Smoke
-G	Q2000330	North & South	ノース&サウス わくわく南北戦争		Q1782700	1990	action	JP,NA,EU	North and South
+G	Q2000330	North & South	ノース&サウス わくわく南北戦争	ノースアンドサウスワクワクナンボクセンソウ	Q1782700	1990	action	JP,NA,EU	North and South
 G	Q2001519	TwinBee	ツインビー	ツインビー	Q45700	1986	shooter	JP	Rainbowbell
 G	Q2002828	Bomberman II	ボンバーマンII	ボンバーマンツー	Q1049502	1991	action	JP,NA,EU	Dyna Blaster|Dynablaster|ボンバーマン2
 G	Q2008603	Konami Hyper Soccer	Konami Hyper Soccer		Q45700	1992	sports	EU	
 G	Q2008751	The Simpsons: Bartman Meets Radioactive Man	The Simpsons: Bartman Meets Radioactive Man		Q339228	1992	action	NA,EU	
 G	Q2014874	Mega Man 3	ロックマン3 Dr.ワイリーの最期!?	ロックマン3ドクターワイリーノサイゴ	Q14428	1990	action	JP,NA,EU	Rockman 3|Rockman 3: Dr. Wily no Saigo!?|ロックマン3|ロックマン3：Dr.ワイリーの最期！？
 G	Q2014882	Mega Man 2	ロックマン2 Dr.ワイリーの謎	ロックマン2ドクターワイリーノナゾ	Q14428	1988	action	JP,NA,EU	Rockman 2|Rockman 2: Dr. Wily no Nazo'|ロックマン2|ロックマン2：Dr.ワイリーの謎
-G	Q2015406	WWF WrestleMania Challenge	WWFレッスルマニアチャレンジ		Q3206072	1990	fighting	JP,NA,EU	
+G	Q2015406	WWF WrestleMania Challenge	WWFレッスルマニアチャレンジ	ダブリューダブリューエフレッスルマニアチャレンジ	Q3206072	1990	fighting	JP,NA,EU	
 G	Q2015463	WWF WrestleMania: Steel Cage Challenge	WWF WrestleMania: Steel Cage Challenge		Q3206072	1992	sports	NA,EU	
 G	Q2016893	Touchdown Fever	タッチダウンフィーバー	タッチダウンフィーバー	Q1044563	1988	sports	JP	
 G	Q2017429	American Gladiators	American Gladiators		Q5519804	1991	sports	NA	
@@ -482,10 +482,10 @@ G	Q2068615	Attack of the Killer Tomatoes	アタック・オブ・ザ・キラー
 G	Q2078681	Air Fortress	エアー・フォートレス	エアーフォートレス	Q1068734	1987	shooter	JP,NA,EU	
 G	Q2079413	MotoRace USA	ジッピーレース	ジッピーレース	Q617752	1985	racing	JP	Traverse USA|Zippy Race
 G	Q2079498	Binary Land	バイナリィランド	バイナリィランド	Q1049502	1985	puzzle	JP	バイナリーランド
-G	Q2081247	Insector X	インセクターX		Q5909783	1990	shooter	JP	
-G	Q2081556	Tiny Toon Adventures 2: Trouble in Wackyland	Tiny Toon Adventures 2 モンタナランドへようこそ		Q45700	1992	action	JP,NA,EU	Tiny Toon Adventures 2: Montana Land e Yōkoso
+G	Q2081247	Insector X	インセクターX	インセクターエックス	Q5909783	1990	shooter	JP	
+G	Q2081556	Tiny Toon Adventures 2: Trouble in Wackyland	Tiny Toon Adventures 2 モンタナランドへようこそ	タイニートゥーンアドベンチャーズ2モンタナランドヘヨウコソ	Q45700	1992	action	JP,NA,EU	Tiny Toon Adventures 2: Montana Land e Yōkoso
 G	Q2083880	Ikki	いっき	イッキ	Q309996	1985	action	JP	Boomerang|Farmers Rebellion|いっき萌バイル
-G	Q2088772	Legendary Wings	アレスの翼		Q14428	1986	action	NA	
+G	Q2088772	Legendary Wings	アレスの翼	アレスノツバサ	Q14428	1986	action	NA	
 G	Q2089684	Magic Jewelry	魔法宝石			1990	puzzle		マジックジュエリー
 G	Q2096756	Sid Meier's Pirates!	パイレーツ!	パイレーツ	Q2492131	1987	strategy	NA,EU	Pirates!
 G	Q2098302	Target: Renegade	Target: Renegade		Q3148930	1988	fighting	NA	
@@ -501,17 +501,17 @@ G	Q2129938	Hostages	Hostages		Q1782700	1988	shooter	NA,EU	Hostage: Rescue Missio
 G	Q2138242	Infiltrator	Infiltrator		Q1570468	1985	strategy	NA	
 G	Q2141683	Ms. Pac-Man	ミズ・パックマン	ミズパックマン	Q149947	1993	action	NA	
 G	Q2152260	Stack-Up	Stack-Up		Q8093	1985	puzzle	JP,NA,EU	Robot Block
-G	Q2157521	Fantasy Zone II: The Tears of Opa-Opa	ファンタジーゾーンII オパオパの涙		Q2298387	1988	shooter	JP	ファンタジーゾーン2|ファンタジーゾーンII
+G	Q2157521	Fantasy Zone II: The Tears of Opa-Opa	ファンタジーゾーンII オパオパの涙	ファンタジーゾーンツーオパオパノナミダ	Q2298387	1988	shooter	JP	ファンタジーゾーン2|ファンタジーゾーンII
 G	Q2160214	Aighina no Yogen: From the Legend of Balubalouk	アイギーナの予言	アイギーナノヨゲン	Q3116102	1986	action	JP	Baluba-Louk No Densetsu
 G	Q2163504	Bad Street Brawler	Bad Street Brawler		Q1570468	1987	action	NA	Street Hassle
 G	Q2163672	Tiles of Fate	Tiles of Fate			0	strategy		
-G	Q2172154	Teenage Mutant Ninja Turtles	激亀忍者伝		Q2492131	1989	action	JP,NA,EU	1989 Teenage Mutant Ninja Turtles|Gekikame Ninja Den|Teenage Mutant Hero Turtles|Teenage Mutant Ninja Turtles (NES video game)|Ultimate Teenage Mutant Ninja Turtles
+G	Q2172154	Teenage Mutant Ninja Turtles	激亀忍者伝	ゲキガメニンジャデン	Q2492131	1989	action	JP,NA,EU	1989 Teenage Mutant Ninja Turtles|Gekikame Ninja Den|Teenage Mutant Hero Turtles|Teenage Mutant Ninja Turtles (NES video game)|Ultimate Teenage Mutant Ninja Turtles
 G	Q2182703	Pin Bot	Pin Bot		Q8093	1990	table	NA,EU	Pin-Bot
 G	Q2182742	Puzznic	パズニック	パズニック	Q1408498	1990	puzzle	JP,NA,EU	
 G	Q2188282	R.C. Pro-Am	R.C. Pro-Am		Q8093	1988	racing	NA,EU	
 G	Q2193820	F-15 City War	F-15 City War			0	action		
-G	Q2204970	Racket Attack	燃えろ!!プロテニス		Q1344080	1988	sports	JP,NA,EU	Moero!! Pro Tennis
-G	Q2211843	All-Pro Basketball	全米プロバスケット		Q3116102	1989	sports	JP,NA	Zenbei!! Pro Basketball
+G	Q2204970	Racket Attack	燃えろ!!プロテニス	モエロプロテニス	Q1344080	1988	sports	JP,NA,EU	Moero!! Pro Tennis
+G	Q2211843	All-Pro Basketball	全米プロバスケット	ゼンベイプロバスケット	Q3116102	1989	sports	JP,NA	Zenbei!! Pro Basketball
 G	Q2212127	Rad Racer	ハイウェイスター	ハイウェイスター	Q739552	1987	racing	JP,NA,EU	Highway Star|ラッドレーサー|ラッド・レーサー
 G	Q2219421	Top Gun: The Second Mission	Top Gun: The Second Mission		Q45700	1989	strategy	JP,NA,EU	Top Gun 2|Top Gun II
 G	Q2223652	R.C. Pro-Am II	R.C. Pro-Am II		Q2447732	1992	racing	NA,EU	
@@ -523,10 +523,10 @@ G	Q2252902	StarTropics	StarTropics	スタートロピックス	Q8093	1990	action
 G	Q2255493	The Mutant Virus: Crisis in a Computer World	The Mutant Virus: Crisis in a Computer World		Q1469961	1992	action	NA	
 G	Q2260930	Baseball Stars 2	ベースボールスターズ2	ベースボールスターズ2	Q1044563	1992	sports	NA	
 G	Q2264301	Donkey Kong Jr.	ドンキーコングJR.	ドンキーコングジュニア	Q8093	1983	action	JP,NA,EU	DK 2|DK2|Donkey Kong 2|Donkey Kong Jr|Donkey Kong Junior|ドンキーコング2|ドンキーコングJr
-G	Q2278537	Captain Tsubasa Vol. II: Super Striker	キャプテン翼II スーパーストライカー		Q1423789	1990	rpg	JP	Captain Tsubasa 2|Captain Tsubasa II - Super Striker|Captain Tsubasa II: Super Striker|キャプテン翼Vol.II スーパーストライカー
+G	Q2278537	Captain Tsubasa Vol. II: Super Striker	キャプテン翼II スーパーストライカー	キャプテンツバサツースーパーストライカー	Q1423789	1990	rpg	JP	Captain Tsubasa 2|Captain Tsubasa II - Super Striker|Captain Tsubasa II: Super Striker|キャプテン翼Vol.II スーパーストライカー
 G	Q2281747	Anticipation	Anticipation		Q8093	1988	table	NA,EU	
 G	Q2292340	Chack'n Pop	ちゃっくんぽっぷ	チャックンポップ	Q1054844	1985	action	JP	
-G	Q2300687	Toki	JuJu伝説		Q5428249	1991	action	JP	
+G	Q2300687	Toki	JuJu伝説	ジュジュデンセツ	Q5428249	1991	action	JP	
 G	Q2302403	Tag Team Wrestling	ザ・ビッグプロレスリング	ザビッグプロレスリング	Q309996	1986	sports	JP	タッグチームプロレスリング
 G	Q2303119	Popeye	ポパイ	ポパイ	Q8093	1986	action	NA,EU	1982 Popeye|Arcade Popeye
 G	Q2306270	Hillsfar	ヒルズファー	ヒルズファー	Q513712	1993	action	NA	
@@ -543,41 +543,41 @@ G	Q2332808	Metal Max	メタルマックス	メタルマックス	Q1172213	1991	r
 G	Q2335742	Bandai Golf: Challenge Pebble Beach	Bandai Golf: Challenge Pebble Beach		Q1194689	1989	sports	NA	
 G	Q2338283	Soccer	サッカー	サッカー	Q8093	1985	sports	NA,EU	1985 Soccer|NES Soccer
 G	Q2340591	Just Breed	ジャストブリード	ジャストブリード	Q1343212	1992	strategy	JP	
-G	Q2345478	Genghis Khan II: Clan of the Gray Wolf	蒼き狼と白き牝鹿・元朝秘史		Q845047	1993	strategy	JP	Aoki Ōkami to Shiroki Mejika: Genchou Hishi|蒼き狼と白き牝鹿 元朝秘史
+G	Q2345478	Genghis Khan II: Clan of the Gray Wolf	蒼き狼と白き牝鹿・元朝秘史	アオキオオカミトシロキメジカゲンチョウヒシ	Q845047	1993	strategy	JP	Aoki Ōkami to Shiroki Mejika: Genchou Hishi|蒼き狼と白き牝鹿 元朝秘史
 G	Q2353348	Karateka	カラテカ	カラテカ	Q995863	1985	action	JP	マスターカラテカ
-G	Q2354748	Yo! Noid	仮面の忍者 花丸		Q14428	1990	action	JP	
+G	Q2354748	Yo! Noid	仮面の忍者 花丸	カメンノニンジャハナマル	Q14428	1990	action	JP	
 G	Q2358844	Bee 52	Bee 52		Q2934754	1992	action		
 G	Q2360194	Mega Man 5	ロックマン5 ブルースの罠!?	ロックマン5ブルースノワナ	Q14428	1992	action	JP,NA,EU	Rockman 5|Rockman 5: Blues no Wana!?|ロックマン5|ロックマン5：ブルースの罠！？
 G	Q2360218	Mega Man 6	ロックマン6 史上最大の戦い!!	ロックマン6シジョウサイダイノタタカイ	Q14428	1993	action	JP,NA	Mega Man VI|Mega Man Ⅵ|Rockman 6|Rockman 6: Shijō Saidai no Tatakai!!|ロックマン6
 G	Q2361559	To the Earth	To the Earth		Q8093	1989	shooter	NA,EU	
 G	Q2364135	Zoda's Revenge: StarTropics II	Zoda's Revenge: StarTropics II		Q8093	1994	action		StarTropics II: Zoda's Revenge|Startropics 2|Startropics II
-G	Q2364724	Blaster Master	超惑星戦記 メタファイト		Q2298387	1988	action	JP,EU	Chō Wakusei Senki Metafight
+G	Q2364724	Blaster Master	超惑星戦記 メタファイト	チョウワクセイセンキメタファイト	Q2298387	1988	action	JP,EU	Chō Wakusei Senki Metafight
 G	Q2367239	Double Strike	Double Strike			1990	action		
 G	Q2379922	Zanac	ザナック	ザナック	Q513712	1986	shooter	NA	
 G	Q2381494	Darkwing Duck	Darkwing Duck		Q14428	1992	action	NA,EU	
 G	Q2383859	The Goonies II	グーニーズ2 フラッテリー最後の挑戦	グーニーズ2フラッテリーサイゴノチョウセン	Q45700	1987	action	JP,NA,EU	グーニーズ2
 G	Q2386654	Jordan vs. Bird: One on One	ジョーダンVSバード ONE on ONE		Q1651497	1988	sports	NA	マイケル・ジョーダン ONE ON ONE
-G	Q2394261	Demon Sword	不動明王伝		Q1054844	1988	action	JP,NA	Fudō Myō-ō Den|Fudō Myōō Den
+G	Q2394261	Demon Sword	不動明王伝	フドウミョウオウデン	Q1054844	1988	action	JP,NA	Fudō Myō-ō Den|Fudō Myōō Den
 G	Q2398028	Gemfire	ロイヤルブラッド	ロイヤルブラッド	Q845047	1991	strategy	JP,NA	スーパーロイヤルブラッド
 G	Q2399220	Adventures in the Magic Kingdom	Adventures in the Magic Kingdom		Q14428	1990	action	NA,EU	
 G	Q2403130	Narc	Narc		Q1403157	1988	shooter	NA	
-G	Q2414730	Joe & Mac	戦え原始人		Q3028965	1991	action	NA,EU	Caveman Ninja|Caveman Ninja: Joe & Mac|Joe & Mac: Caveman Ninja|Joe & Mac: Tatakae Genshijin|Joe and Mac|Joe and Mac: Tatakae Genshijin|JOE&MAC 戦え原始人
+G	Q2414730	Joe & Mac	戦え原始人	タタカエゲンシジン	Q3028965	1991	action	NA,EU	Caveman Ninja|Caveman Ninja: Joe & Mac|Joe & Mac: Caveman Ninja|Joe & Mac: Tatakae Genshijin|Joe and Mac|Joe and Mac: Tatakae Genshijin|JOE&MAC 戦え原始人
 G	Q2422991	Knight Lore	ナイト・ロアー	ナイトロアー	Q2605613	1986	action	JP	
-G	Q2439071	Bandit Kings of Ancient China	水滸伝・天命の誓い		Q845047	1990	strategy	JP,NA	
+G	Q2439071	Bandit Kings of Ancient China	水滸伝・天命の誓い	スイコデンテンメイノチカイ	Q845047	1990	strategy	JP,NA	
 G	Q2441363	A Nightmare on Elm Street	A Nightmare on Elm Street		Q3206072	1990	action	NA	
 G	Q2442526	Asterix	Asterix		Q1782700	1993	action	EU	1993 Asterix|Astérix
 G	Q2449283	The Transformers: Mystery of Convoy	トランスフォーマー コンボイの謎	トランスフォーマーコンボイノナゾ	Q3028965	1986	shooter	JP	コンボイの謎
 G	Q2459946	Arkanoid: Revenge of Doh	Arkanoid: Revenge of Doh		Q1054844	1988	action	JP	
 G	Q2465356	Silk Worm	Silk Worm		Q1423789	1988	shooter	NA	Silkworm
-G	Q2466720	Tecmo World Wrestling	激闘プロレス!!闘魂伝説		Q1423789	1989	sports	JP,NA,EU	Gekitou Pro Wrestling!! Toukon Densetsu
-G	Q2468410	Shinobi	忍 -SHINOBI-		Q2536056	1989	action	NA	忍 SHINOBI
+G	Q2466720	Tecmo World Wrestling	激闘プロレス!!闘魂伝説	ゲキトウプロレストウコンデンセツ	Q1423789	1989	sports	JP,NA,EU	Gekitou Pro Wrestling!! Toukon Densetsu
+G	Q2468410	Shinobi	忍 -SHINOBI-	シノビ	Q2536056	1989	action	NA	忍 SHINOBI
 G	Q2470724	WWF WrestleMania	WWF WrestleMania		Q339228	1989	fighting	NA,EU	
 G	Q2472816	Alfred Chicken	アルフレッドチキン	アルフレッドチキン	Q1570468	1993	action	NA,EU	Super Alfred Chicken
 G	Q2473951	The Adventures of Rocky and Bullwinkle and Friends	ロッキー・アンド・ブルウィンクル・ショー	ロッキーアンドブルウィンクルショー	Q580866	1992	action	NA	ロッキー・アンド・フレンズ|ロッキー君とゆかいな仲間|空飛ぶロッキーくん|空飛ぶロッキー君
 G	Q2490098	Menace Beach	Menace Beach		Q290567	1990	action	NA	Sunday Funday|ミスピーチワールド
 G	Q2491737	S.C.A.T.: Special Cybernetic Attack Team	ファイナルミッション	ファイナルミッション	Q1782700	1990	shooter	JP,NA,EU	Action in New York|Final Mission
 G	Q2495808	Crisis Force	クライシスフォース	クライシスフォース	Q45700	1991	shooter	JP	
-G	Q2498075	Shadow of the Ninja	闇の仕事人 KAGE		Q1054844	1990	action	JP,NA,EU	Blue Shadow|Yami no Shigotonin Kage
+G	Q2498075	Shadow of the Ninja	闇の仕事人 KAGE	ヤミノシゴトニンカゲ	Q1054844	1990	action	JP,NA,EU	Blue Shadow|Yami no Shigotonin Kage
 G	Q2511089	Orb-3D	Orb-3D		Q3135129	1990	puzzle	JP,NA	
 G	Q2513509	Pro Wrestling	プロレス	プロレス	Q8093	1986	sports	JP,NA,EU	
 G	Q2513837	High Speed	High Speed		Q2447732	1991	table	NA,EU	
@@ -611,52 +611,52 @@ G	Q2617164	Quattro Sports	Quattro Sports			1993	sports
 G	Q2619973	Vindicators	Vindicators		Q2536056	1988	action		
 G	Q2623012	Bump 'n' Jump	バギー・ポッパー	バギーポッパー	Q1172213	1986	racing	JP,NA	バギーホッパー|バギーポッパー|バーニン'ラバー|バーニングラバー|バーニンラバー
 G	Q2624586	Big Nose Freaks Out	Big Nose Freaks Out		Q2934754	1992	action		
-G	Q2624732	Little Nemo: The Dream Master	パジャマヒーロー NEMO		Q14428	1990	action	JP,NA,EU	Little Nemo|Pajama Hero Nemo
+G	Q2624732	Little Nemo: The Dream Master	パジャマヒーロー NEMO	パジャマヒーローニモ	Q14428	1990	action	JP,NA,EU	Little Nemo|Pajama Hero Nemo
 G	Q2626892	Krusty's Fun House	クラスティーズ・ファンハウス	クラスティーズファンハウス	Q1131147	1992	puzzle	NA,EU	クリスティーワールド
 G	Q2627223	Friday the 13th	Friday the 13th		Q3206072	1989	adventure	NA	13日の金曜日
 G	Q2629434	Tiny Toon Adventures	Tiny Toon Adventures		Q45700	1991	action	JP,NA,EU	
 G	Q2630920	DuckTales 2	ダックテイルズ2	ダックテイルズ2	Q14428	1993	action	JP,NA,EU	Disney's DuckTales 2|Duck Tales 2|Duck Tales II|Ducktales II
-G	Q2630928	Dragon Ball Z Side Story: Plan to Eradicate the Saiyans	ドラゴンボールZ外伝 サイヤ人絶滅計画		Q507269	1993	fighting	JP	Dragon Ball Z Gaiden: Saiya-jin Zetsumetsu Keikaku|サイヤ人絶滅計画|ドラゴンボールZ サイヤ人絶滅計画
+G	Q2630928	Dragon Ball Z Side Story: Plan to Eradicate the Saiyans	ドラゴンボールZ外伝 サイヤ人絶滅計画	ドラゴンボールゼットガイデンサイヤジンゼツメツケイカク	Q507269	1993	fighting	JP	Dragon Ball Z Gaiden: Saiya-jin Zetsumetsu Keikaku|サイヤ人絶滅計画|ドラゴンボールZ サイヤ人絶滅計画
 G	Q2634600	Gumshoe	ガムシュー	ガムシュー	Q8093	1986	shooter	NA,EU	
 G	Q2642768	Iron Tank	グレートタンク	グレートタンク	Q1073880	1988	shooter	JP,NA,EU	Great Tank|Iron Tank: The Invasion of Normandy
 G	Q2644797	Super Glove Ball	Super Glove Ball		Q596139	1990	action	NA	
 G	Q2645897	Home Alone 2: Lost in New York	Home Alone 2: Lost in New York		Q580866	1992	action	NA,EU	
 G	Q2647594	Final Fantasy VII	Final Fantasy VII		Q19852009	2005	rpg	JP	Core Crisis
 G	Q2658381	Ninja Gaiden	忍者龍剣伝	ニンジャリュウケンデン	Q1423789	1988	action	JP,NA,EU	Ninja Ryūkenden
-G	Q2659903	Jackal	特殊部隊ジャッカル		Q45700	1988	shooter	NA	Final Command: Akai Yousai
-G	Q2660086	Little Samson	聖鈴伝説リックル		Q1054844	1992	action	JP,NA,EU	Seirei Densetsu Lickle
+G	Q2659903	Jackal	特殊部隊ジャッカル	トクシュブタイジャッカル	Q45700	1988	shooter	NA	Final Command: Akai Yousai
+G	Q2660086	Little Samson	聖鈴伝説リックル	セイレイデンセツリックル	Q1054844	1992	action	JP,NA,EU	Seirei Densetsu Lickle
 G	Q2660330	Abadox: The Deadly Inner War	アバドックス	アバドックス	Q2150493	1989	shooter	JP,NA	Abadox
 G	Q2669580	10-Yard Fight	10ヤードファイト	10ヤードファイト	Q1054844	1985	sports	JP,NA,EU	
 G	Q2678915	Galaga: Demons of Death	Galaga: Demons of Death		Q309996	1987	shooter	NA,EU	
 G	Q2679211	8 Eyes	エイト・アイズ	エイトアイズ	Q954877	1988	action	JP,NA	8 Eye's|エイトアイズ
 G	Q2680533	Lot Lot	ロットロット	ロットロット	Q1372258	1985	puzzle	JP	
-G	Q2684056	Indiana Jones and the Last Crusade: The Action Game	インディー・ジョーンズ 最後の聖戦		Q1930918	1989	action	NA	
+G	Q2684056	Indiana Jones and the Last Crusade: The Action Game	インディー・ジョーンズ 最後の聖戦	インディージョーンズサイゴノセイセン	Q1930918	1989	action	NA	
 G	Q2700588	Tennis	テニス	テニス	Q8093	1984	sports	JP,NA,EU	1984 Tennis|Game Boy Tennis|NES Tennis
 G	Q2701304	Mario's Time Machine	マリオ'ズ タイムマシーン	マリオズタイムマシーン	Q8093	1994	educational	NA	マリオズ タイムマシーン
 G	Q2705249	The Addams Family: Pugsley's Scavenger Hunt	The Addams Family: Pugsley's Scavenger Hunt		Q1408498	1992	action	NA,EU	
 G	Q2705496	Punch-Out!!	マイクタイソン・パンチアウト!!	マイクタイソンパンチアウト	Q8093	1987	sports	NA,EU	1987 Punch-Out|Mike Tyson's Punch-Out!!|NES Punch-Out|Punch-Out!! Featuring Mr. Dream|Punch-Out!! NES|Punch-Out‼
 G	Q2710703	Blades of Steel	コナミックアイスホッケー	コナミックアイスホッケー	Q45700	1988	sports	EU	Konamic Ice Hockey
-G	Q2716205	Wario's Woods	ワリオの森		Q8093	1994	puzzle	JP,NA,EU	Wario no Mori
-G	Q2717834	Wizardry II: The Knight of Diamonds	ウィザードリィII ダイヤモンドの騎士		Q930222	1990	rpg	JP	ウィザードリィIII ダイヤモンドの騎士
-G	Q2726277	Hoops	燃えろ!!ジュニアバスケット ツーオンツー		Q1344080	1988	sports	JP,NA,EU	
+G	Q2716205	Wario's Woods	ワリオの森	ワリオノモリ	Q8093	1994	puzzle	JP,NA,EU	Wario no Mori
+G	Q2717834	Wizardry II: The Knight of Diamonds	ウィザードリィII ダイヤモンドの騎士	ウィザードリィツーダイヤモンドノキシ	Q930222	1990	rpg	JP	ウィザードリィIII ダイヤモンドの騎士
+G	Q2726277	Hoops	燃えろ!!ジュニアバスケット ツーオンツー	モエロジュニアバスケットツーオンツー	Q1344080	1988	sports	JP,NA,EU	
 G	Q2731595	Golf	ゴルフ	ゴルフ	Q8093	1984	sports	JP,NA,EU	1984 Golf|NES Golf
 G	Q2732183	Circus Charlie	サーカスチャーリー	サーカスチャーリー	Q45700	1986	action	JP	
 G	Q2741274	D-Pad Hero	D-Pad Hero			2009	music		
 G	Q2742194	Arch Rivals	アーチライバルズ	アーチライバルズ	Q339228	1989	sports	EU	
 G	Q2746198	Rolling Thunder	ローリングサンダー	ローリングサンダー	Q309996	1989	action	JP	
-G	Q2748771	Dr. Chaos	Dr.カオス 地獄の扉		Q513712	1987	action	NA	Dr. Chaos: Jigoku no Tobira
-G	Q2749049	Goal!	燃えろ!!プロサッカー		Q1344080	1988	sports	JP,NA,EU	GOAL!!|Moero 5!! Pro Soccer|Jカップサッカー
+G	Q2748771	Dr. Chaos	Dr.カオス 地獄の扉	ドクターカオスジゴクノトビラ	Q513712	1987	action	NA	Dr. Chaos: Jigoku no Tobira
+G	Q2749049	Goal!	燃えろ!!プロサッカー	モエロプロサッカー	Q1344080	1988	sports	JP,NA,EU	GOAL!!|Moero 5!! Pro Soccer|Jカップサッカー
 G	Q2752616	Pac-Land	パックランド	パックランド	Q309996	1985	action	JP	
 G	Q2757019	Volleyball	バレーボール	バレーボール	Q8093	1986	sports	NA,EU	1986 Volleyball|NES Volleyball
-G	Q2764442	Bad News Baseball	激闘スタジアム!!		Q1423789	1989	sports	JP,NA	
-G	Q2774261	Golgo 13: Top Secret Episode	ゴルゴ13 第一章神々の黄昏		Q3116102	1988	action	JP,NA	
+G	Q2764442	Bad News Baseball	激闘スタジアム!!	ゲキトウスタジアム	Q1423789	1989	sports	JP,NA	
+G	Q2774261	Golgo 13: Top Secret Episode	ゴルゴ13 第一章神々の黄昏	ゴルゴサーティーンダイイッショウカミガミノタソガレ	Q3116102	1988	action	JP,NA	
 G	Q2774283	Tecmo Baseball	Tecmo Baseball		Q1423789	1989	sports	NA	
 G	Q2780594	Baseball Stars	ベースボールスター めざせ三冠王	ベースボールスターメザセサンカンオウ	Q8093	1989	sports	JP,NA	
 G	Q2783606	Impossible Mission II	Impossible Mission II		Q1347787	1988	action		
-G	Q2786897	Victory Road	怒号層圏		Q1044563	1988	shooter	JP,NA	Ikari Warriors II: Victory Road
+G	Q2786897	Victory Road	怒号層圏	ドゴウソウケン	Q1044563	1988	shooter	JP,NA	Ikari Warriors II: Victory Road
 G	Q2795318	Crystal Mines	Crystal Mines		Q2984363	1989	action		
 G	Q2796607	Ikari Warriors	怒	イカリ	Q2447732	1986	shooter	JP,NA,EU	Ikari|怒 IKARI
-G	Q2799054	Baseball Simulator 1.000	超人ウルトラベースボール		Q760096	1989	sports	JP,NA	ウルトラベースボール
+G	Q2799054	Baseball Simulator 1.000	超人ウルトラベースボール	チョウジンウルトラベースボール	Q760096	1989	sports	JP,NA	ウルトラベースボール
 G	Q2800857	Flight of the Intruder	Flight of the Intruder		Q1418015	1990	other	NA,EU	
 G	Q2803175	Chaos World	カオスワールド	カオスワールド	Q3772556	1991	rpg	JP	
 G	Q2815984	The 3-D Battles of Worldrunner	とびだせ大作戦	トビダセダイサクセン	Q339228	1987	shooter	NA	3-D Worldrunner
@@ -665,7 +665,7 @@ G	Q2829419	Al Unser Jr.'s Turbo Racing	POLE TO FINISH	ポールトゥフィニ�
 G	Q2836804	Alien 3	Alien 3		Q339228	1992	action	EU	Alien³
 G	Q2855009	Krazy Kreatures	Krazy Kreatures		Q628652	1990	action	NA	
 G	Q2877818	Mystery Tower	バベルの塔	バベルノトウ	Q309996	1986	puzzle	JP	Babel|Tower of Babel
-G	Q2881381	Balloon Kid	バルーンファイトGB		Q8093	1992	action	JP	ハローキティワールド|バルーンキッズ|フワフワランド
+G	Q2881381	Balloon Kid	バルーンファイトGB	バルーンファイトジービー	Q8093	1992	action	JP	ハローキティワールド|バルーンキッズ|フワフワランド
 G	Q2881676	Baltron	バルトロン	バルトロン	Q730179	1986	action	JP	
 G	Q2885286	Low G Man: The Low Gravity Man	Low G Man: The Low Gravity Man		Q7689500	1990	action	NA,EU	
 G	Q2886732	Bases Loaded 3	Bases Loaded 3		Q1344080	1990	sports	JP,NA	
@@ -674,7 +674,7 @@ G	Q2891857	Battleship	Battleship		Q1570468	1993	strategy	NA,EU	1993 Battleship|N
 G	Q2904335	The Super Dimension Fortress Macross	超時空要塞マクロス	チョウジクウヨウサイマクロス	Q507269	1985	shooter	JP	
 G	Q2914658	Godzilla 2: War of the Monsters	Godzilla 2: War of the Monsters		Q875920	1992	strategy	NA	
 G	Q2924799	Ring King	ファミリーボクシング	ファミリーボクシング	Q309996	1987	sports	JP,NA	Family Boxing|King of Boxer|Vs.ファミリーボクシング|キングオブボクサー
-G	Q2933783	Clash at Demonhead	電撃ビッグバン!		Q3116102	1989	action	JP	電撃ビックバン
+G	Q2933783	Clash at Demonhead	電撃ビッグバン!	デンゲキビッグバン	Q3116102	1989	action	JP	電撃ビックバン
 G	Q2937645	Captain Planet and the Planeteers	Captain Planet and the Planeteers		Q1570468	1991	action	NA,EU	Captain Planet
 G	Q2944565	The Jetsons: Cogswell's Caper!	The Jetsons: Cogswell's Caper!		Q596139	1992	action	JP,NA,EU	
 G	Q2955894	Championship Pool	Championship Pool		Q3781101	1993	sports	JP,NA	
@@ -685,29 +685,29 @@ G	Q2982608	Ski or Die	Ski or Die		Q2492131	1990	sports	NA,EU
 G	Q2984372	Color a Dinosaur	Color a Dinosaur		Q1481820	1993	educational	NA	
 G	Q2995918	Contra Force	Contra Force		Q45700	1992	shooter	NA	
 G	Q2998156	Race America	Race America		Q1651497	1990	racing	NA,EU	Corvette ZR-1 Challenge
-G	Q3001743	The Mafat Conspiracy	ゴルゴ13 第二章イカロスの謎		Q3116102	1990	action	NA	
-G	Q3001971	Crackout	謎の壁 ブロックくずし		Q45700	1991	action	EU	Nazo no Kabe: Block Kuzushi|謎の壁
+G	Q3001743	The Mafat Conspiracy	ゴルゴ13 第二章イカロスの謎	ゴルゴサーティーンダイニショウイカロスノナゾ	Q3116102	1990	action	NA	
+G	Q3001971	Crackout	謎の壁 ブロックくずし	ナゾノカベブロッククズシ	Q45700	1991	action	EU	Nazo no Kabe: Block Kuzushi|謎の壁
 G	Q3006152	Metal Slader Glory	メタルスレイダーグローリー	メタルスレイダーグローリー	Q1068734	1991	adventure	JP	メタルスレイダーグローリー ディレクターズカット|メタルスレイダー・グローリー
 G	Q3008142	Cyberball	サイバーボール	サイバーボール	Q207922	1988	sports	NA	Cyberball: Football in the 21st Century
-G	Q3020041	Twin Cobra	究極タイガー		Q59524614	1989	shooter	JP,NA	Kyukyoku Tiger|究極TIGER
+G	Q3020041	Twin Cobra	究極タイガー	キュウキョクタイガー	Q59524614	1989	shooter	JP,NA	Kyukyoku Tiger|究極TIGER
 G	Q3020756	Deathbots	Deathbots		Q2845995	1990	shooter		
 G	Q3029726	Dirty Harry	Dirty Harry		Q1570468	1990	action	NA	
 G	Q3031530	Little League Baseball: Championship Series	Little League Baseball: Championship Series		Q1073880	1990	sports	NA	
-G	Q3038698	Dragon Ball: Daimaō fukkatsu	ドラゴンボール大魔王復活		Q507269	1988	rpg	JP	Dragon Ball: Daimaou Fukkatsu|ドラゴンボール 大魔王復活
-G	Q3038702	Dragon Ball 3: Gokūden	ドラゴンボール3 悟空伝		Q507269	1989	adventure	JP	Dragon Ball 3: Gokū den|ドラゴンボール (ワンダースワン)
+G	Q3038698	Dragon Ball: Daimaō fukkatsu	ドラゴンボール大魔王復活	ドラゴンボールダイマオウフッカツ	Q507269	1988	rpg	JP	Dragon Ball: Daimaou Fukkatsu|ドラゴンボール 大魔王復活
+G	Q3038702	Dragon Ball 3: Gokūden	ドラゴンボール3 悟空伝	ドラゴンボール3ゴクウデン	Q507269	1989	adventure	JP	Dragon Ball 3: Gokū den|ドラゴンボール (ワンダースワン)
 G	Q3038826	Dragons of Flame	Dragons of Flame		Q1268871	1992	action	JP	Advanced Dungeons & Dragons: Dragons of Flame
 G	Q3047948	SonSon	ソンソン	ソンソン	Q14428	1986	shooter	JP	
 G	Q3049161	Eggerland – Revival of the Labyrinth	Eggerland – Revival of the Labyrinth		Q1068734	1988	puzzle	JP	
 G	Q3057167	Classic Concentration	Classic Concentration		Q5519804	1988	strategy	NA	
 G	Q3061894	Exed Exes	エグゼドエグゼス	エグゼドエグゼス	Q1372258	1985	shooter		Savage Bees
-G	Q3066238	Family Mahjong II: Shanghai he no Michi	ファミリーマージャンII 上海への道		Q309996	1988	table	JP	# NES Directory: Family Mahjong II: Shanghai e no Michi
+G	Q3066238	Family Mahjong II: Shanghai he no Michi	ファミリーマージャンII 上海への道	ファミリーマージャンツーシャンハイヘノミチ	Q309996	1988	table	JP	# NES Directory: Family Mahjong II: Shanghai e no Michi
 G	Q3066241	Family Mahjong	ファミリーマージャン	ファミリーマージャン	Q309996	1987	table	JP	
 G	Q3072372	Final Lap	ファイナルラップ	ファイナルラップ	Q309996	1988	racing	JP	
 G	Q3073061	Fist of the North Star	北斗の拳	ホクトノケン	Q730179	1987	action	JP,NA	Hokuto no Ken II: Seikimatsu Kyuuseishu Densetsu|北斗の拳2 世紀末救世主伝説|北斗の拳3 新世紀創造 凄拳列伝|北斗の拳4 七星覇拳伝 北斗神拳の彼方へ
 G	Q3073362	Flappy	FLAPPY	フラッピー	Q11320972	1985	puzzle	JP	フラッピー
 G	Q3094939	Gambler Jiko Chūshinha 2	Gambler Jiko Chūshinha 2		Q798642	1990	table	JP	Gambler Jiko Chuushinha 2|ぎゅわんぶらあ自己中心派2
-G	Q3098364	Gargoyle's Quest II	レッドアリーマーII		Q14428	1992	action	JP,NA,EU	Gargoyle's Quest II: The Demon Darkness|魔界村外伝 THE DEMON DARKNESS
-G	Q3108305	Yokai Dochuki	妖怪道中記		Q309996	1988	action	JP	Shadow Land|Shadowland
+G	Q3098364	Gargoyle's Quest II	レッドアリーマーII	レッドアリーマーツー	Q14428	1992	action	JP,NA,EU	Gargoyle's Quest II: The Demon Darkness|魔界村外伝 THE DEMON DARKNESS
+G	Q3108305	Yokai Dochuki	妖怪道中記	ヨウカイドウチュウキ	Q309996	1988	action	JP	Shadow Land|Shadowland
 G	Q3112891	Terra Cresta	テラクレスタ	テラクレスタ	Q1637338	1986	shooter	JP	
 G	Q3116412	Gremlins 2: The New Batch	Gremlins 2: The New Batch		Q2298387	1990	puzzle	JP,NA,EU	
 G	Q3120808	Gun-Nac	ガンナック	ガンナック	Q7821535	1990	shooter	JP,NA	
@@ -716,7 +716,7 @@ G	Q3148872	Image Fight	イメージファイト	イメージファイト	Q617752
 G	Q3156908	JJ	JJ		Q739552	1987	action	JP	
 G	Q3181429	John Elway's Quarterback	John Elway's Quarterback		Q1481820	1987	sports	NA	
 G	Q3186013	Joshua & the Battle of Jericho	Joshua & the Battle of Jericho		Q3569449	1992	action		
-G	Q3191691	Kabuki Quantum Fighter	地獄・極楽丸		Q1068734	1990	action	JP,NA,EU	
+G	Q3191691	Kabuki Quantum Fighter	地獄・極楽丸	ジゴクゴクラクマル	Q1068734	1990	action	JP,NA,EU	
 G	Q3196363	Kickle Cubicle	迷宮島	メイキュウジマ	Q617752	1990	puzzle	JP,NA,EU	キックルキューブル
 G	Q3196441	Mobile Suit Z Gundam: Hot Scramble	機動戦士Ζガンダム・ホットスクランブル	キドウセンシゼータガンダムホットスクランブル	Q507269	1986	action	JP	機動戦士Zガンダム・ホットスクランブル|機動戦士Ζガンダム ホットスクランブル
 G	Q3218370	Last Action Hero	Last Action Hero		Q7562488	1993	action	NA	
@@ -731,11 +731,11 @@ G	Q3280214	Arabian	アラビアン	アラビアン	Q13409231	1985	action	JP	ス�
 G	Q3280387	Chubby Cherub	オバケのQ太郎 ワンワンパニック	オバケノキュウタロウワンワンパニック	Q507269	1985	action	JP	ワンワンパニック
 G	Q3280693	Cowboy Kid	ウエスタンキッズ	ウエスタンキッズ	Q3441266	1991	action	JP,NA	
 G	Q3281100	WWF King of the Ring	WWF King of the Ring		Q3206072	1993	sports	NA,EU	
-G	Q3281751	Metal Storm	重力装甲メタルストーム		Q617752	1991	action	JP,NA	
+G	Q3281751	Metal Storm	重力装甲メタルストーム	ジュウリョクソウコウメタルストーム	Q617752	1991	action	JP,NA	
 G	Q3281783	Kick Master	Kick Master		Q1054844	1992	action	NA	
 G	Q3282425	Vice: Project Doom	ガンデック	ガンデック	Q1457152	1991	action	JP	GUN-DEC
 G	Q3282642	F-1 Sensation	F-1 SENSATION		Q2492131	1993	racing	JP,EU	F1センセーション
-G	Q3282885	Zombie Nation	暴れん坊天狗		Q6812085	1990	shooter	JP,NA	Abarenbo Tengu
+G	Q3282885	Zombie Nation	暴れん坊天狗	アバレンボウテング	Q6812085	1990	shooter	JP,NA	Abarenbo Tengu
 G	Q3282919	Argus	アーガス	アーガス	Q1344080	1986	shooter	JP	
 G	Q3283029	Route-16	ルート16	ルート16	Q2946291	1985	action	JP	ルート16ターボ
 G	Q3283252	Paperboy 2	Paperboy 2		Q1570468	1991	action	EU	
@@ -743,31 +743,31 @@ G	Q3283927	Wally Bear and the NO! Gang	ウォーリー・ベア	ウォーリー�
 G	Q3284062	Datach	データック	データック	Q507269	1992			
 G	Q3285256	Tiger-Heli	タイガーヘリ	タイガーヘリ	Q513712	1986	shooter	JP,NA,EU	Tiger Heli|タイガー・ヘリ
 G	Q3302188	Sky Destroyer	スカイデストロイヤー	スカイデストロイヤー	Q1054844	1985	shooter	JP	
-G	Q3328277	Musashi no Bōken	ムサシの冒険		Q54149907	1990	rpg	JP	
-G	Q3341362	Nigel Mansell's World Championship Racing	ナイジェル・マンセル F1チャレンジ		Q2274654	1993	racing	NA,EU	Nigel Mansell's World Championship Challenge|Nigel Mansel’s World Championship Challenge
-G	Q3359482	P.O.W.: Prisoners of War	脱獄 -Prisoners of War-		Q1073880	1989	action	JP,NA,EU	
+G	Q3328277	Musashi no Bōken	ムサシの冒険	ムサシノボウケン	Q54149907	1990	rpg	JP	
+G	Q3341362	Nigel Mansell's World Championship Racing	ナイジェル・マンセル F1チャレンジ	ナイジェルマンセルエフワンチャレンジ	Q2274654	1993	racing	NA,EU	Nigel Mansell's World Championship Challenge|Nigel Mansel’s World Championship Challenge
+G	Q3359482	P.O.W.: Prisoners of War	脱獄 -Prisoners of War-	ダツゴクプリズナーズオブウォー	Q1073880	1989	action	JP,NA,EU	
 G	Q3362541	Best of the Best: Championship Karate	ザ・キックボクシング	ザキックボクシング	Q3259558	1992	fighting	NA,EU	
-G	Q3391045	Sherlock Holmes: Hakushaku Reijō Yūkai Jiken	シャーロック・ホームズ 伯爵令嬢誘拐事件		Q139796646	1986	action	JP	シャーロックホームズ伯爵令嬢誘拐事件|シャーロック・ホームズ伯爵令嬢誘拐事件
+G	Q3391045	Sherlock Holmes: Hakushaku Reijō Yūkai Jiken	シャーロック・ホームズ 伯爵令嬢誘拐事件	シャーロックホームズハクシャクレイジョウユウカイジケン	Q139796646	1986	action	JP	シャーロックホームズ伯爵令嬢誘拐事件|シャーロック・ホームズ伯爵令嬢誘拐事件
 G	Q3392005	Platoon	プラトゥーン	プラトゥーン	Q1172213	1987	shooter	NA	
 G	Q3398873	The Adventures of Rad Gravity	The Adventures of Rad Gravity		Q200491	1990	action	NA,EU	
-G	Q3415769	Cloud Master	中華大仙		Q5909783	1989	action	JP	CHUKA TAISEN
-G	Q3438819	Roger Clemens' MVP Baseball	MVPベースボール		Q339228	1991	sports	NA	
+G	Q3415769	Cloud Master	中華大仙	チュウカタイセン	Q5909783	1989	action	JP	CHUKA TAISEN
+G	Q3438819	Roger Clemens' MVP Baseball	MVPベースボール	エムブイピーベースボール	Q339228	1991	sports	NA	
 G	Q3440477	Rollerball	ローラーボール	ローラーボール	Q1068734	1988	table	JP,NA,EU	
 G	Q3440992	Romance of the Three Kingdoms II	三國志II	サンゴクシツー	Q845047	1989	strategy	JP,NA	Mobile三國志2|三国志II|三國志 ゲームボーイ版2|三國志II for WonderSwan
 G	Q3456898	Super Xevious: GAMP no Nazo	スーパーゼビウス ガンプの謎	スーパーゼビウスガンプノナゾ	Q309996	1986	shooter	JP	スーパーゼビウス・ガンプの謎
 G	Q3459392	SD Gundam: Gundam Wars	SD Gundam: Gundam Wars		Q507269	1993	strategy	JP	
-G	Q3459413	SD Gundam Gaiden: Knight Gundam Monogatari	SDガンダム外伝 ナイトガンダム物語		Q507269	1990	rpg	JP	ナイトガンダム物語|騎士ガンダム物語
-G	Q3459416	SD Gundam Gaiden: Knight Gundam Monogatari 2 - Hikari no Kishi	SDガンダム外伝 ナイトガンダム物語2 光の騎士		Q507269	1991	rpg	JP	
-G	Q3459419	SD Gundam Gaiden: Knight Gundam Monogatari 3 - Densetsu no Kishi Dan	SDガンダム外伝 ナイトガンダム物語3 伝説の騎士団		Q507269	1992	rpg	JP	
-G	Q3459435	SD Gundam World: Gachapon Senshi - Scramble Wars - Map Collection	SDガンダムワールド ガチャポン戦士 スクランブルウォーズ マップコレクション		Q507269	1989	strategy	JP	
-G	Q3459436	SD Gundam World: Gachapon Senshi 3 - Eiyuu Senki	SDガンダムワールド ガチャポン戦士3 英雄戦記		Q1371744	1990	strategy	JP	
-G	Q3459437	SD Gundam World: Gachapon Senshi 2 - Capsule Senki	SDガンダムワールド ガチャポン戦士2 カプセル戦記		Q507269	1989	strategy	JP	
-G	Q3459438	SD Gundam World: Gachapon Senshi 4 - New Type Story	SDガンダムワールド ガチャポン戦士4 ニュータイプストーリー		Q747070	1991	strategy	JP	
-G	Q3459439	SD Gundam World: Gachapon Senshi 5 - Battle of Universal Century	SDガンダムワールド ガチャポン戦士5 BATTLE OF UNIVERSAL CENTURY		Q747070	1992	strategy	JP	
+G	Q3459413	SD Gundam Gaiden: Knight Gundam Monogatari	SDガンダム外伝 ナイトガンダム物語	エスディーガンダムガイデンナイトガンダムモノガタリ	Q507269	1990	rpg	JP	ナイトガンダム物語|騎士ガンダム物語
+G	Q3459416	SD Gundam Gaiden: Knight Gundam Monogatari 2 - Hikari no Kishi	SDガンダム外伝 ナイトガンダム物語2 光の騎士	エスディーガンダムガイデンナイトガンダムモノガタリ2ヒカリノキシ	Q507269	1991	rpg	JP	
+G	Q3459419	SD Gundam Gaiden: Knight Gundam Monogatari 3 - Densetsu no Kishi Dan	SDガンダム外伝 ナイトガンダム物語3 伝説の騎士団	エスディーガンダムガイデンナイトガンダムモノガタリ3デンセツノキシダン	Q507269	1992	rpg	JP	
+G	Q3459435	SD Gundam World: Gachapon Senshi - Scramble Wars - Map Collection	SDガンダムワールド ガチャポン戦士 スクランブルウォーズ マップコレクション	エスディーガンダムワールドガチャポンセンシスクランブルウォーズマップコレクション	Q507269	1989	strategy	JP	
+G	Q3459436	SD Gundam World: Gachapon Senshi 3 - Eiyuu Senki	SDガンダムワールド ガチャポン戦士3 英雄戦記	エスディーガンダムワールドガチャポンセンシ3エイユウセンキ	Q1371744	1990	strategy	JP	
+G	Q3459437	SD Gundam World: Gachapon Senshi 2 - Capsule Senki	SDガンダムワールド ガチャポン戦士2 カプセル戦記	エスディーガンダムワールドガチャポンセンシ2カプセルセンキ	Q507269	1989	strategy	JP	
+G	Q3459438	SD Gundam World: Gachapon Senshi 4 - New Type Story	SDガンダムワールド ガチャポン戦士4 ニュータイプストーリー	エスディーガンダムワールドガチャポンセンシ4ニュータイプストーリー	Q747070	1991	strategy	JP	
+G	Q3459439	SD Gundam World: Gachapon Senshi 5 - Battle of Universal Century	SDガンダムワールド ガチャポン戦士5 BATTLE OF UNIVERSAL CENTURY	エスディーガンダムワールドガチャポンセンシ5バトルオブユニバーサルセンチュリー	Q747070	1992	strategy	JP	
 G	Q3477465	Section Z	セクションZ	セクションゼット	Q14428	1987	shooter	JP,NA,EU	
-G	Q3482091	Shikinjoh	紫禁城		Q2298387	1991	puzzle		Forbidden City|Shi Kin Jo|Shi-Kin-Joh
+G	Q3482091	Shikinjoh	紫禁城	シキンジョウ	Q2298387	1991	puzzle		Forbidden City|Shi Kin Jo|Shi-Kin-Joh
 G	Q3482630	Shufflepuck Café	シャッフルパックカフェ	シャッフルパックカフェ	Q995863	1990	sports	JP	GAMES:Shufflepuck Cafe|Shufflepuck Cafe
-G	Q3489627	Solstice	ソルスティス 三次元迷宮の狂獣		Q7562488	1990	puzzle	NA,EU	Solstice: The Quest for the Staff of Demnos
+G	Q3489627	Solstice	ソルスティス 三次元迷宮の狂獣	ソルスティスサンジゲンメイキュウノキョウジュウ	Q7562488	1990	puzzle	NA,EU	Solstice: The Quest for the Staff of Demnos
 G	Q3493437	Spider-Man: Return of the Sinister Six	スパイダーマン: リターン・オブ・ザ・シニスター・シックス	スパイダーマンリターンオブザシニスターシックス	Q3206072	1992	action	NA,EU	
 G	Q3496966	Star Luster	スターラスター	スターラスター	Q309996	1985	shooter	JP	VS.スターラスター
 G	Q3500399	Strider	ストライダー	ストライダー	Q14428	1989	action	NA	
@@ -776,40 +776,40 @@ G	Q3504227	Super Mario Bros./Tetris/Nintendo World Cup	Super Mario Bros./Tetris/
 G	Q3514133	Takahashi Meijin no Bug-tte Honey	高橋名人のBUGってハニー	タカハシメイジンノバグッテハニー	Q1049502	1987	action	JP	
 G	Q3514327	Takeshi no Chōsenjō	たけしの挑戦状	タケシノチョウセンジョウ	Q1054844	1986	action	JP	Takeshi no Chousenjou|Takeshi's Challenge|The Ultimate Challenge from Beat Takeshi|Ultimate Challenge from Beat Takeshi|たけ挑|ポリネシアンキッド南海の黄金
 G	Q3516981	Tecmo Bowl	テクモボウル	テクモボウル	Q1423789	1990	sports	JP	
-G	Q3516985	Tecmo Cup Soccer Game	キャプテン翼		Q1423789	1988	sports	JP,NA,EU	Tecmo Cup Football Game|Tecmo Cup: Football Game|Tecmo Cup: Soccer Game
-G	Q3520704	The Earth Fighter Rayieza	地球戦士ライーザ		Q1343212	1987	rpg	JP	銀河の三人
+G	Q3516985	Tecmo Cup Soccer Game	キャプテン翼	キャプテンツバサ	Q1423789	1988	sports	JP,NA,EU	Tecmo Cup Football Game|Tecmo Cup: Football Game|Tecmo Cup: Soccer Game
+G	Q3520704	The Earth Fighter Rayieza	地球戦士ライーザ	チキュウセンシライーザ	Q1343212	1987	rpg	JP	銀河の三人
 G	Q3521086	The Goonies	グーニーズ	グーニーズ	Q45700	1986	action	JP	
 G	Q3521145	The Great Waldo Search	The Great Waldo Search		Q580866	1992	puzzle	NA	
-G	Q3521337	The Hunt for Red October	レッドオクトーバーを追え!		Q3135129	1990	action	NA,EU	
+G	Q3521337	The Hunt for Red October	レッドオクトーバーを追え!	レッドオクトーバーヲオエ	Q3135129	1990	action	NA,EU	
 G	Q3532685	Total Recall	Total Recall		Q1131147	1990	action	NA,EU	
 G	Q3535976	Toxic Crusaders	Toxic Crusaders		Q507269	1992	action	NA	
-G	Q3540750	Bio Senshi Dan: Increaser to no Tatakai	バイオ戦士DAN インクリーザーとの闘い		Q1344080	1987	action	JP	Bashi Bazook: Morphoid Masher|Bio Senshi Dan|バイオ戦士DAN
+G	Q3540750	Bio Senshi Dan: Increaser to no Tatakai	バイオ戦士DAN インクリーザーとの闘い	バイオセンシダンインクリーザートノタタカイ	Q1344080	1987	action	JP	Bashi Bazook: Morphoid Masher|Bio Senshi Dan|バイオ戦士DAN
 G	Q3553822	Valis: The Fantasm Soldier	夢幻戦士ヴァリス	ムゲンセンシヴァリス	Q3177903	1987	action	JP	Dream Soldier: Valis|Mugen Senshi Valis
 G	Q3564653	WCW Wrestling	スーパースタープロレスリング	スーパースタープロレスリング	Q5507476	1989	sports	JP	WCW: World Championship Wrestling
 G	Q3565019	Uchūsen: Cosmo Carrier	宇宙船コスモキャリア	ウチュウセンコスモキャリア	Q1344080	1987	action	JP	
 G	Q3569964	Stadium Events	ファミリートレーナー ランニングスタジアム	ファミリートレーナーランニングスタジアム	Q507269	1986	sports	JP,NA,EU	Class Track Meet|Family Fun Fitness: Stadium Events|Running Stadium|ランニングスタジアム
-G	Q3612233	Erika to Satoru no Yume Bōken	えりかとさとるの夢冒険		Q309996	1988	adventure	JP	Erika to Satoru no Yume Bouken|ひでむし
+G	Q3612233	Erika to Satoru no Yume Bōken	えりかとさとるの夢冒険	エリカトサトルノユメボウケン	Q309996	1988	adventure	JP	Erika to Satoru no Yume Bouken|ひでむし
 G	Q3628242	Atlantis no Nazo	アトランチスの謎	アトランチスノナゾ	Q2298387	1986	action	JP	
 G	Q3634758	Barbie	Barbie		Q3135129	1991	action	NA,EU	
 G	Q3639500	Bible Buffet	Bible Buffet		Q3569449	1993	table		
 G	Q3663351	Moon Crystal	ムーンクリスタル	ムーンクリスタル	Q5696520	1992	action	JP	
-G	Q3736507	F1 Circus	F1サーカス		Q1637338	1992	racing	JP	
+G	Q3736507	F1 Circus	F1サーカス	エフワンサーカス	Q1637338	1992	racing	JP	
 G	Q3758947	Gauntlet	Gauntlet		Q2536056	1987	action	NA	1988 Gauntlet|NES Gauntlet
 G	Q3786900	Hot Slots	Hot Slots		Q290567	1991	adventure	NA	
 G	Q3805702	Jackie Chan's Action Kung Fu	ジャッキー・チェン	ジャッキーチェン	Q1049502	1990	action	JP,NA,EU	
 G	Q3810637	Journey to Silius	ラフワールド	ラフワールド	Q2298387	1990	shooter	JP,NA,EU	Rough World|[rʌf] WORLD|rAf WORLD|ラフ
 G	Q3815495	Kings of the Beach	Kings of the Beach		Q173941	1990	sports	NA	
-G	Q3818164	Double Moon Densetsu	ダブルムーン伝説		Q19695395	1992	rpg	JP	
+G	Q3818164	Double Moon Densetsu	ダブルムーン伝説	ダブルムーンデンセツ	Q19695395	1992	rpg	JP	
 G	Q3845209	Mappy Kids	マッピーキッズ	マッピーキッズ	Q309996	1989	action	JP	
 G	Q3910069	Predator	シュワルツェネッガー プレデター	シュワルツェネッガープレデター	Q200491	1988	action	JP,NA,EU	
-G	Q3913710	Dusty Diamond's All-Star Softball	ソフトボール天国		Q7821535	1989	sports	JP,NA	
+G	Q3913710	Dusty Diamond's All-Star Softball	ソフトボール天国	ソフトボールテンゴク	Q7821535	1989	sports	JP,NA	
 G	Q3929863	Rambo	Rambo		Q339228	1987	action	JP,NA	Rambo (NES)
 G	Q3939296	RoboWarrior	ボンバーキング	ボンバーキング	Q1344080	1987	action	JP,NA,EU	Bomber King|Robo Warrior|The Legend of Altile
 G	Q3939307	RoboCop 2	ロボコップ2	ロボコップ2	Q1172213	1991	action	JP,NA,EU	
 G	Q3942802	Lupin III: Pandora no Isan	ルパン三世 パンドラの遺産	ルパンサンセイパンドラノイサン	Q1194689	1987	action	JP	
-G	Q3945119	Saint Seiya: Ougon Densetsu Kanketsu Hen	聖闘士星矢 黄金伝説完結編		Q507269	1988		JP	
+G	Q3945119	Saint Seiya: Ougon Densetsu Kanketsu Hen	聖闘士星矢 黄金伝説完結編	セイントセイヤオウゴンデンセツカンケツヘン	Q507269	1988		JP	
 G	Q3952040	The Little Mermaid	The Little Mermaid		Q14428	1991	action	NA	
-G	Q3954615	Idol Hakkenden	アイドル八犬伝		Q3739267	1989	adventure	JP	
+G	Q3954615	Idol Hakkenden	アイドル八犬伝	アイドルハッケンデン	Q3739267	1989	adventure	JP	
 G	Q3965791	Space Hunter	スペースハンター	スペースハンター	Q174561	1986	action	JP	
 G	Q3985728	The Astyanax	ザ・ロードオブキング	ザロードオブキング	Q1344080	1989	action	JP,EU	
 G	Q3989775	The Uncanny X-Men	The Uncanny X-Men		Q3206072	1989	action	NA	Uncanny X-Men
@@ -823,17 +823,17 @@ G	Q4038478	F-117A Stealth Fighter	F-117A Stealth Fighter		Q652421	1992	other	NA
 G	Q4038693	Felix the Cat	Felix the Cat		Q2298387	1992	action	NA,EU	
 G	Q4038932	Formula One: Built to Win	Formula One: Built to Win		Q954877	1990	racing	NA	
 G	Q4039214	Galaxy 5000	Galaxy 5000		Q200491	1991	racing	NA,EU	
-G	Q4041647	Isolated Warrior	マックス・ウォーリアー 惑星戒厳令		Q2723301	1991	action	JP,NA,EU	
+G	Q4041647	Isolated Warrior	マックス・ウォーリアー 惑星戒厳令	マックスウォーリアーワクセイカイゲンレイ	Q2723301	1991	action	JP,NA,EU	
 G	Q4041940	Jurassic Park	ジュラシック・パーク	ジュラシックパーク	Q1408498	1993	action	NA,EU	NES Jurassic Park
 G	Q4043880	Mechanized Attack	Mechanized Attack		Q1044563	1989	action	NA	
 G	Q4044393	Mitsume ga Tooru	Mitsume ga Tooru		Q1335998	1992	action	JP	
-G	Q4045031	Michael Andretti's World GP	中嶋悟 F-1 HERO		Q7915854	1988	racing	JP,NA	Nakajima Satoru F-1 Hero|中嶋悟F-1ヒーロー
-G	Q4045163	Nekketsu Street Basket: Ganbare Dunk Heroes	熱血!すとりーとバスケット がんばれ Dunk Heroes		Q1358743	1993	sports	JP	熱血!すとりーとバスケット
-G	Q4045164	Nekketsu Kakutō Densetsu	熱血格闘伝説		Q1358743	1992	fighting	JP	
+G	Q4045031	Michael Andretti's World GP	中嶋悟 F-1 HERO	ナカジマサトルエフワンヒーロー	Q7915854	1988	racing	JP,NA	Nakajima Satoru F-1 Hero|中嶋悟F-1ヒーロー
+G	Q4045163	Nekketsu Street Basket: Ganbare Dunk Heroes	熱血!すとりーとバスケット がんばれ Dunk Heroes	ネッケツストリートバスケットガンバレダンクヒーローズ	Q1358743	1993	sports	JP	熱血!すとりーとバスケット
+G	Q4045164	Nekketsu Kakutō Densetsu	熱血格闘伝説	ネッケツカクトウデンセツ	Q1358743	1992	fighting	JP	
 G	Q4047296	Power Blade 2	キャプテンセイバー	キャプテンセイバー	Q1054844	1992	action	JP,NA	Captain Saver
 G	Q4047297	Power Blade	パワー・ブレイザー	パワーブレイザー	Q1054844	1990	action	JP,NA,EU	Power Blazer|パワーブレイザー
 G	Q4047361	Prince of Persia	プリンス・オブ・ペルシャ	プリンスオブペルシャ	Q995863	1991	action	JP,NA,EU	
-G	Q4048088	Recca	サマーカーニバル'92 烈火		Q4042038	1992	shooter	JP	Summer Carnival '92: Recca|サマーカーニバル'92烈火
+G	Q4048088	Recca	サマーカーニバル'92 烈火	サマーカーニバル92レッカ	Q4042038	1992	shooter	JP	Summer Carnival '92: Recca|サマーカーニバル'92烈火
 G	Q4049949	Splatterhouse: Wanpaku Graffiti	スプラッターハウス わんぱくグラフィティ	スプラッターハウスワンパクグラフィティ	Q309996	1989	action	JP	
 G	Q4049992	Square's Tom Sawyer	スクウェアのトム・ソーヤ	スクウェアノトムソーヤ	Q739552	1989	rpg	JP	Square no Tom Sawyer|スクウェアのトムソーヤ
 G	Q4051082	The Flintstones: The Surprise at Dinosaur Peak	The Flintstones: The Surprise at Dinosaur Peak		Q1054844	1994	action	NA,EU	
@@ -850,27 +850,27 @@ G	Q4357590	Athletic World	ファミリートレーナー アスレチックワ�
 G	Q4371697	Shingen the Ruler	Shingen the Ruler		Q5909783	1989	strategy	JP	Takeda Shingen 2
 G	Q4397217	Digger T. Rock	Digger T. Rock		Q1651497	1990	action	NA,EU	Digger T. Rock: Legend of the Lost City
 G	Q4549969	Eliminator Boat Duel	Eliminator Boat Duel		Q5357928	1991	racing	NA,EU	
-G	Q4594431	1999: Hore, Mita koto ka! Seikimatsu	1999 〜ほれ、みたことか!世紀末〜		Q5139870	1992	table	JP	
-G	Q4633923	2nd Super Robot Wars	第2次スーパーロボット大戦		Q1371744	1991	strategy	JP	2nd Super Robot Wars G|第2次スーパーロボット大戦G
-G	Q4639069	4 Nin Uchi Mahjong	ジャン狂		Q8093	1984	strategy	JP	4人打ち麻雀
-G	Q4661040	Aa Yakyū Jinsei Itchokusen	嗚呼野球人生一直線		Q1457152	1992	action	JP	
+G	Q4594431	1999: Hore, Mita koto ka! Seikimatsu	1999 〜ほれ、みたことか!世紀末〜	1999ホレミタコトカセイキマツ	Q5139870	1992	table	JP	
+G	Q4633923	2nd Super Robot Wars	第2次スーパーロボット大戦	ダイ2ジスーパーロボットタイセン	Q1371744	1991	strategy	JP	2nd Super Robot Wars G|第2次スーパーロボット大戦G
+G	Q4639069	4 Nin Uchi Mahjong	ジャン狂	ジャンキョウ	Q8093	1984	strategy	JP	4人打ち麻雀
+G	Q4661040	Aa Yakyū Jinsei Itchokusen	嗚呼野球人生一直線	アアヤキュウジンセイイッチョクセン	Q1457152	1992	action	JP	
 G	Q4686640	Adventures of Dino Riki	新人類	シンジンルイ	Q1049502	1987	shooter	JP,NA	
 G	Q4696494	Ai Sensei no Oshiete: Watashi no Hoshi	Ai Sensei no Oshiete: Watashi no Hoshi		Q617752	1993	other	JP	
 G	Q4701118	Akira	アキラ	アキラ	Q1054844	1988	adventure	JP	
-G	Q4742751	America Daitōryō Senkyo	アメリカ大統領選挙		Q5696520	1988	strategy	JP	
+G	Q4742751	America Daitōryō Senkyo	アメリカ大統領選挙	アメリカダイトウリョウセンキョ	Q5696520	1988	strategy	JP	
 G	Q4743629	American Dream	American Dream		Q5139870	1989	adventure	JP	
 G	Q4746580	Dash Galaxy in the Alien Asylum	Dash Galaxy in the Alien Asylum		Q1172213	1990	puzzle	NA	
 G	Q4792003	Arkista's Ring	Arkista's Ring		Q129968006	1990	action	NA	
 G	Q4797404	Artelius	アルテリオス	アルテリオス	Q1637338	1987	rpg	JP	
 G	Q4807433	Asmik-kun Land	アスミッくんランド	アスミックンランド	Q798642	1991	action	JP	
 G	Q4811499	Astro Fang: Super Machine	アストロファング	アストロファング	Q62559241	1990	racing	JP	
-G	Q4822548	Otaku no Seiza: An Adventure in the Otaku Galaxy	おたくの星座		Q139796920	1991	rpg	JP	オーロラ5人娘
+G	Q4822548	Otaku no Seiza: An Adventure in the Otaku Galaxy	おたくの星座	オタクノセイザ	Q139796920	1991	rpg	JP	オーロラ5人娘
 G	Q4822828	Aussie Rules Footy	Aussie Rules Footy		Q596139	1991	sports	EU	
-G	Q4849606	Bakushō! Ai no Gekijō	爆笑!愛の劇場		Q5139870	1990	strategy	JP	Bakushou! Ai no Gekijou
-G	Q4849608	Bakushou!! Kinsey Gekijou	爆笑!!人生劇場		Q1054844	1989	strategy	JP	大爆笑!人生劇場|爆笑人生劇場|爆笑人生劇場2
-G	Q4849609	Bakushō! Star Monomane Shitennō	爆笑!スターものまね四天王		Q2659812	1990	action	JP	
+G	Q4849606	Bakushō! Ai no Gekijō	爆笑!愛の劇場	バクショウアイノゲキジョウ	Q5139870	1990	strategy	JP	Bakushou! Ai no Gekijou
+G	Q4849608	Bakushou!! Kinsey Gekijou	爆笑!!人生劇場	バクショウジンセイゲキジョウ	Q1054844	1989	strategy	JP	大爆笑!人生劇場|爆笑人生劇場|爆笑人生劇場2
+G	Q4849609	Bakushō! Star Monomane Shitennō	爆笑!スターものまね四天王	バクショウスターモノマネシテンノウ	Q2659812	1990	action	JP	
 G	Q4853816	Banana	バナナ	バナナ		1986	puzzle		
-G	Q4853838	Banana Prince	バナナン王子の大冒険		Q3028965	1991	action	JP,EU	
+G	Q4853838	Banana Prince	バナナン王子の大冒険	バナナンオウジノダイボウケン	Q3028965	1991	action	JP,EU	
 G	Q4859992	Barcode World	バーコードワールド	バーコードワールド	Q2298387	1992	strategy	JP	
 G	Q4860942	Barker Bill's Trick Shooting	Barker Bill's Trick Shooting		Q8093	1990	shooter	NA,EU	
 G	Q4869623	Bats & Terry	バツ&テリー	バツテリー	Q139564979	1987	action	JP	バツ＆テリー
@@ -878,24 +878,24 @@ G	Q4870108	Battle Rush: Build Up Robot Tournament	Battle Rush: Build Up Robot To
 G	Q4870119	Battle Storm	バトルストーム	バトルストーム	Q17050725	1991	strategy	JP	
 G	Q4870132	B-Wings	B-WING		Q1172213	1986	shooter	JP	
 G	Q4880213	Beetlejuice	Beetlejuice		Q3206072	1991	action	NA	
-G	Q4893630	Famicom Jump II: Saikyō no Shichinin	ファミコンジャンプII 最強の7人		Q507269	1991	rpg	JP	ファミコンジャンプ2|ファミコンジャンプII
+G	Q4893630	Famicom Jump II: Saikyō no Shichinin	ファミコンジャンプII 最強の7人	ファミコンジャンプツーサイキョウノシチニン	Q507269	1991	rpg	JP	ファミコンジャンプ2|ファミコンジャンプII
 G	Q4904863	Bigfoot	Bigfoot		Q339228	1991	racing	EU	
 G	Q4907851	Bill & Ted's Excellent Video Game Adventure	Bill & Ted's Excellent Video Game Adventure		Q3206072	1991	action	NA	
 G	Q4908891	Bill Elliott's NASCAR Challenge	Bill Elliott's NASCAR Challenge		Q45700	1990	racing	NA	
 G	Q4915918	Bird Week	バード・ウィーク	バードウィーク	Q1365614	1986	action	JP	
 G	Q4922705	Super Dodge Ball	熱血高校ドッジボール部	ネッケツコウコウドッジボールブ	Q7562488	1988	sports	JP	1988 Super Dodge Ball|Super Dodge Ball NES
 G	Q4931103	Bo Jackson Baseball	Bo Jackson Baseball		Q1172213	1990	sports	NA	
-G	Q4942780	Booby Kids	キッドのホレホレ大作戦		Q1637338	1987	action	JP	ブービーキッズ
+G	Q4942780	Booby Kids	キッドのホレホレ大作戦	キッドノホレホレダイサクセン	Q1637338	1987	action	JP	ブービーキッズ
 G	Q4959236	BreakThru	強行突破	キョウコウトッパ	Q1172213	1986	shooter		
 G	Q4959302	Break Time: The National Pool Tour	Break Time: The National Pool Tour		Q5507476	1993	sports	NA	
 G	Q4982197	Bubble Bobble Part 2	バブルボブル2	バブルボブル2	Q1054844	1993	action	JP,NA	
-G	Q4998084	Burai Fighter	ブライファイター(無頼戦士)		Q7689500	1990	action	JP,NA,EU	
-G	Q5001815	Business Wars	ビジネスウォーズ 最強の企業戦略M&A		Q5696520	1992	adventure	JP	
+G	Q4998084	Burai Fighter	ブライファイター(無頼戦士)	ブライファイター	Q7689500	1990	action	JP,NA,EU	
+G	Q5001815	Business Wars	ビジネスウォーズ 最強の企業戦略M&A	ビジネスウォーズサイキョウノキギョウセンリャクエムアンドエー	Q5696520	1992	adventure	JP	
 G	Q5024016	Caltron 6 in 1	Caltron 6 in 1		Q539425	0			
-G	Q5034540	Capcom's Gold Medal Challenge '92	CAPCOMバルセロナ'92		Q14428	1992	sports	JP,NA,EU	
+G	Q5034540	Capcom's Gold Medal Challenge '92	CAPCOMバルセロナ'92	カプコンバルセロナ92	Q14428	1992	sports	JP,NA,EU	
 G	Q5036800	Captain Silver	キャプテンシルバー	キャプテンシルバー	Q1172213	1988	action	JP,NA	
 G	Q5048851	Casino Derby & Super Bingo	Casino Derby & Super Bingo		Q17050725	1993	sports	JP	
-G	Q5048860	Casino Kid	100万$キッド 幻の帝王編		Q11315251	1989	table	JP,NA	Casino Kid 2
+G	Q5048860	Casino Kid	100万$キッド 幻の帝王編	ヒャクマンドルキッドマボロシノテイオウヘン	Q11315251	1989	table	JP,NA	Casino Kid 2
 G	Q5050376	Castle of Deceit	Castle of Deceit			1990	action		
 G	Q5050386	Castle of Dragon	キャッスルオブドラゴン	キャッスルオブドラゴン	Q954877	1990	action	JP	CoD|DU|Dragon Unit
 G	Q5050570	Castlequest	Castlequest		Q297303	1986	puzzle	JP,NA	Castle Excellent|Castle Quest
@@ -906,32 +906,32 @@ G	Q5070108	Championship Bowling	Championship Bowling		Q3441266	1989	sports	NA
 G	Q5070123	Championship Lode Runner	チャンピオンシップロードランナー	チャンピオンシップロードランナー	Q1049502	1985	puzzle	JP	
 G	Q5070142	Championship Rally	エキサイティングラリー ワールドラリーチャンピオンシップ	エキサイティングラリーワールドラリーチャンピオンシップ	Q1068734	1991	racing	JP,EU	Exciting Rally: World Rally Championship
 G	Q5090594	NES Play Action Football	NES Play Action Football		Q8093	1990	sports	NA	
-G	Q5102634	Chiyonofuji no Ōichō	千代の富士の大銀杏		Q58803916	1990	sports	JP	
+G	Q5102634	Chiyonofuji no Ōichō	千代の富士の大銀杏	チヨノフジノオオイチョウ	Q58803916	1990	sports	JP	
 G	Q5121797	Circus Caper	Circus Caper		Q875920	1989	action	JP,NA	
 G	Q5149054	Colorful Dragon	變色龍		Q7784257	0	action		Tagin' Dragon
 G	Q5158103	Conan: The Mysteries of Time	Conan: The Mysteries of Time		Q1570468	1991	action	NA	Conan
 G	Q5160162	Conflict	コンフリクト	コンフリクト	Q3116102	1989	strategy	JP,NA	
-G	Q5162455	Conquest of the Crystal Palace	魔天童子		Q798642	1990	action	JP,NA	
+G	Q5162455	Conquest of the Crystal Palace	魔天童子	マテンドウジ	Q798642	1990	action	JP,NA	
 G	Q5165990	Ghostbusters	Ghostbusters		Q200491	1986	action	JP,NA	
 G	Q5167368	Cool World	Cool World		Q1408498	1993	action	NA,EU	
-G	Q5182325	Crash 'n' the Boys: Street Challenge	びっくり熱血新記録!はるかなる金メダル		Q1358743	1992	sports	JP,NA	はるかなる金メダル|びっくり熱血新記録|びっくり熱血新記録!|びっくり熱血新記録！〜はるかなる金メダル〜|熱血新記録
+G	Q5182325	Crash 'n' the Boys: Street Challenge	びっくり熱血新記録!はるかなる金メダル	ビックリネッケツシンキロクハルカナルキンメダル	Q1358743	1992	sports	JP,NA	はるかなる金メダル|びっくり熱血新記録|びっくり熱血新記録!|びっくり熱血新記録！〜はるかなる金メダル〜|熱血新記録
 G	Q5183051	Crayon Shin-Chan: Ora to Poi Poi	クレヨンしんちゃん オラとポイポイ	クレヨンシンチャンオラトポイポイ	Q507269	1993	puzzle	JP	
-G	Q5191424	Crystalis	ゴッド・スレイヤー はるか天空のソナタ		Q1044563	1990	rpg	JP,NA	ゴッドスレイヤー はるか天空のソナタ
+G	Q5191424	Crystalis	ゴッド・スレイヤー はるか天空のソナタ	ゴッドスレイヤーハルカテンクウノソナタ	Q1044563	1990	rpg	JP,NA	ゴッドスレイヤー はるか天空のソナタ
 G	Q5198147	Cycle Race: Road Man	サイクルレース ロードマン 〜激走!! 日本一周4000km〜		Q139796523	1988	racing	JP	
 G	Q5215030	Dance Aerobics	ファミリートレーナー エアロビスタジオ	ファミリートレーナーエアロビスタジオ	Q8093	1987	sports	JP,NA	エアロビスタジオ
 G	Q5220859	Danny Sullivan's Indy Heat	Danny Sullivan's Indy Heat		Q1816614	1991	racing	NA,EU	
 G	Q5225077	Joy Mech Fight	ジョイメカファイト	ジョイメカファイト	Q8093	1993	fighting	JP	Joy Mecha Fight
-G	Q5226611	Princess Tomato in the Salad Kingdom	サラダの国のトマト姫		Q1049502	1988	adventure	JP,NA	
+G	Q5226611	Princess Tomato in the Salad Kingdom	サラダの国のトマト姫	サラダノクニノトマトヒメ	Q1049502	1988	adventure	JP,NA	
 G	Q5229965	The Magic of Scheherazade	アラビアンドリーム シェラザード	アラビアンドリームシェラザード	Q760096	1987	action	JP,NA	Arabian Dream Scheherazade
 G	Q5231241	The Tower of Druaga	ドルアーガの塔	ドルアーガノトウ	Q309996	1985	rpg	JP	Doruāga no Tō|ドルアーガ
 G	Q5234956	Mendel Palace	クインティ	クインティ	Q309996	1989	action	JP,NA	Quinty
 G	Q5236657	Milon's Secret Castle	迷宮組曲	メイキュウクミキョク	Q1049502	1986	action	JP,NA	ミロンの迷宮組曲
 G	Q5242819	Day Dreamin' Davey	デイ・ドリーミン・デイヴィー	デイドリーミンデイヴィー	Q1068734	1992	action	NA	
 G	Q5243398	Days of Thunder	Days of Thunder		Q1570468	1990	racing	NA,EU	
-G	Q5245663	Deadly Towers	魔鐘		Q617752	1986	action	JP,NA	
+G	Q5245663	Deadly Towers	魔鐘	マショウ	Q617752	1986	action	JP,NA	
 G	Q5247184	Death Race	Death Race		Q2842942	1990	action		
 G	Q5248755	Decathlon	Decathlon			1992	sports		
-G	Q5263900	Desert Commander	戦車戦略 砂漠の狐		Q174561	1988	strategy	JP,NA	戦車戦略砂漠の狐|砂漠の狐 (ゲーム)
+G	Q5263900	Desert Commander	戦車戦略 砂漠の狐	センシャセンリャクサバクノキツネ	Q174561	1988	strategy	JP,NA	戦車戦略砂漠の狐|砂漠の狐 (ゲーム)
 G	Q5265128	Destination Earthstar	Destination Earthstar		Q339228	1990	shooter	NA	
 G	Q5273473	Dick Tracy	ディック・トレイシー	ディックトレイシー	Q507269	1990	action	NA	
 G	Q5292528	Don Doko Don 2	Don Doko Don 2		Q1054844	1992	action	JP	
@@ -939,9 +939,9 @@ G	Q5294687	Donald Land	ドナルドランド	ドナルドランド	Q1172213	1988
 G	Q5299706	Double Dare	Double Dare		Q5519804	1988		NA	
 G	Q5301079	Dough Boy	ダウボーイ	ダウボーイ	Q174561	1985	action	JP	
 G	Q5305059	Dragon's Lair	Doragonzu Rea		Q7562488	1990	action	JP,NA,EU	1990 Dragon's Lair
-G	Q5305275	Dragon Scroll	ドラゴンスクロール 甦りし魔竜		Q45700	1987	rpg	JP	
+G	Q5305275	Dragon Scroll	ドラゴンスクロール 甦りし魔竜	ドラゴンスクロールヨミガエリシマリュウ	Q45700	1987	rpg	JP	
 G	Q5305282	Romancia	ロマンシア	ロマンシア	Q1142226	1987	action	JP	Dragon Slayer Jr|Romancia: Another Legend
-G	Q5305286	Dragon Spirit: The New Legend	ドラゴンスピリット 新たなる伝説		Q309996	1989	action	JP,NA	
+G	Q5305286	Dragon Spirit: The New Legend	ドラゴンスピリット 新たなる伝説	ドラゴンスピリットアラタナルデンセツ	Q309996	1989	action	JP,NA	
 G	Q5305307	Dragon Wars	ドラゴンウォーズ	ドラゴンウォーズ	Q200491	1991	rpg	JP	
 G	Q5308500	Dropzone	Dropzone		Q1930918	1984	action	EU	
 G	Q5311460	Duck	Duck		Q539425	1987	action	EU	Duck Maze
@@ -953,7 +953,7 @@ G	Q5358604	Field Combat	フィールドコンバット	フィールドコンバ�
 G	Q5398840	Esper Dream	エスパードリーム	エスパードリーム	Q45700	1992	rpg	JP	
 G	Q5410234	Nuts & Milk	ナッツ&ミルク	ナッツミルク	Q1049502	1984	puzzle	JP	
 G	Q5420074	Exerion	エクセリオン	エクセリオン	Q1344080	1985	shooter	JP	Arcade Archives Exerion|アーケードアーカイブス エクセリオン
-G	Q5432912	Famicom Jump: Hero Retsuden	ファミコンジャンプ 英雄列伝		Q507269	1989	rpg	JP	ファミコンジャンプ
+G	Q5432912	Famicom Jump: Hero Retsuden	ファミコンジャンプ 英雄列伝	ファミコンジャンプエイユウレツデン	Q507269	1989	rpg	JP	ファミコンジャンプ
 G	Q5451279	FireHawk	FireHawk		Q2934754	1991	action		
 G	Q5451293	Solomon's Key 2	ソロモンの鍵2 クールミン島救出作戦		Q1423789	1992	puzzle	JP,NA	Fire 'n Ice|FnI|SK 2|SK2
 G	Q5470030	Formation Z	フォーメーションZ	フォーメーションゼット	Q1344080	1985	shooter	JP	Aeroboto
@@ -966,17 +966,17 @@ G	Q5512043	G.I. Joe: The Atlantis Factor	G.I. Joe: The Atlantis Factor		Q14428	1
 G	Q5512049	G.I. Joe	G.I. Joe		Q7689500	1991	shooter	NA	
 G	Q5517792	Galactic Crusader	Galactic Crusader		Q2984363	1990	shooter	NA	
 G	Q5520531	Ganbare Goemon! Karakuri Dōchū	がんばれゴエモン!からくり道中	ガンバレゴエモンカラクリドウチュウ	Q45700	1986	action	JP	Persevere Goemon! A Tricky Journey|Ganbare Geomon Karakuri Doutyuu|Ganbare Goemon! Karakuri Douchuu
-G	Q5520540	Ganbare Goemon Gaiden: Kieta Ōgon Kiseru	がんばれゴエモン外伝 きえた黄金キセル		Q45700	1990	rpg	JP	がんばれゴエモン外伝〜消えた黄金キセル〜|がんばれゴエモン外伝～消えた黄金キセル～
+G	Q5520540	Ganbare Goemon Gaiden: Kieta Ōgon Kiseru	がんばれゴエモン外伝 きえた黄金キセル	ガンバレゴエモンガイデンキエタオウゴンキセル	Q45700	1990	rpg	JP	がんばれゴエモン外伝〜消えた黄金キセル〜|がんばれゴエモン外伝～消えた黄金キセル～
 G	Q5530145	Geimos	ゲイモス	ゲイモス	Q297303	1985	shooter	JP	
-G	Q5530304	Gekitotsu Yonku Battle	激突四駆バトル		Q617752	1989	action	JP	
-G	Q5533537	Genpei Tōma Den	源平討魔伝		Q309996	1988	action	JP	The Genji and the Heike Clans|KAGEKIYO
+G	Q5530304	Gekitotsu Yonku Battle	激突四駆バトル	ゲキトツヨンクバトル	Q617752	1989	action	JP	
+G	Q5533537	Genpei Tōma Den	源平討魔伝	ゲンペイトウマデン	Q309996	1988	action	JP	The Genji and the Heike Clans|KAGEKIYO
 G	Q5554520	Getsu Fūma Den	月風魔伝	ゲツフウマデン	Q45700	1987	rpg	JP	Fukuda
-G	Q5584569	Gorby no Pipeline Daisakusen	ゴルビーのパイプライン大作戦		Q1372258	1991	puzzle	JP	Pipeline Daisakusen|パイプライン大作戦
+G	Q5584569	Gorby no Pipeline Daisakusen	ゴルビーのパイプライン大作戦	ゴルビーノパイプラインダイサクセン	Q1372258	1991	puzzle	JP	Pipeline Daisakusen|パイプライン大作戦
 G	Q5587732	Gotcha! The Sport!	Gotcha! The Sport!		Q3206072	1987	shooter	NA	
 G	Q5606063	Greg Norman's Golf Power	Greg Norman's Golf Power		Q1481820	1992	sports	NA	
 G	Q5625472	Gyrodine	ジャイロダイン	ジャイロダイン	Q1054844	1986	shooter	JP	
-G	Q5643982	Ys II	イースII		Q1142226	1990	rpg	JP	Ancient Ys Vanished: The Final Chapter|Ys 2|Ys II: Ancient Ys Vanished - The Final Chapter|Ys II: Ancient Ys Vanished – The Final Chapter
-G	Q5648259	Hanjuku Hero	半熟英雄		Q207784	1988	strategy	JP	半熟ヒーロー|半熟英雄4 〜7人の半熟英雄〜|半熟英雄4 ～7人の半熟英雄～|半熟英雄対3D
+G	Q5643982	Ys II	イースII	イースツー	Q1142226	1990	rpg	JP	Ancient Ys Vanished: The Final Chapter|Ys 2|Ys II: Ancient Ys Vanished - The Final Chapter|Ys II: Ancient Ys Vanished – The Final Chapter
+G	Q5648259	Hanjuku Hero	半熟英雄	ハンジュクヒーロー	Q207784	1988	strategy	JP	半熟ヒーロー|半熟英雄4 〜7人の半熟英雄〜|半熟英雄4 ～7人の半熟英雄～|半熟英雄対3D
 G	Q5658539	Harlem Globetrotters	Harlem Globetrotters		Q5519804	1991	sports	NA	
 G	Q5664513	Hatris	ハットリス	ハットリス	Q11331181	1990	puzzle	JP,NA	
 G	Q5681947	Sqoon	スクーン	スクーン	Q617752	1986	shooter	JP	
@@ -984,30 +984,30 @@ G	Q5695172	Heavy Shreddin'	Heavy Shreddin'		Q1501379	1990	sports	EU
 G	Q5708762	Hello Kitty no Hanabatake	ハローキティのおはなばたけ	ハローキティノオハナバタケ	Q11297257	1992	action	JP	
 G	Q5750476	Hi no Tori Hououhen: Gaou no Bouken	火の鳥 鳳凰編 我王の冒険	ヒノトリホウオウヘンガオウノボウケン	Q45700	1987	action	JP	我王の冒険
 G	Q5845047	Little Red Hood	Little Red Hood		Q539425	1990	action		
-G	Q5853292	Kunio-kun no Nekketsu Soccer League	くにおくんの熱血サッカーリーグ		Q1358743	1993	sports	JP	
+G	Q5853292	Kunio-kun no Nekketsu Soccer League	くにおくんの熱血サッカーリーグ	クニオクンノネッケツサッカーリーグ	Q1358743	1993	sports	JP	
 G	Q5908008	Hoshi wo Miru Hito	星をみるひと	ホシヲミルヒト	Q5909783	1987	rpg	JP	星をみる人|星を見るひと|星を見る人
-G	Q5960864	Code Name: Viper	人間兵器デッドフォックス		Q14428	1990	action	JP,NA	デッドフォックス|人間兵器 デッドフォックス
-G	Q5971725	Volguard II	高機動戦闘メカ ヴォルガードII		Q11320972	1985	shooter	JP	
-G	Q5978173	I Love Softball	I LOVE ソフトボール		Q5139870	1989	sports	JP	
+G	Q5960864	Code Name: Viper	人間兵器デッドフォックス	ニンゲンヘイキデッドフォックス	Q14428	1990	action	JP,NA	デッドフォックス|人間兵器 デッドフォックス
+G	Q5971725	Volguard II	高機動戦闘メカ ヴォルガードII	コウキドウセントウメカヴォルガードツー	Q11320972	1985	shooter	JP	
+G	Q5978173	I Love Softball	I LOVE ソフトボール	アイラブソフトボール	Q5139870	1989	sports	JP	
 G	Q5995969	Ikinari Musician	いきなりミュージシャン	イキナリミュージシャン	Q139796523	1987	music	JP	
 G	Q6023274	Indiana Jones and the Last Crusade	Indiana Jones and the Last Crusade		Q1054844	1991	action	NA,EU	
 G	Q6073279	Ironsword: Wizards & Warriors II	Ironsword: Wizards & Warriors II		Q339228	1989	action	NA,EU	Ironsword: Wizards & Warriors 2|Ironsword: Wizards and Warriors 2|Ironsword: Wizards and Warriors II|Wizards & Warriors 2|Wizards & Warriors II|Wizards and Warriors 2|Wizards and Warriors II
-G	Q6103736	J-League Fighting Soccer	Jリーグ ファイティングサッカー		Q702550	1993	sports	JP	
-G	Q6103751	J-League Winning Goal	Jリーグ ウィニングゴール		Q3512266	1994	sports	JP	
+G	Q6103736	J-League Fighting Soccer	Jリーグ ファイティングサッカー	ジェイリーグファイティングサッカー	Q702550	1993	sports	JP	
+G	Q6103751	J-League Winning Goal	Jリーグ ウィニングゴール	ジェイリーグウィニングゴール	Q3512266	1994	sports	JP	
 G	Q6106327	J. League Super Top Players	J. League Super Top Players		Q507269	1994	sports	JP	
-G	Q6109491	JaJaMaru Gekimaden: Maboroshi no Kinmajou	じゃじゃ丸撃魔伝 幻の金魔城		Q1344080	1990	rpg	JP	Ninja JaJaMaru: Legend of the Golden Castle
-G	Q6109493	JaJaMaru: Ninpō Chō	じゃじゃ丸忍法帳		Q1344080	1989	adventure	JP	Ninja JaJaMaru: The Ninja Skill Book|Taro's Quest
+G	Q6109491	JaJaMaru Gekimaden: Maboroshi no Kinmajou	じゃじゃ丸撃魔伝 幻の金魔城	ジャジャマルゲキマデンマボロシノキンマジョウ	Q1344080	1990	rpg	JP	Ninja JaJaMaru: Legend of the Golden Castle
+G	Q6109493	JaJaMaru: Ninpō Chō	じゃじゃ丸忍法帳	ジャジャマルニンポウチョウ	Q1344080	1989	adventure	JP	Ninja JaJaMaru: The Ninja Skill Book|Taro's Quest
 G	Q6109496	JaJaMaru no Daibouken	じゃじゃ丸の大冒険	ジャジャマルノダイボウケン	Q1344080	1986	action	JP	
 G	Q6114335	Jack Nicklaus' Greatest 18 Holes of Major Championship Golf	Jack Nicklaus' Greatest 18 Holes of Major Championship Golf		Q339266	1988	sports	NA,EU	
 G	Q6131418	Wily & Right no RockBoard: That's Paradise	ワイリー&ライトのロックボード ザッツ☆パラダイス	ワイリーライトノロックボードザッツパラダイス	Q14428	1993	strategy	JP	ワイリー&ライトのロックボード
-G	Q6145476	Sangokushi	三国志 中原の覇者		Q309996	1988		JP	ナムコ三国志|三国志 -中原の覇者-|三国志 覇王の大陸|三国志II 覇王の大陸|三国志II・覇王の大陸|三国志・中原の覇者
+G	Q6145476	Sangokushi	三国志 中原の覇者	サンゴクシチュウゲンノハシャ	Q309996	1988		JP	ナムコ三国志|三国志 -中原の覇者-|三国志 覇王の大陸|三国志II 覇王の大陸|三国志II・覇王の大陸|三国志・中原の覇者
 G	Q6147940	MagMax	マグマックス	マグマックス	Q5507476	1986	shooter	JP,NA	Mag Max
 G	Q6188067	Jesus	ジーザス	ジーザス	Q1328605	1989	adventure	JP	Jesus: Dreadful Bio-Monster|ジーザス 恐怖のバイオモンスター|ジーザス2
 G	Q6199858	Jimmy Connors Tennis	Jimmy Connors Tennis		Q188273	1993	sports	NA,EU	
 G	Q6296588	Slalom	スラローム	スラローム	Q8093	1987	racing	NA,EU	1986 Slalom|NES Slalom
-G	Q6311259	Jumpin' Kid: Jack to Mame no Ki Monogatari	ジャンピン・キッド ジャックと豆の木ものがたり		Q798642	1990	action	JP	
+G	Q6311259	Jumpin' Kid: Jack to Mame no Ki Monogatari	ジャンピン・キッド ジャックと豆の木ものがたり	ジャンピンキッドジャックトマメノキモノガタリ	Q798642	1990	action	JP	
 G	Q6368551	Karaoke Studio	カラオケスタジオ	カラオケスタジオ	Q507269	1987	music	JP	
-G	Q6404503	Kid Klown in Night Mayor World	ミッキーマウスIII 夢ふうせん		Q174561	1992	action	JP,NA	
+G	Q6404503	Kid Klown in Night Mayor World	ミッキーマウスIII 夢ふうせん	ミッキーマウススリーユメフウセン	Q174561	1992	action	JP,NA	
 G	Q6404521	Kid Niki: Radical Ninja	快傑ヤンチャ丸	カイケツヤンチャマル	Q617752	1987	action	JP,NA	Kid Niki to the Rescue
 G	Q6410984	King's Knight	キングスナイト	キングスナイト	Q739552	1986	shooter	JP,NA	
 G	Q6411818	King Kong 2: Ikari no Megaton Punch	キングコング2 怒りのメガトンパンチ	キングコング2イカリノメガトンパンチ	Q45700	1986	action	JP	king kong 2:Ikari no Megaton Punch|キング・コング2怒りのメガトンパンチ
@@ -1018,17 +1018,17 @@ G	Q6455660	L'Empereur	ランペルール	ランペルール	Q845047	1991	strateg
 G	Q6472675	Lagrange Point	ラグランジュポイント	ラグランジュポイント	Q45700	1991	rpg	JP	
 G	Q6493002	Laser Invasion	ガンサイト	ガンサイト	Q45700	1991	shooter	JP,NA	
 G	Q6494118	Last Armageddon	ラストハルマゲドン	ラストハルマゲドン	Q747070	1990	rpg	JP	
-G	Q6503495	Law of the West	ロウ・オブ・ザ・ウエスト 西部の掟		Q339266	1987	action	JP	ロウ・オブ・ザ・ウエスト
+G	Q6503495	Law of the West	ロウ・オブ・ザ・ウエスト 西部の掟	ロウオブザウエストセイブノオキテ	Q339266	1987	action	JP	ロウ・オブ・ザ・ウエスト
 G	Q6505589	Layla	レイラ	レイラ	Q11320972	1986	action	JP	レイラ (テレビゲーム)
 G	Q6517979	Legends of the Diamond	Legends of the Diamond		Q507269	1992	sports	NA	
-G	Q6535589	Go-Go! Nekketsu Hockey Club Slip-and-Slide Madness	いけいけ!熱血ホッケー部「すべってころんで大乱闘」			1992	sports	JP	Crash 'n' the Boys: Ice Challenge|Ike Ike! Nekketsu Hockey-Bu|Ike Ike! Nekketsu Hockey-bu: Subete Koronde Dairantō|いけいけ!熱血ホッケー部|いけいけ!熱血ホッケー部 「すべってころんで大乱闘」|いけいけ熱血ホッケー部
+G	Q6535589	Go-Go! Nekketsu Hockey Club Slip-and-Slide Madness	いけいけ!熱血ホッケー部「すべってころんで大乱闘」	イケイケネッケツホッケーブスベッテコロンデダイラントウ		1992	sports	JP	Crash 'n' the Boys: Ice Challenge|Ike Ike! Nekketsu Hockey-Bu|Ike Ike! Nekketsu Hockey-bu: Subete Koronde Dairantō|いけいけ!熱血ホッケー部|いけいけ!熱血ホッケー部 「すべってころんで大乱闘」|いけいけ熱血ホッケー部
 G	Q6544796	Life Force	ライフフォース	ライフフォース	Q45700	1988		NA,EU	
 G	Q6552947	Metal Gear	メタルギア	メタルギア	Q45700	1987	action	JP,NA,EU	MG1
 G	Q6586317	Mega Man	ロックマン	ロックマン	Q14428	1987	action	JP,NA,EU	1987 Mega Man|1987 Rockman|Mega Man 1|Mega Man I|Rockman|Rockman 1
 G	Q6651181	Little Ninja Brothers	スーパーチャイニーズ2	スーパーチャイニーズ2	Q760096	1989	rpg	JP,NA,EU	
 G	Q6657899	TM Network: Live in Power Bowl	TM NETWORK LIVE IN POWER BOWL		Q732503	1989	adventure	JP	
-G	Q6684311	Lost Word of Jenny	ロストワード・オブ・ジェニー 失われたメッセージ		Q3028965	1987	action	JP	
-G	Q6712166	M.C. Kids	MCキッズ		Q1408498	1992	action	NA,EU	MC Kids|McDonaldland
+G	Q6684311	Lost Word of Jenny	ロストワード・オブ・ジェニー 失われたメッセージ	ロストワードオブジェニーウシナワレタメッセージ	Q3028965	1987	action	JP	
+G	Q6712166	M.C. Kids	MCキッズ	エムシーキッズ	Q1408498	1992	action	NA,EU	MC Kids|McDonaldland
 G	Q6726002	Mad Max	Mad Max		Q1570468	1990	action	NA	
 G	Q6730681	Magic Darts	マジック・ダーツ	マジックダーツ	Q954877	1991	sports	JP,NA	
 G	Q6730725	Magic Johnson's Fast Break	Magic Johnson's Fast Break		Q4785169	1988	sports	NA	
@@ -1036,14 +1036,14 @@ G	Q6731042	Magician	Magician		Q7689500	1991	action	NA
 G	Q6738119	Major League Baseball	Major League Baseball		Q3206072	1988	sports	NA	
 G	Q6754192	Mappy-Land	マッピーランド	マッピーランド	Q309996	1986	action	JP,NA	
 G	Q6784999	Master Chu and the Drunkard Hu	Master Chu and the Drunkard Hu		Q2984363	1989	action	NA	
-G	Q6810352	Meitantei Holmes: M-Kara no Chousenjou	名探偵ホームズ Mからの挑戦状		Q139796646	1989	adventure	JP	
+G	Q6810352	Meitantei Holmes: M-Kara no Chousenjou	名探偵ホームズ Mからの挑戦状	メイタンテイホームズエムカラノチョウセンジョウ	Q139796646	1989	adventure	JP	
 G	Q6822676	Metal Mech	メタルフレーム・サイバスター	メタルフレームサイバスター	Q1344080	1990	action	JP,NA	
 G	Q6826906	MiG-29: Soviet Fighter	MiG-29: Soviet Fighter		Q23901	1989	action	NA	
 G	Q6838523	Mickey's Adventures in Numberland	Mickey's Adventures in Numberland		Q3135129	1994	educational	NA	
 G	Q6838562	Mickey's Safari in Letterland	Mickey's Safari in Letterland		Q3135129	1993	educational	NA	
-G	Q6864172	Minelvaton Saga: Ragon no Fukkatsu	ミネルバトンサーガ ラゴンの復活		Q1054844	1987	rpg	JP	ミネバルトンサーガ|ミネルバトンサーガ
-G	Q6872441	Miracle Ropitt: 2100-Nen no Daibōken	ミラクルロピット 〜2100年の大冒険〜		Q1328605	1987	action	JP	Miracle Ropit's Adventure in 2100
-G	Q6872454	Miracle Warriors: Seal of the Dark Lord	覇邪の封印		Q122741	1987	rpg	JP	破邪の封印
+G	Q6864172	Minelvaton Saga: Ragon no Fukkatsu	ミネルバトンサーガ ラゴンの復活	ミネルバトンサーガラゴンノフッカツ	Q1054844	1987	rpg	JP	ミネバルトンサーガ|ミネルバトンサーガ
+G	Q6872441	Miracle Ropitt: 2100-Nen no Daibōken	ミラクルロピット 〜2100年の大冒険〜	ミラクルロピット2100ネンノダイボウケン	Q1328605	1987	action	JP	Miracle Ropit's Adventure in 2100
+G	Q6872454	Miracle Warriors: Seal of the Dark Lord	覇邪の封印	ハジャノフウイン	Q122741	1987	rpg	JP	破邪の封印
 G	Q6878558	Mission Cobra	Mission Cobra		Q539425	1990	action	NA	Sidewinder
 G	Q6886363	Moai-kun	モアイくん	モアイクン	Q45700	1990	puzzle	JP	
 G	Q6890275	Moero 6!! Shin Moero!! Pro Yakyuu	Moero 6!! Shin Moero!! Pro Yakyuu		Q1344080	1989	sports	JP	
@@ -1053,13 +1053,13 @@ G	Q6907539	Moon Ranger	Moon Ranger		Q2984363	1990	action	NA
 G	Q6918121	Motor City Patrol	Motor City Patrol		Q1050690	1992	racing	NA	
 G	Q6937117	Muppet Adventure: Chaos at the Carnival	Muppet Adventure: Chaos at the Carnival		Q3135129	1990	action	NA	
 G	Q6940166	Musashi no Ken – Tadaima Shugyō Chū	六三四の剣 ただいま修行中	ムサシノケンタダイマシュギョウチュウ	Q1054844	1986	action	JP	
-G	Q6945847	My Life My Love: Boku no Yume: Watashi no Negai	マイライフ マイラブ ぼくの夢わたしの願い		Q1371744	1991	table	JP	
+G	Q6945847	My Life My Love: Boku no Yume: Watashi no Negai	マイライフ マイラブ ぼくの夢わたしの願い	マイライフマイラブボクノユメワタシノネガイ	Q1371744	1991	table	JP	
 G	Q6958317	Nagagutsu o Haita Neko: Sekai Isshū 80 Nichi Dai Bōken	Nagagutsu o Haita Neko: Sekai Isshū 80 Nichi Dai Bōken		Q730179	1986	action	JP	Puss 'n Boots: Pero's Great Adventure|Puss n Boots: Pero's Great Adventure
-G	Q6965048	Napoleon Senki	ナポレオン戦記		Q617752	1988	strategy	JP	The Battlefields of Napoleon
+G	Q6965048	Napoleon Senki	ナポレオン戦記	ナポレオンセンキ	Q617752	1988	strategy	JP	The Battlefields of Napoleon
 G	Q7034038	Nightshade	Nightshade		Q2492131	1992	action	NA	
-G	Q7038899	Ninja Crusaders	忍者クルセイダーズ 龍牙		Q919983	1990	action	JP,NA	
+G	Q7038899	Ninja Crusaders	忍者クルセイダーズ 龍牙	ニンジャクルセイダーズリュウガ	Q919983	1990	action	JP,NA	
 G	Q7038930	Ninja JaJaMaru-kun	忍者じゃじゃ丸くん	ニンジャジャジャマルクン	Q1344080	1985	action	JP	じゃじゃ丸
-G	Q7095136	Onyanko Town	おにゃんこTOWN		Q513712	1985	action	JP	
+G	Q7095136	Onyanko Town	おにゃんこTOWN	オニャンコタウン	Q513712	1985	action	JP	
 G	Q7097527	Operation Secret Storm	Operation Secret Storm		Q2984363	1992	action	NA	
 G	Q7108566	Othello	オセロ	オセロ	Q1068734	1986	table	JP,NA	
 G	Q7113402	Over Horizon	オーバーホライゾン	オーバーホライゾン	Q5909783	1991	shooter	JP,EU	
@@ -1067,10 +1067,10 @@ G	Q7122027	Pachi-Slot Adventure	Pachi-Slot Adventure		Q5139870	1991	table	JP
 G	Q7122035	Pachicom	パチコン	パチコン	Q55998360	1985	table	JP	
 G	Q7126660	Palamedes	パラメデス	パラメデス	Q5909783	1990	puzzle	JP	
 G	Q7134983	Parallel World	ぱられるワールド	パラレルワールド	Q7915854	1990	puzzle	JP	
-G	Q7162804	Penguin Wars	ぺんぎんくんWARS		Q297303	1985	sports	JP	King of the Zoo|Penguin-Kun Wars|ぺんぎんくんwars vs.|ぺんぎんくんウォーズ|ペンギンくんWARS|ペンギンくんウォーズ
+G	Q7162804	Penguin Wars	ぺんぎんくんWARS	ペンギンクンウォーズ	Q297303	1985	sports	JP	King of the Zoo|Penguin-Kun Wars|ぺんぎんくんwars vs.|ぺんぎんくんウォーズ|ペンギンくんWARS|ペンギンくんウォーズ
 G	Q7171490	Pesterminator: The Western Exterminator	Pesterminator: The Western Exterminator			1990	action		
 G	Q7176289	Peter Pan and the Pirates	Peter Pan and the Pirates		Q580866	1991	action	NA	Fox's Peter Pan & The Pirates: The Revenge of Captain Hook
-G	Q7180559	Phantom Fighter	霊幻道士		Q513712	1988	action	JP,NA	Reigen Doushi|Reigen Dōshi
+G	Q7180559	Phantom Fighter	霊幻道士	レイゲンドウシ	Q513712	1988	action	JP,NA	Reigen Doushi|Reigen Dōshi
 G	Q7191093	Pictionary	Pictionary		Q3206072	1990	puzzle	NA	
 G	Q7194870	Pinball Quest	ピンボールクエスト	ピンボールクエスト	Q1344080	1989	rpg	JP,NA,EU	
 G	Q7229294	Popeye no Eigo Asobi	ポパイの英語遊び	ポパイノエイゴアソビ	Q8093	1983	educational	JP	
@@ -1078,13 +1078,13 @@ G	Q7236417	Power Soccer	パワーサッカー	パワーサッカー	Q1372258	199
 G	Q7246763	Pro Sport Hockey	USA ICE HOCKEY		Q1344080	1993	sports	JP,NA	USA Ice Hockey in FC
 G	Q7261912	Puss 'n Boots: Pero's Great Adventure	Puss 'n Boots: Pero's Great Adventure		Q5357928	1990	action	NA	
 G	Q7277462	RPG Jinsei Game	RPG Jinsei Game		Q3028965	1993	table	JP	
-G	Q7279015	Racer Mini Yonku: Japan Cup	レーサーミニ四駆 ジャパンカップ		Q45700	1989	racing	JP	
+G	Q7279015	Racer Mini Yonku: Japan Cup	レーサーミニ四駆 ジャパンカップ	レーサーミニヨンクジャパンカップ	Q45700	1989	racing	JP	
 G	Q7279791	Rackets & Rivals	Rackets & Rivals		Q2492131	1993	sports	EU	
-G	Q7280253	Radia Senki: Reimeihen	ラディア戦記 黎明篇		Q1423789	1991	rpg	JP	
-G	Q7295368	Rasāru Ishii no Childs Quest	ラサール石井のチャイルズクエスト		Q309996	1989	rpg	JP	チャイクエ|チャイルズクエスト
+G	Q7280253	Radia Senki: Reimeihen	ラディア戦記 黎明篇	ラディアセンキレイメイヘン	Q1423789	1991	rpg	JP	
+G	Q7295368	Rasāru Ishii no Childs Quest	ラサール石井のチャイルズクエスト	ラサールイシイノチャイルズクエスト	Q309996	1989	rpg	JP	チャイクエ|チャイルズクエスト
 G	Q7335719	Ripple Island	リップルアイランド	リップルアイランド	Q2298387	1988	adventure	JP	
 G	Q7352488	Robin Hood: Prince of Thieves	Robin Hood: Prince of Thieves		Q1481820	1991	rpg	NA,EU	1991 Robin Hood
-G	Q7353274	Robocco Wars	ロボッ子ウォーズ		Q6030727	1991	action	JP	
+G	Q7353274	Robocco Wars	ロボッ子ウォーズ	ロボッコウォーズ	Q6030727	1991	action	JP	
 G	Q7353278	Robodemons	Robodemons			1990	action		
 G	Q7354253	Rock 'n Ball	ファミリーピンボール	ファミリーピンボール	Q309996	1989	table	JP,NA	
 G	Q7361005	RollerGames	RollerGames		Q45700	1990	sports	NA,EU	Roller Games
@@ -1092,7 +1092,7 @@ G	Q7361080	Rollerblade Racer	Rollerblade Racer		Q3135129	1993	sports	NA
 G	Q7371234	Roundball: 2 on 2 Challenge	Roundball: 2 on 2 Challenge		Q1570468	1992	sports	NA	
 G	Q7418924	Sanrio Cup: Pon Pon Volley	サンリオカップ ポンポンバレー	サンリオカップポンポンバレー	Q11297257	1992	sports	JP	Sanrio Cup Pon Pon Volley|Sanrio Cup:Pon Pon Volley
 G	Q7419041	Sansū 2-nen: Keisan Game	けいさんゲーム	ケイサンゲーム	Q139796523	1986	educational	JP	Keisan Game: Sansuu 2 Nen|けいさんゲーム 算数2年|けいさんゲーム 算数3年|けいさんゲーム 算数5・6年|けいさんゲームさんすう1年|けいさんゲーム算数2年|けいさんゲーム算数3年|けいさんゲーム算数4年
-G	Q7424955	Sasa	アストロロボSASA		Q297303	1985	action	JP	Astro Robo Sasa
+G	Q7424955	Sasa	アストロロボSASA	アストロロボササ	Q297303	1985	action	JP	Astro Robo Sasa
 G	Q7426388	Satoru Nakajima F-1 Hero 2	Satoru Nakajima F-1 Hero 2		Q7915854	1991	racing	JP	
 G	Q7444091	Secret Scout in the Temple of Demise	Secret Scout in the Temple of Demise			0	action		
 G	Q7446621	Seicross	セクターゾーン	セクターゾーン	Q1637338	1986	racing	JP	Sector Zero|Sector Zone|セクロス
@@ -1104,7 +1104,7 @@ G	Q7534119	Skate or Die 2: The Search for Double Trouble	Skate or Die 2: The Sea
 G	Q7537365	Sky Kid	スカイキッド	スカイキッド	Q309996	1986	shooter		スカイキッドDX
 G	Q7548016	Snoopy's Silly Sports Spectacular	Snoopy's Silly Sports Spectacular		Q174561	1988	sports	JP,NA	
 G	Q7572495	Space Shuttle Project	Space Shuttle Project		Q2822030	1991	action	NA	
-G	Q7575926	Spelunker II: Yūsha e no Chōsen	スペランカーII 勇者への挑戦		Q617752	1987	action	JP	Spelunker II: Yuusha e no Chousen|Spelunker II: Yūja e no Chōsen
+G	Q7575926	Spelunker II: Yūsha e no Chōsen	スペランカーII 勇者への挑戦	スペランカーツーユウシャヘノチョウセン	Q617752	1987	action	JP	Spelunker II: Yuusha e no Chousen|Spelunker II: Yūja e no Chōsen
 G	Q7580028	Spot: The Video Game	スポット	スポット	Q1481820	1992	strategy	JP,NA	Infection|Spot|Spot: The Computer Game!|Spot: The Video Game!
 G	Q7582008	Square Deal: The Game of Two Dimensional Poker	Square Deal: The Game of Two Dimensional Poker		Q5696520	1990	strategy	JP,NA	
 G	Q7599408	Stanley: The Search for Dr. Livingston	Stanley: The Search for Dr. Livingston		Q5357928	1992	adventure	NA	
@@ -1118,43 +1118,43 @@ G	Q7642814	Super Star Force: Jikūreki no Himitsu	スーパースターフォー
 G	Q7653353	Swamp Thing	Swamp Thing		Q580866	1992	action	NA,EU	
 G	Q7659348	Swords and Serpents	Swords and Serpents		Q339228	1990	rpg	NA,EU	
 G	Q7673504	Taboo: The Sixth Sense	Taboo: The Sixth Sense		Q2447732	1989	other	NA	
-G	Q7676482	Taito Grand Prix: Eikou heno License	タイトーグランプリ栄光へのライセンス		Q1054844	1987	racing	JP	Taito Grand Prix: Eikou he no Licence
+G	Q7676482	Taito Grand Prix: Eikou heno License	タイトーグランプリ栄光へのライセンス	タイトーグランプリエイコウヘノライセンス	Q1054844	1987	racing	JP	Taito Grand Prix: Eikou he no Licence
 G	Q7684223	Tao	Tao		Q2723301	1989	adventure	JP	
-G	Q7687216	Tashiro Masashi no Princess ga Ippai	田代まさしのプリンセスがいっぱい		Q846383	1989	action	JP	
+G	Q7687216	Tashiro Masashi no Princess ga Ippai	田代まさしのプリンセスがいっぱい	タシロマサシノプリンセスガイッパイ	Q846383	1989	action	JP	
 G	Q7692738	Tecmo World Cup Soccer	テクモ ワールドカップサッカー	テクモワールドカップサッカー	Q1423789	1990	sports	JP,EU	
-G	Q7699897	Tenkaichi Bushi Keru Nagūru	天下一武士 ケルナグール		Q309996	1989	fighting	JP	
+G	Q7699897	Tenkaichi Bushi Keru Nagūru	天下一武士 ケルナグール	テンカイチブシケルナグール	Q309996	1989	fighting	JP	
 G	Q7706929	Tetsuwan Atom	Tetsuwan Atom		Q45700	1988	action	JP	
-G	Q7715623	The Bard's Tale II: The Destiny Knight	バーズテイルII		Q173941	1992	rpg	JP	Bard's Tale 2|Tales of the Unknown - Volume II: The Archmage's Tale|The Bard's Tale 2: The Destiny Knight
+G	Q7715623	The Bard's Tale II: The Destiny Knight	バーズテイルII	バーズテイルツー	Q173941	1992	rpg	JP	Bard's Tale 2|Tales of the Unknown - Volume II: The Archmage's Tale|The Bard's Tale 2: The Destiny Knight
 G	Q7718243	The Black Bass	The Black Bass		Q5909783	1987		JP,NA	
-G	Q7718244	The Black Bass	ザ・ブラックバスII		Q5909783	1988	sports	JP,NA	The Black Bass II
+G	Q7718244	The Black Bass	ザ・ブラックバスII	ザブラックバスツー	Q5909783	1988	sports	JP,NA	The Black Bass II
 G	Q7718794	The Blue Marlin	ザ・ブルーマーリン	ザブルーマーリン	Q5909783	1991	sports	NA	
 G	Q7737140	The Golf '92	The Golf '92		Q139796422	1992	sports	JP	
 G	Q7748086	The Lone Ranger	The Lone Ranger		Q45700	1991	action	NA	
 G	Q7751991	The Money Game	ザ・マネーゲーム	ザマネーゲーム	Q11315251	1988	strategy	JP	
-G	Q7751994	Wall Street Kid	ザ・マネーゲームⅡ 兜町の奇跡		Q11315251	1989	strategy	JP,NA	The Money Game II: Kabutochou no Kiseki|Wall $treet Kid
+G	Q7751994	Wall Street Kid	ザ・マネーゲームⅡ 兜町の奇跡	ザマネーゲームツーカブトチョウノキセキ	Q11315251	1989	strategy	JP,NA	The Money Game II: Kabutochou no Kiseki|Wall $treet Kid
 G	Q7755831	The P'Radikus Conflict	The P'Radikus Conflict		Q2984363	0	action		Color Dreams
 G	Q7757819	The Portopia Serial Murder Case	ポートピア連続殺人事件	ポートピアレンゾクサツジンジケン	Q1343212	1985	adventure	JP	Portopia Renzoku Satsujin Jiken
-G	Q7759056	The Quest of Ki	カイの冒険		Q309996	1988	action	JP	Vs.カイの冒険
+G	Q7759056	The Quest of Ki	カイの冒険	カイノボウケン	Q309996	1988	action	JP	Vs.カイの冒険
 G	Q7760182	The Ren & Stimpy Show: Buckaroo$!	The Ren & Stimpy Show: Buckaroo$!		Q580866	1993	action	NA	
 G	Q7761289	The Rocketeer	The Rocketeer		Q507269	1991	action	NA	
 G	Q7769089	The Three Stooges	The Three Stooges		Q200491	1987	action	NA	
 G	Q7775129	The Wing of Madoola	マドゥーラの翼	マドゥーラノツバサ	Q2298387	1986	action	JP	
 G	Q7805036	Time Lord	Time Lord		Q2150493	1990	action	NA,EU	
-G	Q7806576	Times of Lore	TIMES OF LORE 失われたメダリオン		Q1193678	1990	rpg	JP	
+G	Q7806576	Times of Lore	TIMES OF LORE 失われたメダリオン	タイムズオブロアウシナワレタメダリオン	Q1193678	1990	rpg	JP	
 G	Q7808645	Tiny Toon Adventures Cartoon Workshop	Tiny Toon Adventures Cartoon Workshop		Q45700	1992	educational	NA,EU	
-G	Q7818702	Asteka II: Templo del Sol	太陽の神殿 アステカII		Q742561	1988	rpg	JP	Taiyō no Shinden|Tombs & Treasure|アステカII 太陽の神殿|太陽の神殿 ASTEKA II
+G	Q7818702	Asteka II: Templo del Sol	太陽の神殿 アステカII	タイヨウノシンデンアステカツー	Q742561	1988	rpg	JP	Taiyō no Shinden|Tombs & Treasure|アステカII 太陽の神殿|太陽の神殿 ASTEKA II
 G	Q7829879	Town & Country II: Thrilla's Surfari	Town & Country II: Thrilla's Surfari		Q3206072	1992	other	NA	
 G	Q7829883	Town & Country Surf Designs: Wood & Water Rage	Town & Country Surf Designs: Wood & Water Rage		Q3206072	1988	sports	NA	
 G	Q7836711	Treasure Master	Treasure Master		Q1469961	1991	action	NA	
 G	Q7850240	Tsuppari Wars	つっぱりウォーズ	ツッパリウォーズ	Q919983	1991	action	JP	
 G	Q7858062	TwinBee 3: Poko Poko Daimaō	ツインビー3 ポコポコ大魔王	ツインビー3ポコポコダイマオウ	Q45700	1989	shooter	JP	ツインビー3
 G	Q7858149	Twin Eagle	ツインイーグル	ツインイーグル	Q3441266	1991	shooter	JP	Twin Eagle: Revenge Joe's Brother
-G	Q7862685	Firework Thrower Kantaro's 53 Stations of the Tokaido	かんしゃく玉なげカン太郎の東海道五十三次		Q2298387	1986	action	JP	Kanshaku tamanage Kantarō no Tōkaidō Gojūsan-tsugi|Kanshakudama Nage Kantarou no Toukaidou Gojuusan Tsugi
+G	Q7862685	Firework Thrower Kantaro's 53 Stations of the Tokaido	かんしゃく玉なげカン太郎の東海道五十三次	カンシャクダマナゲカンタロウノトウカイドウゴジュウサンツギ	Q2298387	1986	action	JP	Kanshaku tamanage Kantarō no Tōkaidō Gojūsan-tsugi|Kanshakudama Nage Kantarou no Toukaidou Gojuusan Tsugi
 G	Q7880118	Ultimate Air Combat	エイセス・アイアンイーグル3	エイセスアイアンイーグル3	Q200491	1992	other	JP,NA,EU	
 G	Q7880124	Ultimate Basketball	タイトーバスケットボール	タイトーバスケットボール	Q919983	1991	sports	JP	
 G	Q7884786	Hydlide	ハイドライド	ハイドライド	Q3030624	1986	rpg	JP,NA	
 G	Q7911777	Valkyrie no Bōken: Toki no Kagi Densetsu	ワルキューレの冒険 時の鍵伝説	ワルキューレノボウケントキノカギデンセツ	Q309996	1986	action	JP	VS. Valkyrie no Bōken: Toki no Kagi Densetsu|Valkyrie no Bōken|ワルキューレの冒険
-G	Q7918301	Vegas Connection: Casino Kara Ai wo Komete	ベガスコネクション カジノから愛をこめて		Q54149907	1989	adventure	JP	
+G	Q7918301	Vegas Connection: Casino Kara Ai wo Komete	ベガスコネクション カジノから愛をこめて	ベガスコネクションカジノカラアイヲコメテ	Q54149907	1989	adventure	JP	
 G	Q7918305	Vegas Dream	Vegas Dream		Q1068734	1988	table	JP	VIVA LASVEGAS
 G	Q7928030	Videomation	Videomation		Q580866	1991	other	NA	
 G	Q7969862	Warp & Warp	ワープ&ワープ	ワープワープ	Q309996	1985	shooter	JP	
@@ -1163,34 +1163,34 @@ G	Q7993125	Where's Waldo?	Where's Waldo?		Q580866	1991	puzzle	NA
 G	Q7997235	Who Framed Roger Rabbit	ロジャー・ラビット	ロジャーラビット	Q3206072	1989	action	NA	1989 Who Framed Roger Rabbit?|NES Who Framed Roger Rabbit?
 G	Q7997606	Whomp 'Em	Whomp 'Em		Q1344080	1990	action	JP,NA	
 G	Q7998722	Widget	Widget		Q780528	1992	action	NA	
-G	Q8011407	Downtown Nekketsu March: Super-Awesome Field Day!	ダウンタウン熱血行進曲		Q1358743	1990	sports	JP	Downtown Nekketsu Koushinkyoku: Soreyuke Daiundoukai|ダウンタウン熱血行進曲 それゆけ大運動会|ダウンタウン熱血行進曲それいけ大運動会|ダウンタウン熱血行進曲それゆけ大運動会|熱血行進曲
-G	Q8028765	Wizardry III: Legacy of Llylgamyn	ウィザードリィIII リルガミンの遺産		Q930222	1989	rpg	JP	Wizardry 3|Wizardry III|Wizardry III: The Legacy of Llylgamyn|ウィザードリィII リルガミンの遺産
+G	Q8011407	Downtown Nekketsu March: Super-Awesome Field Day!	ダウンタウン熱血行進曲	ダウンタウンネッケツコウシンキョク	Q1358743	1990	sports	JP	Downtown Nekketsu Koushinkyoku: Soreyuke Daiundoukai|ダウンタウン熱血行進曲 それゆけ大運動会|ダウンタウン熱血行進曲それいけ大運動会|ダウンタウン熱血行進曲それゆけ大運動会|熱血行進曲
+G	Q8028765	Wizardry III: Legacy of Llylgamyn	ウィザードリィIII リルガミンの遺産	ウィザードリィスリーリルガミンノイサン	Q930222	1989	rpg	JP	Wizardry 3|Wizardry III|Wizardry III: The Legacy of Llylgamyn|ウィザードリィII リルガミンの遺産
 G	Q8028773	Wizards & Warriors III: Kuros: Visions of Power	Wizards & Warriors III: Kuros: Visions of Power		Q339228	1992	action	NA,EU	Kuros: Visions of Power|Wizards & Warriors 3: Kuros: Visions of Power|Wizards and Warriors 3: Kuros: Visions of Power|Wizards and Warriors III: Kuros: Visions of Power
 G	Q8030537	Wolverine	Wolverine		Q3206072	1991	action	NA	
 G	Q8033696	Woody Poko	うっでいぽこ	ウッデイポコ	Q11320972	1987	action	JP	
-G	Q8037625	Wrath of the Black Manta	忍者COP サイゾウ		Q1054844	1989	action	JP,NA,EU	Ninja Cop Saizou|Ninja Cop Saizō|忍者COPサイゾウ
-G	Q8039296	Wurm: Journey to the Center of the Earth	地底戦空バゾルダー		Q798642	1991	action	JP,NA	Chitei Senkou Bazolder
+G	Q8037625	Wrath of the Black Manta	忍者COP サイゾウ	ニンジャコップサイゾウ	Q1054844	1989	action	JP,NA,EU	Ninja Cop Saizou|Ninja Cop Saizō|忍者COPサイゾウ
+G	Q8039296	Wurm: Journey to the Center of the Earth	地底戦空バゾルダー	チテイセンクウバゾルダー	Q798642	1991	action	JP,NA	Chitei Senkou Bazolder
 G	Q8075312	Zunō Senkan Galg	頭脳戦艦ガル	ズノウセンカンガル	Q11320972	1985	shooter	JP	
 G	Q8762678	New Ghostbusters II	Gōsutobasutāzu 2		Q1068734	1990	action	JP,EU	New Ghostbusters 2
-G	Q8763111	Ganbare Goemon Gaiden 2: Tenka no Zaihō	がんばれゴエモン外伝2〜天下の財宝〜		Q45700	1992	rpg	JP	
+G	Q8763111	Ganbare Goemon Gaiden 2: Tenka no Zaihō	がんばれゴエモン外伝2〜天下の財宝〜	ガンバレゴエモンガイデン2テンカノザイホウ	Q45700	1992	rpg	JP	
 G	Q8963433	Ganbare Goemon 2	がんばれゴエモン2	ガンバレゴエモン2	Q45700	1989	action	JP	Ganbare Goemon II|Ganbare Goemon Two|Ganbare Goemon2
 G	Q9017702	Kiteretsu Daihyakka	Kiteretsu Daihyakka		Q132358	1990		JP	
 G	Q9089201	Totally Rad	マジック・ジョン	マジックジョン	Q1344080	1990	action	JP,NA,EU	
 G	Q9358285	The Ultimate Stuntman	The Ultimate Stuntman		Q2934754	0	action		
 G	Q10263749	Daiva Story 6: Imperial of Nirsartia	Daiva Story 6: Imperial of Nirsartia		Q55998360	1986	action	JP	DAIVA Story 6: Nirsartia no Gyokuza
 G	Q10278613	Exciting Boxing	EXCITING BOXING	エキサイティングボクシング	Q45700	1987	sports	JP	エキサイティングボクシング
-G	Q10334191	Mystery Quest	ハオ君の不思議な旅		Q739552	1987	action	JP,NA	Hao-kun no Fushigina Tabi
+G	Q10334191	Mystery Quest	ハオ君の不思議な旅	ハオクンノフシギナタビ	Q739552	1987	action	JP,NA	Hao-kun no Fushigina Tabi
 G	Q10856190	Nobunaga's Ambition	信長の野望・全国版	ノブナガノヤボウゼンコクバン	Q3516982	1988	strategy	JP,NA	
-G	Q11233573	Uncharted Waters	大航海時代		Q845047	1991	rpg	JP	
-G	Q11255834	Zoids: Mokushiroku	ZOIDS黙示録		Q1335998	1990		JP	Zoids: Apocalypse|ゾイド黙示録
-G	Q11265439	Downtown Special: Kunio-kun's Historical Period Drama!	ダウンタウンスペシャル くにおくんの時代劇だよ全員集合!		Q1358743	1991		JP	Downtown Special - Kunio-kun's Historical Period Drama!|Downtown Special: Kunio-kun no Jidaigeki Dayo Zenin Shuugou!|Downtown Special: Kunio-kun no Jidaigeki da yo - Zenin Shūgō!|くにおくんの時代劇だよ全員集合!|ダウンタウンスペシャル 時代劇だよ全員集合|時代劇だよ全員集合!
+G	Q11233573	Uncharted Waters	大航海時代	ダイコウカイジダイ	Q845047	1991	rpg	JP	
+G	Q11255834	Zoids: Mokushiroku	ZOIDS黙示録	ゾイドモクシロク	Q1335998	1990		JP	Zoids: Apocalypse|ゾイド黙示録
+G	Q11265439	Downtown Special: Kunio-kun's Historical Period Drama!	ダウンタウンスペシャル くにおくんの時代劇だよ全員集合!	ダウンタウンスペシャルクニオクンノジダイゲキダヨゼンインシュウゴウ	Q1358743	1991		JP	Downtown Special - Kunio-kun's Historical Period Drama!|Downtown Special: Kunio-kun no Jidaigeki Dayo Zenin Shuugou!|Downtown Special: Kunio-kun no Jidaigeki da yo - Zenin Shūgō!|くにおくんの時代劇だよ全員集合!|ダウンタウンスペシャル 時代劇だよ全員集合|時代劇だよ全員集合!
 G	Q11268587	Sanma no Meitantei	さんまの名探偵	サンマノメイタンテイ	Q309996	1987		JP	さんまの迷探偵
 G	Q11269442	Juvei Quest	じゅうべえくえすと	ジュウベエクエスト	Q1194689	1991	rpg	JP	
-G	Q11269649	Sugoro Quest: Dice Heroes	すごろクエスト ダイスの戦士たち		Q1358743	1991	rpg	JP	Sugoro Quest: Dice no Senshi-tachi
+G	Q11269649	Sugoro Quest: Dice Heroes	すごろクエスト ダイスの戦士たち	スゴロクエストダイスノセンシタチ	Q1358743	1991	rpg	JP	Sugoro Quest: Dice no Senshi-tachi
 G	Q11278253	The Krion Conquest	まじかるキッズどろぴー	マジカルキッズドロピー	Q1502293	1990	action	JP,NA	
-G	Q11283677	Attack Animal Gakuen	アタックアニマル学園		Q513712	1987	shooter	JP	
+G	Q11283677	Attack Animal Gakuen	アタックアニマル学園	アタックアニマルガクエン	Q513712	1987	shooter	JP	
 G	Q11286214	Puyo Puyo	ぷよぷよ	プヨプヨ	Q383538	1993	puzzle	JP	Puyo Puyo - Famimaga Disk Vol. 5
-G	Q11290857		エモやんの10倍プロ野球 セリーグ編			0			エモやんの10倍プロ野球
+G	Q11290857		エモやんの10倍プロ野球 セリーグ編	エモヤンノ10バイプロヤキュウセリーグヘン		0			エモやんの10倍プロ野球
 G	Q11297579	Kyonshis 2	キョンシーズ2	キョンシーズ2	Q1054844	1987	action	JP	Kyonshiizu 2
 G	Q11301528	Ninja Kid	ゲゲゲの鬼太郎 妖怪大魔境	ゲゲゲノキタロウヨウカイダイマキョウ	Q806259	1986	action	JP,NA	GeGeGe no Kitarō: Yōkai Dai Makyō
 G	Q11302009	Cocoron	ココロン	ココロン	Q56278668	1991	action	JP	
@@ -1199,51 +1199,51 @@ G	Q11306623	The Triathron	ザ・トライアスロン	ザトライアスロン	Q
 G	Q11307679	Shuffle Fight	シャッフルファイト	シャッフルファイト	Q1371744	1992		JP	
 G	Q11307715	Shadow Brain	シャドウブレイン	シャドウブレイン	Q513712	1991	rpg	JP	シャドウ・ブレイン
 G	Q11313910	Super Real Baseball	スーパーリアルベースボール	スーパーリアルベースボール	Q2723301	1988	sports	JP	スーパーリアルベースボール'88
-G	Q11317186	Rally Bike	ダッシュ野郎		Q1054844	1990	racing	JP,NA	
+G	Q11317186	Rally Bike	ダッシュ野郎	ダッシュヤロウ	Q1054844	1990	racing	JP,NA	
 G	Q11317484	Dungeon Kid	ダンジョンキッド	ダンジョンキッド	Q2737049	1990	rpg	JP	
 G	Q11317625	Dark Lord	ダークロード	ダークロード	Q1172213	1991	rpg	JP	
 G	Q11319329	Tetris 2	テトリスフラッシュ	テトリスフラッシュ	Q8093	1993	puzzle	JP,NA,EU	Tetris Flash
-G	Q11322994	Legacy of the Wizard	ドラゴンスレイヤーIV ドラスレファミリー		Q309996	1987	rpg	JP,NA	Dragon Slayer IV: Drasle Family|ドラゴンスレイヤーIV|ドラスレファミリー
-G	Q11332033	Famista '89: Kaimaku Ban!!	ファミスタ'89 開幕版!!		Q309996	1989	sports	JP	
+G	Q11322994	Legacy of the Wizard	ドラゴンスレイヤーIV ドラスレファミリー	ドラゴンスレイヤーフォードラスレファミリー	Q309996	1987	rpg	JP,NA	Dragon Slayer IV: Drasle Family|ドラゴンスレイヤーIV|ドラスレファミリー
+G	Q11332033	Famista '89: Kaimaku Ban!!	ファミスタ'89 開幕版!!	ファミスタ89カイマクバン	Q309996	1989	sports	JP	
 G	Q11332036		ファミスタ'92	ファミスタ92		0			
 G	Q11332037		ファミスタ'93	ファミスタ93		0			
 G	Q11332038		ファミスタ'94	ファミスタ94		0			
-G	Q11332052	Super Team Games	ファミトレ大運動会		Q507269	1986	sports	JP,NA,EU	Family Fun Fitness: Stadium Events|Family Trainer 2: Running Stadium|Family Trainer: Daiundōkai
-G	Q11332070	Family Quiz: Four People are Rivals	ファミリークイズ 4人はライバル		Q4813366	1988	table	JP	The Quiz Show|THE クイズ番組
+G	Q11332052	Super Team Games	ファミトレ大運動会	ファミトレダイウンドウカイ	Q507269	1986	sports	JP,NA,EU	Family Fun Fitness: Stadium Events|Family Trainer 2: Running Stadium|Family Trainer: Daiundōkai
+G	Q11332070	Family Quiz: Four People are Rivals	ファミリークイズ 4人はライバル	ファミリークイズ4ニンハライバル	Q4813366	1988	table	JP	The Quiz Show|THE クイズ番組
 G	Q11332075	Family Jockey	ファミリージョッキー	ファミリージョッキー	Q309996	1987	racing	JP	
 G	Q11332081	Family Tennis	ファミリーテニス	ファミリーテニス	Q309996	1987	sports	JP	VS. Family Tennis|Vs.ファミリーテニス
 G	Q11332085	Family Trainer: Jogging Race	ファミリートレーナー ジョギングレース	ファミリートレーナージョギングレース	Q507269	1987	sports	JP	
 G	Q11332086	Street Cop	ファミリートレーナー マンハッタンポリス	ファミリートレーナーマンハッタンポリス	Q507269	1987	action	JP,NA	Family Trainer: Manhattan Police
-G	Q11332087	Family Trainer: Totsugeki! Fuuun Takeshi Jou	ファミリートレーナー 突撃!風雲たけし城		Q507269	1987	action	JP	Family Trainer: Totsugeki! Fuuun Takeshi Shiro|Street Cop|突撃!風雲たけし城
-G	Q11332089	Family Trainer Series 5: Meiro Daisakusen	ファミリートレーナー 迷路大作戦		Q507269	1987		JP	Family Trainer: Meiro Daisakusen|迷路大作戦
+G	Q11332087	Family Trainer: Totsugeki! Fuuun Takeshi Jou	ファミリートレーナー 突撃!風雲たけし城	ファミリートレーナートツゲキフウウンタケシジョウ	Q507269	1987	action	JP	Family Trainer: Totsugeki! Fuuun Takeshi Shiro|Street Cop|突撃!風雲たけし城
+G	Q11332089	Family Trainer Series 5: Meiro Daisakusen	ファミリートレーナー 迷路大作戦	ファミリートレーナーメイロダイサクセン	Q507269	1987		JP	Family Trainer: Meiro Daisakusen|迷路大作戦
 G	Q11336287	Pro Baseball: Family Stadium '87	プロ野球ファミリースタジアム'87	プロヤキュウファミリースタジアム87	Q309996	1987		JP	Vs.プロ野球ファミリースタジアム'87|ファミスタ'87|ファミリースタジアム'87|プロ野球ファミリースタジアム '87年度版
-G	Q11336288	Pro Baseball: Family Stadium '88	プロ野球ファミリースタジアム'88		Q309996	1988		JP	Vs.プロ野球ファミリースタジアム'88|ファミスタ'88|ファミリースタジアム'88
+G	Q11336288	Pro Baseball: Family Stadium '88	プロ野球ファミリースタジアム'88	プロヤキュウファミリースタジアム88	Q309996	1988		JP	Vs.プロ野球ファミリースタジアム'88|ファミスタ'88|ファミリースタジアム'88
 G	Q11338868	Tetris 2 + Bombliss	テトリス2+ボンブリス	テトリスツーボンブリス	Q11331181	1991	puzzle	JP	スーパーテトリス2+ボンブリス|スーパーテトリス2+ボンブリス 限定版|スーパーボンブリス|スーパーボンブリス デラックス
 G	Q11349281		ルーンマスター	ルーンマスター		0			
 G	Q11372574	Gomoku Narabe Renju	五目ならべ 連珠	ゴモクナラベレンジュ	Q8093	1983	puzzle	JP	五目ならべ (任天堂)
-G	Q11378400		仮面ライダーSD グランショッカーの野望			0			
-G	Q11378402	Kamen Rider SD: Run! Mighty Riders	仮面ライダーSD 走れ! マイティライダーズ		Q3398059	1993	racing		
-G	Q11378436	Kamen Rider Club Gekitotsu ShockerLand	仮面ライダー倶楽部 激突ショッカーランド		Q507269	1988	rpg	JP	ShockerLand|ショッカーランド|仮面ライダー倶楽部|激突ショッカーランド
+G	Q11378400		仮面ライダーSD グランショッカーの野望	カメンライダーエスディーグランショッカーノヤボウ		0			
+G	Q11378402	Kamen Rider SD: Run! Mighty Riders	仮面ライダーSD 走れ! マイティライダーズ	カメンライダーエスディーハシレマイティライダーズ	Q3398059	1993	racing		
+G	Q11378436	Kamen Rider Club Gekitotsu ShockerLand	仮面ライダー倶楽部 激突ショッカーランド	カメンライダークラブゲキトツショッカーランド	Q507269	1988	rpg	JP	ShockerLand|ショッカーランド|仮面ライダー倶楽部|激突ショッカーランド
 G	Q11403080	Hokkaidō Rensa Satsujin: Ohōtsuku ni Kiyu	北海道連鎖殺人 オホーツクに消ゆ	ホッカイドウレンササツジンオホーツクニキユ	Q139796426	1987	adventure	JP	Hokkaido Rensa Satsujin: Ohotsuku ni Kiyu|Hokkaidou Rensa Satsujin: Ohoutsuku ni Kiyu|Ohotsuku ni Kiyu|Ohōtsuku ni Kiyu|オホーツクに消ゆ|北海道連鎖殺人事件～オホーツクに消ゆ
-G	Q11435517	Daisenryaku	大戦略		Q11338918	1988	strategy	JP	
+G	Q11435517	Daisenryaku	大戦略	ダイセンリャク	Q11338918	1988	strategy	JP	
 G	Q11446797	Yokai Club	妖怪倶楽部	ヨウカイクラブ	Q1344080	1987		JP	Youkai Club|Yōkai Club
-G	Q11447964	Kujaku Ō	孔雀王		Q513712	1988		JP	Kujaku Ou|Kujakuō
-G	Q11477457	Kawa no Nushi Tsuri	川のぬし釣り		Q2659812	1990	rpg	JP	川のぬし釣り ワンダフルジャーニー
+G	Q11447964	Kujaku Ō	孔雀王	クジャクオウ	Q513712	1988		JP	Kujaku Ou|Kujakuō
+G	Q11477457	Kawa no Nushi Tsuri	川のぬし釣り	カワノヌシツリ	Q2659812	1990	rpg	JP	川のぬし釣り ワンダフルジャーニー
 G	Q11490769	Ninja Jajamaru: Ginga Daisakusen	忍者じゃじゃ丸〜銀河大作戦〜	ニンジャジャジャマルギンガダイサクセン		0			Ninja Jajamaru: Operation Milky Way|Squashed
-G	Q11491370	Kaiketsu Yanchamaru 2: Karakuri Land	快傑ヤンチャ丸2 からくりランド		Q617752	1991	action	JP	
-G	Q11491371	Kaiketsu Yanchamaru 3: Taiketsu! Zouringen	快傑ヤンチャ丸3 対決!ゾウリンゲン			1993			Kaiketsu Yanchamaru 3|Kid Niki 3
+G	Q11491370	Kaiketsu Yanchamaru 2: Karakuri Land	快傑ヤンチャ丸2 からくりランド	カイケツヤンチャマル2カラクリランド	Q617752	1991	action	JP	
+G	Q11491371	Kaiketsu Yanchamaru 3: Taiketsu! Zouringen	快傑ヤンチャ丸3 対決!ゾウリンゲン	カイケツヤンチャマル3タイケツゾウリンゲン		1993			Kaiketsu Yanchamaru 3|Kid Niki 3
 G	Q11525055	The Adventures of Gilligan's Island	The Adventures of Gilligan's Island		Q507269	1990	strategy	NA	Gilligan's Island
-G	Q11527110	Tōhō Kenbun Roku	東方見文録		Q3772556	1988	adventure	JP	The Travels of Marco Polo|Touhou Kenbun Roku|Touhouken Bunroku
-G	Q11537004	Momotaro Dentetsu	桃太郎電鉄		Q1049502	1988		JP	Momotaro Electric Railway|Momotarou Dentetsu|Momotarō Dentetsu|Momotetsu|桃電
-G	Q11580658	Hyaku no Sekai no Monogatari: The Tales on a Watery Wilderness	百の世界の物語		Q54149573	1991	rpg	JP	
-G	Q11583374		真田十勇士			0			
-G	Q11608824	Oishinbo: Kyūkyoku no Menu 3-bon Shōbu	美味しんぼ 究極のメニュー三本勝負		Q507269	1989		JP	Oishinbo: Kyuukyoku no Menu 3-bon Shoubu
+G	Q11527110	Tōhō Kenbun Roku	東方見文録	トウホウケンブンロク	Q3772556	1988	adventure	JP	The Travels of Marco Polo|Touhou Kenbun Roku|Touhouken Bunroku
+G	Q11537004	Momotaro Dentetsu	桃太郎電鉄	モモタロウデンテツ	Q1049502	1988		JP	Momotaro Electric Railway|Momotarou Dentetsu|Momotarō Dentetsu|Momotetsu|桃電
+G	Q11580658	Hyaku no Sekai no Monogatari: The Tales on a Watery Wilderness	百の世界の物語	ヒャクノセカイノモノガタリ	Q54149573	1991	rpg	JP	
+G	Q11583374		真田十勇士	サナダジュウユウシ		0			
+G	Q11608824	Oishinbo: Kyūkyoku no Menu 3-bon Shōbu	美味しんぼ 究極のメニュー三本勝負	オイシンボキュウキョクノメニューサンボンショウブ	Q507269	1989		JP	Oishinbo: Kyuukyoku no Menu 3-bon Shoubu
 G	Q11611160	Seikima II Akuma no Gyakushū!	聖飢魔II 悪魔の逆襲!	セイキマツーアクマノギャクシュウ	Q732503	1986	action	JP	聖飢魔II 悪魔の逆襲
-G	Q11613566	Masuzoe Youichi: Asa Made Famicom	舛添要一 朝までファミコン		Q5139870	1992	adventure	JP	舛添要一朝までファミコン
-G	Q11620537	Okkotoshi Puzzle Tonjan!?	落っことしパズル とんじゃん!?		Q1344080	1989	puzzle	JP	YAM!YAM!?|とんじゃん
-G	Q11629569	Saiyūki World	西遊記ワールド		Q1344080	1988	rpg	JP	Saiyuuki World
-G	Q11634489	Kaijū Monogatari	貝獣物語		Q309996	1988	rpg	JP	
-G	Q11665707	Flying Hero	飛ingヒーロー		Q846383	1989	action	JP	Blazebusters
+G	Q11613566	Masuzoe Youichi: Asa Made Famicom	舛添要一 朝までファミコン	マスゾエヨウイチアサマデファミコン	Q5139870	1992	adventure	JP	舛添要一朝までファミコン
+G	Q11620537	Okkotoshi Puzzle Tonjan!?	落っことしパズル とんじゃん!?	オッコトシパズルトンジャン	Q1344080	1989	puzzle	JP	YAM!YAM!?|とんじゃん
+G	Q11629569	Saiyūki World	西遊記ワールド	サイユウキワールド	Q1344080	1988	rpg	JP	Saiyuuki World
+G	Q11634489	Kaijū Monogatari	貝獣物語	カイジュウモノガタリ	Q309996	1988	rpg	JP	
+G	Q11665707	Flying Hero	飛ingヒーロー	フライングヒーロー	Q846383	1989	action	JP	Blazebusters
 G	Q11673876	Higemaru Makaijima - Nanatsu no Shima Daibōken	魔界島 七つの島大冒険		Q14428	1987	action	JP	魔界島
 G	Q11704278	Tecmo NBA Basketball	Tecmo NBA Basketball		Q1423789	1992	sports	NA	
 G	Q14675880	Quattro Adventure	Quattro Adventure			1993	action		
@@ -1252,51 +1252,51 @@ G	Q15036778	Mini-Putt	ミニ・パット	ミニパット	Q339266	1991	sports	JP
 G	Q15036792	Hudson Hawk	Hudson Hawk		Q1408498	1991	action	JP,NA,EU	
 G	Q15111504	Spartan X 2	Spartan X 2		Q617752	1991	action	JP	
 G	Q16147744	Indiana Jones and the Temple of Doom	Indiana Jones and the Temple of Doom		Q1570468	1988	action	NA	1988 Indiana Jones and the Temple of Doom
-G	Q16163195	Nadia: The Secret of Blue Water	ふしぎの海のナディア		Q875920	1991	strategy	JP	Fushigi no Umi Nadia: The Secret of Blue Water|Fushigi no Umi no Nadia
+G	Q16163195	Nadia: The Secret of Blue Water	ふしぎの海のナディア	フシギノウミノナディア	Q875920	1991	strategy	JP	Fushigi no Umi Nadia: The Secret of Blue Water|Fushigi no Umi no Nadia
 G	Q16205201	Where in Time Is Carmen Sandiego?	Where in Time Is Carmen Sandiego?		Q995863	1989	puzzle	NA	
 G	Q16259540	Flying Warriors	Flying Warriors		Q760096	1991	action	NA	
-G	Q16266754	Utsurun Desu.: Kawauso Hawaii e Iku!!!	伝染るんです。かわうそハワイへ行く		Q3028965	1992	action	JP	
+G	Q16266754	Utsurun Desu.: Kawauso Hawaii e Iku!!!	伝染るんです。かわうそハワイへ行く	ウツルンデスカワウソハワイヘイク	Q3028965	1992	action	JP	
 G	Q16266784	NFL	NFL		Q3206072	1989	sports	NA	
 G	Q16266810	International Cricket	International Cricket		Q2456686	1992	sports	EU	
 G	Q16266827	Star Voyager	コスモジェネシス	コスモジェネシス	Q297303	1986	shooter	JP,NA	
-G	Q16266830	Faria: A World of Mystery and Danger	ファリア 封印の剣		Q1493042	1989	rpg	JP,NA	
+G	Q16266830	Faria: A World of Mystery and Danger	ファリア 封印の剣	ファリアフウインノケン	Q1493042	1989	rpg	JP,NA	
 G	Q16266997	Power Punch II	Power Punch II		Q1469961	1992	sports	NA	
-G	Q16267185	Moero 7!! Juudou Warriors	燃えろ!!柔道WARRIORS		Q1344080	1990	fighting	JP	
-G	Q16267432	Sword Master	剣の達人・ソードマスター		Q200491	1990	action	NA,EU	
+G	Q16267185	Moero 7!! Juudou Warriors	燃えろ!!柔道WARRIORS	モエロジュウドウウォーリアーズ	Q1344080	1990	fighting	JP	
+G	Q16267432	Sword Master	剣の達人・ソードマスター	ケンノタツジンソードマスター	Q200491	1990	action	NA,EU	
 G	Q16267446	Skull & Crossbones	Skull & Crossbones		Q1235040	1987	action		
-G	Q16267477	Hottāman no Chitei Tanken	ホッターマンの地底探険		Q139564979	1986	action	JP	Hottaman no Chitei Tanken
+G	Q16267477	Hottāman no Chitei Tanken	ホッターマンの地底探険	ホッターマンノチテイタンケン	Q139564979	1986	action	JP	Hottaman no Chitei Tanken
 G	Q16267492	Goal! Two	Goal! Two		Q1344080	1992	sports	JP,NA,EU	GOAL!!|Super Goal!
 G	Q16267515	Wayne Gretzky Hockey	Wayne Gretzky Hockey		Q580866	1988	sports	NA	
 G	Q16587096	Kyatto Ninden Teyandee	Kyatto Ninden Teyandee		Q1423789	1991		JP	Samurai Pizza Cats
 G	Q16611924	Ninja-Kid	忍者くん 魔城の冒険	ニンジャクンマジョウノボウケン	Q1054844	1985	action	JP	Ninja-kun: Ma-jou no Bouken|Ninja-kun: Ma-jō no Bōken|忍者くん魔城の冒険
 G	Q16683360	Willow	W・I・L・L・O・W	ウィロー	Q14428	1989	rpg	JP,NA,EU	Willow video games|ウィロー
-G	Q16913800	Super Hydlide	ハイドライド３ 闇からの訪問者		Q309996	1989	rpg	JP	Hydlide 3: The Space Memories
+G	Q16913800	Super Hydlide	ハイドライド３ 闇からの訪問者	ハイドライド3ヤミカラノホウモンシャ	Q309996	1989	rpg	JP	Hydlide 3: The Space Memories
 G	Q16913806	Hydlide 3: The Space Memories	Hydlide 3: The Space Memories		Q309996	1989	rpg	JP	Super Hydlide
 G	Q17014280	Flying Dragon: The Secret Scroll	Flying Dragon: The Secret Scroll		Q760096	1989	fighting	JP,NA	
 G	Q17177267	Talespin	Talespin		Q14428	1991	shooter	NA,EU	Capcom Tale Spin|Capcom Talespin|Tale Spin
-G	Q17190863	Genghis Khan	蒼き狼と白き牝鹿・ジンギスカン		Q845047	1989	strategy	JP,NA	
+G	Q17190863	Genghis Khan	蒼き狼と白き牝鹿・ジンギスカン	アオキオオカミトシロキメジカジンギスカン	Q845047	1989	strategy	JP,NA	
 G	Q17213535	Little Magic	リトルマジック	リトルマジック	Q1172213	1990	action	JP	
-G	Q17218907	SD Hero Sōkessen: Taose Aku no Gundan	SDヒーロー総決戦 倒せ!悪の軍団		Q1371744	1990	shooter	JP	
-G	Q17220287		闘魂倶楽部			0			
+G	Q17218907	SD Hero Sōkessen: Taose Aku no Gundan	SDヒーロー総決戦 倒せ!悪の軍団	エスディーヒーローソウケッセンタオセアクノグンダン	Q1371744	1990	shooter	JP	
+G	Q17220287		闘魂倶楽部	トウコンクラブ		0			
 G	Q17229548	Nantettatte!! Baseball	なんてったって!!ベースボール	ナンテッタッテベースボール	Q2298387	1990		JP	
 G	Q17494453	Disney's Aladdin	Disney's Aladdin		Q1481820	1993	action	EU	Aladdin|Disney's Aladdin (Virgin Games)|Disney’s Aladdin|Disney’s Aladdin (Virgin Games)|NES Aladdin|Sega Genesis Aladdin|Sega Mega Drive Aladdin|Virgin Aladdin
 G	Q17508441	Beauty and the Beast	Beauty and the Beast		Q1049502	1994	action	JP,EU	Disney's Beauty and the Beast
-G	Q18907829	Double Dragon III: The Sacred Stones	ダブルドラゴンⅢ ザ・ロゼッタストーン		Q1358743	1991	action	JP,NA,EU	Double Dragon 3: The Sacred Stones
-G	Q18945737	Mezase! Top Pro: Green ni Kakeru Yume	めざせ! トッププロ～グリーンに賭ける夢		Q1344080	1993	sports	JP	Aim! Top Pro - Dream in Green|Mezase! Toppu Puro ~ Guriin ni Kakeru Yume
-G	Q20874773	Double Dragon II: The Revenge	ダブルドラゴンII ザ・リベンジ			1989	action	JP,NA,EU	Double Dragon II NES|Double Dragon II PCE
+G	Q18907829	Double Dragon III: The Sacred Stones	ダブルドラゴンⅢ ザ・ロゼッタストーン	ダブルドラゴンスリーザロゼッタストーン	Q1358743	1991	action	JP,NA,EU	Double Dragon 3: The Sacred Stones
+G	Q18945737	Mezase! Top Pro: Green ni Kakeru Yume	めざせ! トッププロ～グリーンに賭ける夢	メザセトッププログリーンニカケルユメ	Q1344080	1993	sports	JP	Aim! Top Pro - Dream in Green|Mezase! Toppu Puro ~ Guriin ni Kakeru Yume
+G	Q20874773	Double Dragon II: The Revenge	ダブルドラゴンII ザ・リベンジ	ダブルドラゴンツーザリベンジ		1989	action	JP,NA,EU	Double Dragon II NES|Double Dragon II PCE
 G	Q20995205	Top Gun	Top Gun		Q45700	1987	strategy	JP,NA,EU	
 G	Q21039932	Super Turrican	Super Turrican		Q3781101	1992	shooter	EU	1992 Super Turrican|NES Super Turrican|Super Turrican NES
 G	Q21273066	Wonderland Dizzy	Wonderland Dizzy		Q23901	1990	action		
 G	Q21473303	Ghostbusters II	Ghostbusters II		Q200491	1990	action	NA,EU	
-G	Q21668319	Labyrinth	ラビリンス 魔王の迷宮		Q1372258	1987	action	JP	
+G	Q21668319	Labyrinth	ラビリンス 魔王の迷宮	ラビリンスマオウノメイキュウ	Q1372258	1987	action	JP	
 G	Q22101464	Hokuto no Ken	Hokuto no Ken		Q730179	1986		JP	
 G	Q24761717	8bit Music Power	8BIT MUSIC POWER			2016			
 G	Q27017214	The Young Indiana Jones Chronicles	The Young Indiana Jones Chronicles		Q1344080	1992	action	NA	
 G	Q28452235	Monopoly	モノポリー	モノポリー	Q1335998	1991	table	JP,NA,EU	
 G	Q28464434	Bomberman	ボンバーマン	ボンバーマン	Q1049502	1985		JP,NA	Bomberman (1985)|Bomberman (NES)|Bomberman Special|ボンバーマン (1985年)|ボンバーマン (ファミリーコンピュータ)|ボンバーマン スペシャル|ボンバーマンスペシャル
 G	Q30900580	Lethal Weapon	Lethal Weapon		Q1408498	1993		NA,EU	
-G	Q33789295	Osomatsu-kun: Back to the me no Deppa no Maki	おそ松くん バック・トゥ・ザ・ミーの出っ歯の巻		Q507269	1989	rpg	JP	Osomatsu-kun
-G	Q47524775	A-Train	A列車で行こう		Q513712	1991	strategy	JP	A Ressha de Ikou|A Ressha de Ikō|Take The A-Train|初代A列車で行こう
+G	Q33789295	Osomatsu-kun: Back to the me no Deppa no Maki	おそ松くん バック・トゥ・ザ・ミーの出っ歯の巻	オソマツクンバックトゥザミーノデッパノマキ	Q507269	1989	rpg	JP	Osomatsu-kun
+G	Q47524775	A-Train	A列車で行こう	エーレッシャデイコウ	Q513712	1991	strategy	JP	A Ressha de Ikou|A Ressha de Ikō|Take The A-Train|初代A列車で行こう
 G	Q55522172	Pizza Pop!	ピザポップ	ピザポップ	Q1344080	1992	action	JP	
 G	Q57241222	Wagan Land	ワギャンランド	ワギャンランド	Q309996	1989		JP	Wagyan Land
 G	Q63183229	Big Bird's Hide & Speak	Big Bird's Hide & Speak		Q3135129	1990	educational	NA	
@@ -1309,13 +1309,13 @@ G	Q67198438	R.B.I. Baseball	プロ野球ファミリースタジアム	プロヤ
 G	Q67387683	Tetris	テトリス	テトリス	Q8093	1989	puzzle	NA,EU	1989 Tetris|NES Tetris
 G	Q76912032	Terminator 2: Judgment Day	Terminator 2: Judgment Day		Q2659812	1992		JP,NA,EU	1992 Terminator 2: Judgment Day|NES Terminator 2: Judgment Day|T2: Terminator 2: Judgment Day|Terminator 2
 G	Q83022789	Dooly Bravo Land	Dooly Bravo Land		Q83022860	1992	action		
-G	Q85877874		名探偵ホームズ 霧のロンドン殺人事件			0			
+G	Q85877874		名探偵ホームズ 霧のロンドン殺人事件	メイタンテイホームズキリノロンドンサツジンジケン		0			
 G	Q96337096	Win, Lose or Draw	Win, Lose or Draw		Q3135129	1988	table	NA	
 G	Q97137162	Super Mario Bros. / Duck Hunt / World Class Track Meet	Super Mario Bros. / Duck Hunt / World Class Track Meet		Q8093	1988		NA	
 G	Q97188012	CrossFire	CrossFire		Q101252572	1990	shooter	JP	
 G	Q97332611	Log Jammers	Log Jammers			2017			
-G	Q97376766	Erunaaku no Zaihou	エルナークの財宝		Q139796646	1987		JP	Elnark no Zaihou
-G	Q97571417	Hammerin' Harry	大工の源さん		Q617752	1991		JP,EU	
+G	Q97376766	Erunaaku no Zaihou	エルナークの財宝	エルナークノザイホウ	Q139796646	1987		JP	Elnark no Zaihou
+G	Q97571417	Hammerin' Harry	大工の源さん	ダイクノゲンサン	Q617752	1991		JP,EU	
 G	Q97621516	The Chessmaster	The Chessmaster		Q3135129	1989		NA,EU	1989 Chessmaster|NES Chessmaster
 G	Q97650398	Home Alone	Home Alone		Q580866	1991		NA	NES Home Alone
 G	Q98103058	The Terminator	The Terminator		Q1570468	1992	action	NA,EU	
@@ -1326,17 +1326,17 @@ G	Q100152614	Family Feud	Family Feud		Q5519804	1991	table	NA
 G	Q101225378	3 in 1 Supergun	3 in 1 Supergun		Q4044197	1993	shooter	EU	
 G	Q101252563	Airwolf	Airwolf		Q101252572	1988	action	JP	Airwolf Famicom|Airwolf arcade
 G	Q101422777	Perfect Bowling	Perfect Bowling		Q7821535	1989	sports	JP	
-G	Q101515961	'89 Dennou Kyuusei Uranai	'89電脳九星占い		Q139650401	1988		JP	'89 Dennō Kyūsei Uranai|Fat Cat in the Spaceship of Shame
+G	Q101515961	'89 Dennou Kyuusei Uranai	'89電脳九星占い	89デンノウキュウセイウラナイ	Q139650401	1988		JP	'89 Dennō Kyūsei Uranai|Fat Cat in the Spaceship of Shame
 G	Q104735913	Advanced Dungeons & Dragons: Hillsfar	Advanced Dungeons & Dragons: Hillsfar		Q513712	1991	rpg	JP,NA	
 G	Q104878190	Micro Mages	Micro Mages			2019	action		
 G	Q104898442	Grand Master	グランドマスター	グランドマスター	Q7915854	1991	rpg	JP	
 G	Q105095027	Hollywood Squares	Hollywood Squares		Q5519804	1989	table	NA	
-G	Q105547346	Tanigawa Kōji no Shogi Shinan II	谷川浩司の将棋指南II		Q513712	1988		JP	Tanigawa Kouji no Shogi Shinan II|Tanigawa Kōji no Shōgi Shinan II: Meijin e no Michi
-G	Q105547552	Tanigawa Kōji no Shogi Shinan III	谷川浩司の将棋指南III		Q513712	1989		JP	Tanigawa Kouji no Shogi Shinan III
-G	Q105550621	Deep Dungeon III: Yūshi e no Tabi	ディープダンジョンIII 勇士への旅		Q739552	1988		JP	
-G	Q105550629	Deep Dungeon IV: Kuro no Yōjutsushi	ディープダンジョンIV 黒の妖術師		Q798642	1990		JP	
+G	Q105547346	Tanigawa Kōji no Shogi Shinan II	谷川浩司の将棋指南II	タニガワコウジノショウギシナンツー	Q513712	1988		JP	Tanigawa Kouji no Shogi Shinan II|Tanigawa Kōji no Shōgi Shinan II: Meijin e no Michi
+G	Q105547552	Tanigawa Kōji no Shogi Shinan III	谷川浩司の将棋指南III	タニガワコウジノショウギシナンスリー	Q513712	1989		JP	Tanigawa Kouji no Shogi Shinan III
+G	Q105550621	Deep Dungeon III: Yūshi e no Tabi	ディープダンジョンIII 勇士への旅	ディープダンジョンスリーユウシヘノタビ	Q739552	1988		JP	
+G	Q105550629	Deep Dungeon IV: Kuro no Yōjutsushi	ディープダンジョンIV 黒の妖術師	ディープダンジョンフォークロノヨウジュツシ	Q798642	1990		JP	
 G	Q106978929	Super Tilt Bro.	Super Tilt Bro.			2020	action		STB|Super Tilt Bro. for NES|Super Tilt Brother|super-tilt-bro.com|supertiltbro.wontfix.it
-G	Q107410163	Parasol Henbē: Otogi no Kuni wa Ōsawagi!	パラソルヘンべえ おとぎの国は大さわぎ!		Q139797350	1991		JP	
+G	Q107410163	Parasol Henbē: Otogi no Kuni wa Ōsawagi!	パラソルヘンべえ おとぎの国は大さわぎ!	パラソルヘンベエオトギノクニハオオサワギ	Q139797350	1991		JP	
 G	Q107468260	Q Boy	Q Boy			1994	action		
 G	Q108536088	Jeopardy! Junior Edition	Jeopardy! Junior Edition		Q5519804	1989		NA	
 G	Q108711499	Super Jeopardy!	Super Jeopardy!		Q5519804	1991	table	NA	
@@ -1344,11 +1344,11 @@ G	Q108884799	Warpman	ワープマン	ワープマン	Q309996	1985		JP
 G	Q108891607	RoboCop 3	RoboCop 3		Q1408498	1992		JP,NA,EU	RoboCop 3 (NES)
 G	Q109016312	Dragon Ball Z III: Ressen Jinzou Ningen	Dragon Ball Z III: Ressen Jinzou Ningen		Q507269	1992		JP	Dragon Ball Z III: Ressen Jinzō Ningen
 G	Q109365143	Dream Master	ナムコプリズムゾーン ドリームマスター	ナムコプリズムゾーンドリームマスター	Q1194689	1992	rpg	JP	Namco Prism Zone : Dream Master
-G	Q109596632	Gozonji Yajikita Chindochu	御存知 弥次喜多珍道中		Q1068734	1989		JP	Gozonji: Yaji Kita Chin Douchuu
+G	Q109596632	Gozonji Yajikita Chindochu	御存知 弥次喜多珍道中	ゴゾンジヤジキタチンドウチュウ	Q1068734	1989		JP	Gozonji: Yaji Kita Chin Douchuu
 G	Q110393265	Mortal Kombat II Special	Mortal Kombat II Special			2000	fighting		Mortal Kombat II: Special
 G	Q110407267	The Hummer	The Hummer			1994	adventure		
 G	Q110529623	Tiny Toon Adventures 6	Tiny Toon Adventures 6			1997			
-G	Q110670687	Itadaki Street: Watashi no Omise ni Yottette	いただきストリート 〜私のお店によってって〜		Q297303	1991		JP	
+G	Q110670687	Itadaki Street: Watashi no Omise ni Yottette	いただきストリート 〜私のお店によってって〜	イタダキストリートワタシノオミセニヨッテッテ	Q297303	1991		JP	
 G	Q111610508	Teenage Mutant Ninja Turtles II: The Arcade Game	Teenage Mutant Ninja Turtles II: The Arcade Game		Q45700	1990		JP,NA,EU	TMHT 2: The Arcade Game|TMHT II: The Arcade Game|TMNT 2: The Arcade Game|TMNT II: The Arcade Game|Teenage Mutant Hero Turtles 2: The Arcade Game|Teenage Mutant Hero Turtles II: The Arcade Game|Teenage Mutant Ninja Turtles 2: The Arcade Game
 G	Q111610582	Teenage Mutant Ninja Turtles: Tournament Fighters	Teenage Mutant Ninja Turtles: Tournament Fighters		Q45700	1993		NA,EU	NES Teenage Mutant Ninja Turtles: Tournament Fighters|NES Tournament Fighters
 G	Q111654900	The Gorilla Man	ゴリラーマン	ゴリラーマン	Q17050725	1993	table	JP	Gorilla Man|Gorilla-Man|Gorillaman
@@ -1356,27 +1356,27 @@ G	Q112432425	Nintendo Campus Challenge 1991	Nintendo Campus Challenge 1991		Q809
 G	Q112433034	Nintendo Campus Challenge 1992	Nintendo Campus Challenge 1992		Q8093	1992		NA	
 G	Q114832984	Airway	Airway			0	shooter		
 G	Q115616421	Thunderbirds	Thunderbirds		Q200491	1989		JP	
-G	Q115627719	SD Battle Oozumou: Heisei Hero Basho	SDバトル大相撲 平成ヒーロー場所		Q1371744	1990		JP	SD Battle Ōzumō
+G	Q115627719	SD Battle Oozumou: Heisei Hero Basho	SDバトル大相撲 平成ヒーロー場所	エスディーバトルオオズモウヘイセイヒーローバショ	Q1371744	1990		JP	SD Battle Ōzumō
 G	Q116981097	The Addams Family	The Addams Family		Q1408498	1992		NA,EU	The Addams Family 8-bit console version
 G	Q117266751	Plasma Ball	プラズマ・ボール	プラズマボール	Q1344080	1992		JP	
 G	Q118766133	NEScape!	NEScape!		Q110193156	2019	adventure		NEScape
-G	Q120892922	Kujaku Ō II	孔雀王II		Q513712	1990			Kujaku Ou II|Kujaku-ou II|Kujakuō II
-G	Q124360979	Majō Densetsu II: Daimashikyō Galious	魔城伝説II 大魔司教ガリウス		Q45700	1987	rpg	JP	Majou Densetsu II: Daima Shikyou Gariusu|Majou Densetsu II: Daimashikyou Galious
-G	Q124735536	Be-Bop High School: Kōkōsei Gokuraku Densetsu	ビーバップハイスクール 高校生極楽伝説		Q1172213	1988		JP	Be-Bop High School: Koukousei Gokuraku Densetsu
-G	Q124803337	Kamen no Ninja Akakage	仮面の忍者 赤影		Q730179	1988	action	JP	
+G	Q120892922	Kujaku Ō II	孔雀王II	クジャクオウツー	Q513712	1990			Kujaku Ou II|Kujaku-ou II|Kujakuō II
+G	Q124360979	Majō Densetsu II: Daimashikyō Galious	魔城伝説II 大魔司教ガリウス	マジョウデンセツツーダイマシキョウガリウス	Q45700	1987	rpg	JP	Majou Densetsu II: Daima Shikyou Gariusu|Majou Densetsu II: Daimashikyou Galious
+G	Q124735536	Be-Bop High School: Kōkōsei Gokuraku Densetsu	ビーバップハイスクール 高校生極楽伝説	ビーバップハイスクールコウコウセイゴクラクデンセツ	Q1172213	1988		JP	Be-Bop High School: Koukousei Gokuraku Densetsu
+G	Q124803337	Kamen no Ninja Akakage	仮面の忍者 赤影	カメンノニンジャアカカゲ	Q730179	1988	action	JP	
 G	Q125885769	Fighting Road	ファイティングロード	ファイティングロード	Q730179	1988	fighting	JP	
 G	Q125933915	Outlanders	アウトランダーズ	アウトランダーズ	Q2748676	1987	rpg	JP	
 G	Q125961131	Top Striker	トップストライカー	トップストライカー	Q309996	1992	sports	JP	
-G	Q125963936	Dezaemon	絵描衛門		Q4813366	1991		JP	
+G	Q125963936	Dezaemon	絵描衛門	デザエモン	Q4813366	1991		JP	
 G	Q126002303	Long Drive Golf	Long Drive Golf			0			
-G	Q126023763	Akagawa Jirō no Yūrei Ressha	赤川次郎の幽霊列車		Q58899971	1991	adventure	JP	Akagawa Jiro no Yurei Ressha|Akagawa Jirou no Yuurei Ressha
-G	Q126034808	President no Sentaku	プレジデントの選択		Q5909783	1990		JP	
-G	Q126034862	Perman Part 2: Himitsu Kessha Madōdan o Taose!	パーマンPART2 秘密結社マドー団をたおせ!		Q617752	1991		JP	Perman Part 2: Himitsu Kessha Madoudan o Taose!|Perman Part 2: Himitsu Kessha Madoudan wo Taose!|Perman Part 2: Himitsu Kessha Madōdan wo Taose!
+G	Q126023763	Akagawa Jirō no Yūrei Ressha	赤川次郎の幽霊列車	アカガワジロウノユウレイレッシャ	Q58899971	1991	adventure	JP	Akagawa Jiro no Yurei Ressha|Akagawa Jirou no Yuurei Ressha
+G	Q126034808	President no Sentaku	プレジデントの選択	プレジデントノセンタク	Q5909783	1990		JP	
+G	Q126034862	Perman Part 2: Himitsu Kessha Madōdan o Taose!	パーマンPART2 秘密結社マドー団をたおせ!	パーマンパート2ヒミツケッシャマドーダンヲタオセ	Q617752	1991		JP	Perman Part 2: Himitsu Kessha Madoudan o Taose!|Perman Part 2: Himitsu Kessha Madoudan wo Taose!|Perman Part 2: Himitsu Kessha Madōdan wo Taose!
 G	Q126186377	Sesame Street: Numbers Count	Sesame Street: Numbers Count		Q3135129	1989	educational	NA	
 G	Q126187656	Sir Ababol	Sir Ababol			0			
-G	Q126363915	Esper Boukentai: Maou no Toride	エスパ冒険隊 魔王の砦		Q1344080	1987	rpg	JP	Esper Boukentai|エスパ冒険隊
+G	Q126363915	Esper Boukentai: Maou no Toride	エスパ冒険隊 魔王の砦	エスパボウケンタイマオウノトリデ	Q1344080	1987	rpg	JP	Esper Boukentai|エスパ冒険隊
 G	Q129876389	7 Grand Dad	7 Grand Dad			1992			Grand Dad Fleenstones|Primitive Mario 7|Seven Grand Dad|Super Mario Bros. 7: Grand Dad
-G	Q130297030	Sekiryūō	赤龍王		Q2298387	1989	adventure	JP	Sekiryuuou
+G	Q130297030	Sekiryūō	赤龍王	セキリュウオウ	Q2298387	1989	adventure	JP	Sekiryuuou
 G	Q130723602	Witch n' Wiz	Witch n' Wiz		Q28026114	2021	puzzle		
 G	Q130731741	Böbl	Böbl		Q131574490	0	action		Bobl (NES)
 G	Q130732310	FROM BELOW - A Real NES Game!	FROM BELOW - A Real NES Game!			2020	puzzle		
@@ -1386,8 +1386,8 @@ G	Q132855709	DragonStrike	DragonStrike		Q513712	1992	shooter	JP,NA	Advanced Dung
 G	Q133880555	Darkman	Darkman		Q1408498	1991	action	NA,EU	
 G	Q134348453	Captain America and The Avengers	Captain America and The Avengers		Q1172213	1991	action	NA,EU	
 G	Q135013312	Streemerz	Streemerz			2010	action		
-G	Q135113127	Tsurupika Hagemaru Mezase! Tsuru Seko no Akashi	つるピカハゲ丸 めざせ!つるセコの証		Q1344080	1991	action	JP	
-G	Q135911590	Ninja-Kid II	忍者くん 阿修羅ノ章		Q7865507	1987	action		JT-104|Ninja-kun: Ashura no Shō|Rad Action|忍者くん 阿修羅の章|忍者くん阿修羅の章|忍者くん阿修羅ノ章
+G	Q135113127	Tsurupika Hagemaru Mezase! Tsuru Seko no Akashi	つるピカハゲ丸 めざせ!つるセコの証	ツルピカハゲマルメザセツルセコノアカシ	Q1344080	1991	action	JP	
+G	Q135911590	Ninja-Kid II	忍者くん 阿修羅ノ章	ニンジャクンアシュラノショウ	Q7865507	1987	action		JT-104|Ninja-kun: Ashura no Shō|Rad Action|忍者くん 阿修羅の章|忍者くん阿修羅の章|忍者くん阿修羅ノ章
 G	Q136644457	Castle Quest	Castle Quest		Q1049502	1990		JP	Triumph
 G	Q136655705	Fisher-Price: Perfect Fit	Fisher-Price: Perfect Fit		Q5519804	1990		NA	
 G	Q136697929	Jeopardy! 25th Anniversary Edition	Jeopardy! 25th Anniversary Edition		Q5519804	1990		NA	
@@ -1396,7 +1396,7 @@ G	Q137160505	Remote Control	Remote Control		Q3135129	1990	table	NA	MTV Remote Co
 G	Q137383674	Changeable Guardian Estique	Changeable Guardian Estique			2024	shooter		
 G	Q138330820	Nakayoshi to Issho	なかよしといっしょ	ナカヨシトイッショ	Q11349297	1993		JP	
 G	Q139376446	Cosmo Police Galivan	Cosmo Police Galivan		Q1637338	1988	rpg	JP	Cosmo Police: Galivan
-G	Q139597067	Hammerin’ Harry 2: Dan the Red Strikes Back	大工の源さん2 赤毛のダンの逆襲		Q617752	1993	action	JP	Daiku no Gen-san 2: Akage no Dan no Gyakushō
+G	Q139597067	Hammerin’ Harry 2: Dan the Red Strikes Back	大工の源さん2 赤毛のダンの逆襲	ダイクノゲンサン2アカゲノダンノギャクシュウ	Q617752	1993	action	JP	Daiku no Gen-san 2: Akage no Dan no Gyakushō
 G	Q139603932	The Last Starfighter	The Last Starfighter		Q1570468	1990	shooter	NA	Last Starfighter NES|The Last Starfighter (NES)|The Last Starfighter 1990
 G	Q139604052	Sesame Street: A-B-C/1-2-3	Sesame Street: A-B-C/1-2-3		Q3135129	1991	educational	NA	Sesame Street 1 2 3 / Sesame Street A B C|Sesame Street ABC & 123|Sesame Street: ABC & 123
 G	Q139604316	Wheel of Fortune	Wheel of Fortune		Q5519804	1988	table	NA	Wheel of Fortune (NES)|Wheel of Fortune NES
@@ -1406,8 +1406,8 @@ G	Q139604440	Wheel of Fortune: Junior Edition	Wheel of Fortune: Junior Edition		
 G	Q139604558	KlashBall	KlashBall		Q11315251	1991	sports	NA	Klash Ball|KlashBall NES|SpeedBall
 G	Q139888876	Action 52	Action 52			0			
 G	Q140839904	James Bond Jr.	James Bond Jr.		Q580866	0			1991 James Bond Jr.
-G	Q141358037	Tōjin Makyō Den: Hercules no Eikō	闘人魔境伝 ヘラクレスの栄光		Q1172213	1987			
-G	Q141379776	Hercules no Eikō II: Titan no Metsubō	ヘラクレスの栄光II タイタンの滅亡		Q1172213	1989			
+G	Q141358037	Tōjin Makyō Den: Hercules no Eikō	闘人魔境伝 ヘラクレスの栄光	トウジンマキョウデンヘラクレスノエイコウ	Q1172213	1987			
+G	Q141379776	Hercules no Eikō II: Titan no Metsubō	ヘラクレスの栄光II タイタンの滅亡	ヘラクレスノエイコウツータイタンノメツボウ	Q1172213	1989			
 G	Q141539762	Almost Hero	Almost Hero			2016			
 G	Q141539766	Creepy Brawlers	Creepy Brawlers			2017			
 G	Q141539793	Multidude	Multidude			2019			

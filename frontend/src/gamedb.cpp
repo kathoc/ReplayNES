@@ -172,7 +172,7 @@ std::string nameKey(const std::string& text) {
 // The part before a subtitle (": " / " - "), "" when there is none.
 std::string mainTitle(const std::string& t) {
   size_t p = std::string::npos;
-  for (const char* sep : {": ", " - ", "：", " ～", "～"}) {
+  for (const char* sep : {": ", " - ", "\xEF\xBC\x9A", " \xEF\xBD\x9E", "\xEF\xBD\x9E"}) {
     size_t q = t.find(sep);
     if (q != std::string::npos && q > 0) p = std::min(p, q);
   }

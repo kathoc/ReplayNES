@@ -256,6 +256,7 @@ int App::run(const AppOptions& opt) {
   thumbs_ = std::make_unique<ThumbnailManager>();
   if (!perfMode) libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
+  library_->setPrefsFile(paths_.configDir + "/" + RNF_LIBRARY_PREFS_FILE);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -649,7 +650,7 @@ void printUsage(const PlatformHooks& platform) {
   std::printf(
       "%s [options]\n"
       "  --rom PATH            play PATH without a project (temporary session)\n"
-      "  --no-resume           do not reopen the last session\n"
+      "  --no-resume           do not offer the last session (Continue)\n"
       "  --fullscreen | --windowed\n"
       "  --lang ja|en          UI language (also REPLAYNES_LANG; default: the system's)\n"
       "  --perf-seconds N      measure N seconds after --warmup S (default 8), then quit\n"

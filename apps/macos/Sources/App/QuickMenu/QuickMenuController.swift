@@ -114,6 +114,8 @@ final class QuickMenuController: ObservableObject {
         let items = content.items
         let i = min(focusIndex(p), max(0, items.count - 1))
         switch n {
+        case .options, .search:
+            break
         case .menu, .escape:   // L+R / Esc close the menu from any level
             close()
         case .back:            // B / Delete: one level up (closes on the top level)
