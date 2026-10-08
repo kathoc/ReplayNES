@@ -2,6 +2,16 @@
 // The engine does mapping, turbo, SOCD and hotkey separation; this file only reports
 // physical state changes with stable ids ("kb:<keyCode>", "gc<slot>:<element>").
 // Face buttons are reported by position ("gc0:face.east"), see ControllerLayout.swift.
+// The Quick Menu (docs/design/UI_REDESIGN.md, "Input model") is the action "hk.menu": pad 1's L+R
+// through the shared chord detector and Esc. L or R alone act on their RELEASE (never in the way of
+// the chord): their own bindings in play (pause / slow), previous / next page in menus, a frame
+// step back / forward while paused (held >= 400 ms: repeated), a held marker move while a seek bar
+// marker is edited. Menus confirm with the UI's confirm button (east by default, "southConfirm"
+// swaps it) and go back with the cancel one. While paused in play (the seek bar) cancel tapped
+// resumes, confirm tapped drops a marker, up tapped goes to the markers, Y tapped picks the next
+// A/B slot (taps: they still reach the game, so a held button survives frame steps); with a marker
+// focused the pad is the seek bar's (onSeekInput) and nothing reaches the game.
+// Same rules as the Linux / Windows frontend (apps/desktop/src/input_router.cpp).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 import GameController
@@ -34,9 +44,17 @@ final class InputManager {
 
     /// Main thread: navigation input (menus open / library shown, the L+R chord and Esc always).
     var onNav: ((NavInput) -> Void)?
-    /// Main thread: confirm (south face button) tapped while the game is paused = resume
+    /// Main thread: the UI's cancel button tapped while the game is paused = resume
     /// (ConfirmTap.swift: holding it for a frame advance never resumes).
-    var onPausedConfirm: (() -> Void)?
+    var onPausedResume: (() -> Void)?
+    /// The paused seek bar's controller input: taps on the bar (ok, up, y: press only), everything
+    /// while a marker is focused / edited (press and release). Main thread.
+    enum SeekInput { case ok, cancel, up, down, left, right, x, y }
+    var onSeekInput: ((SeekInput, Bool) -> Void)?
+    /// Main thread: L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
+    var onPausedShoulder: ((Int) -> Void)?
+    /// Main thread: L / R held while a marker is edited: the marker moves (-1 / +1) until released.
+    var onMarkerHold: ((Int, Bool) -> Void)?
 
     // Navigation mode: the Quick Menu or the library is on screen. Controller and keyboard input
     // then drive it and never reach the game.
@@ -49,13 +67,25 @@ final class InputManager {
     // core's chord detector (ChordDetector.swift, gcQueue only); single inputs bound to it (Esc)
     // open it directly and never reach the game.
     private let chord = ChordDetector()
+    /// Combo members bound to game input: held for the game from ALONE_DOWN (gcQueue only).
+    private var gameMembers: Set<String> = []
     /// Combo members whose solo press was handed on (their release follows).
     private var forwardedMembers: Set<String> = []  // gcQueue only
+    /// Combo members moving an edited marker now -> -1 / +1 (gcQueue only).
+    private var holdMembers: [String: Int] = [:]
+    private var chordTickWork: DispatchWorkItem?    // gcQueue only
     private var menuIDs: Set<String> = []           // stepLock
-    /// Paused seek bar: confirm taps resume (gcQueue only).
+    /// Paused seek bar: cancel / confirm / up / Y taps (gcQueue only).
     private var confirmTap = ConfirmTap()
+    /// Settings › Controls › Confirm Button: south confirms (default: east). gcQueue only.
+    private var southConfirm = false
+    /// The paused seek bar's focus: 0 = the bar, 1 = a marker, 2 = a marker being edited. gcQueue only.
+    private var seekFocus = 0
+    /// Presses taken by "press a key" (keys only): their releases are swallowed too. gcQueue only.
+    private var captureSwallowed: Set<String> = []
 
-    /// Called (main thread) with the physical id while capturing a binding. Esc cancels (nil).
+    /// Called (main thread) with the physical id while capturing a binding (keys only). Esc and the
+    /// controller's cancel button cancel (nil); other controller input is ignored meanwhile.
     var captureHandler: ((String?) -> Void)? {
         didSet { captureLock.lock(); capturing = captureHandler != nil; captureLock.unlock() }
     }
@@ -160,7 +190,11 @@ final class InputManager {
             guard let self else { return }
             // Reconfiguring drops the detector's state: members handed on are released here.
             self.releaseForwardedMembers()
+            self.endMarkerHolds()
             self.chord.configure(c.bindings)
+            // A combo member bound to a game button is held for the game (from the end of the window).
+            self.gameMembers = Set(c.bindings.filter { self.chord.isMember($0.input) && !$0.action.hasPrefix("hk.") }.map(\.input))
+            self.updateRepeat()
         }
     }
 
@@ -168,6 +202,59 @@ final class InputManager {
     private func releaseForwardedMembers() {
         for id in forwardedMembers { setPressed(id, false) }
         forwardedMembers.removeAll()
+    }
+
+    /// gcQueue: members moving a marker stop (the marker stops).
+    private func endMarkerHolds() {
+        for (_, dir) in holdMembers { DispatchQueue.main.async { [weak self] in self?.onMarkerHold?(dir, false) } }
+        holdMembers.removeAll()
+    }
+
+    /// gcQueue: paused frame steps repeat while L / R is held (not while a marker is edited: it moves).
+    private func updateRepeat() {
+        stepLock.lock(); let paused = stepModeOn; stepLock.unlock()
+        let on = paused && !isNavMode && seekFocus < 2
+        if chord.repeatMode != on {
+            chord.repeatMode = on
+            scheduleChordTick()
+        }
+    }
+
+    /// Paused in play: the seek bar (not a menu / the library).
+    private var isPausedInPlay: Bool {
+        stepLock.lock(); let paused = stepModeOn; stepLock.unlock()
+        return paused && !isNavMode
+    }
+
+    private var confirmElement: String { String(cString: rnf_ui_confirm_element(southConfirm ? 1 : 0)) }
+    private var cancelElement: String { String(cString: rnf_ui_cancel_element(southConfirm ? 1 : 0)) }
+
+    /// Settings › Controls › Confirm Button (any thread).
+    func setSouthConfirm(_ on: Bool) {
+        gcQueue.async { [weak self] in self?.southConfirm = on }
+    }
+
+    /// Main thread: the paused seek bar's focus (0 the bar, 1 a marker, 2 editing). Entering a marker
+    /// releases what the game had held: the pad is the seek bar's then.
+    func setSeekFocus(_ focus: Int) {
+        gcQueue.async { [weak self] in
+            guard let self, focus != self.seekFocus else { return }
+            let entering = self.seekFocus == 0 && focus > 0
+            self.seekFocus = focus
+            if entering {
+                rn_input_release_prefix(self.handle, "gc")
+                rn_input_release_prefix(self.handle, "kb:")
+                self.confirmTap.clear()
+                self.forwardedMembers.removeAll()
+                for id in self.routedSteps {
+                    self.stepLock.lock(); let d = self.stepDirs[id]; self.stepLock.unlock()
+                    if let d { self.onPausedStep?(d, false) }
+                }
+                self.routedSteps.removeAll()
+            }
+            if focus < 2 { self.endMarkerHolds() }
+            self.updateRepeat()
+        }
     }
 
     private func isMenuInput(_ id: String) -> Bool {
@@ -193,8 +280,11 @@ final class InputManager {
             guard let self else { return }
             for w in self.navRepeat.values { w.cancel() }
             self.navRepeat.removeAll()
+            self.updateRepeat()
             guard on else { return }
             self.confirmTap.clear()
+            self.forwardedMembers.removeAll()
+            self.endMarkerHolds()
             for id in self.routedSteps {
                 self.stepLock.lock(); let d = self.stepDirs[id]; self.stepLock.unlock()
                 if let d { self.onPausedStep?(d, false) }
@@ -225,15 +315,17 @@ final class InputManager {
             scheduleNavRepeat(id, dir, delay: 0.35)
             return
         }
-        guard down else { return }
+        // Pads 2-4 (pad 1's L / R come through the chord detector): pages, on the release.
+        if !down {
+            if name == "leftShoulder" { post(.pagePrev) } else if name == "rightShoulder" { post(.pageNext) }
+            return
+        }
         switch name {
-        case "face.south": post(.confirm)
-        case "face.east": post(.back)
+        case confirmElement: post(.confirm)
+        case cancelElement: post(.back)
         case "face.west": post(.x)
         case "face.north": post(.y)
         case "menu": post(.menu)
-        case "leftShoulder": post(.pagePrev)    // pads 2-4 (pad 1's come through the chord detector)
-        case "rightShoulder": post(.pageNext)
         default: break
         }
     }
@@ -252,16 +344,27 @@ final class InputManager {
 
     private func now() -> Double { ProcessInfo.processInfo.systemUptime }
 
+    /// One pending tick at the detector's next deadline (the window's end, a repeat).
     private func scheduleChordTick() {
+        chordTickWork?.cancel()
+        chordTickWork = nil
         guard let deadline = chord.nextDeadline else { return }
         let delay = max(0, deadline - now())
-        gcQueue.asyncAfter(deadline: .now() + delay + 0.001) { [weak self] in
+        let w = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            self.chordTickWork = nil
             self.emitChord(self.chord.tick(now: self.now()))
             self.scheduleChordTick()
         }
+        chordTickWork = w
+        gcQueue.asyncAfter(deadline: .now() + delay + 0.001, execute: w)
     }
 
+    private func onMain(_ f: @escaping (InputManager) -> Void) {
+        DispatchQueue.main.async { [weak self] in if let self { f(self) } }
+    }
+
+    /// gcQueue: the chord detector's outcome: the Quick Menu, or L / R alone (on their release).
     private func emitChord(_ events: [ChordEvent]) {
         for e in events {
             switch e {
@@ -269,31 +372,79 @@ final class InputManager {
                 post(.menu)
             case .comboUp:
                 break
-            case .alone(let id, let down):
-                if down && isNavMode {
-                    post(id.hasSuffix("leftShoulder") ? .pagePrev : .pageNext)
-                } else if down {
+            case .alone(let id, true, let member, _):   // held alone: a game button is held, a marker moves
+                let dir = member == 0 ? -1 : 1
+                stepLock.lock(); let paused = stepModeOn; stepLock.unlock()
+                if paused && !isNavMode && seekFocus == 2 {
+                    holdMembers[id] = dir
+                    onMain { $0.onMarkerHold?(dir, true) }
+                } else if !isNavMode && !paused && gameMembers.contains(id) {
                     forwardedMembers.insert(id)
                     confirmTap.cancel()
                     setPressed(id, true)
+                }
+            case .repeated(_, let member):
+                let dir = member == 0 ? -1 : 1
+                if isPausedInPlay && seekFocus < 2 { onMain { $0.onPausedShoulder?(dir) } }
+            case .alone(let id, false, let member, let repeats):   // the trigger of a single press
+                let dir = member == 0 ? -1 : 1
+                if holdMembers.removeValue(forKey: id) != nil {
+                    onMain { $0.onMarkerHold?(dir, false) }
                 } else if forwardedMembers.remove(id) != nil {
+                    setPressed(id, false)
+                } else if isNavMode {
+                    post(dir < 0 ? .pagePrev : .pageNext)
+                } else if isPausedInPlay {
+                    if repeats == 0 { onMain { $0.onPausedShoulder?(dir) } }
+                } else {
+                    // A tap of its own action (pause, slow, ...): the hotkey fires on the press edge.
+                    confirmTap.cancel()
+                    setPressed(id, true)
                     setPressed(id, false)
                 }
             }
         }
     }
 
-    /// gcQueue: the confirm button while paused resumes as a tap (ConfirmTap.swift); it still
-    /// reaches the game. Returns whether to resume (on the release).
-    private func trackPausedConfirm(_ id: String, _ name: String, _ down: Bool) -> Bool {
+    private enum PausedTap { case resume, seek(SeekInput) }
+
+    /// gcQueue: paused in play (the seek bar), taps (ConfirmTap.swift) of the UI's cancel (resume),
+    /// confirm (a marker), up (to the markers) and Y (the next A/B slot). They still reach the game,
+    /// so a button can be held for a frame advance; holding one and stepping never counts as a tap.
+    private func trackPausedTap(_ id: String, _ name: String, _ down: Bool) -> PausedTap? {
         if down {
             confirmTap.cancel()
-            guard name == "face.south" else { return false }
-            stepLock.lock(); let paused = stepModeOn && stepEnabled; stepLock.unlock()
-            if paused { confirmTap.press(id) }
-            return false
+            guard isPausedInPlay, [cancelElement, confirmElement, "dpad.up", "face.north"].contains(name) else { return nil }
+            confirmTap.press(id)
+            return nil
         }
-        return confirmTap.release(id)
+        guard confirmTap.release(id), isPausedInPlay else { return nil }
+        switch name {
+        case cancelElement: return .resume
+        case "dpad.up": return .seek(.up)
+        case "face.north": return .seek(.y)
+        default: return .seek(.ok)
+        }
+    }
+
+    /// gcQueue: a marker focused / edited: the pad is the seek bar's (D-pad / left stick, confirm,
+    /// cancel, X, Y); nothing reaches the game. L2 / R2 (rewind / fast-forward) keep working.
+    private func routeSeek(_ name: String, _ down: Bool) -> Bool {
+        guard seekFocus > 0, isPausedInPlay, name != "leftTrigger", name != "rightTrigger" else { return false }
+        let input: SeekInput?
+        switch name {
+        case confirmElement: input = .ok
+        case cancelElement: input = .cancel
+        case "dpad.up", "lstick.up": input = .up
+        case "dpad.down", "lstick.down": input = .down
+        case "dpad.left", "lstick.left": input = .left
+        case "dpad.right", "lstick.right": input = .right
+        case "face.west": input = .x
+        case "face.north": input = .y
+        default: input = nil
+        }
+        if let input { onMain { $0.onSeekInput?(input, down) } }
+        return true
     }
 
     /// Any thread: a key or a menu command (frame advance, ...) while a confirm button may be held.
@@ -314,9 +465,12 @@ final class InputManager {
         stepModeOn = on
         let ids = Array(stepDirs.keys)
         stepLock.unlock()
-        guard changed, on else { return }
+        guard changed else { return }
         gcQueue.async { [weak self] in
             guard let self else { return }
+            self.updateRepeat()
+            if !on { self.confirmTap.clear(); self.endMarkerHolds() }
+            guard on else { return }
             for id in ids where self.lastState[id] == true && !self.routedSteps.contains(id) {
                 rn_input_set_pressed(self.handle, id, 0)
                 self.routedSteps.insert(id) // its release is then swallowed too
@@ -613,6 +767,7 @@ final class InputManager {
             // The detector's state is shared by every pad: forget it and release what it handed on.
             self.chord.reset()
             self.releaseForwardedMembers()
+            self.endMarkerHolds()
             self.confirmTap.clear()
             self.lastState = self.lastState.filter { !$0.key.hasPrefix(prefix) }
             for id in self.routedSteps where id.hasPrefix(prefix) {
@@ -646,27 +801,49 @@ final class InputManager {
         if lastState[id] == down { return }
         lastState[id] = down
         notePressed(id, down)
+        // "Press a key": keys only; the controller's cancel button cancels, the rest waits.
         if down, isCapturing {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let cap = self.captureHandler else { return }
-                self.captureHandler = nil
-                cap(id)
+            captureSwallowed.insert(id)
+            if name == cancelElement {
+                onMain { m in
+                    guard let cap = m.captureHandler else { return }
+                    m.captureHandler = nil
+                    cap(nil)
+                }
             }
             return
         }
+        if !down, captureSwallowed.remove(id) != nil { return }
         // The Quick Menu: a combo member (L+R) or an input of its own.
         let fed = chord.feed(id, down: down, now: now())
-        emitChord(fed.events)
-        if fed.taken { scheduleChordTick(); return }
+        if fed.taken {
+            if down { confirmTap.cancel() }   // L / R step while paused: a held confirm is no longer a tap
+            emitChord(fed.events)
+            scheduleChordTick()
+            return
+        }
+        emitChord(fed.events)   // a member held alone may have fired just now
         if isMenuInput(id) {
             if down { post(.menu) }
             return
         }
         if isNavMode { routeNav(id, name, down); return }
+        if routeSeek(name, down) { return }
         if routePausedStep(id, down) { return }
-        let resume = trackPausedConfirm(id, name, down)
+        let tap = trackPausedTap(id, name, down)
         setPressed(id, down, at: gcEventTime)
-        if resume { DispatchQueue.main.async { [weak self] in self?.onPausedConfirm?() } }
+        switch tap {
+        case .resume: onMain { $0.onPausedResume?() }
+        case .seek(let input): onMain { $0.onSeekInput?(input, true) }
+        case nil: break
+        }
+    }
+
+    /// Test hook (--fake-controller <family>): a controller of that family listed on slot 0 (hint
+    /// glyphs, the diagram, the pill) without a device; its input comes from --inject-pad.
+    func addFakeController(family: ControllerFamily) {
+        infos[0] = ControllerInfo(slot: 0, name: "Test Pad", productCategory: "Test", family: family, labels: [:])
+        publishControllers()
     }
 
     /// Test hook (--inject-pad): a controller element change on slot 0, through the same path
@@ -677,7 +854,8 @@ final class InputManager {
 
     private func stick(_ prefix: String, _ name: String, _ x: Float, _ y: Float) {
         let nav = isNavMode
-        rn_input_set_axis(handle, prefix + name, nav ? 0 : x, nav ? 0 : y)
+        let seek = !nav && seekFocus > 0 && isPausedInPlay   // the markers have the pad
+        rn_input_set_axis(handle, prefix + name, nav || seek ? 0 : x, nav || seek ? 0 : y)
         // Track virtual direction ids for change detection / capture (threshold 0.5).
         let t: Float = 0.5
         for (dir, on) in [("left", x <= -t), ("right", x >= t), ("up", y >= t), ("down", y <= -t)] {
@@ -685,14 +863,12 @@ final class InputManager {
             if lastState[id] == on { continue }
             lastState[id] = on
             notePressed(id, on)
-            if on, isCapturing {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, let cap = self.captureHandler else { return }
-                    self.captureHandler = nil
-                    cap(id)
-                }
+            if isCapturing {
+                continue   // keys only
             } else if nav {
                 routeNav(id, name + "." + dir, on)
+            } else if routeSeek(name + "." + dir, on) {
+                continue
             } else {
                 if on { confirmTap.cancel() }
                 noteEvent(at: gcEventTime)

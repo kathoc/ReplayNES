@@ -23,6 +23,7 @@ struct AppOptions {
   std::string statsLog, frameLog, sessionRoot, libraryRoot, script, label = "run";
   int fullscreen = -1;  // -1 = auto (gamescope: on)
   bool injectInput = false;
+  bool virtualPad = false;  // --virtual-pad: an SDL virtual gamepad (scripted checks without a controller)
   bool resume = true;
   int flash = -1;  // -1 = the saved setting
   // Measurement overrides (not saved): CRT display on, its knobs, integer scaling.

@@ -1,8 +1,10 @@
 // The Quick Menu's L+R (docs/design/UI_REDESIGN.md, "Input model") through the shared core's chord
 // detector (frontend/include/replaynes/frontend.h, rnf_chord_*), so every frontend decides the chord
 // the same way: both members of a combo bound to "hk.menu" (default "gc0:leftShoulder+gc0:rightShoulder")
-// down within RNF_CHORD_WINDOW (either order) = the chord; a member alone keeps its own action
-// (pause / slow by default) and fires on release, or once held for the window without the other.
+// down within RNF_CHORD_WINDOW (either order) = the chord; a member alone acts on its RELEASE
+// (`alone(down: false)`: pause / slow in play, a page in menus, a frame step while paused);
+// `alone(down: true)` only says "held alone" (a member bound to a game button is held from there).
+// Repeat mode (paused frame steps): a member held alone fires `repeated` after 400 ms, then every 50 ms.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
@@ -11,8 +13,12 @@ enum ChordEvent: Equatable {
     case comboDown(String)
     /// Both released after comboDown.
     case comboUp(String)
-    /// A member on its own: press / release its own id (R = pause, L = slow, ...).
-    case alone(String, down: Bool)
+    /// A member on its own: held alone (down) / released (up: the single press's trigger).
+    /// `member`: 0 = the combo's first id (L), 1 = the second (R). `repeats`: on the release, the
+    /// repeats fired during this hold (the single action is skipped when > 0).
+    case alone(String, down: Bool, member: Int, repeats: Int)
+    /// Repeat mode: held alone >= RNF_CHORD_HOLD_DELAY (and every RNF_CHORD_REPEAT_INTERVAL).
+    case repeated(String, member: Int)
 }
 
 /// Thin wrapper over rnf_chord. Not thread-safe: use it from one queue. Times are seconds on one
@@ -43,7 +49,7 @@ final class ChordDetector {
         return (taken, poll())
     }
 
-    /// Members held alone for the whole window fire (call at `nextDeadline`).
+    /// Members held alone for the whole window and the repeats fire (call at `nextDeadline`).
     func tick(now: Double) -> [ChordEvent] {
         rnf_chord_tick(handle, now)
         return poll()
@@ -58,6 +64,12 @@ final class ChordDetector {
     /// Forget everything held / pending without events (controller detached).
     func reset() { rnf_chord_reset(handle) }
 
+    /// Repeat mode (members held alone fire `repeated`): on only while paused in play.
+    var repeatMode: Bool {
+        get { rnf_chord_repeat(handle) != 0 }
+        set { rnf_chord_set_repeat(handle, newValue ? 1 : 0) }
+    }
+
     private func poll() -> [ChordEvent] {
         var out: [ChordEvent] = []
         var e = rnf_chord_event()
@@ -66,8 +78,9 @@ final class ChordDetector {
             switch e.kind {
             case RNF_CHORD_COMBO_DOWN: out.append(.comboDown(id))
             case RNF_CHORD_COMBO_UP: out.append(.comboUp(id))
-            case RNF_CHORD_ALONE_DOWN: out.append(.alone(id, down: true))
-            default: out.append(.alone(id, down: false))
+            case RNF_CHORD_ALONE_DOWN: out.append(.alone(id, down: true, member: Int(e.member), repeats: Int(e.repeats)))
+            case RNF_CHORD_ALONE_REPEAT: out.append(.repeated(id, member: Int(e.member)))
+            default: out.append(.alone(id, down: false, member: Int(e.member), repeats: Int(e.repeats)))
             }
         }
         return out

@@ -62,7 +62,7 @@ void UI::buildDialogs() {
     inlinePrompts(d.buttons.size() > 1 ? TR("Cancel") : TR("Close"));
     int cancel = d.cancelIndex >= 0 ? d.cancelIndex : int(d.buttons.size()) - 1;
     if (result < 0 && !ImGui::IsWindowAppearing() &&
-        (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+        (ImGui::IsKeyPressed(cancelKey(), false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
       result = cancel;
     if (dialogAnswer_ >= 0) {
       result = std::min(dialogAnswer_, int(d.buttons.size()) - 1);
@@ -216,7 +216,7 @@ void UI::buildChooser() {
       inlinePrompts(TR("Back"));
     }
     if (!ImGui::GetIO().WantTextInput && !appearing &&
-        (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
+        (ImGui::IsKeyPressed(cancelKey(), false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
       if (!c.confirmReplace.empty()) c.confirmReplace.clear();
       else if (!rnf_paths_equal(c.dir.c_str(), c.req.root.c_str())) {
         c.dir = fs::path(c.dir).parent_path().string();
@@ -259,7 +259,7 @@ void UI::buildRename() {
     if (ImGui::Button(TR("Cancel"), ImVec2(S(120), 0))) cancel = true;
     if (!textEntryOwnsPad()) inlinePrompts(TR("Cancel"));  // the keyboard shows its own buttons
     if (!io.WantTextInput && !ImGui::IsWindowAppearing() &&
-        (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+        (ImGui::IsKeyPressed(cancelKey(), false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
       cancel = true;
     if (ok || cancel) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();

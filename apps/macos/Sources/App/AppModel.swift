@@ -41,9 +41,13 @@ final class AppModel: ObservableObject {
             if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession {
                 updateImmersive()
                 updateUIMode()
+            } else if status.coarse != oldValue.coarse {
+                markers.sync()
             }
         }
     }
+    /// The paused seek bar's A/B markers (controller; SeekMarkers.swift).
+    let markers = SeekMarkers()
     /// Quick Menu (QuickMenu/QuickMenuController.swift) and the library screen's focus.
     let quickMenu = QuickMenuController()
     let libraryNav = LibraryNav()
@@ -63,7 +67,7 @@ final class AppModel: ObservableObject {
     @Published var inputConfig: InputCatalog.Config
     @Published var stats = LatencyMeter.Snapshot()
     @Published var notice: String?
-    @Published var showExport = false
+    @Published var showExport = false { didSet { markers.sync() } }
     @Published var exportJob: ExportJob?
     @Published var capturingAction: String?
     @Published var practiceSlots: [PracticeSlotInfo] = (0..<EngineSession.practiceSlotCount).map { PracticeSlotInfo(index: $0) }
@@ -81,6 +85,8 @@ final class AppModel: ObservableObject {
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume); objectWillChange.send() } }
+    /// Menus confirm with the south face button (default false: east confirms, south goes back).
+    @AppStorage("southConfirm") var southConfirm = false { didSet { input.setSouthConfirm(southConfirm); objectWillChange.send() } }
     /// While paused, controller D-pad ←/→ step one frame back/forward (not sent to the game).
     @AppStorage("dpadStepWhenPaused") var dpadStepWhenPaused = true { didSet { input.setPausedStepEnabled(dpadStepWhenPaused); objectWillChange.send() } }
     /// Photosensitive flash reduction level (FlashLevel raw value). Default Standard (on): safety first.
@@ -133,16 +139,21 @@ final class AppModel: ObservableObject {
             if self.bookmarks != st.bookmarks { self.bookmarks = st.bookmarks }
             if self.takes != st.takes { self.takes = st.takes }
             if !st.practiceSlots.isEmpty, self.practiceSlots != st.practiceSlots { self.practiceSlots = st.practiceSlots }
+            self.markers.sync()
         }
         emu.onError = { [weak self] title, msg in self?.showError(title, msg) }
         emu.onNotice = { [weak self] text in self?.flash(text) }
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
         input.onControllersChanged = { [weak self] c in self?.controllers = c; self?.updateUIMode() }
         input.onNav = { [weak self] n in self?.handleNav(n) }
-        input.onPausedConfirm = { [weak self] in
+        input.onPausedResume = { [weak self] in
             guard let self, self.status.hasSession, self.status.paused, !self.quickMenu.isOpen, !self.showLibrary else { return }
             self.togglePause()
         }
+        input.onSeekInput = { [weak self] i, down in self?.markers.seekInput(i, down: down) }
+        input.onMarkerHold = { [weak self] dir, down in self?.markers.markerHold(dir, down: down) }
+        input.onPausedShoulder = { [weak self] dir in self?.markers.pausedShoulder(dir) }
+        markers.model = self
         input.onDisconnect = { [weak self] name in
             guard let self else { return }
             self.emu.perform { emu in emu.paused = true }
@@ -185,7 +196,12 @@ final class AppModel: ObservableObject {
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
                                                         reason: "NES emulation")
         input.setPausedStepEnabled(dpadStepWhenPaused)
+        input.setSouthConfirm(southConfirm)
         input.setPausedStepMode(true)
+        // The markers follow the selected A/B slot (FilmstripModel needs AppModel.shared: not in init).
+        FilmstripModel.shared.$selectedSlot.removeDuplicates()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.markers.sync() } }
+            .store(in: &menuSubs)
         emu.audio.volume = Float(volume)
         pushPrefs()
         emu.start()
@@ -231,6 +247,13 @@ final class AppModel: ObservableObject {
         emu.perform { e in
             guard let s = e.session else { return }
             e.stepBack(s, n)
+        }
+    }
+    /// One frame back (-1) / forward (+1), paused (L / R released while paused).
+    func stepFrame(_ dir: Int) {
+        emu.perform { e in
+            guard let s = e.session else { return }
+            e.stepFrame(dir, s)
         }
     }
     func setSlow(_ r: SlowRate) { emu.perform { e in e.slow = r } }
@@ -930,6 +953,7 @@ final class AppModel: ObservableObject {
         let pill = MenuPillOverlay.shared
         pill.update(glyph: glyph, scale: mainWindow?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
         pill.setVisible(status.hasSession && !status.paused && !quickMenu.isOpen && !showLibrary)
+        markers.sync()
     }
 
     /// Game › Choose Game (⇧⌘L): the library over the paused game.

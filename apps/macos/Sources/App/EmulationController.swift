@@ -145,6 +145,7 @@ final class EmulationController {
     private var rewinding = false
     private var fastForward = false
     private var rewindTicks = 0
+    private var ffTicks = 0   // ticks of the fast-forward hold (rnf_hold_speed)
     private var tickCount: UInt64 = 0
     private var statusDirty = true
     private var structureDirty = true
@@ -604,7 +605,7 @@ final class EmulationController {
             // Game input is not emulated while paused; say so once instead of silently ignoring it.
             if wasPaused && paused && edges == 0 && held == 0 && advanceRemaining == 0 && !pauseHintShown && !uiRewindHeld {
                 pauseHintShown = true
-                notice(String(localized: "Paused. Press Space or R on the controller (or the ▶︎ button) to resume"))
+                notice(String(localized: "Paused. Press Space, or the back button on the controller, to resume"))
             }
         }
 
@@ -622,7 +623,7 @@ final class EmulationController {
             if practicing { practiceLoop.interrupt() }
             audio.setMuted(true)
             rewindTicks += 1
-            let n: UInt64 = rewindTicks > 240 ? 4 : rewindTicks > 90 ? 2 : 1
+            let n = UInt64(rnf_hold_speed(Int32(rewindTicks)))   // the same curve as fast-forward
             // Practice: rewinds the practice run only (the engine stops at A); take: clamps at 0.
             if practicing ? s.practiceStatus.rewindAvailable > 0 : s.frame > 0 {
                 do {
@@ -696,6 +697,7 @@ final class EmulationController {
 
     private func beginFastForward(_ s: EngineSession) {
         pausedBeforeFF = paused
+        ffTicks = 0
         ffBlocked = s.frame >= s.takeLength
         if ffBlocked {
             notice(s.takeLength == 0 ? String(localized: "Nothing has been recorded yet, so there is nothing to fast-forward") : String(localized: "End of the recording (fast-forward stops here)"))
@@ -717,12 +719,13 @@ final class EmulationController {
         ffBlocked = false
     }
 
-    /// Fast-forward replays recorded frames 4x (silent) and stops at the take end, paused there.
+    /// Fast-forward replays recorded frames 2x -> 4x (rnf_hold_speed, silent) and stops at the take end, paused there.
     private func tickFastForward(_ s: EngineSession) {
         audio.setMuted(true)
         guard ff.active, !ffBlocked else { return }
         do {
-            let (n, atEnd) = try ff.step(s, frames: 4)
+            ffTicks += 1   // the same speed curve as rewind (rnf_hold_speed), forwards
+            let (n, atEnd) = try ff.step(s, frames: Int(rnf_hold_speed(Int32(ffTicks))))
             if n > 0 { publishVideo(continuous: true) }
             if atEnd {
                 ffBlocked = true

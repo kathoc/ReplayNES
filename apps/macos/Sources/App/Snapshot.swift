@@ -78,6 +78,16 @@ extension AppModel {
             "fastForward": status.fastForward, "slow": status.slow.label, "endOfTake": status.endOfTake,
             "integerScale": integerScale, "menuItemAdds": MenuBarCleaner.shared.mainMenuAdds, "showPracticePanel": showPracticePanel,
             "menuOpen": quickMenu.isOpen, "menuPage": quickMenu.page.rawValue, "showLibrary": showLibrary,
+            "markers": markers.frames, "markerFocus": markers.focus, "markerEditing": markers.editing,
+            "markersActive": markers.active, "markerHint": markers.hint ?? "", "abSlot": FilmstripModel.shared.selectedSlot,
+            "southConfirm": southConfirm, "notice": notice ?? "",
+            "menuFocus": quickMenu.focusIndex(quickMenu.page), "menuListPage": quickMenu.listPageIndex(quickMenu.page),
+            "assignElement": quickMenu.assignElement ?? "",
+            "controllerFocusActions": { let e = quickMenu.diagramElements(self); let i = quickMenu.focusIndex(.controller)
+                                        return e.indices.contains(i) ? ControllerAssignments.actions(element: e[i].element,
+                                            slot: quickMenu.listPageIndex(.controller), config: inputConfig) : [] }(),
+            "controllerFocus": { let e = quickMenu.diagramElements(self); let i = quickMenu.focusIndex(.controller)
+                                 return e.indices.contains(i) ? e[i].element : "" }(),
             "pillGlyph": pillGlyph, "pillMetalVisible": MenuPillOverlay.shared.state.visible,
             "controllerHotkeys": InputCatalog.controllerHotkeys.map { "\($0.0)=\($0.1)" },
         ]

@@ -500,6 +500,16 @@ int rnf_input_action_get(size_t i, rnf_action_info* out) {
   out->group = kActions[i].group;
   return 1;
 }
+size_t rnf_input_assign_choices(int slot, const char** out, size_t cap) {
+  std::vector<const char*> v{""};
+  rnf_action_group own = slot == 1 ? RNF_GROUP_PLAYER2 : RNF_GROUP_PLAYER1;
+  rnf_action_group other = slot == 1 ? RNF_GROUP_PLAYER1 : RNF_GROUP_PLAYER2;
+  for (rnf_action_group g : {own, other, RNF_GROUP_HOTKEY})
+    for (auto& a : kActions)
+      if (a.group == g) v.push_back(a.id);
+  for (size_t i = 0; out && i < v.size() && i < cap; ++i) out[i] = v[i];
+  return v.size();
+}
 char* rnf_input_action_label(const char* id) {
   if (!id) return nullptr;
   for (auto& a : kActions)

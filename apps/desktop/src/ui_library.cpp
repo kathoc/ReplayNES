@@ -144,10 +144,10 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
     }
     libPage_ = libFocus_ / perPage;
   }
-  bool confirm = pressed(ImGuiKey_GamepadFaceDown, false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
+  bool confirm = pressed(confirmKey(), false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
   bool keyX = pressed(kPadX, false) || pressed(ImGuiKey_Delete, false);
   bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false) || (ImGui::GetIO().KeyCtrl && pressed(ImGuiKey_F, false));
-  bool back = pressed(ImGuiKey_GamepadFaceRight, false) || pressed(ImGuiKey_Backspace, false);
+  bool back = pressed(cancelKey(), false) || pressed(ImGuiKey_Backspace, false);
   std::vector<const LibraryROM*> roms = libraryRoms();
   if (confirm) {
     if (libFocus_ == -1) {
@@ -290,7 +290,7 @@ void UI::buildLibrary(double now) {
       }
     }
     if (!lib->folderError().empty()) description_ = lib->folderError();
-    prompt({"face.south"}, TR("Open Folder"));
+    prompt({"ui.confirm"}, TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
   } else {
     // Continue.
@@ -373,9 +373,9 @@ void UI::buildLibrary(double now) {
         for (int p = 0; p < pages; ++p)
           dl->AddCircleFilled(ImVec2(dx0 + float(p) * (dot + gap) + dot / 2, dy0 + dot / 2), dot / 2, p == libPage_ ? kText : kTextFaint);
     }
-    if (libFocus_ == -1) prompt({"face.south"}, TR("Continue"));
+    if (libFocus_ == -1) prompt({"ui.confirm"}, TR("Continue"));
     else if (n > 0) {
-      prompt({"face.south"}, TR("Play"));
+      prompt({"ui.confirm"}, TR("Play"));
       prompt({"face.west"}, TR("Projects"));
     }
     prompt({"face.north"}, TR("Search"));

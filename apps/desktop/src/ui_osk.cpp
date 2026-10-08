@@ -32,14 +32,15 @@ namespace rnl {
 
 namespace {
 
-bool oskButton(uint8_t b, OskButton* out) {
+// Type (A) / Delete (B) are the UI's confirm / cancel buttons (Settings > Controls > Confirm Button).
+bool oskButton(uint8_t b, OskButton* out, bool southConfirm) {
   switch (b) {
     case SDL_GAMEPAD_BUTTON_DPAD_UP: *out = OskButton::up; return true;
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN: *out = OskButton::down; return true;
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: *out = OskButton::left; return true;
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: *out = OskButton::right; return true;
-    case SDL_GAMEPAD_BUTTON_SOUTH: *out = OskButton::a; return true;
-    case SDL_GAMEPAD_BUTTON_EAST: *out = OskButton::b; return true;
+    case SDL_GAMEPAD_BUTTON_SOUTH: *out = southConfirm ? OskButton::a : OskButton::b; return true;
+    case SDL_GAMEPAD_BUTTON_EAST: *out = southConfirm ? OskButton::b : OskButton::a; return true;
     case SDL_GAMEPAD_BUTTON_WEST: *out = OskButton::x; return true;
     case SDL_GAMEPAD_BUTTON_NORTH: *out = OskButton::y; return true;
     case SDL_GAMEPAD_BUTTON_START: *out = OskButton::start; return true;
@@ -61,8 +62,8 @@ const char* buttonName(OskButton b) {
     case OskButton::down: return "down";
     case OskButton::left: return "left";
     case OskButton::right: return "right";
-    case OskButton::a: return "a";
-    case OskButton::b: return "b";
+    case OskButton::a: return "ok";  // the UI's confirm / cancel (script names)
+    case OskButton::b: return "cancel";
     case OskButton::x: return "x";
     case OskButton::y: return "y";
     case OskButton::start: return "menu";
@@ -151,12 +152,12 @@ bool UI::textEntryEvent(const SDL_Event& e, double now) {
   switch (e.type) {
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
       OskButton b;
-      if (oskButton(e.gbutton.button, &b)) press(b);
+      if (oskButton(e.gbutton.button, &b, d_.settings->southConfirm)) press(b);
       return true;  // other buttons (R3, Guide, paddles) do nothing while typing
     }
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
       OskButton b;
-      if (oskButton(e.gbutton.button, &b)) oskRepeat_.set(b, false, now);
+      if (oskButton(e.gbutton.button, &b, d_.settings->southConfirm)) oskRepeat_.set(b, false, now);
       return true;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
@@ -290,8 +291,8 @@ void UI::buildOsk() {
       const char* text;
     };
     const HP items[] = {
-        {{"face.south", nullptr}, TR("Type")},
-        {{"face.east", nullptr}, TR("Delete")},
+        {{"ui.confirm", nullptr}, TR("Type")},
+        {{"ui.cancel", nullptr}, TR("Delete")},
         {{"face.west", nullptr}, TR("Space")},
         {{"face.north", nullptr}, TR("Shift")},
         {{"leftShoulder", "rightShoulder"}, TR("Move Cursor")},

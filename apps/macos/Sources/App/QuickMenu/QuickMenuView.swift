@@ -233,6 +233,8 @@ struct QuickMenuOverlay: View {
         var hints: [(String, String, () -> Void)] = []
         if let f = focused, f.enabled, f.page != nil || f.confirm != nil || f.adjust != nil {
             hints.append((g.confirm, f.verb ?? String(localized: "Select"), { menu.handle(.confirm) }))
+        } else if p == .controller {
+            hints.append((g.confirm, String(localized: "Change"), { menu.handle(.confirm) }))
         }
         let x = focused?.x ?? content.x, y = focused?.y ?? content.y
         if let y { hints.append((g.y, y.label, { menu.handle(.y) })) }
@@ -396,6 +398,19 @@ private struct SettingRow: View {
             }
         case .text(let t):
             Text(t).font(.system(size: 13)).foregroundStyle(.white.opacity(0.6)).lineLimit(1).truncationMode(.middle)
+        case .buttons(let pairs):
+            HStack(spacing: 10) {
+                Image(systemName: "chevron.left").onTapGesture { item.adjust?(-1); menu.touch() }
+                ForEach(Array(pairs.enumerated()), id: \.offset) { _, p in
+                    HStack(spacing: 5) {
+                        KeyCap(p.glyph)
+                        Text(p.verb).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    }
+                }
+                Image(systemName: "chevron.right").onTapGesture { item.adjust?(1); menu.touch() }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .fixedSize()
         case .none:
             if item.page != nil {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.45))
@@ -485,12 +500,16 @@ private struct ControllerPage: View {
     var body: some View {
         let slot = menu.listPageIndex(.controller)
         let info = monitor.controllers.first { $0.slot == slot }
-        let family = info?.family ?? .generic
+        let family = QuickMenuPages.diagramFamily(model, slot: slot)
         let canvas = ControllerDiagramLayout.canvas
+        let els = menu.diagramElements(model)
+        let f = min(max(0, menu.focusIndex(.controller)), max(0, els.count - 1))
         GeometryReader { g in
             let s = min(1.15, g.size.width / canvas.width, g.size.height / canvas.height)
             ControllerDiagramView(family: family, slot: slot, config: model.inputConfig, labels: info?.labels ?? [:],
-                                  pressed: monitor.pressed) { id, action in model.input.setAssignment(id, action: action) }
+                                  pressed: monitor.pressed, focused: els.indices.contains(f) ? els[f].element : nil) { element in
+                menu.openAssign("gc\(slot):\(element)")
+            }
                 .scaleEffect(s)
                 .frame(width: canvas.width * s, height: canvas.height * s)
                 .frame(width: g.size.width, height: g.size.height)
@@ -502,16 +521,23 @@ private struct ControllerPage: View {
 
 // MARK: - button glyphs
 
-/// Hint-bar glyphs for the connected controller family (keyboard when none is connected).
+/// Hint-bar glyphs for the connected controller family (keyboard when none is connected). Confirm /
+/// back are the UI's confirm / cancel buttons (east / south by default; Settings › Controls ›
+/// Confirm Button swaps them: rnf_ui_confirm_element).
 struct HintGlyphs {
     let confirm: String, back: String, x: String, y: String, l: String, r: String
+    var controller = true
+
+    static var southConfirm: Bool { UserDefaults.standard.bool(forKey: "southConfirm") }
+    static var confirmElement: String { String(cString: rnf_ui_confirm_element(southConfirm ? 1 : 0)) }
+    static var cancelElement: String { String(cString: rnf_ui_cancel_element(southConfirm ? 1 : 0)) }
 
     static func current(_ controllers: [ControllerInfo]) -> HintGlyphs {
         guard let c = controllers.min(by: { $0.slot < $1.slot }) else {
-            return HintGlyphs(confirm: "⏎", back: "⌫", x: "X", y: "Y", l: "⇧⇥", r: "⇥")
+            return HintGlyphs(confirm: "⏎", back: "⌫", x: "X", y: "Y", l: "⇧⇥", r: "⇥", controller: false)
         }
         let ps = c.family == .playStation
-        return HintGlyphs(confirm: c.label("face.south"), back: c.label("face.east"), x: c.label("face.west"), y: c.label("face.north"),
+        return HintGlyphs(confirm: c.label(confirmElement), back: c.label(cancelElement), x: c.label("face.west"), y: c.label("face.north"),
                           l: ps ? "L1" : "L", r: ps ? "R1" : "R")
     }
 }

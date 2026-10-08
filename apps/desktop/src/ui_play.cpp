@@ -1,7 +1,9 @@
 // While a game is open and the menu is closed: the seek bar when paused (filmstrip + time + the
-// A/B lane; A / B resume, L2 / R2 rewind / fast-forward, the D-pad steps - all through the
-// InputRouter; mouse / touch scrub, select and drag sections on it), the practice pill and the
-// status badges. All in the game's render pass; nothing at all while playing but the badges.
+// A/B lane; the cancel button resumes, L / R and the D-pad step, L2 / R2 rewind / fast-forward -
+// all through the InputRouter; mouse / touch scrub, select and drag sections on it; the A/B
+// markers of the selected slot from the controller: rnf_markers, docs/design/UI_REDESIGN.md), the
+// practice pill and the status badges. All in the game's render pass; nothing at all while playing
+// but the badges.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -29,6 +31,129 @@ const ImU32 kSlotColors[8] = {IM_COL32(255, 149, 0, 255), IM_COL32(10, 132, 255,
                               IM_COL32(255, 214, 10, 255), IM_COL32(255, 69, 58, 255)};
 ImU32 slotColor(int slot, float a = 1.0f) { return alpha(kSlotColors[((slot % 8) + 8) % 8], a); }
 }  // namespace
+
+// ------------------------------------------------------------------ markers (controller A / B)
+
+bool UI::markersActive() const {
+  if (!hasSession() || menuOpen_ || interactive()) return false;
+  const EmuStatus& st = d_.emu->status();
+  return st.paused && !st.practicing;
+}
+
+int UI::seekFocus() const {
+  if (!markersActive()) return 0;
+  return rnf_markers_editing(markers_) ? 2 : rnf_markers_focus(markers_) >= 0 ? 1 : 0;
+}
+
+void UI::applyMarkers(const rnf_markers_result& r) {
+  EmulationController* emu = d_.emu;
+  int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
+  if (r.seek) emu->scrub(r.seek_frame);
+  switch (r.write) {
+    case RNF_MARKERS_WRITE_A_ONLY: emu->practiceSetAAt(slot, r.a); break;
+    case RNF_MARKERS_WRITE_RANGE: emu->practiceSetRange(slot, r.a, r.b, true); break;
+    case RNF_MARKERS_WRITE_CLEAR: emu->practiceClear(slot); break;
+    case RNF_MARKERS_WRITE_NONE: break;
+  }
+  double now = markerNow_;
+  if (r.outcome == RNF_MARKERS_FULL) {
+    markerHint_ = TR("Two markers already (X deletes one)");
+    markerHintUntil_ = now + 2.5;
+  } else if (r.outcome == RNF_MARKERS_OCCUPIED) {
+    markerHint_ = TR("A marker is already here");
+    markerHintUntil_ = now + 2.5;
+  }
+}
+
+void UI::updateMarkers(double now) {
+  markerNow_ = now;
+  if (!markersActive()) {
+    // Resumed, the menu, practice: an edit is dropped (the picture goes back while still paused).
+    rnf_markers_result r = rnf_markers_leave(markers_);
+    const EmuStatus& st = d_.emu->status();
+    if (r.seek && hasSession() && st.paused && !st.practicing) d_.emu->scrub(r.seek_frame);
+    markerHoldDir_ = 0;
+    rnf_step_repeater_reset(markerRepeat_);
+    return;
+  }
+  int sel = std::clamp(d_.settings->timelineSlot, 0, 7);
+  rnf_timeline_range range{};
+  bool has = false;
+  for (const rnf_timeline_range& r : d_.emu->visibleRanges())
+    if (r.slot == sel) {
+      range = r;
+      has = true;
+    }
+  rnf_markers_sync(markers_, has ? &range : nullptr, d_.emu->status().takeLength);
+  if (!rnf_markers_editing(markers_)) {
+    markerHoldDir_ = 0;
+    rnf_step_repeater_reset(markerRepeat_);
+    return;
+  }
+  // Held D-pad (repeat) and L / R (the rewind / fast-forward curve) move the edited marker.
+  if (int d = rnf_step_repeater_tick(markerRepeat_)) applyMarkers(rnf_markers_nudge(markers_, d));
+  if (markerHoldDir_ != 0) {
+    markerHoldTicks_ += 1;
+    applyMarkers(rnf_markers_nudge(markers_, int64_t(markerHoldDir_) * rnf_hold_speed(markerHoldTicks_)));
+  }
+}
+
+void UI::seekInput(int input, bool down) {
+  using SI = InputRouter::SeekInput;
+  if (!markersActive()) return;
+  uint64_t head = d_.emu->status().frame;
+  bool editing = rnf_markers_editing(markers_) != 0;
+  switch (SI(input)) {
+    case SI::left:
+    case SI::right: {
+      int dir = SI(input) == SI::left ? -1 : 1;
+      if (editing) {
+        if (down) applyMarkers(rnf_markers_nudge(markers_, rnf_step_repeater_press(markerRepeat_, dir)));
+        else rnf_step_repeater_release(markerRepeat_, dir);
+      } else if (down) {
+        applyMarkers(rnf_markers_move(markers_, dir, 0, head));
+      }
+      break;
+    }
+    case SI::up:
+      if (down) applyMarkers(rnf_markers_move(markers_, 0, -1, head));
+      break;
+    case SI::down:
+      if (down) applyMarkers(rnf_markers_move(markers_, 0, 1, head));
+      break;
+    case SI::ok:
+      if (down) applyMarkers(rnf_markers_confirm(markers_, head));
+      break;
+    case SI::cancel:
+      if (down) applyMarkers(rnf_markers_cancel(markers_));
+      break;
+    case SI::x:
+      if (down) applyMarkers(rnf_markers_delete(markers_));
+      break;
+    case SI::y:  // the next A/B slot (the markers show that one)
+      if (down && !editing) {
+        d_.settings->timelineSlot = (std::clamp(d_.settings->timelineSlot, 0, 7) + 1) % 8;
+        rnf_markers_leave(markers_);
+        changed();
+      }
+      break;
+  }
+}
+
+void UI::markerHold(int dir, bool down) {
+  if (!down || !markersActive() || !rnf_markers_editing(markers_)) {
+    if (!down || dir == markerHoldDir_) markerHoldDir_ = 0;
+    return;
+  }
+  markerHoldDir_ = dir;
+  markerHoldTicks_ = 1;
+  applyMarkers(rnf_markers_nudge(markers_, int64_t(dir) * rnf_hold_speed(1)));
+}
+
+void UI::pausedShoulder(int dir) {
+  if (!hasSession() || menuOpen_ || interactive() || !d_.emu->paused() || rnf_markers_editing(markers_)) return;
+  d_.emu->step(dir);
+}
 
 // ------------------------------------------------------------------ seek bar
 
@@ -73,10 +198,33 @@ void UI::buildSeekBar(double now) {
     x += measure(m.hint(), text).x + S(22);
   };
   if (controllerConnected()) {
-    hint({"face.south"}, TR("Resume"));
-    std::string l = triggerAction(true), r = triggerAction(false);
-    if (l == "hk.rewind" && r == "hk.fast_forward") hint({"leftTrigger", "rightTrigger"}, TR("Rewind / Fast-forward"));
-    if (d_.settings->dpadStepWhenPaused) hint({"dpad.lr"}, TR("Step"));
+    size_t count = rnf_markers_count(markers_);
+    int focus = rnf_markers_focus(markers_);
+    bool editing = rnf_markers_editing(markers_) != 0, markers = markersActive();
+    if (markers && editing) {
+      hint({"dpad.lr"}, "\xC2\xB1" "1");
+      hint({"leftShoulder", "rightShoulder"}, TR("Move"));
+      hint({"ui.confirm"}, TR("Done"));
+      hint({"ui.cancel"}, TR("Undo"));
+    } else if (markers && focus >= 0) {
+      hint({"dpad.lr"}, "A \xE2\x87\x84 B");  // A ⇄ B
+      hint({"ui.confirm"}, TR("Move"));
+      hint({"face.west"}, TR("Delete"));
+      hint({"ui.cancel"}, TR("Back"));
+    } else {
+      hint({"ui.cancel"}, TR("Resume"));
+      hint({"leftShoulder", "rightShoulder"}, TR("Step"));
+      if (markers && count < 2) hint({"ui.confirm"}, TR("Marker"));
+      if (markers && count > 0) hint({"dpad.up"}, TR("Markers"));
+      if (markers) {
+        std::string ab = "A/B " + std::to_string(std::clamp(d_.settings->timelineSlot, 0, 7) + 1);
+        hint({"face.north"}, ab.c_str());
+      }
+    }
+    if (markers && now < markerHintUntil_ && !markerHint_.empty()) {
+      float w = measure(m.hint(), markerHint_.c_str()).x;
+      dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(g.hints.right() - w, hy + (gh - m.hint()) / 2), kTextDim, markerHint_.c_str());
+    }
   } else {
     float kh = gh;
     x += keycap(dl, ImVec2(x, hy), kh, "Space", false) + S(8);
@@ -248,6 +396,14 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
                 shown.end());
     shown.push_back(preview_);
   }
+  // The controller's markers stand for the selected slot (they may be mid-edit): its range from them.
+  bool flags = markersActive() && !hasPreview_ && drag_ == Drag::none;
+  size_t markerCount = flags ? rnf_markers_count(markers_) : 0;
+  if (flags) {
+    shown.erase(std::remove_if(shown.begin(), shown.end(), [&](const rnf_timeline_range& r) { return r.slot == sel; }), shown.end());
+    if (markerCount == 2)
+      shown.push_back(rnf_timeline_range{sel, rnf_markers_frame(markers_, 0), 1, rnf_markers_frame(markers_, 1)});
+  }
   std::stable_sort(shown.begin(), shown.end(), [&](const rnf_timeline_range& a, const rnf_timeline_range& b) {
     return std::make_pair(a.slot == sel ? 1 : 0, a.slot) < std::make_pair(b.slot == sel ? 1 : 0, b.slot);
   });
@@ -275,6 +431,34 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
       dl->AddRectFilled(ImVec2(fx, top + S(2)), ImVec2(fx + S(26), top + laneH - S(2)), slotColor(r.slot, hl ? 0.95f : 0.6f), S(3));
       std::string n = std::to_string(r.slot + 1) + "A";
       dl->AddText(ImGui::GetFont(), laneH * 0.75f, ImVec2(fx + S(3), top + laneH * 0.1f), IM_COL32(0, 0, 0, 255), n.c_str());
+    }
+  }
+  // Marker flags: a pole through the filmstrip and a small flag in the lane (A to the left of its
+  // pole, B to the right; letters once both exist), the focused one ringed, the edited one lit.
+  if (flags) {
+    int focus = rnf_markers_focus(markers_);
+    bool editing = rnf_markers_editing(markers_) != 0;
+    for (size_t i = 0; i < markerCount; ++i) {
+      float x = X(rnf_markers_frame(markers_, i));
+      bool f = int(i) == focus, lit = f && editing;
+      ImU32 c = lit ? kBrand : slotColor(sel, 1.0f);
+      dl->AddRectFilled(ImVec2(x - (lit ? 1.5f : 1.0f), top), ImVec2(x + (lit ? 1.5f : 1.0f), s1.y), c);
+      float fw = laneH * 1.15f, fh = laneH - S(2);
+      bool left = markerCount == 2 && i == 0;
+      float fx = left ? x - fw : x;
+      if (fx < strip.x) fx = x;
+      if (fx + fw > strip.right()) fx = x - fw;
+      LRect fr{fx, top, fw, fh};
+      dl->AddRectFilled(tl(fr), br(fr), c, S(3));
+      if (markerCount == 2) {
+        const char* t = i == 0 ? "A" : "B";
+        ImVec2 ts = measure(fh * 0.85f, t);
+        dl->AddText(ImGui::GetFont(), fh * 0.85f, ImVec2(fx + (fw - ts.x) / 2, top + (fh - ts.y) / 2), IM_COL32(0, 0, 0, 255), t);
+      }
+      if (f) {
+        LRect ring{fx - S(3), top - S(3), fw + S(6), fh + S(6)};
+        focusRing(dl, ring, S(5), metrics_.ring() * (editing ? 1.5f : 1.0f), S(2));
+      }
     }
   }
   for (const BookmarkInfo& b : emu->structure().bookmarks)

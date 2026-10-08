@@ -1,7 +1,8 @@
 // Settings diagram of a game controller: every physical element drawn where it sits on the
-// device (own simple shapes, no artwork), its current assignment as a badge, live highlight of
-// held buttons, click -> pick an action. Pure view: data in, `onAssign` out (also rendered
-// offscreen by the unit tests).
+// device (own simple shapes, no artwork) over the shared core's outline (rnf_diagram_decor: no
+// grips; the Steam Deck its own), its current assignment as a badge, live highlight of held
+// buttons, the controller focus ring; a click selects an element (the Quick Menu opens its action
+// picker page). Pure view: data in, `onSelect` out (also rendered offscreen by the unit tests).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -9,43 +10,74 @@ struct ControllerDiagramView: View {
     let family: ControllerFamily
     let slot: Int
     let config: InputCatalog.Config
-    /// Face-button labels reported by the connected device (element -> "A"), optional.
+    /// Face-button labels reported by the device (element -> "A"), optional.
     var labels: [String: String] = [:]
     /// Controller ids ("gc0:face.east", "gc0:lstick.up"...) held right now.
     var pressed: Set<String> = []
-    /// (physical id, action or nil = none). nil = read-only.
-    var onAssign: ((String, String?) -> Void)? = nil
+    /// The element with the controller focus (D-pad / left stick on the page): a focus ring.
+    var focused: String? = nil
+    /// A click on an element (its name, e.g. "face.east"): the action picker. nil = read-only.
+    var onSelect: ((String) -> Void)? = nil
 
-    @State private var editing: String?
+    static let brand = Color(red: 1, green: 0x3B / 255, blue: 0x3B / 255)
 
     private var layout: ControllerDiagramLayout { ControllerDiagramLayout(family: family) }
 
     var body: some View {
         let l = layout
         ZStack(alignment: .topLeading) {
-            ControllerBodyShape(family: family)
-                .fill(Color.secondary.opacity(0.13))
-            ControllerBodyShape(family: family)
-                .stroke(Color.secondary.opacity(0.55), lineWidth: 1.5)
-            if let t = l.touchpad {
-                RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.10))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.4)))
-                    .frame(width: t.width, height: t.height).position(x: t.midX, y: t.midY)
-            }
+            // The outline (rnf_diagram_decor): a rounded body without grips, the Deck's screen, pads.
+            ForEach(Array(l.decor.enumerated()), id: \.offset) { _, d in decorView(d) }
             // Stick wells and the D-pad hub.
             ForEach([l.leftStick, l.rightStick].indices, id: \.self) { i in
                 let s = i == 0 ? l.leftStick : l.rightStick
-                Circle().fill(Color.secondary.opacity(0.18))
-                    .overlay(Circle().stroke(Color.secondary.opacity(0.5)))
+                Circle().fill(Color.white.opacity(0.10))
+                    .overlay(Circle().stroke(Color.white.opacity(0.35)))
                     .frame(width: s.radius * 2, height: s.radius * 2).position(s.center)
             }
-            Rectangle().fill(Color.secondary.opacity(0.35))
+            Rectangle().fill(Color.white.opacity(0.22))
                 .frame(width: ControllerDiagramLayout.dpadArm, height: ControllerDiagramLayout.dpadArm)
                 .position(l.dpadCenter)
             ForEach(l.elements) { e in elementView(e) }
             badges(l)
+            if let f = focused, let e = l.element(f) { focusRing(e) }
         }
         .frame(width: ControllerDiagramLayout.canvas.width, height: ControllerDiagramLayout.canvas.height)
+    }
+
+    @ViewBuilder
+    private func decorView(_ d: ControllerDiagramLayout.Decor) -> some View {
+        let shape = RoundedRectangle(cornerRadius: d.radius, style: .circular)
+        switch d.kind {
+        case .body:
+            shape.fill(LinearGradient(colors: [Color(red: 0.20, green: 0.21, blue: 0.25), Color(red: 0.15, green: 0.16, blue: 0.19)],
+                                      startPoint: .top, endPoint: .bottom))
+                .overlay(shape.stroke(Color.white.opacity(0.30), lineWidth: 1.5))
+                .frame(width: d.rect.width, height: d.rect.height).position(x: d.rect.midX, y: d.rect.midY)
+        case .screen:
+            shape.fill(Color(red: 0.05, green: 0.06, blue: 0.07))
+                .overlay(shape.stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .frame(width: d.rect.width, height: d.rect.height).position(x: d.rect.midX, y: d.rect.midY)
+        case .pad:
+            shape.fill(Color.white.opacity(0.08))
+                .overlay(shape.stroke(Color.white.opacity(0.22), lineWidth: 1))
+                .frame(width: d.rect.width, height: d.rect.height).position(x: d.rect.midX, y: d.rect.midY)
+        }
+    }
+
+    private func focusRing(_ e: DiagramElement) -> some View {
+        let round = e.kind == .face || e.kind == .home || e.kind == .stickClick || e.kind == .stickDirection
+        let w = e.size.width + 8, h = e.size.height + 8
+        return Group {
+            if round {
+                Capsule().stroke(Self.brand, lineWidth: 2.5).frame(width: max(w, h), height: max(w, h))
+            } else {
+                RoundedRectangle(cornerRadius: 9).stroke(Self.brand, lineWidth: 2.5).frame(width: w, height: h)
+            }
+        }
+        .shadow(color: Self.brand.opacity(0.6), radius: 4)
+        .position(e.center)
+        .allowsHitTesting(false)
     }
 
     // MARK: elements
@@ -57,29 +89,18 @@ struct ControllerDiagramView: View {
     @ViewBuilder
     private func elementView(_ e: DiagramElement) -> some View {
         let isDown = pressed.contains(physicalID(e.element))
-        let isEditing = editing == e.element
+        let isFocused = focused == e.element
         let assigned = !ControllerAssignments.actions(element: e.element, slot: slot, config: config).isEmpty
-        let fill: Color = isDown ? Color.accentColor : (assigned ? Color(nsColor: .controlBackgroundColor) : Color.secondary.opacity(0.08))
-        let stroke: Color = isEditing ? Color.accentColor : Color.secondary.opacity(assigned ? 0.75 : 0.4)
-        let fg: Color = isDown ? .white : (assigned ? .primary : .secondary)
-        Button {
-            if onAssign != nil { editing = e.element }
-        } label: {
-            shape(e, fill: fill, stroke: stroke, lineWidth: isEditing ? 2.5 : 1, fg: fg)
-                .frame(width: e.size.width, height: e.size.height)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(helpText(e.element))
-        .popover(isPresented: Binding(get: { editing == e.element }, set: { if !$0 { editing = nil } })) {
-            AssignmentPicker(title: ControllerAssignments.title(element: e.element, family: family, labels: labels),
-                             current: ControllerAssignments.actions(element: e.element, slot: slot, config: config),
-                             slot: slot) { action in
-                onAssign?(physicalID(e.element), action)
-                editing = nil
-            }
-        }
-        .position(e.center)
+        let fill: Color = isDown ? Self.brand : (assigned ? Color.white.opacity(0.16) : Color.white.opacity(0.05))
+        let stroke: Color = Color.white.opacity(assigned ? 0.6 : 0.3)
+        let fg: Color = isDown ? .white : (assigned ? Color.white : Color.white.opacity(0.55))
+        shape(e, fill: fill, stroke: stroke, lineWidth: 1, fg: fg)
+            .frame(width: e.size.width, height: e.size.height)
+            .contentShape(Rectangle())
+            .scaleEffect(isFocused ? 1.08 : 1)
+            .onTapGesture { onSelect?(e.element) }
+            .help(helpText(e.element))
+            .position(e.center)
     }
 
     @ViewBuilder
@@ -94,9 +115,9 @@ struct ControllerDiagramView: View {
                 .overlay(arrow(e.element).font(.system(size: 8)).foregroundStyle(fg))
         case .stickDirection:
             arrow(e.element).font(.system(size: 10, weight: .bold))
-                .foregroundStyle(fill == Color.accentColor ? Color.accentColor : fg.opacity(0.85))
+                .foregroundStyle(fill == Self.brand ? Self.brand : fg.opacity(0.85))
                 .padding(1)
-                .background(Circle().fill(fill == Color.accentColor ? Color.accentColor.opacity(0.25) : Color.clear))
+                .background(Circle().fill(fill == Self.brand ? Self.brand.opacity(0.25) : Color.clear))
                 .overlay(Circle().stroke(lineWidth == 1 ? Color.clear : stroke, lineWidth: lineWidth))
         case .shoulder, .trigger, .small:
             RoundedRectangle(cornerRadius: e.kind == .trigger ? 9 : 7).fill(fill)
@@ -166,63 +187,5 @@ private struct Badge: View {
                     .background(Capsule().fill(hotkey ? Color.orange : Color.blue.opacity(0.85)))
                     .fixedSize()
             }
-    }
-}
-
-/// The controller silhouette: a rounded body plus two grips.
-struct ControllerBodyShape: Shape {
-    let family: ControllerFamily
-
-    func path(in rect: CGRect) -> Path {
-        let body = Path(roundedRect: CGRect(x: 92, y: 70, width: 376, height: 132), cornerRadius: 50)
-        let lx: CGFloat = family.isSymmetric ? 175 : 168
-        let left = Path(ellipseIn: CGRect(x: lx - 64, y: 132, width: 128, height: 120))
-        let right = Path(ellipseIn: CGRect(x: 560 - lx - 64, y: 132, width: 128, height: 120))
-        return body.union(left).union(right)
-    }
-}
-
-/// Popover list: "None" + every action, grouped; the current one(s) checked.
-struct AssignmentPicker: View {
-    let title: String
-    let current: [String]
-    let slot: Int
-    let pick: (String?) -> Void
-
-    var body: some View {
-        let groups: [InputAction.Group] = slot == 1 ? [.player2, .player1, .hotkey] : [.player1, .player2, .hotkey]
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
-            Text("Action for this button").font(.caption).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 1) {
-                    row(String(localized: "None"), checked: current.isEmpty) { pick(nil) }
-                    ForEach(groups, id: \.self) { g in
-                        Text(g.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
-                        ForEach(InputCatalog.allActions.filter { $0.group == g }) { a in
-                            row(a.label, checked: current.contains(a.id)) { pick(a.id) }
-                        }
-                    }
-                }
-            }
-            .frame(width: 300, height: 340)
-            if current.count > 1 {
-                Text("Choosing one makes it the only action assigned to this button.").font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-    }
-
-    private func row(_ text: String, checked: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: "checkmark").opacity(checked ? 1 : 0).frame(width: 14)
-                Text(text)
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 3).padding(.horizontal, 4)
-        }
-        .buttonStyle(.plain)
     }
 }

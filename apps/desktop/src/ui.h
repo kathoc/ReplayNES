@@ -108,6 +108,8 @@ class UI : public DialogHost {
 
   /// Whether ImGui / the UI have the controller and keyboard (menus, library, seek bar, dialogs).
   bool interactive() const;
+  /// Settings > Controls > Confirm Button: the south button confirms (default: east).
+  bool southConfirm() const;
   /// Text input active (keys go to the text field, not the game).
   bool wantsKeyboard() const;
   /// hk.menu (L+R, Esc, the pill): the Quick Menu on / off (the library: Settings on / off).
@@ -116,8 +118,14 @@ class UI : public DialogHost {
   bool menuOpen() const { return menuOpen_; }
   /// L / R in the UI (InputRouter::onUiShoulder): previous / next page.
   void shoulder(int dir);
-  /// A / B on the seek bar (InputRouter::onPausedConfirm): resume.
+  /// The cancel button tapped on the seek bar (InputRouter::onPausedResume): resume.
   void resumeFromSeekBar();
+  /// The paused seek bar's markers (InputRouter::onSeekInput / onMarkerHold / onPausedShoulder).
+  void seekInput(int input, bool down);  // InputRouter::SeekInput
+  void markerHold(int dir, bool down);
+  void pausedShoulder(int dir);
+  /// The seek bar's focus for the InputRouter: 0 the bar, 1 a marker, 2 editing.
+  int seekFocus() const;
   void pointerMoved(double now) { lastPointer_ = now; }
   /// "Export…": the MP4 export dialog; startExport() = its Export button (scripts).
   void openExportDialog();
@@ -159,6 +167,8 @@ class UI : public DialogHost {
   bool answerDialog(int button);
   bool dialogVisible() const { return !dialogs_.empty(); }
   bool scriptUpdate(const std::string& action);
+  /// "setting <key> <value>" (scripts): diagramFamily auto|0..4, southConfirm 0|1, timelineSlot 0..7.
+  bool scriptSetting(const std::string& key, const std::string& value);
   std::string updatePhaseName() const;
 
  private:
@@ -190,6 +200,11 @@ class UI : public DialogHost {
   bool controllerConnected() const;
   std::string triggerAction(bool left) const;  // "hk.rewind" / "hk.fast_forward" / ""
   float glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_controller_family f, float h, bool draw = true) const;
+  /// "ui.confirm" / "ui.cancel" -> the face button of the setting; other elements unchanged.
+  std::string uiElement(const std::string& element) const;
+  /// ImGui's gamepad keys of the UI confirm / cancel buttons (east / south by default).
+  ImGuiKey confirmKey() const;
+  ImGuiKey cancelKey() const;
 
   // ---- ui_menu.cpp: the Quick Menu and its pages (rnf_menu)
   void buildMenu(double now);
@@ -220,7 +235,7 @@ class UI : public DialogHost {
   float itemFraction(const std::string& id) const;     // SLIDER position 0..1 (-1: none)
   bool itemEnabled(const std::string& id) const;
   void buildDiagram(rnf_controller_family family, int slot, const LRect& area, double now);
-  void buildAssignPicker();
+  void openAssign(const std::string& physicalId);  // the action picker page of a controller button
   void startAddToSteam();
   void pollAddToSteam();
   rnf_controller_family diagramFamily(int slot) const;
@@ -234,6 +249,9 @@ class UI : public DialogHost {
   // ---- ui_play.cpp: seek bar, timeline, practice pill, badges
   void buildSeekBar(double now);
   void buildTimeline(const LRect& strip, const LRect& lane, double now);
+  bool markersActive() const;  // paused on the seek bar, not practicing, no menu / popup
+  void updateMarkers(double now);  // sync with the selected slot, D-pad repeat, L / R hold
+  void applyMarkers(const rnf_markers_result& r);
   void buildPracticePill();
   void buildBadges();
   bool thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1);
@@ -299,7 +317,7 @@ class UI : public DialogHost {
   int diagramFocus_ = 0;
   std::vector<std::string> diagramIds_;  // this frame's diagram elements (physical ids) ...
   std::vector<ImVec2> diagramCenters_;   // ... and where they are (D-pad navigation)
-  std::string assignElement_;  // physical id whose action is being picked
+  std::string assignElement_;  // physical id whose action is picked on "controls.assign"
   std::string capturingAction_;
 #if RNL_HAVE_STEAM
   std::future<steam::Report> steamJob_;
@@ -330,6 +348,12 @@ class UI : public DialogHost {
   };
   std::optional<Rename> rename_;
   bool popupLastFrame_ = false;
+  // Seek bar markers (rnf_markers: the selected slot's A / B from the controller).
+  rnf_markers* markers_ = nullptr;
+  rnf_step_repeater* markerRepeat_ = nullptr;  // D-pad left / right while editing
+  int markerHoldDir_ = 0, markerHoldTicks_ = 0;  // L / R held while editing (rnf_hold_speed)
+  double markerHintUntil_ = 0, markerNow_ = 0;
+  std::string markerHint_;
   // Timeline (seek bar).
   enum class Drag { none, scrub, select, handle, body, ignore };
   Drag drag_ = Drag::none;

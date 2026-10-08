@@ -5,7 +5,8 @@
 //   pad <button>            a controller press (down this frame, up the next) injected as SDL gamepad
 //                           events of pad slot 0, so it goes the way a real press does (InputRouter:
 //                           chord detector, hotkeys, game, menu; PadNavFeed: the UI). Buttons: a b x y
-//                           (by position: a = south, b = east, x = west, y = north), up down left right,
+//                           (by position: a = south, b = east, x = west, y = north), ok / cancel (the UI's
+//                           confirm / cancel: east / south by default), up down left right,
 //                           l1 r1 l2 r2, menu (= start, ≡), view (= back, ⧉), l3 r3
 //   padhold <button> <s>    the same, held for <s> seconds (the script goes on meanwhile)
 //   chord [<ms>]            L1, then R1 <ms> later (default 30), both held 0.2 s: the Quick Menu chord
@@ -16,6 +17,7 @@
 //   seek <frame> | advance <n> | dialog <button> | shot <file.png> (shotdir <dir>: relative to it) | quit
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)
 //   exportdialog | exportstart | crt [off]       (MP4 export dialog / its Export button, CRT setting)
+//   setting <key> <value>   diagramFamily auto|0..4, southConfirm 0|1, timelineSlot 0..7
 //   update check|apply|later|restart            (in-app update: Check now, Update, Later, Restart)
 //   updatewait <phase> <seconds>                 wait until the update phase is <phase> (UI::updatePhaseName)
 //   layoutcheck [WxH ...]   every screen at the window size and the given sizes: nothing may overflow

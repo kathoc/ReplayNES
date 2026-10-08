@@ -17,7 +17,7 @@ You can export it as-is to an MP4 with audio.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
 - **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
 - **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
-- **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls), L2 rewinds, R2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
+- **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls; even button remapping works with the controller alone), L2 rewinds, R2 fast-forwards, R pauses, L slows down; while paused L / R and the D-pad step frame by frame and A/B practice markers are dropped and moved on the seek bar. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
 - **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
 - **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
 - **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
@@ -46,22 +46,23 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
 1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library; Settings › System › Updates has Update → Restart and "Check Now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
 2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings › System › **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
 3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the latest project, then large game cards - A plays (a new project in `~/Documents/ReplayNES/Projects`), X lists a game's projects, Y searches.
-4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward**.
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward**. In menus **B (east) confirms and A (south) goes back** (Settings › Controls › Confirm Button swaps them).
 5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (record from here, previous try, takes, bookmarks, watch), Practice (the 8 A/B sections as cards), Share (MP4 export), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
 
-   | Button | In play | In menus |
-   |---|---|---|
-   | L+R together | Quick Menu (pauses) | close it (resume) |
-   | R alone | pause / resume: only the seek bar shows (tap A / B to resume, ←/→ step, L2 / R2 scrub; hold a button while stepping to advance with it held) | next page |
-   | L alone | slow 1/2 on / off | previous page |
-   | L2 / R2 hold | rewind / fast-forward | rewind / fast-forward |
-   | D-pad / left stick | NES D-pad | move the focus |
-   | A / B | NES B / A | confirm / back (on the top level: resume) |
-   | Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
+   | Button | In play | Paused (seek bar) | In menus |
+   |---|---|---|---|
+   | L+R together | Quick Menu (pauses) | Quick Menu | close it (resume) |
+   | R alone | pause: only the seek bar shows | step 1 frame forward (hold: repeat) | next page |
+   | L alone | slow 1/2 on / off | step 1 frame back (hold: repeat) | previous page |
+   | L2 / R2 hold | rewind / fast-forward (the same speed, both speed up) | rewind / fast-forward | rewind / fast-forward |
+   | D-pad / left stick | NES D-pad | ← / → step, ↑ to the A/B markers | move the focus |
+   | B (east) | NES A | drop an A/B marker | confirm |
+   | A (south) | NES B | **resume** (tap) | back (on the top level: resume) |
+   | Y / X | turbo A / B | Y: next A/B slot · X: delete the focused marker | what the hint bar shows (rename, clear, search, projects …) |
 
-   L or R alone acts on release (or after 0.1 s held), so it is at most 0.1 s later than a plain button - the price of L+R. Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
+   L or R alone acts when it is **released**, so a single press never gets in the way of L+R. Confirm / back follow Settings › Controls › Confirm Button (B confirms by default; the game's buttons never change). Paused, the buttons are taps: hold one (say A to run) and step with → or R to advance frames with it held - it only resumes / drops a marker when tapped alone. Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
 
-   **Typing (search, names)**: a text field brings an on-screen keyboard. In Gaming Mode ReplayNES asks Steam for its keyboard (it can type Japanese); if it does not appear, press A for ReplayNES's built-in controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Settings › Controls › On-screen Keyboard: Automatic, Built-in or Steam.
+   **Typing (search, names)**: a text field brings an on-screen keyboard. In Gaming Mode ReplayNES asks Steam for its keyboard (it can type Japanese); if it does not appear, press the confirm button for ReplayNES's built-in controller keyboard (confirm types, back deletes, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Settings › Controls › On-screen Keyboard: Automatic, Built-in or Steam.
 
 Japanese text uses the system's CJK font (SteamOS has one). While you play only the Menu pill is drawn (in the game's own render pass), so the UI does not add latency.
 
@@ -95,22 +96,23 @@ ReplayNES has one window. While you play, only the game is on screen, plus a sma
 | **Retry** | Record from Here · Previous Attempt (⌥⌘Z) · Watch Replay / Back to Recording (⇧⌘M) · Takes (⇧⌘T) · Bookmarks |
 | **Practice** | The 8 A/B sections as cards (see "Practice Mode") |
 | **Share** | Export MP4 (⌘E) · Stream Output (Syphon, for OBS) |
-| **Settings** | Four pages, L / R (or Tab) switch: **Display** (Size Integer / FILL, CRT, 8:7, Reduce Flashing, Hide Edges, CRT Details), **Controls** (Controller diagram, Keyboard, Turbo Speed, D-pad While Paused, Pause After Rewind, Controls Details), **Sound** (Volume), **System** (Language, Autosave, Latency Meter, Flash Notice, Updates, About) |
+| **Settings** | Four pages, L / R (or Tab) switch: **Display** (Size Integer / FILL, CRT, 8:7, Reduce Flashing, Hide Edges, CRT Details), **Controls** (Controller diagram, Keyboard, Confirm Button, D-pad While Paused, Pause After Rewind, Controls Details), **Sound** (Volume), **System** (Language, Autosave, Latency Meter, Flash Notice, Updates, About) |
 | **Game** | Choose Game · Save · Save As · Reset (Soft Reset, Power Cycle, Start Over) · Close |
 
 No page scrolls: a page shows at most six items, longer lists (takes, bookmarks, key assignments) are split into pages switched with L / R. The focused item has a red frame, one line at the bottom says what it does, and the bottom right shows the buttons of your controller (or keys). The mouse and trackpad work everywhere too.
 
-| Button | In play | In menus |
-|---|---|---|
-| L+R together / Esc | Quick Menu (pauses) | close it (resume) |
-| R alone | pause / resume (the seek bar) | next page |
-| L alone | slow 1/2 on / off | previous page |
-| L2 / R2 hold | rewind / fast-forward | — |
-| D-pad / left stick | NES D-pad | move the focus |
-| A / B | NES B / A | confirm / back (on the top level: close) |
-| Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
+| Button | In play | Paused (seek bar) | In menus |
+|---|---|---|---|
+| L+R together / Esc | Quick Menu (pauses) | Quick Menu | close it (resume) |
+| R alone | pause (the seek bar) | step 1 frame forward (hold: repeat) | next page |
+| L alone | slow 1/2 on / off | step 1 frame back (hold: repeat) | previous page |
+| L2 / R2 hold | rewind / fast-forward (the same speed) | rewind / fast-forward | — |
+| D-pad / left stick | NES D-pad | ← / → step, ↑ to the A/B markers | move the focus |
+| East button (B / Xbox, A / Nintendo, ○) | NES A | drop an A/B marker | confirm |
+| South button (A / Xbox, B / Nintendo, ✕) | NES B | **resume** (tap) | back (on the top level: close) |
+| Y / X | turbo A / B | Y: next A/B slot · X: delete the focused marker | what the hint bar shows (rename, clear, search, projects …) |
 
-Keyboard: Esc opens / closes the Quick Menu, Space pauses; in menus the arrows move, Return / Space confirm, Delete goes back, Tab / ⇧Tab switch pages. L or R alone acts on release (or after being held for 0.1 s), so it is at most 0.1 s later than a plain button: the price of L+R. The Quick Menu is an assignable action (Settings › Controls › Keyboard): pad 1's L+R and Esc by default.
+Keyboard: Esc opens / closes the Quick Menu, Space pauses / resumes; in menus the arrows move, Return / Space confirm, Delete goes back, Tab / ⇧Tab switch pages. L or R alone acts when it is released, so it never gets in the way of L+R. Settings › Controls › Confirm Button swaps the controller's confirm (east) and back (south). The Quick Menu is an assignable action (Settings › Controls › Keyboard): pad 1's L+R and Esc by default.
 
 ### Library
 
@@ -163,12 +165,12 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | Fast-forward (while held) | **Right Trigger** | ZR | RT | R2 | Tab |
 | Pause / Resume | **Right Shoulder** | R | RB | R1 | Space |
 | Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
-| Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | | | | `,` / `.` |
+| Step back / frame advance while paused | **L / R** or **D-pad ← / →** (hold for continuous) | | | | `,` / `.` |
 | Bookmark | — | | | | B |
 
-- **Settings › Controls › Controller** shows a diagram of the connected controller (Nintendo / Xbox / PlayStation / other shapes) with each button's assignment; pressing a button lights it up. Choose a button to assign a Famicom button, turbo, a hotkey or nothing; Y restores that pad's defaults; L / R switch pads. **Keyboard** lists every action with its keys and buttons (A adds one by pressing it, X clears). **Controls Details**: opposite directions (←+→), stick threshold, turbo press length, Default Buttons.
+- **Settings › Controls › Controller** shows a diagram of the connected controller (Steam Deck / Nintendo / Xbox / PlayStation / other outlines) with each button's assignment; pressing a button lights it up. Everything works with the controller alone: move the red ring over a button with the D-pad or stick, confirm, and pick its action (a Famicom button, turbo, a hotkey or nothing) from pages of six (L / R turn the pages, back cancels); X switches pads, Y restores that pad's defaults. **Keyboard** lists every action with its keys (confirm, then press the new key; back / Esc cancels; X clears). **Controls Details**: opposite directions (←+→), stick threshold, turbo press length, Default Buttons.
 - Rewind, fast-forward, pause, slow, frame advance and the Quick Menu are "hotkeys" and are never recorded as game input.
-- **While paused**, the D-pad ← / → steps frames and is not sent to the game, and **a tap of A resumes** (Settings › Controls › D-pad While Paused turns both off). Other buttons still reach the game, so you can hold a button (say B to run) and step with → to advance frames with it held; an A held through a step does not resume.
+- **While paused**, L / R and the D-pad ← / → step frames (not sent to the game; Settings › Controls › D-pad While Paused turns the D-pad part off), and **a tap of the back button (A / south) resumes**. Other buttons still reach the game, so you can hold a button (say B to run) and step with → to advance frames with it held; a button held through a step never resumes or drops a marker.
 - **Fast-forward** just plays the recorded take at high speed and records nothing; it stops and pauses at the end of what is recorded.
 - **Background input**: while a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and the sound keeps playing. The keyboard works only while ReplayNES is in front. If the controller is disconnected, the game pauses.
 - **Updating from older versions**: saved assignments are upgraded once, and only the parts you never changed: 0.1.x controller hotkeys → the current ones; up to 0.2.x the triggers were swapped (R2 rewind); up to 0.2.0 A / B and X / Y were swapped on Nintendo controllers (customised face buttons are carried over when that controller connects); 0.5.0 adds the Quick Menu (pad 1's L+R and Esc, unless Esc was already assigned). R keeps pausing and L keeps slowing down. Older versions cannot read the assignments file once a newer one has added the Quick Menu.
@@ -211,6 +213,7 @@ For a recorded take, you can define sections without playing again. While paused
 - **Drag** on the band to make that range the A→B of the selected section (on the thumbnails, **Shift+drag**). **Drag either end** to adjust A / B; **click a section** to practice it.
 - **Practice › Set A Here (Timeline)** (⌥⌘I) / **Set B Here (Timeline)** (⌥⌘O) at the playhead. Set B works without playing on from A, as long as A is on this take.
 - Only sections on the current take are shown. Sections cannot be set while practicing.
+- **With a controller** (paused): the selected section ("A/B 1", Y picks the next) shows as flags on the seek bar. Confirm (B / east) drops a flag at the playhead - the first is A, the second makes the section (the left flag is A, the right one B). ↑ moves to the flags (← / → pick one, ↓ or back returns); confirm on a flag moves it: ← / → one frame, L / R held move it like rewind / fast-forward while the picture follows; confirm keeps it, back undoes it. A flag passing the other one swaps A and B. X deletes the focused flag (one of two left: the section becomes "A only").
 
 ### Pick Up the Next Day
 

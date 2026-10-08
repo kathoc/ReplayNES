@@ -15,6 +15,7 @@ struct FilmstripTimeline: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var strip = FilmstripModel.shared
     @ObservedObject private var clock = AppModel.shared.clock   // playhead / take length (AppModel.status)
+    @ObservedObject private var markers = AppModel.shared.markers   // the controller's A/B flags
     @Environment(\.displayScale) private var displayScale
 
     static let laneHeight: CGFloat = 16
@@ -54,12 +55,15 @@ struct FilmstripTimeline: View {
                                                        activeTake: st.activeTake, takeLength: st.takeLength)
             let version = strip.version
             let fade = strip.fade
+            let flags = markers.active && preview == nil && dragKind == nil
+                ? (frames: markers.frames, focus: markers.focus, editing: markers.editing) : nil
             TimelineView(.animation(minimumInterval: nil, paused: fade == nil)) { tl in
                 Canvas { ctx, size in
                     _ = version
                     var c = ctx
                     c.translateBy(x: Self.inset, y: 0)
-                    draw(&c, size: CGSize(width: w, height: size.height), g: g, step: step, st: st, ranges: ranges, fade: fade, now: tl.date)
+                    draw(&c, size: CGSize(width: w, height: size.height), g: g, step: step, st: st, ranges: ranges, flags: flags,
+                         fade: fade, now: tl.date)
                 }
             }
             .contentShape(Rectangle())
@@ -76,7 +80,8 @@ struct FilmstripTimeline: View {
     // MARK: drawing
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize, g: TimelineGeometry, step: Double, st: EmuStatus,
-                      ranges: [TimelineRange], fade: (from: Double, start: Date)?, now: Date) {
+                      ranges: [TimelineRange], flags: (frames: [UInt64], focus: Int, editing: Bool)?,
+                      fade: (from: Double, start: Date)?, now: Date) {
         let lane = Self.laneHeight
         let stripRect = CGRect(x: 0, y: lane, width: size.width, height: Self.stripHeight)
         let stripPath = Path(roundedRect: stripRect, cornerRadius: 4)
@@ -107,6 +112,11 @@ struct FilmstripTimeline: View {
         if let p = preview {
             shown.removeAll { $0.slot == p.slot }
             shown.append(p)
+        }
+        // The controller's markers stand for the selected slot (they may be mid-edit): its range from them.
+        if let fl = flags {
+            shown.removeAll { $0.slot == selected }
+            if fl.frames.count == 2 { shown.append(TimelineRange(slot: selected, a: fl.frames[0], b: fl.frames[1])) }
         }
         // Selected slot on top.
         shown.sort { ($0.slot == selected ? 1 : 0, $0.slot) < ($1.slot == selected ? 1 : 0, $1.slot) }
@@ -143,6 +153,33 @@ struct FilmstripTimeline: View {
                 ctx.fill(Path(roundedRect: flag, cornerRadius: 3), with: .color(c.opacity(hl ? 0.95 : 0.6)))
                 ctx.draw(Text("\(r.slot + 1)A").font(.system(size: 9, weight: .bold)).foregroundColor(.black),
                          at: CGPoint(x: fx + 3, y: Double(lane) / 2), anchor: .leading)
+            }
+        }
+
+        // Marker flags: a pole through the filmstrip and a small flag in the lane (A to the left of
+        // its pole, B to the right; letters once both exist), the focused one ringed, the edited one lit.
+        if let fl = flags {
+            let n = fl.frames.count
+            for (i, f) in fl.frames.enumerated() {
+                let x = g.x(forFrame: f)
+                let focused = i == fl.focus, lit = focused && fl.editing
+                let c = lit ? QMStyle.brand : SlotColors.color(selected)
+                let pw: Double = lit ? 3 : 2
+                ctx.fill(Path(CGRect(x: x - pw / 2, y: 0, width: pw, height: Double(lane + Self.stripHeight))), with: .color(c))
+                let fw = Double(lane) * 1.15, fh = Double(lane) - 4
+                var fx = n == 2 && i == 0 ? x - fw : x
+                if fx < -Double(Self.inset) { fx = x }
+                if fx + fw > Double(size.width) + Double(Self.inset) { fx = x - fw }
+                let flag = CGRect(x: fx, y: 2, width: fw, height: fh)
+                ctx.fill(Path(roundedRect: flag, cornerRadius: 3), with: .color(c))
+                if n == 2 {
+                    ctx.draw(Text(verbatim: i == 0 ? "A" : "B").font(.system(size: 9, weight: .heavy)).foregroundColor(.black),
+                             at: CGPoint(x: flag.midX, y: flag.midY), anchor: .center)
+                }
+                if focused {
+                    ctx.stroke(Path(roundedRect: flag.insetBy(dx: -2, dy: -2), cornerRadius: 4),
+                               with: .color(fl.editing ? .white : QMStyle.brand), lineWidth: fl.editing ? 2 : 1.5)
+                }
             }
         }
 

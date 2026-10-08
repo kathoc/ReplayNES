@@ -62,6 +62,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
   if (id == "display.flash") return std::clamp(s.flash, 0, 3);
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
+  if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
   if (id == "system.language") return s.language == "ja" ? 1 : s.language == "en" ? 2 : 0;
   if (id == "system.autosave") {
     for (int i = 0; i < 5; ++i)
@@ -211,6 +212,7 @@ void UI::adjustItem(const std::string& id, int dir) {
     if (id == "display.size") s.integerScale = next == 0;
     else if (id == "display.flash") s.flash = next;
     else if (id == "controls.osk") s.onScreenKeyboard = next == 1 ? "builtin" : next == 2 ? "steam" : "auto";
+    else if (id == "controls.confirm") s.southConfirm = next == 1;
     else if (id == "controls.socd") {
       in.setSOCD(next == 1 ? "last_wins" : next == 2 ? "allow" : "neutral");
       return;
@@ -390,20 +392,27 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   ImDrawList* dl = ImGui::GetWindowDrawList();
   rnf_diagram_info info{};
   rnf_diagram_info_get(family, &info);
-  bool sym = rnf_controller_family_is_symmetric(family) != 0;
-  float lx = sym ? 175 : 168;
-  ImU32 bodyFill = IM_COL32(44, 46, 54, 255), bodyLine = IM_COL32(255, 255, 255, 90);
-  for (float gx : {lx, 560 - lx}) dl->AddEllipse(P(gx, 192), ImVec2(64 * k, 60 * k), bodyLine, 0, 0, 2.0f);
-  for (float gx : {lx, 560 - lx}) dl->AddEllipseFilled(P(gx, 192), ImVec2(64 * k, 60 * k), bodyFill);
-  dl->AddRect(P(92, 70), P(468, 202), bodyLine, 50 * k, 0, 1.5f);
-  dl->AddRectFilled(P(92 + 1, 70 + 1), P(468 - 1, 202 - 1), bodyFill, 50 * k);
-  dl->PushClipRect(P(0, 150), P(560, 262), true);
-  for (float gx : {lx, 560 - lx}) dl->AddEllipseFilled(P(gx, 192), ImVec2(64 * k - 1.5f, 60 * k - 1.5f), bodyFill);
-  dl->PopClipRect();
-  if (info.has_touchpad)
-    dl->AddRectFilled(P(info.touchpad_x - info.touchpad_width / 2, info.touchpad_y - info.touchpad_height / 2),
-                      P(info.touchpad_x + info.touchpad_width / 2, info.touchpad_y + info.touchpad_height / 2),
-                      IM_COL32(255, 255, 255, 30), 8 * k);
+  // The outline (rnf_diagram_decor): a rounded body without grips, the Steam Deck's screen, pads.
+  for (size_t i = 0, nd = rnf_diagram_decor_count(family); i < nd; ++i) {
+    rnf_diagram_decor d{};
+    if (!rnf_diagram_decor_get(family, i, &d)) continue;
+    ImVec2 a = P(d.x, d.y), z = P(d.x + d.width, d.y + d.height);
+    float r = float(d.radius) * k;
+    switch (d.kind) {
+      case RNF_DECOR_BODY:
+        dl->AddRectFilled(a, z, IM_COL32(44, 46, 54, 255), r);
+        dl->AddRect(a, z, IM_COL32(255, 255, 255, 90), r, 0, 1.5f);
+        break;
+      case RNF_DECOR_SCREEN:
+        dl->AddRectFilled(a, z, IM_COL32(14, 15, 18, 255), r);
+        dl->AddRect(a, z, IM_COL32(255, 255, 255, 40), r, 0, 1.0f);
+        break;
+      case RNF_DECOR_PAD:
+        dl->AddRectFilled(a, z, IM_COL32(255, 255, 255, 22), r);
+        dl->AddRect(a, z, IM_COL32(255, 255, 255, 50), r, 0, 1.0f);
+        break;
+    }
+  }
   for (auto [x, y] : {std::pair<double, double>{info.left_stick_x, info.left_stick_y}, {info.right_stick_x, info.right_stick_y}}) {
     dl->AddCircleFilled(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 36));
     dl->AddCircle(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 110));
@@ -445,7 +454,7 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     if (clicked) {
       diagramFocus_ = index;
       if (reserved) notice(TR("R3 / Guide: ReplayNES menu (reserved)"));
-      else assignElement_ = id;
+      else openAssign(id);
     }
     rnf_list* acts = rnf_input_element_actions(b.data(), b.size(), el.c_str(), slot);
     bool assigned = rnf_list_count(acts) > 0;
@@ -486,8 +495,12 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
         break;
     }
     if (!label.empty() && e.kind != RNF_DIAGRAM_STICK_DIRECTION && e.kind != RNF_DIAGRAM_DPAD) {
-      ImVec2 ts = measure(fs, label.c_str());
-      dl->AddText(ImGui::GetFont(), fs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), fg, label.c_str());
+      // Long labels ("STEAM") shrink to fit their button.
+      float lfs = fs;
+      float lw = measure(lfs, label.c_str()).x;
+      if (lw > w * 0.86f) lfs *= w * 0.86f / lw;
+      ImVec2 ts = measure(lfs, label.c_str());
+      dl->AddText(ImGui::GetFont(), lfs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), fg, label.c_str());
     }
     bool groupBadge = e.group && groups[e.group].first != RNF_GROUP_CUSTOM;
     std::string badge = reserved ? std::string(TR("Menu")) : str(rnf_input_element_badge(b.data(), b.size(), el.c_str(), slot));
@@ -536,72 +549,28 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
                      : std::string();
 }
 
-// The action for a controller button: all actions at once in three columns (no scrolling).
-void UI::buildAssignPicker() {
-  if (assignElement_.empty() || !dialogs_.empty()) return;
-  InputRouter& in = *d_.input;
-  ImGuiIO& io = ImGui::GetIO();
-  const UiMetrics& m = metrics_;
-  if (!ImGui::IsPopupOpen("##assign")) ImGui::OpenPopup("##assign");
-  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-  ImGui::SetNextWindowSize(ImVec2(std::min(S(1120), io.DisplaySize.x - 2 * m.margin()), 0));
-  bool close = false;
-  if (ImGui::BeginPopupModal("##assign", nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
-                                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar)) {
-    int slot = 0;
-    rnf_input_controller_slot(assignElement_.c_str(), &slot);
-    std::string el = assignElement_.substr(assignElement_.find(':') + 1);
-    rnf_controller_family fam = diagramFamily(slot);
-    ImGui::PushFont(nullptr, m.title());
-    ImGui::TextUnformatted(str(rnf_input_element_title(el.c_str(), fam, nullptr)).c_str());
-    ImGui::PopFont();
-    const std::vector<rnf_binding>& b = in.bindings();
-    rnf_list* acts = rnf_input_element_actions(b.data(), b.size(), el.c_str(), slot);
-    std::vector<std::string> current;
-    for (size_t j = 0; j < rnf_list_count(acts); ++j) current.push_back(rnf_list_a(acts, j));
-    rnf_list_free(acts);
-    bool appearing = ImGui::IsWindowAppearing();
-    std::vector<rnf_action_group> order = slot == 1 ? std::vector<rnf_action_group>{RNF_GROUP_PLAYER2, RNF_GROUP_PLAYER1, RNF_GROUP_HOTKEY}
-                                                    : std::vector<rnf_action_group>{RNF_GROUP_PLAYER1, RNF_GROUP_PLAYER2, RNF_GROUP_HOTKEY};
-    float colW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
-    float rowH = m.label() * 1.45f;
-    ImGui::PushFont(nullptr, m.label() * 0.95f);
-    if (ImGui::BeginTable("##acts", 3, ImGuiTableFlags_SizingFixedSame)) {
-      for (int c = 0; c < 3; ++c) ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, colW);
-      ImGui::TableNextRow();
-      for (rnf_action_group g : order) {
-        ImGui::TableNextColumn();
-        ImGui::TextDisabled("%s", str(rnf_input_group_title(g)).c_str());
-        for (size_t i = 0, n = rnf_input_action_count(); i < n; ++i) {
-          rnf_action_info a{};
-          if (!rnf_input_action_get(i, &a) || a.group != g) continue;
-          bool on = std::find(current.begin(), current.end(), a.id) != current.end();
-          if (appearing && on) ImGui::SetKeyboardFocusHere();
-          std::string label = std::string(on ? "\xE2\x9C\x93 " : "   ") + str(rnf_input_action_label(a.id)) + "##" + a.id;
-          if (ImGui::Selectable(label.c_str(), on, 0, ImVec2(0, rowH))) {
-            in.setAssignment(assignElement_, a.id);
-            close = true;
-          }
-        }
-      }
-      ImGui::EndTable();
-    }
-    ImGui::PopFont();
-    if (appearing && current.empty()) ImGui::SetKeyboardFocusHere();
-    if (ImGui::Button(TR("None"), ImVec2(S(160), 0))) {
-      in.setAssignment(assignElement_, "");
-      close = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(TR("Cancel"), ImVec2(S(160), 0))) close = true;
-    ImGui::SameLine(0, S(24));
-    inlinePrompts(TR("Cancel"));
-    if (!appearing && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) close = true;
-    if (close) ImGui::CloseCurrentPopup();
-    ImGui::EndPopup();
+// The action picker of a controller button: the menu page "controls.assign" (rows of
+// rnf_input_assign_choices, six per sheet, L / R; focus on the action assigned now).
+void UI::openAssign(const std::string& physicalId) {
+  std::string el = physicalId.substr(physicalId.find(':') + 1);
+  if (InputRouter::isReserved(el)) {
+    notice(TR("R3 / Guide: ReplayNES menu (reserved)"));
+    return;
   }
-  if (close) assignElement_.clear();
+  assignElement_ = physicalId;
+  int slot = 0;
+  rnf_input_controller_slot(physicalId.c_str(), &slot);
+  const std::vector<rnf_binding>& b = d_.input->bindings();
+  rnf_list* acts = rnf_input_element_actions(b.data(), b.size(), el.c_str(), slot);
+  std::string current = rnf_list_count(acts) ? rnf_list_a(acts, 0) : "";
+  rnf_list_free(acts);
+  std::vector<const char*> choices(rnf_input_assign_choices(slot, nullptr, 0));
+  rnf_input_assign_choices(slot, choices.data(), choices.size());
+  syncMenuCounts();
+  if (rnf_menu_push(menu_, "controls.assign") != RNF_MENU_EVENT_PUSHED) return;
+  for (size_t i = 0; i < choices.size(); ++i)
+    if (current == choices[i]) rnf_menu_set_focus(menu_, i);
+  pageChangedAt_ = -1;
 }
 
 }  // namespace rnl

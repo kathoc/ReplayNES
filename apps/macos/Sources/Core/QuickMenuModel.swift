@@ -12,7 +12,7 @@ enum QMPage: String, CaseIterable, Hashable {
     case practice
     case share, stream
     case display, crtDetail
-    case controls, controller, bindings, controlsDetail
+    case controls, controller, assign, bindings, controlsDetail
     case sound
     case system, updates, about
     case game, reset
@@ -42,6 +42,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .crtDetail: return "display.crt"
         case .controls: return "settings.controls"
         case .controller: return "controls.controller"
+        case .assign: return "controls.assign"
         case .bindings: return "controls.keyboard"
         case .controlsDetail: return "controls.detail"
         case .sound: return "settings.sound"
@@ -62,6 +63,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .stream: return .share
         case .crtDetail: return .display
         case .controller, .bindings, .controlsDetail: return .controls
+        case .assign: return .controller   // the action picker of a button on the diagram
         case .updates, .about: return .system
         case .reset: return .game
         }
@@ -75,7 +77,8 @@ enum QMPage: String, CaseIterable, Hashable {
         return out
     }
 
-    /// Levels below the top (Settings › Display › CRT Details = 2: the settings tabs are one level).
+    /// Levels below the top (Settings › Display › CRT Details = 2: the settings tabs are one level;
+    /// the controller's action picker, Controls › Controller › Button Action, is the only 3).
     var depth: Int { path.count - 1 }
 
     var isSettings: Bool { path.contains { QMPage.settingsTabs.contains($0) } }
@@ -118,8 +121,9 @@ enum QMPage: String, CaseIterable, Hashable {
         }
     }
 
-    /// Long lists (takes, bookmarks, bindings) are paged; L / R switch pages.
-    var paged: Bool { self == .takes || self == .bookmarks || self == .bindings || self == .controller }
+    /// Long lists (takes, bookmarks, bindings, the action picker) are paged; L / R switch pages
+    /// (the controller page: the pad).
+    var paged: Bool { self == .takes || self == .bookmarks || self == .bindings || self == .assign || self == .controller }
 
     var icon: String {
         switch self {
@@ -127,7 +131,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .retry, .takes, .bookmarks: return "clock.arrow.circlepath"
         case .practice: return "target"
         case .share, .stream: return "square.and.arrow.up"
-        case .display, .crtDetail, .controls, .controller, .bindings, .controlsDetail, .sound, .system, .updates, .about:
+        case .display, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .updates, .about:
             return "gearshape"
         case .game, .reset: return "gamecontroller"
         }
@@ -146,6 +150,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .crtDetail: return String(localized: "CRT Details")
         case .controls: return String(localized: "Controls")
         case .controller: return String(localized: "Controller")
+        case .assign: return String(localized: "Button Action")
         case .bindings: return String(localized: "Keyboard")
         case .controlsDetail: return String(localized: "Controls Details")
         case .sound: return String(localized: "Sound")

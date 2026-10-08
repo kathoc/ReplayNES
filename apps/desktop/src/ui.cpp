@@ -104,9 +104,15 @@ UI::UI(Deps d) : d_(d) {
   if (RNL_HAVE_STEAM) menuFeatures_ |= RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK;
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
   menu_ = rnf_menu_new(menuFeatures_);
+  markers_ = rnf_markers_new();
+  markerRepeat_ = rnf_step_repeater_new();
 }
 
-UI::~UI() { rnf_menu_free(menu_); }
+UI::~UI() {
+  rnf_menu_free(menu_);
+  rnf_markers_free(markers_);
+  rnf_step_repeater_free(markerRepeat_);
+}
 
 bool UI::hasSession() const { return d_.emu->session() != nullptr; }
 
@@ -202,13 +208,13 @@ void UI::updateScale(int windowWidth, int windowHeight) {
 
 bool UI::interactive() const {
   return menuOpen_ || !hasSession() || !dialogs_.empty() || chooser_.has_value() || rename_.has_value() ||
-         !assignElement_.empty() || exportDialog_;
+         exportDialog_;
 }
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
 
 bool UI::popupOpen() const {
-  return !dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty() || exportDialog_ ||
+  return !dialogs_.empty() || chooser_ || rename_ || exportDialog_ ||
          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
 }
 
@@ -252,7 +258,7 @@ void UI::closeMenuAndResume() {
 
 void UI::toggleMenu() {
   // A popup has the controls: B / Esc close it (handled by the popup itself).
-  if (!dialogs_.empty() || chooser_ || rename_ || !assignElement_.empty() || exportDialog_) return;
+  if (!dialogs_.empty() || chooser_ || rename_ || exportDialog_) return;
   if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) return;
   if (!capturingAction_.empty()) return;  // waiting for a key (Esc cancels it)
   lastActivity_ = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0;
@@ -378,6 +384,8 @@ void UI::build(double now) {
   if (pageChangedAt_ < 0) pageChangedAt_ = now;
   prompts_.clear();
   description_.clear();
+  // ImGui's own navigation (dialogs, text fields) confirms / cancels with the same buttons.
+  ImGui::GetIO().ConfigNavSwapGamepadButtons = !d_.settings->southConfirm;
   refreshUpdate();
   layoutBounds_ = LRect{0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y};
   layoutOverflow_ = false;
@@ -406,6 +414,7 @@ void UI::build(double now) {
   lastPaused_ = paused;
   if (!d_.settings->menuHintShown && pulseStart_ < 0) pulseStart_ = now;
 
+  updateMarkers(now);
   if (!hasSession()) buildLibrary(now);
   else if (!menuOpen_ && paused) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);
@@ -414,7 +423,6 @@ void UI::build(double now) {
   buildDialogs();
   buildChooser();
   buildRename();
-  buildAssignPicker();
   buildExportDialog();
   buildExportProgressPill();
   updateTextEntry(now);  // after every text field of the frame (ui_osk.cpp)
@@ -587,15 +595,43 @@ void UI::prompt(std::initializer_list<const char*> elements, const std::string& 
   prompts_.push_back(std::move(p));
 }
 
-float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_controller_family f, float h, bool draw) const {
+std::string UI::uiElement(const std::string& element) const {
+  bool south = d_.settings->southConfirm;
+  if (element == "ui.confirm") return rnf_ui_confirm_element(south);
+  if (element == "ui.cancel") return rnf_ui_cancel_element(south);
+  return element;
+}
+
+bool UI::southConfirm() const { return d_.settings->southConfirm; }
+
+bool UI::scriptSetting(const std::string& key, const std::string& value) {
+  Settings& s = *d_.settings;
+  if (key == "diagramFamily") s.diagramFamily = value;
+  else if (key == "southConfirm") s.southConfirm = value == "1" || value == "on";
+  else if (key == "timelineSlot") s.timelineSlot = std::clamp(std::atoi(value.c_str()), 0, 7);
+  else return false;
+  changed();
+  return true;
+}
+
+ImGuiKey UI::confirmKey() const { return d_.settings->southConfirm ? ImGuiKey_GamepadFaceDown : ImGuiKey_GamepadFaceRight; }
+ImGuiKey UI::cancelKey() const { return d_.settings->southConfirm ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown; }
+
+float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& logical, rnf_controller_family f, float h, bool draw) const {
   // Face buttons: a round button with its printed label (by position for the family); the D-pad:
   // a cross; others (shoulders, triggers, Menu / View): a key cap with the label. Without a
-  // controller: the keyboard's keys.
+  // controller: the keyboard's keys. "ui.confirm" / "ui.cancel": the UI's confirm / cancel buttons
+  // (Settings > Controls > Confirm Button).
+  if (!controllerConnected()) {
+    std::string k = logical == "ui.confirm" ? "Enter" : logical == "ui.cancel" ? "Bksp" : "";
+    if (!k.empty()) return keycap(dl, p, h, k, false, draw);
+  }
+  const std::string element = uiElement(logical);
   if (!controllerConnected()) {
     std::string k = element == "face.south" ? "Enter" : element == "face.east" ? "Bksp" : element == "face.west" ? "Del"
                     : element == "face.north" ? "F2" : element == "leftShoulder" ? "PgUp" : element == "rightShoulder" ? "PgDn"
                     : element == "menu" ? "Esc" : element == "dpad.lr" ? "\xE2\x86\x90 \xE2\x86\x92"
-                    : element == "dpad.ud" ? "\xE2\x86\x91 \xE2\x86\x93" : "";
+                    : element == "dpad.ud" ? "\xE2\x86\x91 \xE2\x86\x93" : element == "dpad.up" ? "\xE2\x86\x91" : "";
     if (!k.empty()) return keycap(dl, p, h, k, false, draw);
   }
   if (element.rfind("dpad", 0) == 0) {
@@ -608,6 +644,8 @@ float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_contro
       if (element == "dpad.lr") {
         dl->AddRectFilled(ImVec2(p.x + 1, c.y - a * 0.5f), ImVec2(p.x + a, c.y + a * 0.5f), kBrand, a * 0.25f);
         dl->AddRectFilled(ImVec2(p.x + w - a, c.y - a * 0.5f), ImVec2(p.x + w - 1, c.y + a * 0.5f), kBrand, a * 0.25f);
+      } else if (element == "dpad.up") {
+        dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + 1), ImVec2(c.x + a * 0.5f, p.y + a), kBrand, a * 0.25f);
       } else if (element == "dpad.ud") {
         dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + 1), ImVec2(c.x + a * 0.5f, p.y + a), kBrand, a * 0.25f);
         dl->AddRectFilled(ImVec2(c.x - a * 0.5f, p.y + h - a), ImVec2(c.x + a * 0.5f, p.y + h - 1), kBrand, a * 0.25f);
@@ -659,7 +697,7 @@ void UI::inlinePrompts(const char* backText) {
   ImVec2 p = ImGui::GetCursorScreenPos();
   float x0 = p.x;
   p.y += (fh - gh) * 0.5f;
-  const std::pair<const char*, const char*> items[] = {{"face.south", TR("Select")}, {"face.east", backText}};
+  const std::pair<const char*, const char*> items[] = {{"ui.confirm", TR("Select")}, {"ui.cancel", backText}};
   for (const auto& [el, text] : items) {
     p.x += glyph(dl, p, el, f, gh) + S(6);
     ImVec2 ts = measure(fs, text);

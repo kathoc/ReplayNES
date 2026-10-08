@@ -35,7 +35,7 @@ enum FacePosition: String, CaseIterable {
 }
 
 enum ControllerFamily: String, CaseIterable, Identifiable {
-    case nintendo, xbox, playStation, generic
+    case nintendo, xbox, playStation, generic, steamDeck
     var id: String { rawValue }
 
     var cValue: rnf_controller_family {
@@ -44,15 +44,16 @@ enum ControllerFamily: String, CaseIterable, Identifiable {
         case .xbox: return RNF_FAMILY_XBOX
         case .playStation: return RNF_FAMILY_PLAYSTATION
         case .generic: return RNF_FAMILY_GENERIC
+        case .steamDeck: return RNF_FAMILY_STEAM_DECK
         }
     }
 
-    /// Families the macOS app knows (a Steam Deck is "Other" here).
     init(_ c: rnf_controller_family) {
         switch c {
         case RNF_FAMILY_NINTENDO: self = .nintendo
         case RNF_FAMILY_XBOX: self = .xbox
         case RNF_FAMILY_PLAYSTATION: self = .playStation
+        case RNF_FAMILY_STEAM_DECK: self = .steamDeck
         default: self = .generic
         }
     }
@@ -167,8 +168,15 @@ struct ControllerDiagramLayout {
     let rightStick: (center: CGPoint, radius: CGFloat)
     let dpadCenter: CGPoint
     let faceCenter: CGPoint
-    /// Decorative PlayStation touchpad (not bindable).
-    let touchpad: CGRect?
+    /// The outline under the elements, back to front (rnf_diagram_decor): the body (a rounded pill;
+    /// the Steam Deck: a wide rounded rectangle), its screen (Steam Deck) and touch / track pads.
+    struct Decor: Equatable {
+        enum Kind { case body, screen, pad }
+        let kind: Kind
+        let rect: CGRect
+        let radius: CGFloat
+    }
+    let decor: [Decor]
     /// Grouped badge anchors (below the D-pad / sticks) used when a group has a standard mapping.
     let groupAnchors: [String: CGPoint]
 
@@ -186,7 +194,12 @@ struct ControllerDiagramLayout {
         rightStick = (CGPoint(x: i.right_stick_x, y: i.right_stick_y), CGFloat(i.stick_radius))
         dpadCenter = CGPoint(x: i.dpad_x, y: i.dpad_y)
         faceCenter = CGPoint(x: i.face_x, y: i.face_y)
-        touchpad = i.has_touchpad != 0 ? CGRect(x: i.touchpad_x, y: i.touchpad_y, width: i.touchpad_width, height: i.touchpad_height) : nil
+        decor = (0..<rnf_diagram_decor_count(f)).compactMap { n in
+            var d = rnf_diagram_decor()
+            guard rnf_diagram_decor_get(f, n, &d) != 0 else { return nil }
+            let kind: Decor.Kind = d.kind == RNF_DECOR_BODY ? .body : d.kind == RNF_DECOR_SCREEN ? .screen : .pad
+            return Decor(kind: kind, rect: CGRect(x: d.x, y: d.y, width: d.width, height: d.height), radius: CGFloat(d.radius))
+        }
         elements = (0..<rnf_diagram_element_count(f)).compactMap { n in
             var e = rnf_diagram_element()
             return rnf_diagram_element_get(f, n, &e) != 0 ? DiagramElement(e) : nil

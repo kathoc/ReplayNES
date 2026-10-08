@@ -6,6 +6,10 @@
 //                                                key-window / first-responder gating is exercised.
 //   --library-play "<ROM name>"                 start a new library project for that ROM (as if
 //                                                chosen in the library) once the scan has found it.
+//   --fake-controller <family>                  list a controller of that family (nintendo, xbox,
+//                                                playStation, generic, steamDeck) on slot 0 without a
+//                                                device (hint glyphs, diagram); pair with --inject-pad.
+//                                                (-diagramFamily <family> forces only the diagram.)
 //   --inject-pad "<sec>:<element>:<d|u>,..."     controller slot-0 element changes (e.g. rightTrigger,
 //                                                leftShoulder, dpad.left) through the real controller
 //                                                path (hotkeys, paused D-pad stepping, game input).
@@ -21,7 +25,8 @@
 //                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
 //                                                screen:<n> (moves the main window to NSScreen.screens[n]),
 //                                                dumpLayers (logs the app's windows and the main window's layer tree),
-//                                                dumpMenus (logs the menu bar: "menu: <Menu> | <item> | <⌘ key>").
+//                                                dumpMenus (logs the menu bar: "menu: <Menu> | <item> | <⌘ key>"),
+//                                                diagramFamily:<family|auto> (the controller diagram's family).
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
@@ -141,6 +146,9 @@ extension AppModel {
                     if let w = self.mainWindow { var f = w.frame; f.size.width = CGFloat(n); w.setFrame(f, display: true) }
                 case "dumpLayers": Self.dumpWindowLayers()
                 case "dumpMenus": Self.dumpMenus()
+                case "diagramFamily" where parts.count > 2:   // force the controller diagram's family ("auto": the pad's)
+                    UserDefaults.standard.set(parts[2] == "auto" ? nil : parts[2], forKey: "diagramFamily")
+                    self.quickMenu.touch()
                 case "screen":   // move the main window to NSScreen.screens[n] (0: the menu-bar screen)
                     let screens = NSScreen.screens
                     if let w = self.mainWindow, !screens.isEmpty {
@@ -224,6 +232,13 @@ extension AppModel {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var steps: [(String, () -> Void)] = []
         for p in QMPage.allCases {
+            if p == .assign {   // the action picker of a button (opened from the diagram)
+                steps.append((p.rawValue, { [weak self] in self?.quickMenu.open(at: .controller); self?.quickMenu.openAssign("gc0:face.east") }))
+                steps.append((p.rawValue + "-2", { [weak self] in
+                    self?.quickMenu.open(at: .controller); self?.quickMenu.openAssign("gc0:face.east"); self?.quickMenu.handle(.pageNext)
+                }))
+                continue
+            }
             steps.append((p.rawValue, { [weak self] in self?.quickMenu.open(at: p) }))
             if p.paged {
                 steps.append((p.rawValue + "-2", { [weak self] in self?.quickMenu.open(at: p); self?.quickMenu.handle(.pageNext) }))

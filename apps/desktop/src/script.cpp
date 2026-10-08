@@ -26,7 +26,10 @@ Script::Script(const std::string& text, UI* ui, EmulationController* emu, Render
   }
 }
 
-bool Script::pushPad(const std::string& name, bool down) {
+bool Script::pushPad(const std::string& logical, bool down) {
+  // "ok" / "cancel": the UI's confirm / cancel buttons (Settings > Controls > Confirm Button).
+  bool south = ui_ && ui_->southConfirm();
+  std::string name = logical == "ok" ? (south ? "a" : "b") : logical == "cancel" ? (south ? "b" : "a") : logical;
   static const std::pair<const char*, int> buttons[] = {
       {"a", SDL_GAMEPAD_BUTTON_SOUTH},          {"b", SDL_GAMEPAD_BUTTON_EAST},
       {"x", SDL_GAMEPAD_BUTTON_WEST},           {"y", SDL_GAMEPAD_BUTTON_NORTH},
@@ -176,6 +179,8 @@ void Script::step(double now) {
     } else if (op == "pad" || op == "padhold") {
       if (pushPad(arg(1), true)) pending_.push_back({op == "pad" ? now : now + std::atof(arg(2, "1").c_str()), arg(1), false});
       return;  // one press per frame (the release goes out with the next step)
+    } else if (op == "setting") {
+      if (!ui_->scriptSetting(arg(1), arg(2))) std::fprintf(stderr, "script: unknown setting %s\n", arg(1).c_str());
     } else if (op == "pause") {
       emu_->setPaused(true);
     } else if (op == "play") {
