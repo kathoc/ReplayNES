@@ -3,7 +3,7 @@
 // Privacy: Sparkle only contacts the feed URL (Info.plist SUFeedURL) to check for updates and
 // the release asset URL to download one. No system profile is sent (SUEnableSystemProfiling is
 // left off). Automatic checks start only after the user agrees to Sparkle's standard permission
-// prompt (shown on the second launch) and can be turned off in Settings > Updates.
+// prompt (shown on the second launch) and can be turned off in the Quick Menu (Settings › System › Updates).
 //
 // Installing never bypasses the app's quit path: Sparkle's installer asks the app to quit with a
 // normal Apple quit event, so AppDelegate.applicationShouldTerminate still persists the session
@@ -90,34 +90,5 @@ struct CheckForUpdatesCommand: View {
     var body: some View {
         Button("Check for Updates…") { updates.checkForUpdates() }
             .disabled(!updates.canCheckForUpdates)
-    }
-}
-
-/// Settings > Updates
-struct UpdatesTab: View {
-    @ObservedObject var updates = UpdaterModel.shared
-    var body: some View {
-        Form {
-            Section("Updates") {
-                Toggle("Automatically check for updates", isOn: $updates.automaticallyChecks)
-                Toggle("Automatically download and install updates", isOn: $updates.automaticallyDownloads)
-                    .disabled(!updates.automaticallyChecks)
-                HStack {
-                    Button("Check Now…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
-                    Spacer()
-                    if let d = updates.lastCheck {
-                        Text("Last checked: \(d.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Section("Privacy") {
-                Text("ReplayNES connects only to GitHub (github.com) to check for and download updates. Only ordinary HTTP requests are sent; no system information or usage data. With automatic checks off, it connects only when you check manually from the menu.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("Automatically installed updates are applied the next time you quit the app. If there are unsaved changes, you are asked to save before quitting.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }

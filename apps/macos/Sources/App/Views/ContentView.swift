@@ -1,4 +1,6 @@
-// Main window: viewport, sidebar (takes / bookmarks / controllers), transport + timeline.
+// Main window: the game (nothing else while playing but the menu pill), the seek bar when paused,
+// the Quick Menu over the game, and the library (start screen) when no game is open
+// (docs/design/UI_REDESIGN.md).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -16,61 +18,31 @@ struct WindowAccessor: NSViewRepresentable {
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+    @ObservedObject private var menu = AppModel.shared.quickMenu
+    @ObservedObject private var monitor = AppModel.shared.input.controllerMonitor
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                viewport
-                if model.showSidebar && model.status.hasSession && !model.immersive {
-                    Divider()
-                    SidebarView().frame(width: 270)
-                }
-            }
-            if model.status.hasSession && !model.immersive {
-                Divider()
-                TransportBar()
-            }
-        }
-        .frame(minWidth: 820, minHeight: 560)
-        // Immersive full screen: also under the (hidden) title bar, so the game layer covers the
-        // whole screen; otherwise macOS keeps compositing it (measured: 3024x1794 layer on a
-        // 3024x1898 full-screen window stays composited, +1 refresh).
-        .ignoresSafeArea(.container, edges: model.immersive ? .all : [])
-        .background(WindowAccessor { w in
-            // Only real changes: setting these (even to the same value) makes AppKit redo the
-            // title bar, drag regions and cursor rects.
-            if model.mainWindow !== w { model.mainWindow = w }
-            let title = windowTitle
-            if w.title != title { w.title = title }
-            let path = model.status.projectPath
-            let url = path.isEmpty || model.isTempSession(path) ? nil : URL(fileURLWithPath: path)
-            if w.representedURL != url { w.representedURL = url }
-            if w.isDocumentEdited != model.status.unsaved { w.isDocumentEdited = model.status.unsaved }
-        })
-        // Full screen, playing, pointer resting: no toolbar either, so the game layer covers the
-        // whole screen (direct-to-display; FullScreenChrome.swift).
-        .toolbar(model.immersive ? .hidden : .automatic, for: .windowToolbar)
-        .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
-        // Scripted checks (--test-actions open:<window>, TestHooks.swift).
-        .onReceive(NotificationCenter.default.publisher(for: AppModel.testOpenWindow)) { n in
-            guard let id = n.object as? String else { return }
-            if id == "settings" { openSettings() } else { openWindow(id: id) }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                LibraryToolbarButton()
-                Button { model.saveSync() } label: { Label("Save", systemImage: "square.and.arrow.down") }
-                    .disabled(!model.status.hasSession).help("Save (⌘S)")
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button { model.showExport = true } label: { Label("Export MP4", systemImage: "film") }
-                    .disabled(!model.status.hasSession || model.status.takeLength == 0).help("Export to MP4 (⌘E)")
-                Button { model.showSidebar.toggle() } label: { Label("Sidebar", systemImage: "sidebar.right") }
-                    .help("Sidebar (takes, bookmarks, controllers) (⌥⌘S)")
-            }
-        }
+        viewport
+            .frame(minWidth: 820, minHeight: 560)
+            // Immersive full screen: also under the (hidden) title bar, so the game layer covers the
+            // whole screen; otherwise macOS keeps compositing it (measured: 3024x1794 layer on a
+            // 3024x1898 full-screen window stays composited, +1 refresh).
+            .ignoresSafeArea(.container, edges: model.immersive ? .all : [])
+            .background(WindowAccessor { w in
+                // Only real changes: setting these (even to the same value) makes AppKit redo the
+                // title bar, drag regions and cursor rects.
+                if model.mainWindow !== w { model.mainWindow = w }
+                let title = windowTitle
+                if w.title != title { w.title = title }
+                let path = model.status.projectPath
+                let url = path.isEmpty || model.isTempSession(path) ? nil : URL(fileURLWithPath: path)
+                if w.representedURL != url { w.representedURL = url }
+                if w.isDocumentEdited != model.status.unsaved { w.isDocumentEdited = model.status.unsaved }
+            })
+            .toolbar(model.immersive ? .hidden : .automatic, for: .windowToolbar)
+            .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
+            // The game, its menus and the library are dark; so is the window around them.
+            .preferredColorScheme(.dark)
     }
 
     private var windowTitle: String {
@@ -80,26 +52,48 @@ struct ContentView: View {
         return "ReplayNES"
     }
 
+    private var libraryShown: Bool { !model.status.hasSession || model.showLibrary }
+
     @ViewBuilder private var viewport: some View {
+        let st = model.status
         ZStack(alignment: .topLeading) {
             if !model.immersive { Color.black }
-            if model.status.hasSession {
-                MetalGameView(emu: model.emu, options: model.displayOptions)
+            if st.hasSession {
+                MetalGameView(emu: model.emu, options: model.displayOptions) { menu.open() }
                 if let img = model.snapshotFrame { SnapshotFrameView(image: img, options: model.displayOptions) }
                 // Full-screen play hides everything drawn over the game (FullScreenChrome.swift):
                 // any view above the layer forces a compositor pass.
-                if !model.immersive {
-                    StatusBadges().padding(10)
+                if !model.immersive && !menu.isOpen && !model.showLibrary {
+                    if !st.paused { StatusBadges().padding(12) }
                     if model.showLatency {
-                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(10)
+                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, st.paused ? 96 : 0)
                     }
-                    if model.showPracticePanel || model.status.practicing {
+                    if st.practicing && !st.paused {
                         VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
                             .padding(.leading, 12).padding(.bottom, 12)
                     }
+                    if st.paused {
+                        VStack { Spacer(); SeekBarOverlay() }
+                            .transition(.opacity)
+                    }
                 }
-            } else {
-                WelcomeView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if libraryShown {
+                LibraryHome(library: model.library, nav: model.libraryNav)
+                    .transition(.opacity)
+            }
+            if menu.isOpen {
+                QuickMenuOverlay(menu: menu, monitor: monitor)
+                    .transition(.opacity)
+            }
+            // The SwiftUI pill: paused, menus, library (and --snapshot captures). While playing the
+            // Metal pass draws it (MenuPill.swift).
+            if showSwiftUIPill {
+                HStack {
+                    Spacer()
+                    MenuPillButton(glyph: model.pillGlyph) { menu.toggle() }
+                }
+                .padding(.top, MenuPillLayout.margin).padding(.trailing, MenuPillLayout.margin)
             }
             if let n = model.notice {
                 VStack {
@@ -108,7 +102,7 @@ struct ContentView: View {
                         .font(.callout)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.bottom, 16)
+                        .padding(.bottom, st.paused && st.hasSession && !menu.isOpen ? 110 : 16)
                 }
                 .frame(maxWidth: .infinity)
                 .transition(.opacity)
@@ -116,18 +110,25 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(QMStyle.anim, value: st.paused)
+    }
+
+    private var showSwiftUIPill: Bool {
+        let st = model.status
+        if model.immersive { return false }
+        return !st.hasSession || st.paused || menu.isOpen || model.showLibrary || model.snapshotFrame != nil
     }
 }
 
+/// Transient states only (record mode is the default and shows nothing).
 struct StatusBadges: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         let st = model.status
         HStack(spacing: 6) {
             if st.practicing { badge(String(localized: "Practicing (not recording)"), .orange) }
-            else { badge(st.recording ? String(localized: "● REC") : String(localized: "▶︎ PLAY"), st.recording ? .red : .green) }
+            else if !st.recording { badge(String(localized: "▶︎ Replay"), .green) }
             if st.rewinding { badge(String(localized: "◀◀ Rewinding"), .orange) }
-            else if st.paused { badge(String(localized: "❚❚ Paused"), .gray) }
             else if st.fastForward { badge(String(localized: "▶▶ Fast-Forward"), .blue) }
             else if st.slow != .normal { badge(String(localized: "Slow \(st.slow.label)"), .purple) }
             if st.endOfTake && !st.practicing { badge(String(localized: "End of Take"), .yellow) }
@@ -140,40 +141,6 @@ struct StatusBadges: View {
         Text(t).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(c.opacity(0.75), in: RoundedRectangle(cornerRadius: 5))
-    }
-}
-
-struct WelcomeView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text("ReplayNES").font(.system(size: 30, weight: .bold))
-                Text("Made a mistake? Go back and record it again. At the end, export one continuous play video.").foregroundStyle(.secondary)
-                Spacer()
-            }
-            HStack(spacing: 12) {
-                Button { model.newProject() } label: { Label("New Project…", systemImage: "doc.badge.plus") }
-                    .keyboardShortcut("n")
-                Button { model.openProjectPanel() } label: { Label("Open Project…", systemImage: "folder") }
-                Button("Try a ROM (No Project)…") { model.quickPlay() }.buttonStyle(.link)
-                Spacer()
-                Text("ROMs are not copied into projects (only the path and SHA-256 are stored).")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            LibraryView(library: model.library)
-        }
-        .padding(24)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-}
-
-/// Toolbar button opening the library window.
-struct LibraryToolbarButton: View {
-    @Environment(\.openWindow) private var openWindow
-    var body: some View {
-        Button { openWindow(id: "library") } label: { Label("Library", systemImage: "books.vertical") }
-            .help("Library (⇧⌘L)")
     }
 }
 

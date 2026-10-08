@@ -11,9 +11,21 @@ enum UILanguage {
         withCStrings(systemPreferred) { String(cString: rnf_ui_language_choose($0, $0.count)) }
     }
 
+    /// Settings › System › Language: "auto" (the rule above), "ja" or "en". Applied at launch.
+    static var preference: String {
+        get { UserDefaults.standard.string(forKey: "uiLanguage") ?? "auto" }
+        set { UserDefaults.standard.set(newValue, forKey: "uiLanguage") }
+    }
+
+    /// The language's own name ("English", and Japanese written in Japanese).
+    static func nativeName(_ code: String) -> String {
+        Locale(identifier: code).localizedString(forLanguageCode: code) ?? code
+    }
+
     /// Must run before any localized string is resolved (App.init).
     static func apply() {
-        let lang = choose(systemPreferred: systemLanguages())
+        let pref = preference
+        let lang = pref == "ja" || pref == "en" ? pref : choose(systemPreferred: systemLanguages())
         let defaults = UserDefaults.standard
         if defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String] != [lang] {
             defaults.set([lang], forKey: "AppleLanguages")

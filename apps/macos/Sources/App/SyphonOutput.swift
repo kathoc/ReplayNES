@@ -262,27 +262,6 @@ final class StreamOutputModel: ObservableObject {
 
 // MARK: UI hooks
 
-/// Settings section (Display & Audio tab).
-struct StreamOutputSection: View {
-    @ObservedObject var stream = StreamOutputModel.shared
-    var body: some View {
-        Section("Stream Output (Syphon)") {
-            Toggle("Stream Output (Syphon)", isOn: Binding(get: { stream.isOn }, set: { stream.setOn($0) }))
-            Picker("Output Size", selection: $stream.sizeRaw) {
-                ForEach(StreamOutputSize.allCases) { Text($0.label(par87: stream.par87)).tag($0.rawValue) }
-            }
-            Toggle("8:7 Pixel Aspect Ratio", isOn: $stream.par87)
-            if let f = stream.failure {
-                Text("Couldn’t start: \(f)").font(.caption).foregroundStyle(.red)
-            } else if stream.active {
-                Text("Syphon output active (server name “\(SyphonPublisher.serverName)”)").font(.caption).foregroundStyle(.green)
-            }
-            Text("Choose “ReplayNES” in an OBS “Syphon Client” source to capture just the game picture (after flash reduction, no UI, the full 256×240 frame including overscan), scaled up with nearest-neighbor filtering (a 4:3 CRT picture when set to use the CRT display). For audio, choose ReplayNES in OBS’s “macOS Audio Capture” (application audio).")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// Small badge for the viewport overlay.
 struct StreamOutputBadge: View {
     @ObservedObject var stream = StreamOutputModel.shared

@@ -12,9 +12,11 @@
 //   --test-actions "<sec>:<action>[:<n>],..."    UI actions: setA/setB/practice:<slot 0-7>, stopPractice,
 //                                                toggleRecord, togglePause, panel, fill, integer,
 //                                                quit (the ⌘Q path: persist + resume record),
-//                                                fullscreen, crtOn, crtOff, export (sheet), sidebar, latency,
-//                                                open:<library|takes|guide|settings>,
-//                                                settingsTab:<0-5> (selects a Settings tab),
+//                                                fullscreen, crtOn, crtOff, export (sheet), latency,
+//                                                open:<library|takes|guide|settings>, menu:<page> (Quick Menu
+//                                                at a QMPage raw value, e.g. menu:display), menuClose,
+//                                                nav:<up|down|left|right|confirm|back|x|y|pagePrev|pageNext|menu|escape>,
+//                                                libraryClose, windowSize:<w>x<h> (content size, points),
 //                                                seek:<frame>, bookmark, undoTake,
 //                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
 //                                                screen:<n> (moves the main window to NSScreen.screens[n]),
@@ -22,6 +24,10 @@
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
+//   --menu-walk <dir> [--menu-walk-delay s]      snapshots of every Quick Menu page, the paused seek bar
+//                                                and the library to <dir>/<n>-<name>.png, and
+//                                                <dir>/menu-walk.json with whether each page fit
+//                                                without scrolling (scripts/ui-check-macos.sh).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import AppKit
 
@@ -81,8 +87,6 @@ extension AppModel {
         }
     }
 
-    static let testOpenWindow = Notification.Name("ReplayNESTestOpenWindow")
-
     func scheduleTestActions(_ spec: String) {
         for item in spec.split(separator: ",") {
             let parts = item.split(separator: ":").map(String.init)
@@ -97,7 +101,7 @@ extension AppModel {
                 case "stopPractice": self.practiceStop()
                 case "toggleRecord": self.toggleRecord()
                 case "togglePause": self.togglePause()
-                case "panel": self.showPracticePanel.toggle()
+                case "panel": self.quickMenu.open(at: .practice)
                 case "fill": self.integerScale = false
                 case "integer": self.integerScale = true
                 case "quit": NSApp.terminate(nil)
@@ -105,10 +109,26 @@ extension AppModel {
                 case "crtOn": CRTSettingsModel.shared.launchOverride = true
                 case "crtOff": CRTSettingsModel.shared.enabled = false
                 case "export": self.showExport = true
-                case "sidebar": self.showSidebar.toggle()
                 case "latency": self.showLatency.toggle()
                 case "open" where parts.count > 2:
-                    NotificationCenter.default.post(name: Self.testOpenWindow, object: parts[2])
+                    switch parts[2] {
+                    case "library": self.showLibraryScreen()
+                    case "takes": self.quickMenu.open(at: .takes)
+                    case "guide": self.quickMenu.open(at: .controller)
+                    default: self.quickMenu.open(at: .display)
+                    }
+                case "menu" where parts.count > 2:
+                    if let page = QMPage(rawValue: parts[2]) { self.quickMenu.open(at: page) } else { NSLog("ReplayNES: unknown menu page \(parts[2])") }
+                case "menuClose": self.quickMenu.close()
+                case "libraryClose": self.hideLibraryScreen()
+                case "nav" where parts.count > 2:
+                    let inputs: [String: NavInput] = ["up": .up, "down": .down, "left": .left, "right": .right, "confirm": .confirm,
+                                                      "back": .back, "x": .x, "y": .y, "pagePrev": .pagePrev, "pageNext": .pageNext,
+                                                      "menu": .menu, "escape": .escape]
+                    if let i = inputs[parts[2]] { self.handleNav(i) }
+                case "windowSize" where parts.count > 2:
+                    let wh = parts[2].split(separator: "x").compactMap { Double($0) }
+                    if wh.count == 2, let w = self.mainWindow { w.setContentSize(NSSize(width: wh[0], height: wh[1])) }
                 case "seek": self.seek(to: UInt64(max(0, n)))
                 case "bookmark": self.addBookmark()
                 case "undoTake": self.undoTake()
@@ -125,9 +145,6 @@ extension AppModel {
                         let f = screens[max(0, min(n, screens.count - 1))].visibleFrame
                         w.setFrame(NSRect(x: f.minX + 40, y: f.maxY - 40 - w.frame.height, width: w.frame.width, height: w.frame.height), display: true)
                     }
-                case "settingsTab":
-                    let tabs = ["controller", "game", "hotkey", "turbo", "display", "updates"]
-                    UserDefaults.standard.set(tabs[max(0, min(n, tabs.count - 1))], forKey: SettingsView.tabKey)
                 default: NSLog("ReplayNES: unknown test action \(parts[1])")
                 }
             }
@@ -183,6 +200,47 @@ extension AppModel {
             let title = w.title.isEmpty ? "untitled" : w.title.replacingOccurrences(of: "/", with: "_")
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(prefix)-\(i)-\(title).png"))
         }
+    }
+
+    /// --menu-walk: every Quick Menu page (and the second page of paged ones), then the paused seek
+    /// bar and the library, one snapshot each; menu-walk.json says whether each menu page fit.
+    func scheduleMenuWalk(dir: URL, delay: Double) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var steps: [(String, () -> Void)] = []
+        for p in QMPage.allCases {
+            steps.append((p.rawValue, { [weak self] in self?.quickMenu.open(at: p) }))
+            if p.paged {
+                steps.append((p.rawValue + "-2", { [weak self] in self?.quickMenu.open(at: p); self?.quickMenu.handle(.pageNext) }))
+            }
+        }
+        steps.append(("seekbar", { [weak self] in self?.quickMenu.close(resume: false) }))
+        steps.append(("library", { [weak self] in self?.showLibraryScreen() }))
+        var results: [[String: Any]] = []
+        func run(_ i: Int) {
+            guard i < steps.count else {
+                if let data = try? JSONSerialization.data(withJSONObject: ["pages": results], options: [.prettyPrinted, .sortedKeys]) {
+                    try? data.write(to: dir.appendingPathComponent("menu-walk.json"))
+                }
+                if ProcessInfo.processInfo.arguments.contains("--quit-after-snapshot") { shutdown(); exit(0) }
+                return
+            }
+            let (name, act) = steps[i]
+            act()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self else { return }
+                let menuPage = self.quickMenu.isOpen ? self.quickMenu.page.rawValue : ""
+                let probe = QuickMenuProbe.shared
+                var r: [String: Any] = ["name": name, "menuOpen": self.quickMenu.isOpen, "page": menuPage]
+                if self.quickMenu.isOpen {
+                    r["fits"] = probe.page == self.quickMenu.page && probe.fits
+                    r["panelHeight"] = Double(probe.panelHeight)
+                    r["areaHeight"] = Double(probe.areaHeight)
+                }
+                results.append(r)
+                self.writeSnapshot(to: dir.appendingPathComponent(String(format: "%02d-%@.png", i, name))) { run(i + 1) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { run(0) }
     }
 
     func scheduleLibraryPlay(_ name: String, attempts: Int = 50) {

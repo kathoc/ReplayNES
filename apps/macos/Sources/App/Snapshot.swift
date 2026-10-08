@@ -77,6 +77,8 @@ extension AppModel {
             "projectPath": status.projectPath, "tempSession": isTempSession(status.projectPath),
             "fastForward": status.fastForward, "slow": status.slow.label, "endOfTake": status.endOfTake,
             "integerScale": integerScale, "menuItemAdds": MenuBarCleaner.shared.mainMenuAdds, "showPracticePanel": showPracticePanel,
+            "menuOpen": quickMenu.isOpen, "menuPage": quickMenu.page.rawValue, "showLibrary": showLibrary,
+            "pillGlyph": pillGlyph, "pillMetalVisible": MenuPillOverlay.shared.state.visible,
             "controllerHotkeys": InputCatalog.controllerHotkeys.map { "\($0.0)=\($0.1)" },
         ]
         info["menus"] = NSApp.mainMenu.map { Self.describe($0) } ?? []
