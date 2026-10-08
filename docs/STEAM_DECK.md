@@ -252,9 +252,13 @@ macOS format).
 ## UI and latency
 
 The UI is Dear ImGui drawn in the same Vulkan render pass as the game picture (one present per
-frame; gamescope composites the window as a whole anyway). While playing it costs ~0.05 ms per frame
-(the Menu pill, badges and the practice pill are a few quads on the foreground list; menus are built
-only while they are open), and ImGui does not read the
+frame; gamescope composites the window as a whole anyway). While playing it costs ~0.06 ms per frame
+to build (the Menu pill, badges and the practice pill are a few quads on the foreground list; menus
+are built only while they are open) and ~0.09 ms to draw: the always-visible pill means the ImGui
+pass now runs every frame (draw+present p50 0.36 ms vs 0.27 ms without it; Steam Deck, Gaming Mode,
+90 Hz, SMB, CRT off, 30 s: sample -> on screen p50 4.9-5.9 ms with the pill vs 4.7-5.7 ms for 0.4.0
+over the same runs, 0 audio underruns). The library card pictures are saved in the slack, never
+between the input sample and the present, and not at all in measurement runs. ImGui does not read the
 gamepads at all (its polling would contend with the controller thread): the SDL gamepad events are
 passed to it, and it navigates only while the menu, the library or a dialog is up (the game is
 paused then). Work that is not

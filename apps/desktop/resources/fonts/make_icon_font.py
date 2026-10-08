@@ -21,7 +21,7 @@ ICONS = [
     "bolt", "crop", "line-height", "sun-low", "antenna", "restore", "arrows-horizontal", "player-pause",
     "clock", "arrows-diff", "language", "brand-steam", "power", "refresh", "file-text", "license",
     "text-size", "chart-line", "layout-grid", "device-floppy", "file-plus", "baseline-density-medium",
-    "steering-wheel",
+    "line-scan", "device-gamepad-3",
     # UI chrome
     "chevron-right", "chevron-left", "plus", "search", "x", "check", "photo", "trash", "pencil", "flag",
     "repeat", "player-stop", "player-track-next", "player-track-prev", "player-skip-back",

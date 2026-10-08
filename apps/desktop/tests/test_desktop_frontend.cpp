@@ -611,6 +611,34 @@ TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
   CHECK_EQ(menuChordGlyph(RNF_FAMILY_PLAYSTATION, false), std::string("Esc"));
 }
 
+TEST_CASE("menu icons: every icon of the menu model is in the bundled Tabler subset") {
+  struct Entry {
+    const char* name;
+    unsigned code;
+  };
+  static const Entry icons[] = {
+#include "../resources/fonts/icons.inc"
+  };
+  auto has = [&](const char* n) {
+    for (const Entry& e : icons)
+      if (std::strcmp(e.name, n) == 0) return true;
+    return false;
+  };
+  rnf_menu* menu = rnf_menu_new(0xffffffffu);
+  for (size_t p = 0; p < rnf_menu_page_count(menu); ++p) {
+    rnf_menu_page_info pi{};
+    rnf_menu_page_get(menu, p, &pi);
+    if (!has(pi.icon)) MESSAGE(std::string("missing page icon ") + pi.icon);
+    CHECK(has(pi.icon));
+    rnf_menu_item_info it{};
+    for (size_t i = 0; rnf_menu_item_get(menu, p, i, &it); ++i) {
+      if (!has(it.icon)) MESSAGE(std::string("missing item icon ") + it.icon);
+      CHECK(has(it.icon));
+    }
+  }
+  rnf_menu_free(menu);
+}
+
 TEST_CASE("menu layout: no screen scrolls (every page of the menu model fits)") {
   const uint32_t features = RNF_MENU_FEATURE_EXPORT | RNF_MENU_FEATURE_CRT | RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK |
                             RNF_MENU_FEATURE_UPDATES | RNF_MENU_FEATURE_QUIT | RNF_MENU_FEATURE_FULLSCREEN |
@@ -622,8 +650,8 @@ TEST_CASE("menu layout: no screen scrolls (every page of the menu model fits)") 
   };
   int checked = 0;
   for (Size sz : {Size{1280, 800}, Size{1920, 1080}, Size{1280, 720}, Size{2560, 1600}, Size{1024, 768}}) {
-    for (float ui : {0.75f, 1.0f, 1.25f, 1.5f}) {
-      UiMetrics m = UiMetrics::make(sz.w, sz.h, ui);
+    for (float ui : {0.75f, 1.0f, 1.25f, 1.5f, -1.0f, -1.5f}) {  // negative: the Japanese text size (CJK font)
+      UiMetrics m = UiMetrics::make(sz.w, sz.h, std::fabs(ui), ui < 0 ? 1.18f : 1.0f);
       for (size_t p = 0; p < rnf_menu_page_count(menu); ++p) {
         rnf_menu_page_info pi{};
         REQUIRE(rnf_menu_page_get(menu, p, &pi));
@@ -639,7 +667,7 @@ TEST_CASE("menu layout: no screen scrolls (every page of the menu model fits)") 
         if (pi.kind != RNF_MENU_PAGE_CUSTOM) CHECK_EQ(g.items.size(), count);
         // Labels of 2-5 Japanese characters / 1-2 English words fit a tile.
         if (pi.kind == RNF_MENU_PAGE_TILES)
-          for (const LRect& r : g.items) CHECK(r.w >= m.label() * 5.5f);
+          for (const LRect& r : g.items) CHECK(r.w >= m.label() / m.text * 5.5f);
         ++checked;
       }
       LibraryGeometry lib = layoutLibrary(m, true);

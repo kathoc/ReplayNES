@@ -254,7 +254,7 @@ int App::run(const AppOptions& opt) {
   input_->load();
   emu_ = std::make_unique<EmulationController>(input_->input(), audioOK_ ? &audio_ : nullptr);
   thumbs_ = std::make_unique<ThumbnailManager>();
-  libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
+  if (!perfMode) libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
 
   IMGUI_CHECKVERSION();
@@ -477,6 +477,7 @@ int App::run(const AppOptions& opt) {
       double now = nowSeconds();
       emu_->afterFrame(slack);
       app_->update(now);
+      ui_->slack(now);
       thumbs_->pump(emu_->session(), now);
       library_->poll();
     }

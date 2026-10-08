@@ -6,20 +6,22 @@
 
 namespace rnl {
 
-UiMetrics UiMetrics::make(float width, float height, float uiScale) {
+UiMetrics UiMetrics::make(float width, float height, float uiScale, float textScale) {
   UiMetrics m;
   m.W = std::max(1.0f, width);
   m.H = std::max(1.0f, height);
   m.s = std::clamp(m.H / 800.0f, 0.6f, 3.0f) * uiScale;
   // A very wide UI size on a small window: keep the six tiles / four cards on screen.
   m.s = std::min(m.s, m.W / 800.0f);
+  m.text = textScale;
   return m;
 }
 
 float cardTextHeight(const UiMetrics& m) { return m.label() + m.hint() + 22 * m.s; }
 float libraryCardTextHeight(const UiMetrics& m) { return m.label() + m.hint() + 20 * m.s; }
 
-PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader) {
+PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader,
+                        size_t reserveRows) {
   PageGeometry g;
   g.content = m.content();
   const LRect& c = g.content;
@@ -41,7 +43,7 @@ PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t coun
       float pw = std::min(880 * s, c.w);
       size_t rows = std::max<size_t>(1, std::min<size_t>(count, RNF_MENU_MAX_ITEMS));
       // Room for a full sheet: the panel keeps its size when a page has fewer rows.
-      size_t slots = kind == RNF_MENU_PAGE_LIST ? RNF_MENU_MAX_ITEMS : rows;
+      size_t slots = std::max(rows, std::min<size_t>(reserveRows, RNF_MENU_MAX_ITEMS));
       float avail = c.h - 2 * pad - headerH - (headerH > 0 ? rowGap : 0);
       float rowH = std::min(64 * s, (avail - rowGap * float(slots - 1)) / float(slots));
       float ph = 2 * pad + headerH + (headerH > 0 ? rowGap : 0) + rowH * float(slots) + rowGap * float(slots - 1);

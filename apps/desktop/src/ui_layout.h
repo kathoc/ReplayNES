@@ -27,12 +27,15 @@ struct LRect {
 /// Visual constants (px at scale 1 = 800 px high). Three text sizes only.
 struct UiMetrics {
   float s = 1;  // window height / 800 * UI size
+  // Text size factor of the font in use: a CJK font as the primary font (Japanese) has a taller line
+  // box for its em, so its glyphs come out ~20 % smaller at the same pixel size.
+  float text = 1;
   float W = 1280, H = 800;
   // Text: title 22 / label 15 / hint 12 (the spec's sizes) times kText for a TV / handheld distance.
   static constexpr float kText = 1.3f;
-  float title() const { return 22 * kText * s; }
-  float label() const { return 15 * kText * s; }
-  float hint() const { return 12 * kText * s; }
+  float title() const { return 22 * kText * s * text; }
+  float label() const { return 15 * kText * s * text; }
+  float hint() const { return 12 * kText * s * text; }
   float margin() const { return 24 * s; }
   float gap() const { return 10 * s; }
   float panelRadius() const { return 16 * s; }
@@ -48,7 +51,7 @@ struct UiMetrics {
     float top = t.bottom() + 16 * s, bottom = b.y - 12 * s;
     return {margin(), top, W - 2 * margin(), bottom - top};
   }
-  static UiMetrics make(float width, float height, float uiScale);
+  static UiMetrics make(float width, float height, float uiScale, float textScale = 1);
 };
 
 struct PageGeometry {
@@ -60,7 +63,10 @@ struct PageGeometry {
 
 /// Rectangles of a page of the menu model. count: items (LIST: rows on the current sheet, at most
 /// RNF_MENU_MAX_ITEMS; CARDS: cards). hasHeader: a settings group / list sheets line above the items.
-PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader);
+/// reserveRows: SETTINGS / LIST panels keep room for that many rows (a list with several sheets keeps
+/// its size from sheet to sheet).
+PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader,
+                        size_t reserveRows = 0);
 
 /// Height of one card's text strip (name + length) under its thumbnail.
 float cardTextHeight(const UiMetrics& m);

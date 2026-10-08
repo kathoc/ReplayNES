@@ -141,11 +141,12 @@ bool UI::loadFonts(bool japanese) {
     icons::addToAtlas(io.Fonts);
   }
   std::fprintf(stderr, "fonts: %s + icons\n", used.empty() ? "(ImGui default)" : used.c_str());
+  textScale_ = japanese && jp.found() ? 1.18f : 1.0f;  // CJK primary font: smaller glyphs per pixel size
   return !japanese || jp.found();
 }
 
 void UI::updateScale(int windowWidth, int windowHeight) {
-  metrics_ = UiMetrics::make(float(windowWidth), float(windowHeight), d_.settings->uiScale);
+  metrics_ = UiMetrics::make(float(windowWidth), float(windowHeight), d_.settings->uiScale, textScale_);
   float s = metrics_.s;
   ImGuiStyle& style = ImGui::GetStyle();
   style = ImGuiStyle();
@@ -228,7 +229,7 @@ void UI::setMenu(bool open) {
     if (hasSession()) {
       d_.emu->setPaused(true);
       rnf_menu_open(menu_, "quick");
-      saveLibraryThumb(0, true);
+      thumbSaveWanted_ = true;  // the library card picture (saved in the slack)
     } else {
       rnf_menu_open(menu_, "settings.display");
     }
@@ -269,6 +270,7 @@ void UI::shoulder(int dir) {
     menuEvent(rnf_menu_switch(menu_, dir), 0);
   } else if (!hasSession()) {
     libPage_ += dir;  // clamped by the library
+    libMoved_ = true;
     libFocus_ = -2;   // the first card of the new page (resolved by the library)
   }
 }
@@ -323,9 +325,16 @@ GameRect UI::gameRect(int w, int h) const {
   return computeGameRect(w, h, st.integerScale, st.par87, st.hideOverscan);
 }
 
-void UI::saveLibraryThumb(double now, bool force) {
+void UI::slack(double now) {
+  // Off the input -> screen path: the frame loop calls this in the slack before the next sample.
+  if (!hasSession()) return;
+  bool playing = !d_.emu->status().paused;
+  if (thumbSaveWanted_ || (playing && now - lastThumbSave_ >= 30)) saveLibraryThumb(now);
+}
+
+void UI::saveLibraryThumb(double now) {
+  thumbSaveWanted_ = false;
   if (!d_.libraryThumbs || !hasSession()) return;
-  if (!force && now - lastThumbSave_ < 30) return;
   const EmuStatus& st = d_.emu->status();
   if (st.frame == 0 && st.takeLength == 0) return;  // nothing shown yet
   lastThumbSave_ = now;
@@ -385,13 +394,14 @@ void UI::build(double now) {
   } else if (!hasSession() && hadSession_) {
     if (menuOpen_) setMenu(false);
     libFocus_ = -1;
+    libMoved_ = false;
   }
   hadSession_ = hasSession();
   const EmuStatus& st = d_.emu->status();
   bool paused = hasSession() && st.paused;
   if (paused != lastPaused_) {
     lastActivity_ = now;
-    if (paused) saveLibraryThumb(now, true);
+    if (paused) thumbSaveWanted_ = true;
   }
   lastPaused_ = paused;
   if (!d_.settings->menuHintShown && pulseStart_ < 0) pulseStart_ = now;
@@ -408,7 +418,6 @@ void UI::build(double now) {
   buildExportDialog();
   buildExportProgressPill();
   updateTextEntry(now);  // after every text field of the frame (ui_osk.cpp)
-  if (hasSession() && !paused) saveLibraryThumb(now, false);
   popupLastFrame_ = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
   layoutCheckEndFrame();
 }

@@ -125,6 +125,7 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   if (pressed(ImGuiKey_PageUp, false)) shoulder(-1);
   if (pressed(ImGuiKey_PageDown, false)) shoulder(1);
   int n = int(cardCount);
+  if (dx || dy) libMoved_ = true;
   if (libFocus_ == -1) {
     if (dy > 0 && n > 0) libFocus_ = libPage_ * perPage;
   } else if (n > 0) {
@@ -196,6 +197,7 @@ void UI::buildLibrary(double now) {
   // L / R (shoulder) moved the page: focus its first card.
   libPage_ = std::clamp(libPage_, 0, pages - 1);
   if (libFocus_ == -2) libFocus_ = n > 0 ? std::min(n - 1, libPage_ * perPage) : (hero ? -1 : 0);
+  if (!libMoved_ && hero) libFocus_ = -1;  // the Continue card until the user moves (the scan may finish late)
   if (libFocus_ == -1 && !hero) libFocus_ = 0;
   if (libFocus_ >= n) libFocus_ = n > 0 ? n - 1 : (hero ? -1 : 0);
   if (libFocus_ >= 0 && n > 0) libPage_ = libFocus_ / perPage;
@@ -215,7 +217,7 @@ void UI::buildLibrary(double now) {
   dl->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(16, 16, 19, 255));
   // A soft brand glow from the top.
   dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(io.DisplaySize.x, io.DisplaySize.y * 0.5f), IM_COL32(58, 20, 24, 150),
-                              IM_COL32(40, 18, 30, 150), IM_COL32(16, 16, 19, 0), IM_COL32(16, 16, 19, 0));
+                              IM_COL32(58, 20, 24, 150), IM_COL32(16, 16, 19, 0), IM_COL32(16, 16, 19, 0));
   // Top bar: the name, an update notice, the search.
   LRect bar = m.topBar();
   float cy = bar.y + bar.h / 2;
@@ -309,9 +311,11 @@ void UI::buildLibrary(double now) {
       float ty = r.y + (r.h - (m.hint() + m.title() + m.hint() + S(16))) / 2;
       std::string cont = std::string(icons::glyph("player-play-filled")) + "  " + TR("Continue");
       textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty), tw, kBrand, cont);
-      textFit(dl, m.title(), ImVec2(tx, ty + m.hint() + S(8)), tw, kText, latest->romName.empty() ? latest->name : latest->romName);
-      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty + m.hint() + m.title() + S(16)), tw, kTextDim,
-              latest->name + "  ·  " + localDateTime(latest->modified));
+      std::string game = latest->romName.empty() ? latest->name : latest->romName;
+      if (game.size() > 4 && (game.compare(game.size() - 4, 4, ".nes") == 0 || game.compare(game.size() - 4, 4, ".NES") == 0))
+        game.resize(game.size() - 4);
+      textFit(dl, m.title(), ImVec2(tx, ty + m.hint() + S(8)), tw, kText, game);
+      textFit(dl, m.hint() * 1.1f, ImVec2(tx, ty + m.hint() + m.title() + S(16)), tw, kTextDim, localDateTime(latest->modified));
       if (f) {
         drawFocus(r, m.panelRadius(), now);
         description_ = TR("Pick up where you left off");
@@ -329,7 +333,7 @@ void UI::buildLibrary(double now) {
       bool clicked = ImGui::InvisibleButton("##card", ImVec2(r.w, r.h));
       bool hovered = ImGui::IsItemHovered();
       ImGui::PopID();
-      if (hovered && (io.MouseDelta.x || io.MouseDelta.y)) libFocus_ = first + k;
+      if (hovered && (io.MouseDelta.x || io.MouseDelta.y)) libFocus_ = first + k, libMoved_ = true;
       if (clicked) {
         libFocus_ = first + k;
         d_.app->playFromLibrary(rom);
@@ -350,7 +354,10 @@ void UI::buildLibrary(double now) {
       else nameTile(dl, pic, rom.name, m.tileRadius() - S(4), pic.h * 0.45f);
       float ty = pic.bottom() + S(8);
       textFit(dl, m.label(), ImVec2(r.x + S(12), ty), r.w - S(24), kText, rom.name);
-      std::string sub = projects.empty() ? std::string(TR("New")) : TRF("%lld projects", {(long long)projects.size()});
+      // When it was played last (its latest project), or "New".
+      double last = 0;
+      for (const LibraryProject& p : projects) last = std::max(last, p.modified);
+      std::string sub = projects.empty() ? std::string(TR("New")) : localDateTime(last);
       textFit(dl, m.hint(), ImVec2(r.x + S(12), ty + m.label() * 1.2f), r.w - S(24), kTextDim, sub);
       if (f) {
         drawFocus(r, m.tileRadius(), now);

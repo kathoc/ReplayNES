@@ -279,7 +279,7 @@ std::string crumbs(rnf_menu* m) {
   rnf_menu_crumb c[8];
   size_t n = rnf_menu_breadcrumb(m, c, 8);
   std::string s;
-  for (size_t i = 0; i < n && i < 8; ++i) s += std::string(i ? " > " : "") + c[i].label;
+  for (size_t i = 0; i < n && i < 8; ++i) s += std::string(i ? " > " : "") + rnf_menu_text(c[i].label);
   return s;
 }
 

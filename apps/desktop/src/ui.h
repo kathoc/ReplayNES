@@ -100,6 +100,9 @@ class UI : public DialogHost {
 
   /// Builds this frame's UI (between ImGui::NewFrame and ImGui::Render).
   void build(double now);
+  /// Work that may wait (library card pictures): called in the frame loop's slack, never between
+  /// the input sample and the present.
+  void slack(double now);
   /// Where the game picture goes in a w x h drawable (menus draw over the dimmed game).
   GameRect gameRect(int w, int h) const;
 
@@ -174,7 +177,7 @@ class UI : public DialogHost {
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
   void changed();
-  void saveLibraryThumb(double now, bool force);
+  void saveLibraryThumb(double now);
   // Prompts (the hint bar): glyphs of controller elements ("face.south", "dpad.lr", ...).
   struct Prompt {
     std::vector<std::string> elements;
@@ -260,6 +263,7 @@ class UI : public DialogHost {
 
   Deps d_;
   float scale_ = 1.0f;
+  float textScale_ = 1.0f;  // UiMetrics::text of the fonts loaded
   UiMetrics metrics_;
   ImFont* font_ = nullptr;
   bool menuOpen_ = false;
@@ -284,11 +288,13 @@ class UI : public DialogHost {
   // Library.
   int libFocus_ = -1;  // -1: the Continue card, else a game card index (all pages)
   int libPage_ = 0;
+  bool libMoved_ = false;  // the user moved the focus since the library showed
   std::string projectsRomPath_;  // the projects page's ROM
   char search_[128] = {0};
   bool focusSearch_ = false;
   bool searchShown_ = false;
   double lastThumbSave_ = 0;
+  bool thumbSaveWanted_ = false;
   // Settings.
   int diagramFocus_ = 0;
   std::vector<std::string> diagramIds_;  // this frame's diagram elements (physical ids) ...

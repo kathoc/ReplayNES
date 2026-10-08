@@ -54,12 +54,12 @@ const GroupDef kGroups[] = {
 
 const PageDef kPages[] = {
     {"quick", RNF_L("Quick Menu"), "menu-2", RNF_MENU_PAGE_TILES, "", 0},
-    {"retry", RNF_L("Retry"), "history", RNF_MENU_PAGE_TILES, "", 0},
+    {"retry", RNF_L("Retry (menu)"), "history", RNF_MENU_PAGE_TILES, "", 0},
     {"takes", RNF_L("Takes"), "git-branch", RNF_MENU_PAGE_LIST, "", 0},
     {"bookmarks", RNF_L("Bookmarks"), "bookmark", RNF_MENU_PAGE_LIST, "", 0},
     {"practice", RNF_L("Practice"), "target", RNF_MENU_PAGE_CARDS, "", 0},
     {"share", RNF_L("Share"), "share", RNF_MENU_PAGE_TILES, "", F_SHARE_ANY},
-    {"settings.display", RNF_L("Display"), "device-desktop", RNF_MENU_PAGE_SETTINGS, "settings", 0},
+    {"settings.display", RNF_L("Display (settings page)"), "device-desktop", RNF_MENU_PAGE_SETTINGS, "settings", 0},
     {"settings.controls", RNF_L("Controls"), "device-gamepad", RNF_MENU_PAGE_SETTINGS, "settings", 0},
     {"settings.sound", RNF_L("Sound"), "volume", RNF_MENU_PAGE_SETTINGS, "settings", 0},
     {"settings.system", RNF_L("System"), "adjustments-horizontal", RNF_MENU_PAGE_SETTINGS, "settings", 0},
@@ -86,7 +86,7 @@ const std::vector<ItemDef>& items() {
   static const std::vector<ItemDef> v = {
       // Quick Menu: six tiles, one row.
       {"quick", "resume", RNF_L("Resume"), RNF_L("Back to the game"), "player-play", RESUME, "", 0, {}},
-      {"quick", "retry", RNF_L("Retry"), RNF_L("Record again from here, go back to an earlier try"), "history", PAGE, "retry", 0, {}},
+      {"quick", "retry", RNF_L("Retry (menu)"), RNF_L("Record again from here, go back to an earlier try"), "history", PAGE, "retry", 0, {}},
       {"quick", "practice", RNF_L("Practice"), RNF_L("Repeat a section from A to B (nothing is recorded)"), "target", PAGE,
        "practice", 0, {}},
       {"quick", "share", RNF_L("Share"), RNF_L("Export a video or send the picture to other apps"), "share", PAGE, "share",
@@ -122,7 +122,7 @@ const std::vector<ItemDef>& items() {
       {"settings.display", "display.crt_detail", RNF_L("CRT Details"), RNF_L("Scanlines, afterglow, signal"), "adjustments",
        PAGE, "display.crt", F_CRT, {}},
       // Display > CRT details.
-      {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "lines", SLIDER,
+      {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "line-scan", SLIDER,
        "", F_CRT, {}},
       {"display.crt", "crt.beam", RNF_L("Beam Growth"), RNF_L("Bright lines get thicker"), "line-height", TOGGLE, "", F_CRT, {}},
       {"display.crt", "crt.persistence", RNF_L("Afterglow"), RNF_L("Phosphor persistence"), "sun-low", TOGGLE, "", F_CRT, {}},
@@ -152,7 +152,7 @@ const std::vector<ItemDef>& items() {
       {"controls.detail", "controls.socd", RNF_L("Opposite Directions"), RNF_L("← and → (or ↑ and ↓) pressed together"),
        "arrows-diff", CHOICE, "", 0, {RNF_L("Neutral"), RNF_L("Last Wins"), RNF_L("Both")}},
       {"controls.detail", "controls.stick", RNF_L("Stick Threshold"), RNF_L("How far the stick moves before it counts"),
-       "joystick", SLIDER, "", 0, {}},
+       "device-gamepad-3", SLIDER, "", 0, {}},
       {"controls.detail", "controls.reset", RNF_L("Reset Controls"), RNF_L("Every key and button back to the defaults"),
        "restore", ACTION, "", 0, {}},
       // Settings: Sound.

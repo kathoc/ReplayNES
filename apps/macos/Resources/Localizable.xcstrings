@@ -546,7 +546,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "情報"
+            "value": "バージョン情報"
           }
         }
       }
@@ -2307,6 +2307,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "表示・音声"
+          }
+        }
+      }
+    },
+    "Display (settings page)": {
+      "comment": "Settings page title (screen settings)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面"
           }
         }
       }
@@ -5687,6 +5704,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "再起動してアップデート"
+          }
+        }
+      }
+    },
+    "Retry (menu)": {
+      "comment": "Quick Menu tile / page (start over from an earlier point); not the error retry button",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり直す"
           }
         }
       }

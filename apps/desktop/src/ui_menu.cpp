@@ -222,8 +222,11 @@ void UI::handleMenuInput(double now) {
     else if (keyY) rowAction(pi.id, 0, 'y');
     return;
   }
-  int dir = 0;
-  if (dx || dy) menuEvent(rnf_menu_move(menu_, dx, dy, &dir), dir);
+  if (dx || dy) {
+    int dir = 0;
+    rnf_menu_event e = rnf_menu_move(menu_, dx, dy, &dir);  // sets dir: evaluate before passing it on
+    menuEvent(e, dir);
+  }
   if (confirm) menuEvent(rnf_menu_confirm(menu_), 0);
   else if (back) menuEvent(rnf_menu_back(menu_), 0);
   else if (keyX) rowAction(pi.id, rnf_menu_focus(menu_), 'x');
@@ -273,13 +276,18 @@ void UI::buildMenu(double now) {
   size_t page = rnf_menu_current(menu_);
   rnf_menu_page_info pi{};
   rnf_menu_page_get(menu_, page, &pi);
-  bool header = (pi.group && *pi.group) || pi.kind == RNF_MENU_PAGE_LIST;
-  size_t count = pi.count;
+  bool header = pi.group && *pi.group;
+  size_t count = pi.count, reserve = 0;
   if (pi.kind == RNF_MENU_PAGE_LIST) {
     size_t first = rnf_menu_sheet(menu_) * RNF_MENU_MAX_ITEMS;
     count = pi.count > first ? std::min<size_t>(RNF_MENU_MAX_ITEMS, pi.count - first) : 0;
+    bool sheets = rnf_menu_sheet_count(menu_) > 1;
+    // A list's line on top: its sheets (L / R) and / or what the column is.
+    std::string id = pi.id;
+    header = sheets || id == "controls.keyboard" || id == "takes" || id == "library.projects";
+    if (sheets) reserve = RNF_MENU_MAX_ITEMS;
   }
-  PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header);
+  PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header, reserve);
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -525,11 +533,10 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
       drawFocus(r, m.tileRadius(), now);
       description_ = txt(it.description);
       adjustable = it.kind == RNF_MENU_ITEM_TOGGLE || it.kind == RNF_MENU_ITEM_CHOICE || it.kind == RNF_MENU_ITEM_SLIDER;
-      if (it.kind != RNF_MENU_ITEM_INFO && en)
-        prompt({"face.south"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : adjustable ? TR("Change") : TR("Select"));
+      if (adjustable && en) prompt({"face.south", "dpad.lr"}, TR("Change"));
+      else if (it.kind != RNF_MENU_ITEM_INFO && en) prompt({"face.south"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : TR("Select"));
     }
   }
-  if (adjustable) prompt({"dpad.lr"}, TR("Change"));
   prompt({"face.east"}, TR("Back"));
 }
 
@@ -790,6 +797,8 @@ void UI::activateRow(const std::string& page, size_t row) {
     d_.input->beginCapture(
         [this, action](const std::string& id) {
           capturingAction_.clear();
+          // The press that ended the wait (a key, or B / Esc cancelling) is not a menu press too.
+          menuInputFrame_ = ImGui::GetFrameCount() + 1;
           if (id.empty()) return;
           // The key replaces the action's keys (controller buttons stay: they have the diagram).
           std::vector<std::string> old;
