@@ -160,6 +160,11 @@ TEST_CASE("database lookups by hash, id and file name") {
   REQUIRE(rnf_gamedb_find_name("Tetris (Bulletproof) (Japan) (Rev A).nes", &g));
   CHECK_EQ(std::string(g.publisher_ja).empty(), false);
   CHECK_FALSE(rnf_gamedb_find_name("My Homebrew Thing (PD).nes", nullptr));
+  // Romanized long vowels: "Akumajou" (No-Intro) = "Akumaj\u014D" (macron).
+  rnf_game_info a{}, b{};
+  REQUIRE(rnf_gamedb_find_name("Akumajou Dracula (Japan).nes", &a));
+  CHECK_EQ(std::string(a.reading), std::string("アクマジョウドラキュラ"));
+  if (rnf_gamedb_find_name("Akumaj\u014D Dracula", &b)) CHECK_EQ(std::string(a.id), std::string(b.id));
 }
 
 TEST_CASE("FRONT LINE reads フロントライン") {

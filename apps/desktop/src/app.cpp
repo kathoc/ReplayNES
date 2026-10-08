@@ -256,7 +256,8 @@ int App::run(const AppOptions& opt) {
   thumbs_ = std::make_unique<ThumbnailManager>();
   if (!perfMode) libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
-  library_->setPrefsFile(paths_.configDir + "/" + RNF_LIBRARY_PREFS_FILE);
+  // Favourites / history / order: the settings folder (a scratch --session-root keeps its own).
+  library_->setPrefsFile((opt.sessionRoot.empty() ? paths_.configDir : paths_.sessionRoot) + "/" + RNF_LIBRARY_PREFS_FILE);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();

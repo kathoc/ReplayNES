@@ -58,8 +58,10 @@ Rules: no screen ever scrolls; if a page needs more than 6 rows, split it into a
 
 ## Library (start screen)
 
-- Top: a large "続きから / Continue" hero card (last session's thumbnail + game name + time) — A resumes.
-- Below: a grid of large game cards (thumbnail from the latest project/screenshot, else a generated tile with the ROM name), 4 per row at 1280×800; Y = search (on-screen keyboard), X = projects of the focused game, Menu pill → Settings.
+- The app always starts here (no automatic resume). Top: a large "続きから / Continue" hero card (last session's thumbnail + game name + time) — A resumes the session of the resume record (a temporary session or a project, journal recovered after a crash / force quit), else opens the latest project. Starting another game while a temporary session waits there asks first (save / don't save / cancel).
+- Top bar (between the name and the Menu pill): filter chips すべて / お気に入り / 最近 (All / Favorites / Recent: the last 24 games played, newest first, with when and how long), the sort (名前 / 最近遊んだ / メーカー / 発売年 / ジャンル — Name / Last Played / Maker / Year / Genre; cycles) and the search (on-screen keyboard). The controller reaches the row with up (order: row, hero, cards).
+- Below: a grid of large game cards (thumbnail from the latest project/screenshot, else a generated tile with the game name), 4 per row at 1280×800, showing the game's title from the built-in game database (`frontend/data/nesdb.tsv`, shared core) in the UI language and "maker · year" small; a star badge on favourites. The focused game's "maker · year · genre" is the one-line description. A = play, Y = favourite on / off, X = projects of the focused game, View / Select (⧉; keyboard Tab / S) = next sort, Menu pill → Settings.
+- Order: ja = gojūon order of the kana reading (dakuten / handakuten and small kana folded, ー read as the preceding vowel; Latin official titles such as FRONTLINE read フロントライン), en = title ignoring a leading "The"; ROMs not in the database keep their file name and come after the kana titles. Favourites / history / sort / filter persist in `library.json` (settings folder, written by the core).
 - Empty library: a single card explaining where to put ROMs (folder path + "Open folder").
 
 ## Seek bar while paused (R)

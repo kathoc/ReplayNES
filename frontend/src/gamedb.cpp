@@ -138,6 +138,26 @@ std::vector<std::string> split(const std::string& s, char sep) {
 
 namespace rnf {
 
+// Romanized Japanese long vowels as file names spell them (Akumajou = Akumaj\u014D) and common
+// accented letters, lower case; nullptr for anything else.
+const char* latinFold(uint32_t cp) {
+  switch (cp) {
+    case 0x0100: case 0x0101: case 0x00C2: case 0x00E2: return "aa";
+    case 0x0112: case 0x0113: case 0x00CA: case 0x00EA: return "ee";
+    case 0x012A: case 0x012B: case 0x00CE: case 0x00EE: return "ii";
+    case 0x014C: case 0x014D: case 0x00D4: case 0x00F4: return "ou";
+    case 0x016A: case 0x016B: case 0x00DB: case 0x00FB: return "uu";
+    case 0x00C0: case 0x00C1: case 0x00C4: case 0x00E0: case 0x00E1: case 0x00E4: return "a";
+    case 0x00C8: case 0x00C9: case 0x00CB: case 0x00E8: case 0x00E9: case 0x00EB: return "e";
+    case 0x00CC: case 0x00CD: case 0x00CF: case 0x00EC: case 0x00ED: case 0x00EF: return "i";
+    case 0x00D2: case 0x00D3: case 0x00D6: case 0x00F2: case 0x00F3: case 0x00F6: return "o";
+    case 0x00D9: case 0x00DA: case 0x00DC: case 0x00F9: case 0x00FA: case 0x00FC: return "u";
+    case 0x00D1: case 0x00F1: return "n";
+    case 0x00C7: case 0x00E7: return "c";
+    default: return nullptr;
+  }
+}
+
 // Matching key of a title or file name: width folded, ASCII lower-cased, "&" read as "and", a
 // leading "The " / trailing ", The" dropped, katakana folded to hiragana, everything but letters,
 // digits and kana / kanji removed.
@@ -147,6 +167,7 @@ std::string nameKey(const std::string& text) {
   while (i < text.size()) {
     uint32_t cp = foldWidth(nextCodePoint(text, i));
     if (cp < 0x80) s += char(std::tolower(int(cp)));
+    else if (const char* folded = latinFold(cp)) s += folded;
     else appendUtf8(s, cp);
   }
   if (s.size() > 4 && s.compare(0, 4, "the ") == 0) s = s.substr(4);
@@ -392,16 +413,17 @@ bool findByName(const std::string& fileName, size_t* idx) {
       return true;
     }
   }
-  // "Abadox - The Deadly Inner War" vs "Abadox": the main titles.
+  // A subtitle on one side only: "Labyrinth" vs "Labyrinth: Maou no Meikyuu" (the database's main
+  // title), "Spot - The Video Game" vs "Spot" (the file's main title). Never main title against
+  // main title: two different subtitles are two different games.
+  auto it = d.byMainName.find(nameKey(p.base));
+  if (it != d.byMainName.end() && !it->second.empty()) {
+    *idx = pick(it->second, p.region);
+    return true;
+  }
   std::string m = mainTitle(p.base);
-  for (const std::string& t : {p.base, m}) {
-    if (t.empty()) continue;
-    auto it = d.byMainName.find(nameKey(t));
-    if (it != d.byMainName.end() && !it->second.empty()) {
-      *idx = pick(it->second, p.region);
-      return true;
-    }
-    auto it2 = d.byName.find(nameKey(t));
+  if (!m.empty()) {
+    auto it2 = d.byName.find(nameKey(m));
     if (it2 != d.byName.end() && !it2->second.empty()) {
       *idx = pick(it2->second, p.region);
       return true;

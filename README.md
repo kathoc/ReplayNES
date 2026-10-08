@@ -13,7 +13,7 @@ You can export it as-is to an MP4 with audio.
 
 ## Features
 
-- **ROM Library**: ROMs placed in `~/Documents/ReplayNES/ROM` are listed, and you can start playing just by picking one. Projects are saved automatically to `~/Documents/ReplayNES/Projects`, and you can resume each ROM with "Continue".
+- **ROM Library**: ROMs placed in `~/Documents/ReplayNES/ROM` are listed by game name (a built-in database of NES / Famicom titles with maker, year and genre; Japanese titles in gojūon order in the Japanese UI), with favourites, recently played and sorting; pick one to start playing. Projects are saved automatically to `~/Documents/ReplayNES/Projects`, and "Continue" picks up the last session.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
 - **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
 - **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
@@ -45,7 +45,7 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
 
 1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library; Settings › System › Updates has Update → Restart and "Check Now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
 2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings › System › **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
-3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the latest project, then large game cards - A plays (a new project in `~/Documents/ReplayNES/Projects`), X lists a game's projects, Y searches.
+3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the last session (also after a crash), then large game cards with the game's name, maker and year - A plays (a new project in `~/Documents/ReplayNES/Projects`), Y marks a favourite, X lists a game's projects, View (⧉) changes the sort; up from the cards reaches All / Favorites / Recent, the sort and the search.
 4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward**.
 5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (record from here, previous try, takes, bookmarks, watch), Practice (the 8 A/B sections as cards), Share (MP4 export), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
 
@@ -57,7 +57,7 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
    | L2 / R2 hold | rewind / fast-forward | rewind / fast-forward |
    | D-pad / left stick | NES D-pad | move the focus |
    | A / B | NES B / A | confirm / back (on the top level: resume) |
-   | Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
+   | Y / X | turbo A / B | what the hint bar shows (rename, clear, favourite, projects …) |
 
    L or R alone acts on release (or after 0.1 s held), so it is at most 0.1 s later than a plain button - the price of L+R. Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
 
@@ -108,7 +108,7 @@ No page scrolls: a page shows at most six items, longer lists (takes, bookmarks,
 | L2 / R2 hold | rewind / fast-forward | — |
 | D-pad / left stick | NES D-pad | move the focus |
 | A / B | NES B / A | confirm / back (on the top level: close) |
-| Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
+| Y / X | turbo A / B | what the hint bar shows (rename, clear, favourite, projects …) |
 
 Keyboard: Esc opens / closes the Quick Menu, Space pauses; in menus the arrows move, Return / Space confirm, Delete goes back, Tab / ⇧Tab switch pages. L or R alone acts on release (or after being held for 0.1 s), so it is at most 0.1 s later than a plain button: the price of L+R. The Quick Menu is an assignable action (Settings › Controls › Keyboard): pad 1's L+R and Esc by default.
 
@@ -121,9 +121,11 @@ ReplayNES creates these folders at launch (the first time, macOS asks for access
 | `~/Documents/ReplayNES/ROM` | Your own ROMs (`.nes`). Subfolders one level down are read too |
 | `~/Documents/ReplayNES/Projects` | Projects started from the library (`<ROM name> <yyyy-MM-dd HHmm>.nesrec`) |
 
-- At the top, a large **Continue** card opens your latest project where you left off. Below it, big game cards (thumbnail of the latest project), paged with L / R instead of scrolling.
+- ReplayNES always starts here. At the top, a large **Continue** card reopens the last session where you left off (a project, or a game played without one), also after a force quit or a crash (from the last autosave); with none, it opens your latest project. Below it, big game cards (thumbnail of the latest project), paged with L / R instead of scrolling.
+- **Game names**: a built-in database (titles, makers, release years and genres of NES / Famicom games from Wikidata, matched by the ROM's contents or its file name) shows each game by its name in the UI language, with "maker · year" under it and the genre in the line at the bottom. In Japanese, games are listed in gojūon order of their kana reading ("FRONT LINE" sorts as フロントライン); ROMs it doesn't know keep their file name and come after.
+- **Sort and filter**: the row at the top: **All / Favorites / Recent** (the games you played last, with when and for how long), the sort (**Name / Last Played / Maker / Year / Genre**; View (⧉) or S cycles it) and the search (/). **Y** marks the focused game as a favourite (a star) or removes it. Favourites, the history and the order are kept in `~/Library/Application Support/ReplayNES/library.json`.
 - **A / Return / double-click** plays the focused game: a new project is created (no save dialog) and the game starts right away; your work is saved automatically.
-- **X** lists that game's projects ("New Game" starts another one); projects are matched to ROMs by their contents (SHA-256), so renaming the ROM file keeps the match. **Y** searches. With no ROMs yet, one card shows where to put them ("Open Folder"). Additions and deletions are picked up automatically.
+- **X** lists that game's projects ("New Game" starts another one); projects are matched to ROMs by their contents (SHA-256), so renaming the ROM file keeps the match. With no ROMs yet, one card shows where to put them ("Open Folder"). Additions and deletions are picked up automatically.
 - Game menu: New Project… (⌘N: choose where to save), Open Project… (⌘O), Try a ROM (No Project)… (⇧⌘N: play without a project; resumes at the next launch).
 - Choosing another game while one is open asks whether to save unsaved changes (see "Resume" below).
 
@@ -218,11 +220,11 @@ Save with **Game › Save** (⌘S) and open it later with **Open Project** (⌘O
 
 ### Resume (Pick Up Where You Left Off, Even After Quitting)
 
-- **Automatic continuation**: when you quit with ⌘Q or by closing the window (⌘W), you are not asked "Do you want to save?". Your work in progress is kept, and at the next launch the previous project (or the session you were playing without a project) opens **paused at the previous position and mode**, with "Resumed where you left off". After a force quit or power outage, it resumes from the last autosave (within a few seconds).
+- **Continue**: when you quit with ⌘Q or by closing the window (⌘W), you are not asked "Do you want to save?". Your work in progress is kept; the next launch starts on the library, and its **Continue** card opens the previous project (or the session you were playing without a project) **paused at the previous position and mode**, with "Resumed where you left off". After a force quit or power outage, Continue resumes from the last autosave (within a few seconds).
 - **For projects**: on quit, only the project's autosave (journal) is written; what you saved with ⌘S does not change. When switching to another project or ROM, you are asked whether to save (choosing "Don't Save" returns to the last saved state).
-- **Where temporary storage lives**: work done without a project (Try a ROM, or opening a ROM file directly) is stored at `~/Library/Application Support/ReplayNES/Session/current.nesrec` (resume information: `resume.json` in the same folder). It does not appear under Continue in the library; save it anywhere with ⌘S to make it a normal project.
+- **Where temporary storage lives**: work done without a project (Try a ROM, or opening a ROM file directly) is stored at `~/Library/Application Support/ReplayNES/Session/current.nesrec` (resume information: `resume.json` in the same folder). The library's Continue card resumes it; save it anywhere with ⌘S to make it a normal project. Choosing another game while it waits there asks first whether to save it.
 - **When it is discarded**: opening another ROM / project while the temporary session holds recorded content asks "Do you want to save?". "Save…" keeps it as a project, "Don't Save" discards it (the same applies to Game › Close). A temporary session with nothing recorded is discarded without asking.
-- **When resuming fails** (the ROM was moved or deleted, a different core, a damaged file): the reason is shown and you return to the library; if the ROM can be specified again, you can do it right there. The temporary storage is **kept**, and resuming is tried again at the next launch.
+- **When resuming fails** (the ROM was moved or deleted, a different core, a damaged file): the reason is shown and you return to the library; if the ROM can be specified again, you can do it right there. The temporary storage is **kept**, and Continue can try again.
 - If you launch two copies of ReplayNES at the same time, the later one does not resume and does not touch the temporary storage.
 
 If you moved the ROM file, specify it again when opening (it is confirmed to be the same ROM by SHA-256). **The ROM itself is not stored in the project.**

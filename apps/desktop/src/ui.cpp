@@ -329,7 +329,8 @@ void UI::slack(double now) {
   // Off the input -> screen path: the frame loop calls this in the slack before the next sample.
   if (!hasSession()) return;
   bool playing = !d_.emu->status().paused;
-  if (thumbSaveWanted_ || (playing && now - lastThumbSave_ >= 30)) saveLibraryThumb(now);
+  // Periodic pictures only once the game shows something (not the blank first frames).
+  if (thumbSaveWanted_ || (playing && now - lastThumbSave_ >= 30 && d_.emu->status().frame >= 180)) saveLibraryThumb(now);
 }
 
 void UI::saveLibraryThumb(double now) {

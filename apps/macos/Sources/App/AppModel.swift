@@ -744,7 +744,8 @@ final class AppModel: ObservableObject {
         }
         sessionLock = lock
         persistSessions = true
-        library.setCatalogFile(sessionPaths.root.deletingLastPathComponent().appendingPathComponent(RNF_LIBRARY_PREFS_FILE))
+        // Favourites / history / order next to the session folder (a scratch --session-root keeps its own).
+        library.setCatalogFile((root != nil ? sessionPaths.root : sessionPaths.root.deletingLastPathComponent()).appendingPathComponent(RNF_LIBRARY_PREFS_FILE))
         resumeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.updateResumeRecord()
