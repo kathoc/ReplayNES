@@ -125,7 +125,7 @@ extension AppModel {
                 case "nav" where parts.count > 2:
                     let inputs: [String: NavInput] = ["up": .up, "down": .down, "left": .left, "right": .right, "confirm": .confirm,
                                                       "back": .back, "x": .x, "y": .y, "pagePrev": .pagePrev, "pageNext": .pageNext,
-                                                      "menu": .menu, "escape": .escape]
+                                                      "menu": .menu, "escape": .escape, "options": .options, "search": .search]
                     if let i = inputs[parts[2]] { self.handleNav(i) }
                 case "windowSize" where parts.count > 2:
                     let wh = parts[2].split(separator: "x").compactMap { Double($0) }
