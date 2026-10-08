@@ -1,4 +1,4 @@
-// Settings → "CRT Display": settings of the physical CRT display model ported from nesterm
+// CRT display settings (Quick Menu: Settings › Display › CRT / CRT Details): the physical CRT display model ported from nesterm
 // (Sources/Core/CRT, docs/CRT_PORT.md). Display-only: never affects emulation, recording or hashes.
 // Parameters, ranges and defaults are nesterm's (web/index.html, web/app.mjs, physical-worker.mjs).
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -8,13 +8,6 @@ import SwiftUI
 enum CRTSyphonMode: String, CaseIterable, Identifiable {
     case follow, off, on
     var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .follow: return String(localized: "Follow the display")
-        case .off: return String(localized: "Always original (no CRT)")
-        case .on: return String(localized: "Always CRT")
-        }
-    }
 }
 
 /// Main thread only (read by the renderers through `snapshot`, which is lock-protected).

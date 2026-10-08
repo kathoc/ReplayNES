@@ -1,4 +1,4 @@
-// Full-screen play: the window chrome (transport bar, sidebar, status badges, practice panel,
+// Full-screen play: the window chrome (seek bar, status badges, practice pill, Quick Menu,
 // latency overlay) hides while the game runs and the pointer rests, so the game's CAMetalLayer
 // covers the whole screen with nothing above it. macOS then shows it direct-to-display (no
 // compositor pass: about one refresh less latency, and no compositor-induced judder;

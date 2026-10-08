@@ -41,6 +41,8 @@ struct ContentView: View {
             })
             .toolbar(model.immersive ? .hidden : .automatic, for: .windowToolbar)
             .sheet(isPresented: $model.showExport) { ExportSheet().environmentObject(model) }
+            // The game, its menus and the library are dark; so is the window around them.
+            .preferredColorScheme(.dark)
     }
 
     private var windowTitle: String {
@@ -64,7 +66,7 @@ struct ContentView: View {
                 if !model.immersive && !menu.isOpen && !model.showLibrary {
                     if !st.paused { StatusBadges().padding(12) }
                     if model.showLatency {
-                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12)
+                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, st.paused ? 96 : 0)
                     }
                     if st.practicing && !st.paused {
                         VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }

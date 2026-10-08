@@ -40,7 +40,7 @@ extension EmulationController {
 }
 
 extension AppModel {
-    /// File ▸ Reset Project… (also in the sidebar and the Takes window).
+    /// Game › Start Over… (menu bar and the Quick Menu: Game › Reset › Start Over).
     func resetProjectPrompt() {
         guard status.hasSession, let c = current else { return }
         let dir = status.projectPath

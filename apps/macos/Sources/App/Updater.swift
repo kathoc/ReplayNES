@@ -3,7 +3,7 @@
 // Privacy: Sparkle only contacts the feed URL (Info.plist SUFeedURL) to check for updates and
 // the release asset URL to download one. No system profile is sent (SUEnableSystemProfiling is
 // left off). Automatic checks start only after the user agrees to Sparkle's standard permission
-// prompt (shown on the second launch) and can be turned off in Settings > Updates.
+// prompt (shown on the second launch) and can be turned off in the Quick Menu (Settings › System › Updates).
 //
 // Installing never bypasses the app's quit path: Sparkle's installer asks the app to quit with a
 // normal Apple quit event, so AppDelegate.applicationShouldTerminate still persists the session

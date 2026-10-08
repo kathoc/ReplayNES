@@ -59,7 +59,7 @@ struct ExportSheet: View {
             Toggle(isOn: $applyFlash) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Apply Flash Reduction")
-                    Text("Exports the video with intense flashing reduced (level: \(exportFlashLevel.label); change it in Settings → Display & Audio). When off, the video is exactly as recorded.")
+                    Text("Exports the video with intense flashing reduced (level: \(exportFlashLevel.label); change it in Settings › Display). When off, the video is exactly as recorded.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

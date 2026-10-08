@@ -611,26 +611,6 @@
         }
       }
     },
-    "Always CRT": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "常にブラウン管 (CRT)"
-          }
-        }
-      }
-    },
-    "Always original (no CRT)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "常にオリジナル（CRT なし）"
-          }
-        }
-      }
-    },
     "An unsaved previous session remains": {
       "localizations": {
         "ja": {
@@ -2431,12 +2411,12 @@
         }
       }
     },
-    "Exports the video with intense flashing reduced (level: %@; change it in Settings → Display & Audio). When off, the video is exactly as recorded.": {
+    "Exports the video with intense flashing reduced (level: %@; change it in Settings › Display). When off, the video is exactly as recorded.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "激しい点滅を抑えた映像で書き出します（強さ: %@。設定 → 表示・音声で変更）。オフにすると記録どおりの映像です。"
+            "value": "激しい点滅を抑えた映像で書き出します（強さ: %@。設定 › 画面で変更）。オフにすると記録どおりの映像です。"
           }
         }
       }
@@ -2611,7 +2591,7 @@
         }
       }
     },
-    "Follow the display": {
+    "Follow Display": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4307,6 +4287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "逆方向の同時押し・スティック・連射の押す長さ"
+          }
+        }
+      }
+    },
+    "Original": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の画素"
           }
         }
       }

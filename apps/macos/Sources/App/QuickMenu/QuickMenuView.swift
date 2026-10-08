@@ -232,7 +232,7 @@ struct QuickMenuOverlay: View {
         let g = HintGlyphs.current(monitor.controllers)
         var hints: [(String, String, () -> Void)] = []
         if let f = focused, f.enabled, f.page != nil || f.confirm != nil || f.adjust != nil {
-            hints.append((g.confirm, f.verb ?? String(localized: "OK"), { menu.handle(.confirm) }))
+            hints.append((g.confirm, f.verb ?? String(localized: "Select"), { menu.handle(.confirm) }))
         }
         let x = focused?.x ?? content.x, y = focused?.y ?? content.y
         if let y { hints.append((g.y, y.label, { menu.handle(.y) })) }

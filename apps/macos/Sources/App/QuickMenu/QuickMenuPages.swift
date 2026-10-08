@@ -244,7 +244,7 @@ enum QuickMenuPages {
                    sizes.map { $0.label(par87: s.par87) }, sizeIndex) { s.sizeRaw = sizes[$0].rawValue },
             toggle("streamPAR", "rectangle.arrowtriangle.2.outward", "8:7", String(localized: "Pixel aspect ratio of a CRT TV"), s.par87) { s.par87 = $0 },
             choice("streamCRT", "tv", String(localized: "Picture"), String(localized: "Stream the CRT picture or the original pixels"),
-                   modes.map(\.label), modeIndex) { crt.syphonModeRaw = modes[$0].rawValue },
+                   [String(localized: "Follow Display"), String(localized: "Original"), String(localized: "CRT")], modeIndex) { crt.syphonModeRaw = modes[$0].rawValue },
         ]
     }
 
