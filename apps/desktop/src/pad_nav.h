@@ -7,7 +7,8 @@
 // UI never wants (X sets A on the timeline / continues a project in the library). Y (north) is fed
 // as kPadY instead of ImGuiKey_GamepadFaceUp: ImGui activates the focused item with it ("text
 // input" - a press on a button clicks it), while the UI uses Y for its own actions (search, rename,
-// set B). While a text field has the controller (the on-screen keyboard, ui_osk.cpp) nothing is
+// set B). L1 / R1 are not fed: they come from the chord detector (InputRouter::onUiShoulder), so
+// the Quick Menu's L+R never also switches pages. While a text field has the controller (the on-screen keyboard, ui_osk.cpp) nothing is
 // fed (setSuppressed); buttons still held when that ends are fed only after their release.
 // Frame-loop thread only (events are polled there).
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -98,7 +99,6 @@ class PadNavFeed {
         {ImGuiKey_GamepadFaceDown, SDL_GAMEPAD_BUTTON_SOUTH, -1},  {ImGuiKey_GamepadFaceRight, SDL_GAMEPAD_BUTTON_EAST, -1},
         {kPadX, SDL_GAMEPAD_BUTTON_WEST, -1},                      {kPadY, SDL_GAMEPAD_BUTTON_NORTH, -1},
         {ImGuiKey_GamepadStart, SDL_GAMEPAD_BUTTON_START, -1},     {ImGuiKey_GamepadBack, SDL_GAMEPAD_BUTTON_BACK, -1},
-        {ImGuiKey_GamepadL1, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, -1}, {ImGuiKey_GamepadR1, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, -1},
         {ImGuiKey_GamepadL3, SDL_GAMEPAD_BUTTON_LEFT_STICK, -1},   {ImGuiKey_GamepadR3, SDL_GAMEPAD_BUTTON_RIGHT_STICK, -1},
         {ImGuiKey_GamepadDpadLeft, SDL_GAMEPAD_BUTTON_DPAD_LEFT, 0}, {ImGuiKey_GamepadDpadRight, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, 1},
         {ImGuiKey_GamepadDpadUp, SDL_GAMEPAD_BUTTON_DPAD_UP, 2},   {ImGuiKey_GamepadDpadDown, SDL_GAMEPAD_BUTTON_DPAD_DOWN, 3},

@@ -255,7 +255,7 @@ void UI::buildSteamKeyboardHint() {
   float y = g.PlatformImeData.InputPos.y + g.PlatformImeData.InputLineHeight + S(10);
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   dl->AddRectFilled(ImVec2(x, y), ImVec2(x + ts.x + pad.x * 2, y + ts.y + pad.y * 2), IM_COL32(30, 32, 40, 235), S(8));
-  dl->AddRect(ImVec2(x, y), ImVec2(x + ts.x + pad.x * 2, y + ts.y + pad.y * 2), IM_COL32(255, 200, 64, 200), S(8));
+  dl->AddRect(ImVec2(x, y), ImVec2(x + ts.x + pad.x * 2, y + ts.y + pad.y * 2), IM_COL32(255, 59, 59, 200), S(8));
   dl->AddText(font, fs, ImVec2(x + pad.x, y + pad.y), IM_COL32(235, 238, 245, 255), text);
 }
 
@@ -350,7 +350,7 @@ void UI::buildOsk() {
         dl->AddRectFilled(ImVec2(a.x + S(14), b.y - S(8)), ImVec2(b.x - S(14), b.y - S(5)), IM_COL32(255, 255, 255, 230), S(2));
       if (focused) {
         float t = std::max(2.0f, S(3));
-        dl->AddRect(ImVec2(a.x - t, a.y - t), ImVec2(b.x + t, b.y + t), IM_COL32(255, 200, 64, 255), S(9), 0, t);
+        dl->AddRect(ImVec2(a.x - t, a.y - t), ImVec2(b.x + t, b.y + t), IM_COL32(255, 59, 59, 255), S(9), 0, t);
       }
       oskKeys_.push_back({r, c, a.x, a.y, b.x, b.y});
       x += kw;

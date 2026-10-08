@@ -1,15 +1,15 @@
 // In-app updates in the UI (state: UpdateService / UpdateModel): a notice on the library (start
-// screen) with Update / Later, the download progress and Restart; an "Update" button on the hub
-// while one is waiting; Settings -> Audio & Controls -> System: "Check for updates automatically"
-// and "Check now" (Windows: WinSparkle's own dialogs behind "Check for Updates…"). All controller
-// navigable (plain buttons in the page's focus order).
+// screen) that opens Settings > System > Updates (status, Check Now, Update / Restart, Check
+// Automatically: ui_settings.cpp; Windows: WinSparkle's own dialogs behind Check Now).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <string>
 
+#include "icons.h"
 #include "imgui_internal.h"
 #include "l10n.h"
 #include "settings.h"
 #include "ui.h"
+#include "ui_theme.h"
 #include "update_service.h"
 
 namespace rnl {
@@ -18,13 +18,6 @@ namespace {
 constexpr const char* kAllowUpdatesCommand = "flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes";
 constexpr const char* kUpdateCommand = "flatpak update io.github.replaynes.ReplayNES";
 
-void wrapped(const char* text, bool disabled) {
-  if (disabled) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  ImGui::PushTextWrapPos(0);
-  ImGui::TextUnformatted(text);
-  ImGui::PopTextWrapPos();
-  if (disabled) ImGui::PopStyleColor();
-}
 }  // namespace
 
 void UI::refreshUpdate() {
@@ -43,7 +36,7 @@ void UI::refreshUpdate() {
   }
   // While playing (no library on screen): a short notice when something is waiting.
   if (hasSession() && !update_.noticeHidden) {
-    if (update_.phase == UpdatePhase::available) notice(TR("A new version of ReplayNES is available (menu: Update)."));
+    if (update_.phase == UpdatePhase::available) notice(TR("A new version of ReplayNES is available (Settings › System › Updates)."));
     else if (update_.phase == UpdatePhase::installed) notice(TR("The update is installed. Restart ReplayNES to use it."));
   }
 }
@@ -86,119 +79,16 @@ std::string UI::updateStatusText() const {
   return {};
 }
 
-// The library's notice: one row above the search field.
-void UI::buildUpdateNotice() {
+// The library's notice: a small pill in its top bar; a click / tap opens Settings > System > Updates.
+void UI::buildUpdateNotice(const LRect& r) {
   if (!update_.noticeVisible()) return;
-  ImGui::PushID("##update");
-  ImVec4 bg = update_.phase == UpdatePhase::failed ? ImVec4(0.42f, 0.20f, 0.14f, 1) : ImVec4(0.14f, 0.27f, 0.45f, 1);
-  ImGui::PushStyleColor(ImGuiCol_ChildBg, bg);
-  ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, S(8));
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(S(12), S(8)));
-  ImGui::BeginChild("##updatenotice", ImVec2(0, 0),
-                    ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened);
-  ImGui::AlignTextToFramePadding();
-  ImGui::TextUnformatted(updateStatusText().c_str());
-  switch (update_.phase) {
-    case UpdatePhase::available:
-      ImGui::SameLine();
-      if (ImGui::Button(TR("Update"))) d_.updates->update();
-      ImGui::SameLine();
-      if (ImGui::Button(TR("Later"))) d_.updates->dismiss();
-      break;
-    case UpdatePhase::updating:
-      ImGui::SameLine();
-      ImGui::ProgressBar(float(update_.percent) / 100.0f, ImVec2(S(260), 0));
-      break;
-    case UpdatePhase::installed:
-      ImGui::SameLine();
-      if (ImGui::Button(TR("Restart")) && onRestart) onRestart();
-      ImGui::SameLine();
-      if (ImGui::Button(TR("Later"))) d_.updates->dismiss();
-      break;
-    case UpdatePhase::failed:
-      ImGui::SameLine();
-      if (ImGui::Button(TR("OK"))) d_.updates->dismiss();
-      wrapped(updateErrorText().c_str(), false);
-      break;
-    default: break;
-  }
-  ImGui::EndChild();
-  ImGui::PopStyleVar(2);
-  ImGui::PopStyleColor();
-  ImGui::PopID();
-  ImGui::Spacing();
-}
-
-// Hub: the "Update" button's dialog.
-void UI::showUpdateDialog() {
-  Dialog d;
-  if (update_.phase == UpdatePhase::installed) {
-    d.title = TR("Update Installed");
-    d.message = updateStatusText() + "\n\n" + TR("Restart now? The session is saved first.");
-    d.buttons = {TR("Restart"), TR("Later")};
-    d.onResult = [this](int b, bool) {
-      if (b == 0 && onRestart) onRestart();
-      else if (d_.updates) d_.updates->dismiss();
-    };
-  } else if (update_.phase == UpdatePhase::available) {
-    d.title = TR("Update Available");
-    d.message = std::string(TR("A new version of ReplayNES is available.")) + "\n\n" +
-                TR("It downloads in the background: you can keep playing, then restart when it is installed.");
-    d.buttons = {TR("Update"), TR("Later")};
-    d.onResult = [this](int b, bool) {
-      if (!d_.updates) return;
-      if (b == 0) d_.updates->update();
-      else d_.updates->dismiss();
-    };
-  } else {
-    return;
-  }
-  showDialog(std::move(d));
-}
-
-// Settings -> Audio & Controls -> System.
-void UI::buildUpdateSettings() {
-  Settings& s = *d_.settings;
-  if (!d_.updates) {  // no in-app updates (e.g. a Windows build without WinSparkle.dll): the version only
-    wrapped(TRF("Version %@", {RNL_APP_VERSION}).c_str(), true);
-    return;
-  }
-  if (d_.updates->ownsDialogs()) {  // Windows: WinSparkle shows its own windows (under "System")
-    bool autoCheck = d_.updates->autoCheckEnabled();
-    if (ImGui::Checkbox(TR("Automatically check for updates"), &autoCheck)) d_.updates->setAutoCheck(autoCheck);
-    if (ImGui::Button((std::string(TR("Check for Updates…")) + "##updatecheck").c_str())) d_.updates->checkNow();
-    wrapped(TRF("Version %@", {RNL_APP_VERSION}).c_str(), true);
-    wrapped(TR("When this is on, ReplayNES looks for a new version once a day. Updates come from the project’s GitHub "
-               "releases; their signature is checked before they are installed, and ReplayNES restarts into the new "
-               "version (the session is saved first)."),
-            true);
-    return;
-  }
-  ImGui::SeparatorText(TR("Updates"));
-  if (ImGui::Checkbox(TR("Automatically check for updates"), &s.checkForUpdates)) changed();
-  bool unsupported = update_.phase == UpdatePhase::unsupported;
-  ImGui::BeginDisabled(unsupported || update_.busy() || !d_.updates);
-  if (ImGui::Button((std::string(TR("Check now")) + "##updatecheck").c_str())) d_.updates->checkNow();
-  ImGui::EndDisabled();
-  std::string status = updateStatusText();
-  if (update_.phase == UpdatePhase::available) {
-    ImGui::SameLine();
-    if (ImGui::Button((std::string(TR("Update")) + "##updateapply").c_str())) d_.updates->update();
-  } else if (update_.phase == UpdatePhase::installed) {
-    ImGui::SameLine();
-    if (ImGui::Button((std::string(TR("Restart")) + "##updaterestart").c_str()) && onRestart) onRestart();
-  }
-  if (!status.empty()) {
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(status.c_str());
-  }
-  if (update_.phase == UpdatePhase::updating) ImGui::ProgressBar(float(update_.percent) / 100.0f, ImVec2(S(420), 0));
-  if (update_.phase == UpdatePhase::failed) wrapped(updateErrorText().c_str(), false);
-  wrapped(TRF("Version %@", {RNL_APP_VERSION}).c_str(), true);
-  wrapped(TR("While ReplayNES runs, the system checks its repository about every 30 minutes and shows a notice on the "
-             "library. Check now looks right away and installs the update when there is one; restart ReplayNES to use it."),
-          true);
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImU32 bg = update_.phase == UpdatePhase::failed ? IM_COL32(120, 50, 36, 230) : IM_COL32(36, 80, 140, 230);
+  dl->AddRectFilled(ImVec2(r.x, r.y), ImVec2(r.right(), r.bottom()), bg, r.h / 2);
+  std::string t = std::string(icons::glyph("download")) + "  " + updateStatusText();
+  theme::textFit(dl, metrics_.hint(), ImVec2(r.x + S(14), r.y + (r.h - metrics_.hint()) / 2), r.w - S(28), theme::kText, t);
+  ImGui::SetCursorScreenPos(ImVec2(r.x, r.y));
+  if (ImGui::InvisibleButton("##updatenotice", ImVec2(r.w, r.h))) openPage("system.updates");
 }
 
 bool UI::scriptUpdate(const std::string& action) {

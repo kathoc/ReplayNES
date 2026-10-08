@@ -36,6 +36,8 @@ struct Settings {
   std::string onScreenKeyboard = "auto";
   // System
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
+  std::string language = "auto";  // "auto" (the system's), "ja", "en"
+  bool menuHintShown = false;     // the Menu pill pulsed on the first launch
   // Input layout version of the saved bindings (RNF_CONTROLLER_LAYOUT_VERSION; 0 = never saved).
   int controllerLayoutVersion = 0;
   // UI state worth keeping

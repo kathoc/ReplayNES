@@ -22,10 +22,11 @@ std::string slotPrefix(int slot) { return "gc" + std::to_string(slot) + ":"; }
 }  // namespace
 
 InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
-    : in_(rn_input_new()), file_(std::move(bindingsFile)), settings_(settings) {}
+    : in_(rn_input_new()), file_(std::move(bindingsFile)), settings_(settings), chord_(rnf_chord_new(0)) {}
 
 InputRouter::~InputRouter() {
   closeAll();
+  rnf_chord_free(chord_);
   rn_input_free(in_);
 }
 
@@ -75,6 +76,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 5) {  // the Quick Menu: L+R and Esc (R keeps pausing)
+      rnf_input_menu_migration(bindingView_.data(), bindingView_.size(), RNF_KEYBOARD_SDL, &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -102,6 +108,11 @@ void InputRouter::refreshBindings() {
   rnf_list* dirs = rnf_input_paused_step_directions(bindingView_.data(), bindingView_.size());
   for (size_t i = 0, n = rnf_list_count(dirs); i < n; ++i) stepDirs_[rnf_list_a(dirs, i)] = int(rnf_list_value(dirs, i));
   rnf_list_free(dirs);
+  // The Quick Menu: combos go through the chord detector, single inputs open it directly.
+  rnf_chord_configure(chord_, bindingView_.data(), bindingView_.size(), "hk.menu");
+  menuIds_.clear();
+  for (const rnf_binding& b : bindingView_)
+    if (std::string(b.action) == "hk.menu" && !rnf_input_combo_split(b.input, nullptr, nullptr)) menuIds_.insert(b.input);
 }
 
 void InputRouter::persist() {
@@ -160,12 +171,29 @@ void InputRouter::setAnalogThreshold(double t) {
   persist();
 }
 
-void InputRouter::beginCapture(std::function<void(const std::string&)> fn) { capture_ = std::move(fn); }
+void InputRouter::beginCapture(std::function<void(const std::string&)> fn, bool keysOnly) {
+  capture_ = std::move(fn);
+  captureKeysOnly_ = keysOnly;
+}
 void InputRouter::cancelCapture() {
   if (!capture_) return;
   auto fn = std::move(capture_);
   capture_ = nullptr;
   fn("");
+}
+
+// A press while "press a key / button" waits: true when the capture took it.
+bool InputRouter::captureFrom(const std::string& id, bool keyboard) {
+  if (!capture_) return false;
+  if (captureKeysOnly_ && !keyboard) {
+    // Keys only: a controller's B cancels, anything else waits for a key.
+    if (id.find(":face.east") != std::string::npos) cancelCapture();
+    return true;
+  }
+  auto fn = std::move(capture_);
+  capture_ = nullptr;
+  fn(id);
+  return true;
 }
 
 int InputRouter::connectedCount() const {
@@ -210,6 +238,60 @@ bool InputRouter::routePausedStep(const std::string& id, bool down) {
     return true;
   }
   return false;
+}
+
+bool InputRouter::routePausedConfirm(const std::string& id, bool down) {
+  if (down) {
+    // Paused in play (the seek bar): A / B resume; nothing reaches the game.
+    if (ui_ || !pausedStepMode_) return false;
+    size_t colon = id.find(':');
+    if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
+    std::string el = id.substr(colon + 1);
+    if (el != "face.south" && el != "face.east") return false;
+    routedConfirm_.insert(id);
+    if (onPausedConfirm) onPausedConfirm();
+    return true;
+  }
+  return routedConfirm_.erase(id) > 0;
+}
+
+// The chord detector's outcome: the Quick Menu, or L / R alone going their usual way.
+void InputRouter::pumpChord() {
+  rnf_chord_event ev;
+  while (rnf_chord_poll(chord_, &ev)) {
+    std::string id = ev.input;
+    switch (ev.kind) {
+      case RNF_CHORD_COMBO_DOWN:
+        if (onMenuButton) onMenuButton();
+        break;
+      case RNF_CHORD_COMBO_UP: break;
+      case RNF_CHORD_ALONE_DOWN:
+      case RNF_CHORD_ALONE_UP: routeButton(id, ev.kind == RNF_CHORD_ALONE_DOWN, ev.time); break;
+    }
+  }
+}
+
+void InputRouter::tick(double now) {
+  rnf_chord_tick(chord_, now);
+  pumpChord();
+}
+
+// A button after the menu / chord / capture checks: the UI's shoulders, paused stepping and
+// confirming, or the game.
+void InputRouter::routeButton(const std::string& id, bool down, double t) {
+  if (ui_) {
+    setPressed(id, down, t, false);
+    size_t colon = id.find(':');
+    std::string el = colon == std::string::npos ? id : id.substr(colon + 1);
+    if (down && onUiShoulder && (el == "leftShoulder" || el == "rightShoulder")) onUiShoulder(el == "leftShoulder" ? -1 : 1);
+    return;
+  }
+  if (routePausedStep(id, down) || routePausedConfirm(id, down)) {
+    if (down) pressed_.insert(id);
+    else pressed_.erase(id);
+    return;
+  }
+  setPressed(id, down, t, true);
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
@@ -260,6 +342,9 @@ void InputRouter::detach(SDL_JoystickID id) {
   pads_[s] = PadInfo();
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
+  rnf_chord_reset(chord_);
+  for (auto it = routedConfirm_.begin(); it != routedConfirm_.end();)
+    it = it->compare(0, prefix.size(), prefix) == 0 ? routedConfirm_.erase(it) : std::next(it);
   for (auto it = routedSteps_.begin(); it != routedSteps_.end();) {
     if (it->compare(0, prefix.size(), prefix) == 0) {
       auto d = stepDirs_.find(*it);
@@ -288,21 +373,24 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
   }
   if (down && capture_) {
     pressed_.insert(id);
-    auto fn = std::move(capture_);
-    capture_ = nullptr;
-    fn(id);
+    captureFrom(id, false);
     return;
   }
-  if (ui_) {
-    setPressed(id, down, t, false);
-    return;
-  }
-  if (routePausedStep(id, down)) {
+  // The Quick Menu: L+R (chord detector) or a button of its own.
+  if (rnf_chord_feed(chord_, id.c_str(), down ? 1 : 0, t)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
+    pumpChord();
     return;
   }
-  setPressed(id, down, t, true);
+  pumpChord();  // a member held alone may have fired just now
+  if (menuIds_.count(id)) {
+    if (down) pressed_.insert(id);
+    else pressed_.erase(id);
+    if (down && onMenuButton) onMenuButton();
+    return;
+  }
+  routeButton(id, down, t);
 }
 
 void InputRouter::stickDirections(int slot, const char* stick, float x, float y, double t) {
@@ -317,9 +405,7 @@ void InputRouter::stickDirections(int slot, const char* stick, float x, float y,
     if (on) pressed_.insert(id);
     else pressed_.erase(id);
     if (on && capture_) {
-      auto fn = std::move(capture_);
-      capture_ = nullptr;
-      fn(id);
+      captureFrom(id, false);
     } else if (on && !ui_) {
       pressSeq_.fetch_add(1);
       lastEvent_.store(t);
@@ -340,9 +426,7 @@ void InputRouter::padAxis(int slot, int axis, float v, double t) {
     std::string id = g + (right ? "rightTrigger" : "leftTrigger");
     if (now && capture_) {
       pressed_.insert(id);
-      auto fn = std::move(capture_);
-      capture_ = nullptr;
-      fn(id);
+      captureFrom(id, false);
       return;
     }
     setPressed(id, now, t, !ui_);
@@ -382,13 +466,13 @@ void InputRouter::handleEvent(const SDL_Event& e, double evTime, bool keyboardFo
       SDL_Scancode sc = e.key.scancode;
       std::string id = "kb:" + std::to_string(int(sc));
       if (down && capture_) {
-        auto fn = std::move(capture_);
-        capture_ = nullptr;
-        fn(sc == SDL_SCANCODE_ESCAPE ? std::string() : id);
+        if (sc == SDL_SCANCODE_ESCAPE) cancelCapture();
+        else captureFrom(id, true);
         break;
       }
-      if (down && (sc == SDL_SCANCODE_ESCAPE || sc == SDL_SCANCODE_F1)) {
-        if (onMenuButton) onMenuButton();
+      // The Quick Menu: its keys (Esc by default) and F1. Never game input.
+      if (sc == SDL_SCANCODE_F1 || menuIds_.count(id)) {
+        if (down && onMenuButton) onMenuButton();
         break;
       }
       bool game = !ui_ && !keyboardForUI;

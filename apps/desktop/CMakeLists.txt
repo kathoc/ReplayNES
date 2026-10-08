@@ -31,6 +31,8 @@ add_library(rnl_logic STATIC
   src/settings.cpp
   src/thumbnails.cpp
   src/ui_logic.cpp
+  src/ui_layout.cpp
+  src/library_thumbs.cpp
   src/osk.cpp
   src/update_model.cpp
   src/platform/platform.cpp

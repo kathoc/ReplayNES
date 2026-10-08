@@ -17,15 +17,28 @@ target_compile_definitions(rn_imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISA
 target_link_libraries(rn_imgui PUBLIC ${RNL_SDL3_TARGET})
 
 set(RNL_APP_SRC ${RNL_DESKTOP_DIR}/src)
+# The menus' icon font (a Tabler Icons subset, MIT) compiled in: no file to install.
+set(RNL_FONT_DIR ${RNL_DESKTOP_DIR}/resources/fonts)
+set(RNL_ICON_FONT_CPP ${CMAKE_CURRENT_BINARY_DIR}/rnl_icon_font_data.cpp)
+add_custom_command(
+  OUTPUT ${RNL_ICON_FONT_CPP}
+  COMMAND ${CMAKE_COMMAND} -DDIR=${RNL_FONT_DIR} -DOUT=${RNL_ICON_FONT_CPP} -P ${RNL_FONT_DIR}/embed_fonts.cmake
+  DEPENDS ${RNL_FONT_DIR}/tabler-subset.ttf ${RNL_FONT_DIR}/tabler-subset-filled.ttf ${RNL_FONT_DIR}/embed_fonts.cmake
+  COMMENT "Embedding the icon font"
+  VERBATIM)
 add_library(rnl_app STATIC
   ${RNL_APP_SRC}/app.cpp
   ${RNL_APP_SRC}/audio_out.cpp
   ${RNL_APP_SRC}/game_rect.cpp
+  ${RNL_APP_SRC}/icons.cpp
+  ${RNL_ICON_FONT_CPP}
   ${RNL_APP_SRC}/input_router.cpp
   ${RNL_APP_SRC}/perf_stats.cpp
   ${RNL_APP_SRC}/script.cpp
   ${RNL_APP_SRC}/ui.cpp
-  ${RNL_APP_SRC}/ui_pages.cpp
+  ${RNL_APP_SRC}/ui_dialogs.cpp
+  ${RNL_APP_SRC}/ui_menu.cpp
+  ${RNL_APP_SRC}/ui_library.cpp
   ${RNL_APP_SRC}/ui_play.cpp
   ${RNL_APP_SRC}/ui_settings.cpp
   ${RNL_APP_SRC}/ui_export.cpp

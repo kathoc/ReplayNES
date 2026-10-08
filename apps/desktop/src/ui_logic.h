@@ -1,10 +1,10 @@
-// Controller conventions of the Linux UI as plain functions (unit-tested without SDL / ImGui):
-// which page B / Menu (≡) / View (⧉) / L1 / R1 lead to, the timeline's D-pad scrub steps and
-// L1 / R1 jumps, and the button prompt glyphs per controller family.
+// Controller conventions of the desktop UI as plain functions (unit-tested without SDL / ImGui):
+// the seek bar's D-pad scrub steps, button prompt glyphs per controller family and the Menu
+// pill's chord glyph. The menu tree and its navigation are the shared core's (rnf_menu).
 //
-//   A = confirm, B = back (a page returns to the hub; on the hub B resumes play), Menu (≡) =
-//   hub open / close (no session: Library <-> Settings), View (⧉) = Controls Guide on / off,
-//   L1 / R1 = Settings tabs (other pages: the next page), D-pad / left stick = focus.
+//   L+R together = Quick Menu open / close (Esc on a keyboard), R alone = pause (the seek bar),
+//   L alone = slow 1/2; in menus: A = confirm, B = back (on the top level: resume), L / R = the
+//   previous / next page, X / Y = the hint bar's contextual actions, L2 / R2 = rewind / fast-forward.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -16,34 +16,20 @@
 
 namespace rnl {
 
-/// Menu pages. `playback` is the hub (the paused overlay: game, timeline, transport, hub buttons).
-enum class MenuPage { playback, takes, bookmarks, practice, library, settings, guide };
-
-enum class MenuCommand { back, menuButton, viewButton };
-
-struct MenuTransition {
-  MenuPage page = MenuPage::playback;
-  bool closeAndResume = false;  // close the menu and resume play (session only)
-};
-
-/// Where B / Menu / View lead from `current`. `previous` = the page shown before the guide (View
-/// toggles back to it).
-MenuTransition menuTransition(MenuPage current, MenuCommand cmd, bool hasSession, MenuPage previous);
-
-/// L1 / R1 on a page that has no tabs of its own: the previous / next page among Practice, Takes,
-/// Bookmarks and the Guide (`current` unchanged elsewhere).
-MenuPage cyclePage(MenuPage current, int dir);
-
-/// Frames one D-pad step moves the playhead on the focused timeline, by how long the direction
-/// has been held (hold for faster).
+/// Frames one D-pad step moves the playhead on the seek bar, by how long the direction has been
+/// held (hold for faster).
 int scrubStepFrames(double heldSeconds);
 
-/// L1 / R1 on the focused timeline: the previous / next bookmark of the active take, or 5 s
-/// back / forward when there is none in that direction (clamped to the recorded range).
+/// The previous / next bookmark of the active take, or 5 s back / forward when there is none in
+/// that direction (clamped to the recorded range).
 uint64_t timelineJumpTarget(uint64_t frame, uint64_t takeLength, const std::vector<uint64_t>& bookmarks, int dir);
 
 /// Button prompt glyph of a controller element ("face.south", "leftShoulder", "menu", ...) for the
 /// family: Steam Deck / Xbox A B X Y, PlayStation ✕ ○ □ △, Nintendo by position (south = B).
 std::string padGlyph(rnf_controller_family family, const char* element);
+
+/// The Quick Menu chord on the Menu pill: "L+R" (Steam Deck, Xbox, Nintendo, generic), "L1+R1"
+/// (PlayStation), "Esc" with no controller connected.
+std::string menuChordGlyph(rnf_controller_family family, bool controllerConnected);
 
 }  // namespace rnl

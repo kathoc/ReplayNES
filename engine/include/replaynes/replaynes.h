@@ -313,6 +313,10 @@ typedef enum rn_socd { RN_SOCD_NEUTRAL = 0, RN_SOCD_LAST_WINS = 1, RN_SOCD_ALLOW
 #define RN_HK_UNDO_TAKE (1u << 9)
 #define RN_HK_FAST_FORWARD (1u << 10)
 #define RN_HK_STEP_BACK (1u << 11)
+/* The frontend's menu (Quick Menu open / close). Usually bound to a two-button combo id
+ * "gc0:leftShoulder+gc0:rightShoulder" that the frontend presses once its chord detector
+ * (rnf_chord, frontend.h) saw both buttons; never reaches the game. */
+#define RN_HK_MENU (1u << 12)
 
 rn_input* rn_input_new(void);
 void rn_input_free(rn_input* in);
@@ -322,7 +326,7 @@ void rn_input_free(rn_input* in);
  * "p1.down" "p1.left" "p1.right" (same for p2), "p1.turbo_a" "p1.turbo_b" "p2.turbo_a"
  * "p2.turbo_b", hotkeys "hk.pause" "hk.frame_advance" "hk.rewind" "hk.slow" "hk.bookmark"
  * "hk.soft_reset" "hk.power_cycle" "hk.toggle_mode" "hk.save" "hk.undo_take" "hk.fast_forward"
- * "hk.step_back". One physical id may map to several actions and vice versa. */
+ * "hk.step_back" "hk.menu". One physical id may map to several actions and vice versa. */
 rn_status rn_input_bind(rn_input* in, const char* physical_id, const char* action);
 rn_status rn_input_unbind(rn_input* in, const char* physical_id, const char* action /* NULL = all */);
 void rn_input_clear_bindings(rn_input* in);

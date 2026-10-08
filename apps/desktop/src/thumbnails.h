@@ -29,6 +29,8 @@ struct ThumbImage {
   uint64_t serial = 0;  // unique per image (texture atlas key)
   uint32_t px[RNF_THUMB_WIDTH * RNF_THUMB_HEIGHT];
   static ThumbImage* make(const uint32_t* frame256x240);
+  /// A copy of a thumbnail-sized picture (RNF_THUMB_WIDTH x RNF_THUMB_HEIGHT), new serial.
+  static ThumbImage* fromThumb(const uint32_t* px);
   void retain() { refs.fetch_add(1); }
   void release() {
     if (refs.fetch_sub(1) == 1) delete this;

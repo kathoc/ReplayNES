@@ -56,11 +56,15 @@ the console it was started from, or to `--log FILE`. Language: Japanese when the
 display language is Japanese (`--lang` / `REPLAYNES_LANG` override it). Fonts: Segoe UI, Yu Gothic
 (then Meiryo / BIZ UDGothic / MS Gothic) and Segoe UI Symbol from `%WINDIR%\Fonts`.
 
-Controls: the shared bindings (Steam Deck / Xbox layout by button position) - see the table in
-[STEAM_DECK.md](STEAM_DECK.md#controls) and `apps/windows/README.txt`; gamepads through SDL3
-(XInput, GameInput, raw input / HIDAPI for PlayStation and Switch Pro). Keyboard as on Linux (F11
-full screen, F3 statistics). The built-in on-screen keyboard works with a controller; Steam's
-keyboard is a Steam Deck feature.
+Controls: the shared bindings (Steam Deck / Xbox layout by button position) and the same menus
+(docs/design/UI_REDESIGN.md) - see [STEAM_DECK.md](STEAM_DECK.md#controls) and
+`apps/windows/README.txt`; gamepads through SDL3 (XInput, GameInput, raw input / HIDAPI for
+PlayStation and Switch Pro). **L+R together (LB+RB / L1+R1) opens the Quick Menu**, R alone pauses
+(seek bar), L alone toggles slow motion; on the keyboard **Esc** (or F1) opens / closes it, and in
+menus arrows / Enter / Backspace / Page Up / Page Down / Delete / F2 do what the hint bar shows. With
+no controller the "☰ Menu Esc" pill in the top-right corner is a button (mouse / touch). F11 full
+screen, F3 statistics. The built-in on-screen keyboard works with a controller; Steam's keyboard is
+a Steam Deck feature.
 
 ### Rendering and pacing (`apps/windows/src/d3d11_renderer.*`)
 
@@ -180,9 +184,9 @@ failed / cancelled export removes its file.
   architecture (`sparkle:os="windows-x64"` / `"windows-arm64"`; an x64 build emulated on Arm gets
   x64), enclosure = the release zip. `scripts/release-windows.sh` builds and signs it
   ([RELEASE.md](RELEASE.md)).
-* Settings -> Audio & Controls -> System: "Automatically check for updates" (WinSparkle's own setting
-  in `HKCU\Software\ReplayNES\WinSparkle`; WinSparkle asks on the second launch, like Sparkle) and
-  "Check for Updates…" (WinSparkle's dialogs, Japanese / English with the app).
+* Settings › System › Updates: "Check Automatically" (WinSparkle's own setting in
+  `HKCU\Software\ReplayNES\WinSparkle`; WinSparkle asks on the second launch, like Sparkle) and
+  "Check Now" (WinSparkle's dialogs, Japanese / English with the app).
 * Installing: WinSparkle downloads the zip and verifies its signature, then calls the app (it
   would only run installers): the zip is unpacked with Windows' `tar.exe` into
   `%LOCALAPPDATA%\ReplayNES\Update\staging-<pid>`, its `ReplayNES.exe` is started as
@@ -361,7 +365,15 @@ CRT / export / updates: `play-plain`, `play-crt`, `play-crt-off` (arm64), `x64-p
 `x64-crt-off`, `settings-display-crt-{en,ja}`, `final-system-{en,ja}` (Settings -> System with the
 update controls), `final-export-{en,ja}`; WinSparkle's error for a wrongly signed update:
 `build/vm-shots/update-bad-signature.png` (`prlctl capture` worked here - the app was behind
-WinSparkle's window).
+WinSparkle's window). These show the UI before the redesign.
+
+**The redesigned UI (2026-10-08, arm64, 1280x800 window, keyboard only - the VM has no controller):**
+`build/vm-shots/ui/w-{en,ja}-NN-*.png` - library, playing, the paused seek bar, Quick Menu, Retry,
+Practice, Settings (Display, Controls, Keyboard, Controller, System), Game, and the Menu pill clicked
+(closes / opens the menu) - from a `--script` driving the app with SDL key and mouse events
+(`key Escape`, `key Return`, `clickpill`, `page <id>`). `layoutcheck 1920x1080 1280x800` walks every
+screen of the menu model, the library and the seek bar at the window size and as a 1920x1080 layout:
+nothing overflows or scrolls (60 / 60 screens).
 
 ### CI (`.github/workflows/windows.yml`)
 
