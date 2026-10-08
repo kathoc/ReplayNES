@@ -18,12 +18,13 @@ struct Ev {
   rnf_chord_kind kind;
   std::string input;
   double time;
+  int repeats;
 };
 
 std::vector<Ev> drain(rnf_chord* c) {
   std::vector<Ev> v;
   rnf_chord_event e;
-  while (rnf_chord_poll(c, &e)) v.push_back({e.kind, e.input, e.time});
+  while (rnf_chord_poll(c, &e)) v.push_back({e.kind, e.input, e.time, e.repeats});
   return v;
 }
 
@@ -31,7 +32,7 @@ std::string str(const std::vector<Ev>& v) {
   std::string s;
   for (auto& e : v) {
     const char* k = e.kind == RNF_CHORD_COMBO_DOWN ? "COMBO" : e.kind == RNF_CHORD_COMBO_UP ? "combo-up"
-                    : e.kind == RNF_CHORD_ALONE_DOWN ? "DOWN" : "up";
+                    : e.kind == RNF_CHORD_ALONE_DOWN ? "DOWN" : e.kind == RNF_CHORD_ALONE_REPEAT ? "rep" : "up";
     s += std::string(s.empty() ? "" : " ") + k + ":" + (e.input == LR ? "LR" : e.input == L ? "L" : e.input == R ? "R" : e.input);
   }
   return s;
@@ -92,16 +93,18 @@ TEST_CASE("chord: either order, and exactly at the window edge") {
   rnf_chord_free(c);
 }
 
-TEST_CASE("chord: a tap fires on release, a hold after the window") {
+TEST_CASE("chord: a single press is triggered by its release (ALONE_UP), tap or hold") {
   rnf_chord* c = menuChord();
+  CHECK_EQ(rnf_chord_repeat(c), 0);
   rnf_chord_feed(c, R, 1, 1.0);
   rnf_chord_tick(c, 1.03);
   CHECK(drain(c).empty());
-  rnf_chord_feed(c, R, 0, 1.04);  // tap: pause fires on the release
+  rnf_chord_feed(c, R, 0, 1.04);  // tap: DOWN + UP together at the release (UP = pause)
   auto ev = drain(c);
   CHECK_EQ(str(ev), "DOWN:R up:R");
-  CHECK(near(ev[0].time, 1.04, 1e-9));
-  rnf_chord_feed(c, L, 1, 2.0);  // hold: slow fires when the window ends
+  CHECK(near(ev[1].time, 1.04, 1e-9));
+  CHECK_EQ(ev[1].repeats, 0);
+  rnf_chord_feed(c, L, 1, 2.0);  // hold: "held alone" when the window ends, the trigger only at the release
   rnf_chord_tick(c, 2.099);
   CHECK(drain(c).empty());
   rnf_chord_tick(c, 2.116);
@@ -109,9 +112,68 @@ TEST_CASE("chord: a tap fires on release, a hold after the window") {
   CHECK_EQ(str(ev), "DOWN:L");
   CHECK(near(ev[0].time, 2.1, 1e-9));
   rnf_chord_tick(c, 3.0);
-  CHECK(drain(c).empty());  // fires once
+  CHECK(drain(c).empty());  // no repeats unless asked for
+  CHECK_EQ(rnf_chord_deadline(c), 0.0);
   rnf_chord_feed(c, L, 0, 3.1);
-  CHECK_EQ(str(drain(c)), "up:L");
+  ev = drain(c);
+  CHECK_EQ(str(ev), "up:L");
+  CHECK(near(ev[0].time, 3.1, 1e-9));
+  CHECK_EQ(ev[0].repeats, 0);
+  rnf_chord_free(c);
+}
+
+TEST_CASE("chord: repeat mode (paused frame steps): held alone >= 400 ms repeats, never in a chord") {
+  rnf_chord* c = menuChord();
+  rnf_chord_set_repeat(c, 1);
+  CHECK_EQ(rnf_chord_repeat(c), 1);
+  // A short press: one trigger at the release, no repeat.
+  rnf_chord_feed(c, R, 1, 1.0);
+  rnf_chord_tick(c, 1.2);
+  CHECK_EQ(str(drain(c)), "DOWN:R");
+  CHECK(near(rnf_chord_deadline(c), 1.4, 1e-9));
+  rnf_chord_feed(c, R, 0, 1.35);
+  auto ev = drain(c);
+  CHECK_EQ(str(ev), "up:R");
+  CHECK_EQ(ev[0].repeats, 0);
+  // Held: repeats from press + 400 ms every 50 ms; the release reports them (no extra step).
+  rnf_chord_feed(c, L, 1, 2.0);
+  rnf_chord_tick(c, 2.39);
+  CHECK_EQ(str(drain(c)), "DOWN:L");
+  rnf_chord_tick(c, 2.40);
+  ev = drain(c);
+  CHECK_EQ(str(ev), "rep:L");
+  CHECK_EQ(ev[0].repeats, 1);
+  CHECK(near(rnf_chord_deadline(c), 2.45, 1e-9));
+  rnf_chord_tick(c, 2.45);
+  rnf_chord_tick(c, 2.50);
+  CHECK_EQ(str(drain(c)), "rep:L rep:L");
+  rnf_chord_tick(c, 2.80);  // a stall: one repeat, then from now on
+  ev = drain(c);
+  CHECK_EQ(str(ev), "rep:L");
+  CHECK(near(rnf_chord_deadline(c), 2.85, 1e-9));
+  rnf_chord_feed(c, L, 0, 2.82);
+  ev = drain(c);
+  CHECK_EQ(str(ev), "up:L");
+  CHECK_EQ(ev[0].repeats, 4);
+  // A chord never repeats, however long it is held.
+  rnf_chord_feed(c, L, 1, 3.0);
+  rnf_chord_feed(c, R, 1, 3.05);
+  rnf_chord_tick(c, 4.0);
+  CHECK_EQ(str(drain(c)), "COMBO:LR");
+  rnf_chord_feed(c, L, 0, 4.1);
+  rnf_chord_feed(c, R, 0, 4.1);
+  CHECK_EQ(str(drain(c)), "combo-up:LR");
+  // Turned off while held: no more repeats.
+  rnf_chord_feed(c, R, 1, 5.0);
+  rnf_chord_tick(c, 5.45);
+  CHECK_EQ(str(drain(c)), "DOWN:R rep:R");
+  rnf_chord_set_repeat(c, 0);
+  rnf_chord_tick(c, 6.0);
+  CHECK(drain(c).empty());
+  rnf_chord_feed(c, R, 0, 6.1);
+  ev = drain(c);
+  CHECK_EQ(str(ev), "up:R");
+  CHECK_EQ(ev[0].repeats, 1);
   rnf_chord_free(c);
 }
 

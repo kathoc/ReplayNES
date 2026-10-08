@@ -2,6 +2,7 @@
 #include "input_router.h"
 
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -111,8 +112,15 @@ void InputRouter::refreshBindings() {
   // The Quick Menu: combos go through the chord detector, single inputs open it directly.
   rnf_chord_configure(chord_, bindingView_.data(), bindingView_.size(), "hk.menu");
   menuIds_.clear();
-  for (const rnf_binding& b : bindingView_)
+  gameMembers_.clear();
+  for (const rnf_binding& b : bindingView_) {
     if (std::string(b.action) == "hk.menu" && !rnf_input_combo_split(b.input, nullptr, nullptr)) menuIds_.insert(b.input);
+    // A combo member bound to a game button is held for the game (from the end of the chord window).
+    if (rnf_chord_is_member(chord_, b.input) && std::strncmp(b.action, "hk.", 3) != 0) gameMembers_.insert(b.input);
+  }
+  forwardedMembers_.clear();
+  holdMembers_.clear();
+  updateRepeat();
 }
 
 void InputRouter::persist() {
@@ -186,8 +194,9 @@ void InputRouter::cancelCapture() {
 bool InputRouter::captureFrom(const std::string& id, bool keyboard) {
   if (!capture_) return false;
   if (captureKeysOnly_ && !keyboard) {
-    // Keys only: a controller's B cancels, anything else waits for a key.
-    if (id.find(":face.east") != std::string::npos) cancelCapture();
+    // Keys only: the controller's cancel button cancels, anything else waits for a key.
+    bool south = settings_ && settings_->southConfirm;
+    if (id.size() > 3 && id.compare(id.find(':') + 1, std::string::npos, rnf_ui_cancel_element(south)) == 0) cancelCapture();
     return true;
   }
   auto fn = std::move(capture_);
@@ -209,12 +218,43 @@ void InputRouter::setUIMode(bool ui) {
     rn_input_release_all(in_);  // nothing held for the game while the menu is up
     routedSteps_.clear();
     confirmTap_.clear();
+    forwardedMembers_.clear();
   }
+  updateRepeat();
 }
+
+void InputRouter::setSeekFocus(int focus) {
+  if (focus == seekFocus_) return;
+  bool entering = seekFocus_ == 0 && focus > 0;
+  seekFocus_ = focus;
+  if (entering) {
+    // The markers have the pad now: nothing stays held for the game.
+    rn_input_release_all(in_);
+    confirmTap_.clear();
+    forwardedMembers_.clear();
+    for (const std::string& id : routedSteps_) {
+      auto d = stepDirs_.find(id);
+      if (d != stepDirs_.end() && onPausedStep) onPausedStep(d->second, false);
+    }
+    routedSteps_.clear();
+  }
+  if (focus < 2 && !holdMembers_.empty()) {
+    for (const auto& [id, dir] : holdMembers_)
+      if (onMarkerHold) onMarkerHold(dir, false);
+    holdMembers_.clear();
+  }
+  updateRepeat();
+}
+
+// Paused frame steps repeat while L / R is held (not while a marker is edited: it moves instead).
+void InputRouter::updateRepeat() { rnf_chord_set_repeat(chord_, pausedStepMode_ && !ui_ && seekFocus_ < 2); }
+
+bool InputRouter::isGameMember(const std::string& id) const { return gameMembers_.count(id) > 0; }
 
 void InputRouter::setPausedStepMode(bool paused) {
   bool changed = pausedStepMode_ != paused;
   pausedStepMode_ = paused;
+  updateRepeat();
   if (!changed || !paused) return;
   for (const auto& [id, dir] : stepDirs_) {
     if (pressed_.count(id) && !routedSteps_.count(id)) {
@@ -242,33 +282,86 @@ bool InputRouter::routePausedStep(const std::string& id, bool down) {
   return false;
 }
 
-// Paused in play (the seek bar): A / B resume as a tap (rnl::ConfirmTap). They still reach the game,
-// so a button can be held for a frame advance; holding one and stepping never resumes.
-bool InputRouter::routePausedConfirm(const std::string& id, bool down) {
+// Paused in play (the seek bar): taps (rnl::ConfirmTap) of the UI's cancel (resume), confirm (a
+// marker), up (to the markers) and Y (the next A/B slot). They still reach the game, so a button can
+// be held for a frame advance; holding one and stepping never counts as a tap.
+bool InputRouter::routePausedTap(const std::string& id, bool down) {
+  size_t colon = id.find(':');
+  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
+  std::string el = id.substr(colon + 1);
+  bool south = settings_ && settings_->southConfirm;
   if (down) {
     if (ui_ || !pausedStepMode_) return false;
-    size_t colon = id.find(':');
-    if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
-    std::string el = id.substr(colon + 1);
-    if (el != "face.south" && el != "face.east") return false;
-    confirmTap_.press(id);
+    if (el == rnf_ui_cancel_element(south) || el == rnf_ui_confirm_element(south) || el == "dpad.up" || el == "face.north")
+      confirmTap_.press(id);
     return false;
   }
-  return confirmTap_.release(id) && pausedStepMode_ && !ui_;
+  if (!confirmTap_.release(id) || !pausedStepMode_ || ui_) return false;
+  if (el == rnf_ui_cancel_element(south)) {
+    if (onPausedResume) onPausedResume();
+  } else if (onSeekInput) {
+    onSeekInput(el == "dpad.up" ? SeekInput::up : el == "face.north" ? SeekInput::y : SeekInput::ok, true);
+  }
+  return true;
 }
 
-// The chord detector's outcome: the Quick Menu, or L / R alone going their usual way.
+// A marker focused / edited: the pad is the seek bar's (D-pad / left stick, confirm, cancel, X).
+bool InputRouter::routeSeek(const std::string& id, bool down) {
+  if (ui_ || !pausedStepMode_ || seekFocus_ == 0 || !onSeekInput) return false;
+  size_t colon = id.find(':');
+  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
+  std::string el = id.substr(colon + 1);
+  bool south = settings_ && settings_->southConfirm;
+  if (el == rnf_ui_confirm_element(south)) onSeekInput(SeekInput::ok, down);
+  else if (el == rnf_ui_cancel_element(south)) onSeekInput(SeekInput::cancel, down);
+  else if (el == "dpad.up" || el == "lstick.up") onSeekInput(SeekInput::up, down);
+  else if (el == "dpad.down" || el == "lstick.down") onSeekInput(SeekInput::down, down);
+  else if (el == "dpad.left" || el == "lstick.left") onSeekInput(SeekInput::left, down);
+  else if (el == "dpad.right" || el == "lstick.right") onSeekInput(SeekInput::right, down);
+  else if (el == "face.west") onSeekInput(SeekInput::x, down);
+  else if (el == "face.north") onSeekInput(SeekInput::y, down);
+  return true;  // nothing reaches the game while a marker has the focus
+}
+
+// The chord detector's outcome: the Quick Menu, or L / R alone (on their release).
 void InputRouter::pumpChord() {
   rnf_chord_event ev;
   while (rnf_chord_poll(chord_, &ev)) {
     std::string id = ev.input;
+    int dir = ev.member == 0 ? -1 : 1;
+    bool paused = pausedStepMode_ && !ui_;
     switch (ev.kind) {
       case RNF_CHORD_COMBO_DOWN:
         if (onMenuButton) onMenuButton();
         break;
       case RNF_CHORD_COMBO_UP: break;
-      case RNF_CHORD_ALONE_DOWN:
-      case RNF_CHORD_ALONE_UP: routeButton(id, ev.kind == RNF_CHORD_ALONE_DOWN, ev.time); break;
+      case RNF_CHORD_ALONE_DOWN:  // held alone: a game button is held from now, a marker moves
+        if (paused && seekFocus_ == 2) {
+          holdMembers_[id] = dir;
+          if (onMarkerHold) onMarkerHold(dir, true);
+        } else if (!ui_ && !pausedStepMode_ && isGameMember(id)) {
+          forwardedMembers_.insert(id);
+          setPressed(id, true, ev.time, true);
+        }
+        break;
+      case RNF_CHORD_ALONE_REPEAT:
+        if (paused && seekFocus_ < 2 && onPausedShoulder) onPausedShoulder(dir);
+        break;
+      case RNF_CHORD_ALONE_UP:  // the trigger of a single press
+        if (holdMembers_.erase(id)) {
+          if (onMarkerHold) onMarkerHold(dir, false);
+        } else if (forwardedMembers_.erase(id)) {
+          setPressed(id, false, ev.time, true);
+        } else if (ui_) {
+          if (onUiShoulder) onUiShoulder(dir);
+        } else if (paused) {
+          if (ev.repeats == 0 && onPausedShoulder) onPausedShoulder(dir);
+        } else {
+          // A tap of its own action (pause, slow, ...): the hotkey fires on the press edge.
+          setPressed(id, true, ev.time, true);
+          setPressed(id, false, ev.time, true);
+        }
+        break;
     }
   }
 }
@@ -283,9 +376,15 @@ void InputRouter::tick(double now) {
 void InputRouter::routeButton(const std::string& id, bool down, double t) {
   if (ui_) {
     setPressed(id, down, t, false);
+    // Pads 2-4 (pad 1's L / R come through the chord detector): pages, on the release.
     size_t colon = id.find(':');
     std::string el = colon == std::string::npos ? id : id.substr(colon + 1);
-    if (down && onUiShoulder && (el == "leftShoulder" || el == "rightShoulder")) onUiShoulder(el == "leftShoulder" ? -1 : 1);
+    if (!down && onUiShoulder && (el == "leftShoulder" || el == "rightShoulder")) onUiShoulder(el == "leftShoulder" ? -1 : 1);
+    return;
+  }
+  if (routeSeek(id, down)) {
+    if (down) pressed_.insert(id);
+    else pressed_.erase(id);
     return;
   }
   if (routePausedStep(id, down)) {
@@ -294,7 +393,7 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
     return;
   }
   setPressed(id, down, t, true);
-  if (routePausedConfirm(id, down) && onPausedConfirm) onPausedConfirm();
+  routePausedTap(id, down);
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
@@ -351,6 +450,11 @@ void InputRouter::detach(SDL_JoystickID id) {
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
   confirmTap_.clear();
+  for (const auto& [m, dir] : holdMembers_)
+    if (onMarkerHold) onMarkerHold(dir, false);
+  holdMembers_.clear();
+  for (const std::string& m : forwardedMembers_) rn_input_set_pressed(in_, m.c_str(), 0);
+  forwardedMembers_.clear();
   for (auto it = routedSteps_.begin(); it != routedSteps_.end();) {
     if (it->compare(0, prefix.size(), prefix) == 0) {
       auto d = stepDirs_.find(*it);
@@ -384,8 +488,12 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
   }
   // The Quick Menu: L+R (chord detector) or a button of its own.
   if (rnf_chord_feed(chord_, id.c_str(), down ? 1 : 0, t)) {
-    if (down) pressed_.insert(id);
-    else pressed_.erase(id);
+    if (down) {
+      pressed_.insert(id);
+      confirmTap_.cancel();  // L / R step while paused: a held confirm is no longer a tap
+    } else {
+      pressed_.erase(id);
+    }
     pumpChord();
     return;
   }
@@ -416,6 +524,7 @@ void InputRouter::stickDirections(int slot, const char* stick, float x, float y,
     }
     if (on && capture_) {
       captureFrom(id, false);
+    } else if (routeSeek(id, on)) {
     } else if (on && !ui_) {
       pressSeq_.fetch_add(1);
       lastEvent_.store(t);

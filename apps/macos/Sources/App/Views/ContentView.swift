@@ -66,7 +66,7 @@ struct ContentView: View {
                 if !model.immersive && !menu.isOpen && !model.showLibrary {
                     if !st.paused { StatusBadges().padding(12) }
                     if model.showLatency {
-                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, st.paused ? 96 : 0)
+                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, st.paused ? 126 : 0)
                     }
                     if st.practicing && !st.paused {
                         VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
@@ -102,7 +102,7 @@ struct ContentView: View {
                         .font(.callout)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.bottom, st.paused && st.hasSession && !menu.isOpen ? 110 : 16)
+                        .padding(.bottom, st.paused && st.hasSession && !menu.isOpen ? 140 : 16)   // above the seek bar (and its hint row)
                 }
                 .frame(maxWidth: .infinity)
                 .transition(.opacity)

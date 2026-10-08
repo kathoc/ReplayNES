@@ -82,10 +82,10 @@ final class FrontendBridgeTests: XCTestCase {
                                                                             analogThreshold: 0.5),
                                                         slot: 0, positions: ["buttonA": .east])
         XCTAssertEqual(legacy.bind.first?.0, "gc0:face.east")
-        XCTAssertEqual(ControllerFamily.from(productCategory: "Steam Deck"), .generic, "unknown to the macOS app")
+        XCTAssertEqual(ControllerFamily.from(productCategory: "Steam Deck"), .steamDeck, "its own diagram layout")
         XCTAssertEqual(ControllerFamily.playStation.label("face.east"), "○")
         let layout = ControllerDiagramLayout(family: .playStation)
-        XCTAssertNotNil(layout.touchpad)
+        XCTAssertTrue(layout.decor.contains { $0.kind == .pad }, "the touchpad")
         XCTAssertEqual(layout.element("leftThumb")?.kind, .stickClick)
         XCTAssertEqual(layout.element("dpad.up")?.group, "dpad")
         XCTAssertEqual(ControllerAssignments.group("dpad", slot: 0, config: c), .movement("Move"))

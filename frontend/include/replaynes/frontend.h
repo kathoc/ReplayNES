@@ -418,6 +418,17 @@ typedef struct rnf_diagram_info {
 void rnf_diagram_info_get(rnf_controller_family f, rnf_diagram_info* out);
 size_t rnf_diagram_element_count(rnf_controller_family f);
 int rnf_diagram_element_get(rnf_controller_family f, size_t index, rnf_diagram_element* out);
+/* The outline drawn under the elements, back to front: the body (a rounded pill; the Steam Deck: a wide
+ * rounded rectangle), then its screen (Steam Deck) and touch / track pads. No grips. */
+typedef enum rnf_diagram_decor_kind {
+  RNF_DECOR_BODY = 0, RNF_DECOR_SCREEN = 1, RNF_DECOR_PAD = 2
+} rnf_diagram_decor_kind;
+typedef struct rnf_diagram_decor {
+  rnf_diagram_decor_kind kind;
+  double x, y, width, height, radius; /* top-left, size, corner radius (canvas points) */
+} rnf_diagram_decor;
+size_t rnf_diagram_decor_count(rnf_controller_family f);
+int rnf_diagram_decor_get(rnf_controller_family f, size_t index, rnf_diagram_decor* out);
 
 /* Assignment summaries for the diagram. */
 /* Actions bound to gc<slot>:<element>, in catalog order (a = action id). */
@@ -426,6 +437,10 @@ rnf_list* rnf_input_element_actions(const rnf_binding* bindings, size_t count, c
 char* rnf_input_element_title(const char* element, rnf_controller_family f, const char* label_override);
 /* Compact badge label: "A", "Turbo A", "Rewind", "2P B" ... */
 char* rnf_input_action_short_label(const char* action, int slot);
+/* The action picker of a controller button (Settings > Controls > Controller > a button): "" (None)
+ * first, then the slot's own player's actions, the other player's, the hotkeys (static ids).
+ * Two-call pattern. Shown RNF_MENU_MAX_ITEMS rows per sheet (the menu page "controls.assign"). */
+size_t rnf_input_assign_choices(int slot, const char** out, size_t cap);
 /* Badge text (actions joined with " · "); NULL when nothing is bound. */
 char* rnf_input_element_badge(const rnf_binding* bindings, size_t count, const char* element, int slot);
 typedef enum rnf_group_summary { RNF_GROUP_NONE = 0, RNF_GROUP_MOVEMENT = 1, RNF_GROUP_CUSTOM = 2 } rnf_group_summary;
@@ -441,25 +456,35 @@ rnf_group_summary rnf_input_group_summary(const rnf_binding* bindings, size_t co
  *   - both members pressed within the window (either order): one RNF_CHORD_COMBO_DOWN (the frontend
  *     presses the combo id: menu toggle), RNF_CHORD_COMBO_UP once both are released. Neither member
  *     fires alone. Presses while the chord is held (re-pressing one of them) do nothing.
- *   - a member alone: RNF_CHORD_ALONE_DOWN when it is released before the window ended (a tap: DOWN and
- *     UP together) or when the window ended while it is held (rnf_chord_tick); RNF_CHORD_ALONE_UP on
- *     its release. The frontend presses / releases the member's own id then (pause, slow, ...).
- *     Single presses lose at most the window of responsiveness.
+ *   - a member alone: RNF_CHORD_ALONE_DOWN when the window ended while it is held (rnf_chord_tick: it
+ *     can no longer become a chord) or at its release when released within the window (a tap: DOWN
+ *     and UP together); RNF_CHORD_ALONE_UP on its release. ALONE_UP is the TRIGGER of a single press
+ *     (pause, slow, page, frame step ...: docs/design/UI_REDESIGN.md): an L or R press never acts
+ *     before it is released, so it never interferes with the chord. ALONE_DOWN only says "held
+ *     alone" (a member bound to a game button is pressed from there; a held marker moves).
+ *   - repeat (rnf_chord_set_repeat, off by default): a member held alone fires RNF_CHORD_ALONE_REPEAT
+ *     at press + RNF_CHORD_HOLD_DELAY and then every RNF_CHORD_REPEAT_INTERVAL until released (paused
+ *     frame stepping); its ALONE_UP then carries the number of repeats (the frontend skips the
+ *     single action when it is > 0). A chorded member never repeats.
  *   - repeated presses of a held id (key repeat) are ignored.
  * Times are seconds on one monotonic clock (event timestamps). Not thread-safe. */
 #define RNF_CHORD_WINDOW 0.100
+#define RNF_CHORD_HOLD_DELAY 0.400
+#define RNF_CHORD_REPEAT_INTERVAL 0.050
 typedef struct rnf_chord rnf_chord;
 typedef enum rnf_chord_kind {
-  RNF_CHORD_COMBO_DOWN = 0, /* both down: press the combo id (input = "<a>+<b>") */
-  RNF_CHORD_COMBO_UP = 1,   /* both released after COMBO_DOWN: release the combo id */
-  RNF_CHORD_ALONE_DOWN = 2, /* member alone: press its id (input = the member id) */
-  RNF_CHORD_ALONE_UP = 3    /* that member released */
+  RNF_CHORD_COMBO_DOWN = 0,  /* both down: press the combo id (input = "<a>+<b>") */
+  RNF_CHORD_COMBO_UP = 1,    /* both released after COMBO_DOWN: release the combo id */
+  RNF_CHORD_ALONE_DOWN = 2,  /* member held alone (or tapped): it is not part of a chord */
+  RNF_CHORD_ALONE_UP = 3,    /* that member released: the single press's trigger */
+  RNF_CHORD_ALONE_REPEAT = 4 /* repeat mode: held alone >= RNF_CHORD_HOLD_DELAY (and every interval) */
 } rnf_chord_kind;
 typedef struct rnf_chord_event {
   rnf_chord_kind kind;
   const char* input; /* valid until the next call on the handle */
   int member;        /* ALONE_*: 0 = the combo's first id (L), 1 = the second (R); COMBO_*: -1 */
-  double time;       /* when it happened (the release, or press + window for a held member) */
+  double time;       /* when it happened (the release, press + window for a held member, the repeat) */
+  int repeats;       /* ALONE_UP / ALONE_REPEAT: repeats fired during this hold so far (incl. this one) */
 } rnf_chord_event;
 rnf_chord* rnf_chord_new(double window); /* <= 0: RNF_CHORD_WINDOW */
 void rnf_chord_free(rnf_chord* c);
@@ -473,7 +498,8 @@ int rnf_chord_is_member(const rnf_chord* c, const char* physical_id);
 /* A press (1) / release (0) of physical_id at time t. Returns 1 when the id is a combo member (the event
  * is taken: its outcome comes from rnf_chord_poll), 0 otherwise (pass it on as usual). */
 int rnf_chord_feed(rnf_chord* c, const char* physical_id, int pressed, double t);
-/* Fires the members held alone for the whole window (call every frame / poll, with the current time). */
+/* Fires the members held alone for the whole window and the repeats (call every frame / poll, with the
+ * current time). */
 void rnf_chord_tick(rnf_chord* c, double t);
 /* Earliest time a tick can fire something (0: nothing pending). */
 double rnf_chord_deadline(const rnf_chord* c);
@@ -481,6 +507,26 @@ double rnf_chord_deadline(const rnf_chord* c);
 int rnf_chord_poll(rnf_chord* c, rnf_chord_event* out);
 /* Forgets everything held / pending without events (controller disconnected, focus lost). */
 void rnf_chord_reset(rnf_chord* c);
+/* Repeat mode on / off (members held alone fire ALONE_REPEAT). Turning it on while a member is held
+ * counts its hold from its press. */
+void rnf_chord_set_repeat(rnf_chord* c, int on);
+int rnf_chord_repeat(const rnf_chord* c);
+
+/* ------------------------------------------------------------------ UI confirm / cancel
+ * Menus, dialogs, the on-screen keyboard, prompts and the paused seek bar confirm with the EAST face
+ * button and cancel / go back with the SOUTH one by default (Nintendo style, on every controller
+ * family); the setting "Confirm Button" (south_confirm = 1) swaps them. Game input never changes. */
+const char* rnf_ui_confirm_element(int south_confirm); /* "face.east" (default) / "face.south" */
+const char* rnf_ui_cancel_element(int south_confirm);  /* "face.south" (default) / "face.east" */
+
+/* ------------------------------------------------------------------ hold speed
+ * Rewind (L2 held), fast-forward (R2 held) and a seek bar marker moved with L / R held move by the
+ * same number of frames per 60 Hz tick, in opposite directions: rnf_hold_speed(n) for the n-th tick
+ * of a hold (n >= 1): 2 for the first RNF_HOLD_SPEED_FAST_AFTER ticks, 3 until
+ * RNF_HOLD_SPEED_FASTEST_AFTER, then 4. */
+#define RNF_HOLD_SPEED_FAST_AFTER 30
+#define RNF_HOLD_SPEED_FASTEST_AFTER 90
+int rnf_hold_speed(int tick);
 
 /* ================================================================== quick menu model
  * The menu tree of docs/design/UI_REDESIGN.md, shared by every frontend: the Quick Menu (six tiles in
@@ -694,6 +740,57 @@ typedef struct rnf_practice_slot {
 size_t rnf_timeline_visible_ranges(const rnf_practice_slot* slots, size_t slot_count, const rn_take_info* takes,
                                    size_t take_count, uint64_t active_take, uint64_t take_length,
                                    rnf_timeline_range* out, size_t out_cap);
+
+/* ------------------------------------------------------------------ seek bar A/B markers
+ * The paused seek bar's markers (docs/design/UI_REDESIGN.md, "Seek bar while paused"): the controller's
+ * view of the SELECTED practice slot's section on the active take - none (empty slot, or its A is on
+ * another take), one (A only) or two (the left one is A, the right one B). Focus is the seek bar
+ * (-1: D-pad steps the playhead, confirm drops a marker there) or a marker (0 / 1, left to right:
+ * D-pad up from the bar picks the one nearest the playhead, left / right pick, down / cancel go back;
+ * X deletes it). Confirm on a marker edits it: D-pad / L / R held move it (the picture follows it:
+ * seek preview), it skips over the other marker's frame and the two swap roles when it passes it;
+ * confirm commits (focus back to the bar, the playhead stays at the marker), cancel reverts it (and
+ * the playhead). Writes: one marker = "A only" at its frame; two = the range [left, right); deleting
+ * one of two leaves "A only" at the other; deleting the last clears the slot. The frontend applies the
+ * results (writes the slot, seeks) and re-syncs the slot every frame. Pure; not thread-safe. */
+typedef struct rnf_markers rnf_markers;
+typedef enum rnf_markers_outcome {
+  RNF_MARKERS_IGNORED = 0,  /* not the markers' input in this state: it keeps its usual meaning */
+  RNF_MARKERS_CHANGED = 1,  /* handled (focus / edit / markers changed) */
+  RNF_MARKERS_FULL = 2,     /* confirm on the bar with two markers: nothing (a subtle hint) */
+  RNF_MARKERS_OCCUPIED = 3  /* confirm on the bar where a marker already is: nothing (hint) */
+} rnf_markers_outcome;
+typedef enum rnf_markers_write {
+  RNF_MARKERS_WRITE_NONE = 0,
+  RNF_MARKERS_WRITE_A_ONLY = 1, /* the slot = A at `a`, no B */
+  RNF_MARKERS_WRITE_RANGE = 2,  /* the slot = [a, b) (rn_practice_set_range) */
+  RNF_MARKERS_WRITE_CLEAR = 3   /* the slot is emptied */
+} rnf_markers_write;
+typedef struct rnf_markers_result {
+  rnf_markers_outcome outcome;
+  int seek;            /* 1: show seek_frame (the edited marker / back to the playhead) */
+  uint64_t seek_frame;
+  rnf_markers_write write;
+  uint64_t a, b;
+} rnf_markers_result;
+rnf_markers* rnf_markers_new(void);
+void rnf_markers_free(rnf_markers* m);
+/* The selected slot as visible on the active take (NULL: none) and the take length. Ignored while a
+ * marker is being edited; keeps the focus valid. */
+void rnf_markers_sync(rnf_markers* m, const rnf_timeline_range* slot, uint64_t take_length);
+size_t rnf_markers_count(const rnf_markers* m);
+uint64_t rnf_markers_frame(const rnf_markers* m, size_t i); /* left to right (0 = A) */
+int rnf_markers_focus(const rnf_markers* m);                /* -1: the seek bar; else the marker */
+int rnf_markers_editing(const rnf_markers* m);
+rnf_markers_result rnf_markers_confirm(rnf_markers* m, uint64_t playhead);
+rnf_markers_result rnf_markers_cancel(rnf_markers* m);
+/* D-pad: dx / dy -1 / +1 (up = dy -1). Editing: dx moves the marker one frame. */
+rnf_markers_result rnf_markers_move(rnf_markers* m, int dx, int dy, uint64_t playhead);
+/* Editing: moves the marker by `frames` (L / R held: -+rnf_hold_speed). */
+rnf_markers_result rnf_markers_nudge(rnf_markers* m, int64_t frames);
+rnf_markers_result rnf_markers_delete(rnf_markers* m);
+/* Leaving the paused seek bar (resume, the menu): an edit is reverted, the focus goes back to the bar. */
+rnf_markers_result rnf_markers_leave(rnf_markers* m);
 
 /* ------------------------------------------------------------------ filmstrip grid
  * One tile = F frames at its natural width, F = 300 * 2^e (5 s, coarser grids are subsets). */

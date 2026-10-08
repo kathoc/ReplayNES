@@ -61,6 +61,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "pauseAfterRewind") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
+    else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
     else if (k == "onScreenKeyboard" && (v == "auto" || v == "builtin" || v == "steam")) s.onScreenKeyboard = v;
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
     else if (k == "language" && (v == "auto" || v == "ja" || v == "en")) s.language = v;
@@ -98,6 +99,7 @@ std::string Settings::serialize() const {
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";
+  o << "southConfirm=" << int(southConfirm) << "\n";
   o << "onScreenKeyboard=" << onScreenKeyboard << "\n";
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";
   o << "language=" << language << "\n";

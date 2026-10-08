@@ -1,7 +1,7 @@
 // Chord detector: two-button combos (the Quick Menu's L+R) next to the members' own actions.
 // Each member of a combo is UP, PENDING (pressed, the other may still come within the window),
-// ALONE (fired as a single press, still held) or CHORDED (part of a fired combo, suppressed until
-// released). See frontend.h for the rules.
+// ALONE (held on its own: its single press fires on release, repeats in repeat mode) or CHORDED
+// (part of a fired combo, suppressed until released). See frontend.h for the rules.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <deque>
 #include <memory>
@@ -17,7 +17,9 @@ enum class State { up, pending, alone, chorded };
 struct Combo {
   std::string id, member[2];
   State state[2] = {State::up, State::up};
-  double since[2] = {0, 0};  // press time (PENDING)
+  double since[2] = {0, 0};  // press time
+  int repeats[2] = {0, 0};   // ALONE: repeats fired during this hold
+  double next[2] = {0, 0};   // ALONE: when the next repeat is due (repeat mode)
   bool comboDown = false;    // COMBO_DOWN sent, COMBO_UP not yet
 };
 
@@ -26,12 +28,14 @@ struct Event {
   std::string input;
   int member;
   double time;
+  int repeats;
 };
 
 }  // namespace
 
 struct rnf_chord {
   double window = RNF_CHORD_WINDOW;
+  bool repeat = false;
   std::vector<Combo> combos;
   std::deque<Event> queue;
   std::string polled;  // the last polled event's input (rnf_chord_event.input)
@@ -47,15 +51,26 @@ struct rnf_chord {
     return false;
   }
 
-  void push(rnf_chord_kind k, const std::string& input, int member, double t) { queue.push_back({k, input, member, t}); }
+  void push(rnf_chord_kind k, const std::string& input, int member, double t, int repeats = 0) {
+    queue.push_back({k, input, member, t, repeats});
+  }
 
   void tick(double t) {
     for (Combo& c : combos)
-      for (int m = 0; m < 2; ++m)
+      for (int m = 0; m < 2; ++m) {
         if (c.state[m] == State::pending && t - c.since[m] >= window) {
           c.state[m] = State::alone;
           push(RNF_CHORD_ALONE_DOWN, c.member[m], m, c.since[m] + window);
         }
+        if (repeat && c.state[m] == State::alone && t >= c.next[m]) {
+          // One repeat per tick: after a stall (or repeat turned on late) it resumes from now.
+          double at = c.next[m];
+          c.repeats[m] += 1;
+          c.next[m] += RNF_CHORD_REPEAT_INTERVAL;
+          if (c.next[m] <= t) c.next[m] = t + RNF_CHORD_REPEAT_INTERVAL;
+          push(RNF_CHORD_ALONE_REPEAT, c.member[m], m, at, c.repeats[m]);
+        }
+      }
   }
 
   void feed(Combo& c, int m, bool down, double t) {
@@ -72,6 +87,8 @@ struct rnf_chord {
       } else {
         c.state[m] = State::pending;
         c.since[m] = t;
+        c.repeats[m] = 0;
+        c.next[m] = t + RNF_CHORD_HOLD_DELAY;
       }
       return;
     }
@@ -81,7 +98,7 @@ struct rnf_chord {
         push(RNF_CHORD_ALONE_DOWN, c.member[m], m, t);
         push(RNF_CHORD_ALONE_UP, c.member[m], m, t);
         break;
-      case State::alone: push(RNF_CHORD_ALONE_UP, c.member[m], m, t); break;
+      case State::alone: push(RNF_CHORD_ALONE_UP, c.member[m], m, t, c.repeats[m]); break;
       case State::chorded:
         if (c.state[o] != State::chorded && c.comboDown) {
           c.comboDown = false;
@@ -171,13 +188,20 @@ double rnf_chord_deadline(const rnf_chord* c) {
   if (!c) return 0;
   double best = 0;
   for (const Combo& k : c->combos)
-    for (int m = 0; m < 2; ++m)
-      if (k.state[m] == State::pending) {
-        double d = k.since[m] + c->window;
-        if (best == 0 || d < best) best = d;
-      }
+    for (int m = 0; m < 2; ++m) {
+      double d = 0;
+      if (k.state[m] == State::pending) d = k.since[m] + c->window;
+      else if (k.state[m] == State::alone && c->repeat) d = k.next[m];
+      if (d > 0 && (best == 0 || d < best)) best = d;
+    }
   return best;
 }
+
+void rnf_chord_set_repeat(rnf_chord* c, int on) {
+  if (c) c->repeat = on != 0;
+}
+
+int rnf_chord_repeat(const rnf_chord* c) { return c && c->repeat ? 1 : 0; }
 
 int rnf_chord_poll(rnf_chord* c, rnf_chord_event* out) {
   if (!c || c->queue.empty()) return 0;
@@ -190,6 +214,7 @@ int rnf_chord_poll(rnf_chord* c, rnf_chord_event* out) {
     out->input = c->polled.c_str();
     out->member = e.member;
     out->time = e.time;
+    out->repeats = e.repeats;
   }
   return 1;
   RNF_GUARD_END(0)

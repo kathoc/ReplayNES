@@ -1,6 +1,8 @@
 // Geometry of the controller settings diagram (canvas RNF_DIAGRAM_CANVAS_WIDTH x HEIGHT points,
-// origin top-left). Nintendo / Xbox / generic / Steam Deck put the left stick above the D-pad;
-// PlayStation has both sticks at the bottom.
+// origin top-left). Nintendo / Xbox / generic put the left stick above the D-pad on a rounded pill
+// body; PlayStation has both sticks at the bottom (and a touchpad); the Steam Deck is a wide rounded
+// rectangle with the screen in the middle, D-pad / face buttons at the outer top, the sticks inside
+// below them and the trackpads at the bottom. No grips: a simple modern outline.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <vector>
 
@@ -11,7 +13,19 @@ namespace {
 struct Layout {
   rnf_diagram_info info{};
   std::vector<rnf_diagram_element> elements;
+  std::vector<rnf_diagram_decor> decor;
 };
+
+rnf_diagram_decor decor(rnf_diagram_decor_kind k, double x, double y, double w, double h, double r) {
+  rnf_diagram_decor d{};
+  d.kind = k;
+  d.x = x;
+  d.y = y;
+  d.width = w;
+  d.height = h;
+  d.radius = r;
+  return d;
+}
 
 rnf_diagram_element make(const char* element, rnf_diagram_kind kind, double cx, double cy, double w, double h,
                          rnf_diagram_side side, const char* group = nullptr) {
@@ -48,10 +62,17 @@ rnf_diagram_element make(const char* element, rnf_diagram_kind kind, double cx, 
 Layout build(rnf_controller_family family) {
   Layout l;
   const bool sym = family == RNF_FAMILY_PLAYSTATION;
-  const double lsx = sym ? 225 : 165, lsy = sym ? 188 : 120;
-  const double rsx = 335, rsy = sym ? 188 : 182;
-  const double dx = sym ? 160 : 225, dy = sym ? 128 : 182;
-  const double fx = sym ? 400 : 395, fy = sym ? 125 : 120;
+  const bool deck = family == RNF_FAMILY_STEAM_DECK;
+  double lsx = sym ? 225 : 165, lsy = sym ? 188 : 120;
+  double rsx = 335, rsy = sym ? 188 : 182;
+  double dx = sym ? 160 : 225, dy = sym ? 128 : 182;
+  double fx = sym ? 400 : 395, fy = sym ? 125 : 120;
+  double shoulderL = 150, shoulderR = 410;
+  if (deck) {
+    lsx = 156; lsy = 162; rsx = 404; rsy = 162;
+    dx = 72; dy = 126; fx = 486; fy = 126;
+    shoulderL = 130; shoulderR = 430;
+  }
   const double R = RNF_DIAGRAM_STICK_RADIUS;
   auto& i = l.info;
   i.left_stick_x = lsx; i.left_stick_y = lsy;
@@ -60,14 +81,25 @@ Layout build(rnf_controller_family family) {
   i.dpad_x = dx; i.dpad_y = dy;
   i.face_x = fx; i.face_y = fy;
   i.has_touchpad = sym;
-  if (sym) { i.touchpad_x = 252; i.touchpad_y = 84; i.touchpad_width = 56; i.touchpad_height = 44; }
+  if (sym) { i.touchpad_x = 280; i.touchpad_y = 92; i.touchpad_width = 64; i.touchpad_height = 40; }
+  // The outline: the body, then the screen / pads.
+  if (deck) {
+    l.decor.push_back(decor(RNF_DECOR_BODY, 16, 60, 528, 190, 44));
+    l.decor.push_back(decor(RNF_DECOR_SCREEN, 194, 101, 172, 108, 6));
+    l.decor.push_back(decor(RNF_DECOR_PAD, 120, 212, 60, 32, 8));
+    l.decor.push_back(decor(RNF_DECOR_PAD, 380, 212, 60, 32, 8));
+  } else {
+    l.decor.push_back(decor(RNF_DECOR_BODY, 72, 58, 416, 178, 80));
+    if (sym) l.decor.push_back(decor(RNF_DECOR_PAD, i.touchpad_x - i.touchpad_width / 2, i.touchpad_y - i.touchpad_height / 2,
+                                     i.touchpad_width, i.touchpad_height, 8));
+  }
 
   auto& e = l.elements;
   // Triggers / shoulders.
-  e.push_back(make("leftTrigger", RNF_DIAGRAM_TRIGGER, 150, 18, 88, 22, RNF_SIDE_LEFT));
-  e.push_back(make("rightTrigger", RNF_DIAGRAM_TRIGGER, 410, 18, 88, 22, RNF_SIDE_RIGHT));
-  e.push_back(make("leftShoulder", RNF_DIAGRAM_SHOULDER, 150, 48, 108, 18, RNF_SIDE_LEFT));
-  e.push_back(make("rightShoulder", RNF_DIAGRAM_SHOULDER, 410, 48, 108, 18, RNF_SIDE_RIGHT));
+  e.push_back(make("leftTrigger", RNF_DIAGRAM_TRIGGER, shoulderL, 18, 88, 22, RNF_SIDE_LEFT));
+  e.push_back(make("rightTrigger", RNF_DIAGRAM_TRIGGER, shoulderR, 18, 88, 22, RNF_SIDE_RIGHT));
+  e.push_back(make("leftShoulder", RNF_DIAGRAM_SHOULDER, shoulderL, 46, 108, 18, RNF_SIDE_LEFT));
+  e.push_back(make("rightShoulder", RNF_DIAGRAM_SHOULDER, shoulderR, 46, 108, 18, RNF_SIDE_RIGHT));
   // Face buttons (diamond).
   const double s = RNF_DIAGRAM_FACE_SPACING, r = RNF_DIAGRAM_FACE_RADIUS;
   e.push_back(make("face.north", RNF_DIAGRAM_FACE, fx, fy - s, r * 2, r * 2, RNF_SIDE_ABOVE));
@@ -97,10 +129,14 @@ Layout build(rnf_controller_family family) {
                      std::string(st.name) == "lstick" ? RNF_SIDE_LEFT : RNF_SIDE_RIGHT));
   }
   // Small center buttons.
-  if (sym) {
-    e.push_back(make("options", RNF_DIAGRAM_SMALL, 227, 90, 34, 14, RNF_SIDE_ABOVE));
-    e.push_back(make("menu", RNF_DIAGRAM_SMALL, 333, 90, 34, 14, RNF_SIDE_ABOVE));
-    e.push_back(make("home", RNF_DIAGRAM_HOME, 280, 152, 22, 22, RNF_SIDE_BELOW));
+  if (deck) {  // View / Menu at the top corners, the Steam button below the D-pad
+    e.push_back(make("options", RNF_DIAGRAM_SMALL, 34, 80, 26, 12, RNF_SIDE_BELOW));
+    e.push_back(make("menu", RNF_DIAGRAM_SMALL, 526, 80, 26, 12, RNF_SIDE_BELOW));
+    e.push_back(make("home", RNF_DIAGRAM_HOME, 58, 214, 30, 30, RNF_SIDE_ABOVE));
+  } else if (sym) {
+    e.push_back(make("options", RNF_DIAGRAM_SMALL, 222, 90, 30, 14, RNF_SIDE_ABOVE));
+    e.push_back(make("menu", RNF_DIAGRAM_SMALL, 338, 90, 30, 14, RNF_SIDE_ABOVE));
+    e.push_back(make("home", RNF_DIAGRAM_HOME, 280, 150, 22, 22, RNF_SIDE_BELOW));
   } else {
     e.push_back(make("options", RNF_DIAGRAM_SMALL, 245, 104, 30, 14, RNF_SIDE_ABOVE));
     e.push_back(make("menu", RNF_DIAGRAM_SMALL, 315, 104, 30, 14, RNF_SIDE_ABOVE));
@@ -116,7 +152,8 @@ Layout build(rnf_controller_family family) {
 const Layout& layout(rnf_controller_family f) {
   static const Layout symmetric = build(RNF_FAMILY_PLAYSTATION);
   static const Layout standard = build(RNF_FAMILY_GENERIC);
-  return f == RNF_FAMILY_PLAYSTATION ? symmetric : standard;
+  static const Layout deck = build(RNF_FAMILY_STEAM_DECK);
+  return f == RNF_FAMILY_PLAYSTATION ? symmetric : f == RNF_FAMILY_STEAM_DECK ? deck : standard;
 }
 
 }  // namespace
@@ -131,6 +168,14 @@ int rnf_diagram_element_get(rnf_controller_family f, size_t index, rnf_diagram_e
   const Layout& l = layout(f);
   if (index >= l.elements.size() || !out) return 0;
   *out = l.elements[index];
+  return 1;
+}
+
+size_t rnf_diagram_decor_count(rnf_controller_family f) { return layout(f).decor.size(); }
+int rnf_diagram_decor_get(rnf_controller_family f, size_t index, rnf_diagram_decor* out) {
+  const Layout& l = layout(f);
+  if (index >= l.decor.size() || !out) return 0;
+  *out = l.decor[index];
   return 1;
 }
 

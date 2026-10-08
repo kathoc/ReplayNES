@@ -298,7 +298,7 @@ EmulationController::Tick EmulationController::tick() {
     if (wasPaused && paused_ && edges == 0 && held == 0 && advanceRemaining_ == 0 && !pauseHintShown_ &&
         !uiRewindHeld_) {
       pauseHintShown_ = true;
-      notice(TR("Paused. Press Space or R on the controller (or the ▶︎ button) to resume"));
+      notice(TR("Paused. Press Space, or the back button on the controller, to resume"));
     }
   }
 
@@ -316,7 +316,7 @@ EmulationController::Tick EmulationController::tick() {
     if (practicing) rnf_practice_loop_interrupt(practiceLoop_);
     setMuted(true);
     rewindTicks_ += 1;
-    uint64_t n = rewindTicks_ > 240 ? 4 : rewindTicks_ > 90 ? 2 : 1;
+    uint64_t n = uint64_t(rnf_hold_speed(rewindTicks_));  // the same curve as fast-forward
     // Practice: rewinds the practice run only (the engine stops at A); take: clamps at 0.
     bool can = false;
     if (practicing) {
@@ -454,6 +454,7 @@ void EmulationController::handleHotkeys(uint32_t e) {
 void EmulationController::beginFastForward() {
   rn_session* s = session_;
   pausedBeforeFF_ = paused_;
+  ffTicks_ = 0;
   ffBlocked_ = rn_frame(s) >= rn_take_length(s);
   if (ffBlocked_) {
     notice(rn_take_length(s) == 0 ? TR("Nothing has been recorded yet, so there is nothing to fast-forward")
@@ -483,7 +484,8 @@ void EmulationController::tickFastForward() {
   setMuted(true);
   if (!rnf_fast_forward_active(ff_) || ffBlocked_) return;
   int done = 0, atEnd = 0;
-  if (rnf_fast_forward_step(ff_, session_, 4, &done, &atEnd) != RN_OK) {
+  ffTicks_ += 1;  // the same speed curve as rewind (rnf_hold_speed), forwards
+  if (rnf_fast_forward_step(ff_, session_, rnf_hold_speed(ffTicks_), &done, &atEnd) != RN_OK) {
     ffBlocked_ = true;
     setPaused(true);
     reportError(TR("Couldn’t fast-forward"));
@@ -637,6 +639,32 @@ void EmulationController::practiceSetA(int slot) {
   notice(TRF("Set A of section %lld. Keep playing and set B where it should end", {slot + 1}));
 }
 
+void EmulationController::practiceSetAAt(int slot, uint64_t frame) {
+  rn_session* s = session_;
+  if (!s) return;
+  if (rn_get_mode(s) == RN_MODE_PRACTICE) {
+    notice(practiceBlockedText());
+    return;
+  }
+  // A is the machine state at the cursor: go there, take it, come back (paused, silent).
+  uint64_t back = rn_frame(s);
+  frame = std::min(frame, rn_take_length(s));
+  if (frame != back && rn_seek(s, frame) != RN_OK) {
+    reportError(TR("Couldn’t move"));
+    return;
+  }
+  if (rn_practice_set_a(s, uint32_t(slot)) == RN_OK) {
+    refreshPracticeLength(slot);
+    markStructureDirty();
+    notice(TRF("A/B %lld: A %@", {slot + 1, timecode(frame)}));
+  } else {
+    reportError(TR("Couldn’t set A"));
+  }
+  if (frame != back) rn_seek(s, back);
+  setMuted(true);
+  publishVideo();
+}
+
 void EmulationController::practiceSetB(int slot) {
   rn_session* s = session_;
   if (!s) return;
@@ -703,7 +731,7 @@ std::vector<rnf_timeline_range> EmulationController::visibleRanges() {
   return out;
 }
 
-void EmulationController::practiceSetRange(int slot, uint64_t a, uint64_t b) {
+void EmulationController::practiceSetRange(int slot, uint64_t a, uint64_t b, bool fromMarkers) {
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
@@ -717,8 +745,10 @@ void EmulationController::practiceSetRange(int slot, uint64_t a, uint64_t b) {
   markStructureDirty();
   // The engine restores the picture of the cursor: show it again.
   publishVideo();
-  notice(TRF("Section %lld: A %@ → B %@ (length %@). Click the section to practice it",
-             {slot + 1, timecode(a), timecode(b), timecode(b - a)}));
+  if (fromMarkers) notice(TRF("A/B %lld: A %@ → B %@", {slot + 1, timecode(a), timecode(b)}));
+  else
+    notice(TRF("Section %lld: A %@ → B %@ (length %@). Click the section to practice it",
+               {slot + 1, timecode(a), timecode(b), timecode(b - a)}));
 }
 
 void EmulationController::timelineMarkA(int slot) {

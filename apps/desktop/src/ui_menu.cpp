@@ -75,6 +75,7 @@ size_t UI::listCount(const std::string& page) const {
   if (page == "takes") return hasSession() ? d_.emu->structure().takes.size() : 0;
   if (page == "bookmarks") return hasSession() ? d_.emu->structure().bookmarks.size() + 1 : 1;  // + "Add Bookmark"
   if (page == "controls.keyboard") return rnf_input_action_count();
+  if (page == "controls.assign") return rnf_input_assign_choices(0, nullptr, 0);
   if (page == "library.projects") {
     const LibraryROM* r = projectsRom();
     return r ? d_.library->projectsFor(*r).size() + 2 : 0;  // + New Game, Try Without Saving
@@ -83,7 +84,7 @@ size_t UI::listCount(const std::string& page) const {
 }
 
 void UI::syncMenuCounts() {
-  for (const char* p : {"takes", "bookmarks", "controls.keyboard", "library.projects"}) {
+  for (const char* p : {"takes", "bookmarks", "controls.keyboard", "controls.assign", "library.projects"}) {
     int i = rnf_menu_page_find(menu_, p);
     if (i >= 0) rnf_menu_set_count(menu_, size_t(i), listCount(p));
   }
@@ -181,8 +182,8 @@ void UI::handleMenuInput(double now) {
   if (pressed(ImGuiKey_GamepadDpadRight, true) || pressed(ImGuiKey_RightArrow, true)) dx = 1;
   if (pressed(ImGuiKey_GamepadDpadUp, true) || pressed(ImGuiKey_UpArrow, true)) dy = -1;
   if (pressed(ImGuiKey_GamepadDpadDown, true) || pressed(ImGuiKey_DownArrow, true)) dy = 1;
-  bool confirm = pressed(ImGuiKey_GamepadFaceDown, false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
-  bool back = pressed(ImGuiKey_GamepadFaceRight, false) || pressed(ImGuiKey_Backspace, false);
+  bool confirm = pressed(confirmKey(), false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
+  bool back = pressed(cancelKey(), false) || pressed(ImGuiKey_Backspace, false);
   bool keyX = pressed(kPadX, false) || pressed(ImGuiKey_Delete, false);
   bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false);
   if (pressed(ImGuiKey_PageUp, false)) shoulder(-1);
@@ -284,7 +285,7 @@ void UI::buildMenu(double now) {
     bool sheets = rnf_menu_sheet_count(menu_) > 1;
     // A list's line on top: its sheets (L / R) and / or what the column is.
     std::string id = pi.id;
-    header = sheets || id == "controls.keyboard" || id == "takes" || id == "library.projects";
+    header = sheets || id == "controls.keyboard" || id == "controls.assign" || id == "takes" || id == "library.projects";
     if (sheets) reserve = RNF_MENU_MAX_ITEMS;
   }
   PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header, reserve);
@@ -372,9 +373,9 @@ void UI::buildTilesPage(const PageGeometry& g, size_t page, double now) {
     }
   }
   bool root = rnf_menu_depth(menu_) == 1;
-  if (focusedItemId() == "resume") prompt({"face.south"}, TR("Resume"));
-  else prompt({"face.south"}, TR("Select"));
-  prompt({"face.east"}, root && hasSession() ? TR("Resume") : TR("Back"));
+  if (focusedItemId() == "resume") prompt({"ui.confirm"}, TR("Resume"));
+  else prompt({"ui.confirm"}, TR("Select"));
+  prompt({"ui.cancel"}, root && hasSession() ? TR("Resume") : TR("Back"));
 }
 
 // The tabs of a settings group / the sheet of a list.
@@ -429,6 +430,12 @@ void UI::buildPageHeader(const PageGeometry& g, size_t page) {
   std::string left;
   std::string id = pi.id;
   if (id == "controls.keyboard") left = TR("Action");
+  else if (id == "controls.assign" && !assignElement_.empty()) {
+    int slot = 0;
+    rnf_input_controller_slot(assignElement_.c_str(), &slot);
+    std::string el = assignElement_.substr(assignElement_.find(':') + 1);
+    left = str(rnf_input_element_title(el.c_str(), diagramFamily(slot), nullptr));
+  }
   else if (id == "takes") left = TRF("Undo steps available: %lld", {(long long)d_.emu->status().undoDepth});
   else if (id == "library.projects" && projectsRom()) left = projectsRom()->name;
   if (!left.empty()) textFit(dl, m.hint() * 1.1f, ImVec2(g.header.x + S(6), cy - m.hint() * 0.55f), g.header.w * 0.6f, kTextDim, left);
@@ -487,6 +494,28 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
         break;
       }
       case RNF_MENU_ITEM_CHOICE: {
+        if (std::strcmp(it.id, "controls.confirm") == 0) {
+          // The button pair as glyphs of the controller family: "(A) Confirm  (B) Back".
+          bool south = d_.settings->southConfirm;
+          rnf_controller_family fam = promptFamily();
+          float gh = m.label() * 1.25f, aw = m.label() * 0.9f;
+          const std::pair<const char*, const char*> parts[] = {{rnf_ui_confirm_element(south), TR("Confirm")},
+                                                               {rnf_ui_cancel_element(south), TR("Back")}};
+          float w = aw * 2 + S(12);
+          for (const auto& [el, verb] : parts) w += keycap(dl, ImVec2(), gh, padGlyph(fam, el), true, false) + S(6) +
+                                                   measure(m.label(), verb).x + S(14);
+          float x = valueRight - w;
+          icon(dl, "chevron-left", ImVec2(x + aw / 2, cy), m.label(), f ? kText : kTextFaint);
+          x += aw + S(6);
+          for (const auto& [el, verb] : parts) {
+            x += keycap(dl, ImVec2(x, cy - gh / 2), gh, padGlyph(fam, el), true) + S(6);
+            dl->AddText(ImGui::GetFont(), m.label(), ImVec2(x, cy - m.label() / 2), fg, verb);
+            x += measure(m.label(), verb).x + S(14);
+          }
+          icon(dl, "chevron-right", ImVec2(valueRight - aw / 2, cy), m.label(), f ? kText : kTextFaint);
+          valueW = w;
+          break;
+        }
         std::string v = itemValue(it.id);
         float vw = measure(m.label(), v.c_str()).x;
         float aw = m.label() * 0.9f;
@@ -533,11 +562,11 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
       drawFocus(r, m.tileRadius(), now);
       description_ = txt(it.description);
       adjustable = it.kind == RNF_MENU_ITEM_TOGGLE || it.kind == RNF_MENU_ITEM_CHOICE || it.kind == RNF_MENU_ITEM_SLIDER;
-      if (adjustable && en) prompt({"face.south", "dpad.lr"}, TR("Change"));
-      else if (it.kind != RNF_MENU_ITEM_INFO && en) prompt({"face.south"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : TR("Select"));
+      if (adjustable && en) prompt({"ui.confirm", "dpad.lr"}, TR("Change"));
+      else if (it.kind != RNF_MENU_ITEM_INFO && en) prompt({"ui.confirm"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : TR("Select"));
     }
   }
-  prompt({"face.east"}, TR("Back"));
+  prompt({"ui.cancel"}, TR("Back"));
 }
 
 // The Practice page: eight A/B slots as 4 x 2 cards (thumbnail of A, name, length).
@@ -599,19 +628,19 @@ void UI::buildCardsPage(const PageGeometry& g, double now) {
   const SlotInfo* s = focus < ss.slots.size() ? &ss.slots[focus] : nullptr;
   bool hasA = s && s->hasA, active = st.practicing && st.practiceSlot == int(focus);
   if (!hasA) {
-    prompt({"face.south"}, TR("Set A Here"));
+    prompt({"ui.confirm"}, TR("Set A Here"));
     description_ = TR("A = the start of the section: the current position");
   } else if (!s->hasB) {
-    prompt({"face.south"}, TR("Set B Here"));
+    prompt({"ui.confirm"}, TR("Set B Here"));
     description_ = TR("B = the end you reach by playing on from A");
   } else {
-    prompt({"face.south"}, TR("Practice"));
+    prompt({"ui.confirm"}, TR("Practice"));
     description_ = TR("Repeats A to B; nothing is recorded");
   }
   if (hasA) prompt({"face.north"}, TR("Rename"));
   if (active) prompt({"face.west"}, TR("Stop"));
   else if (hasA) prompt({"face.west"}, TR("Clear"));
-  prompt({"face.east"}, TR("Back"));
+  prompt({"ui.cancel"}, TR("Back"));
 }
 
 // Rows of user data, six per sheet: takes, bookmarks, key bindings, a game's projects.
@@ -685,6 +714,34 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
         }
         if (f) description_ = TR("A: set a key · X: clear");
       }
+    } else if (id == "controls.assign") {
+      int slot = 0;
+      rnf_input_controller_slot(assignElement_.c_str(), &slot);
+      std::vector<const char*> choices(rnf_input_assign_choices(slot, nullptr, 0));
+      rnf_input_assign_choices(slot, choices.data(), choices.size());
+      if (row < choices.size()) {
+        std::string a = choices[row];
+        rnf_action_info ai{};
+        for (size_t i = 0; rnf_input_action_get(i, &ai); ++i)
+          if (a == ai.id) break;
+        if (a.empty()) {
+          ic = "x";
+          label = TR("None");
+        } else {
+          ic = ai.group == RNF_GROUP_HOTKEY ? "bolt" : "device-gamepad";
+          label = str(rnf_input_action_label(a.c_str()));
+          if (ai.group == RNF_GROUP_PLAYER2) label = "2P " + label;
+          else if (ai.group == RNF_GROUP_PLAYER1) label = "1P " + label;
+        }
+        const std::vector<rnf_binding>& b = d_.input->bindings();
+        std::string el = assignElement_.substr(assignElement_.find(':') + 1);
+        rnf_list* acts = rnf_input_element_actions(b.data(), b.size(), el.c_str(), slot);
+        bool on = a.empty() ? rnf_list_count(acts) == 0 : false;
+        for (size_t j = 0; j < rnf_list_count(acts); ++j) on = on || a == rnf_list_a(acts, j);
+        rnf_list_free(acts);
+        if (on) value = "\xE2\x9C\x93";  // ✓ the action now
+        if (f) description_ = ai.group == RNF_GROUP_HOTKEY && !a.empty() ? TR("Hotkeys (not recorded)") : std::string();
+      }
     } else if (id == "library.projects") {
       if (row == 0) {
         ic = "player-play";
@@ -717,20 +774,22 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
     if (f) drawFocus(r, m.tileRadius(), now);
   }
   // Hints.
-  if (id == "takes") prompt({"face.south"}, TR("Switch"));
+  if (id == "takes") prompt({"ui.confirm"}, TR("Switch"));
   else if (id == "bookmarks") {
-    prompt({"face.south"}, focus == 0 ? TR("Add") : TR("Go"));
+    prompt({"ui.confirm"}, focus == 0 ? TR("Add") : TR("Go"));
     if (focus > 0) {
       prompt({"face.north"}, TR("Rename"));
       prompt({"face.west"}, TR("Delete"));
     }
+  } else if (id == "controls.assign") {
+    prompt({"ui.confirm"}, TR("Assign"));
   } else if (id == "controls.keyboard") {
-    prompt({"face.south"}, TR("Set Key"));
+    prompt({"ui.confirm"}, TR("Set Key"));
     prompt({"face.west"}, TR("Clear"));
   } else if (id == "library.projects") {
-    prompt({"face.south"}, TR("Play"));
+    prompt({"ui.confirm"}, TR("Play"));
   }
-  prompt({"face.east"}, TR("Back"));
+  prompt({"ui.cancel"}, TR("Back"));
   (void)st;
 }
 
@@ -749,10 +808,10 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
   LRect area{g.panel.x + S(20), g.panel.y + S(16) + m.label() * 1.8f, g.panel.w - S(40), 0};
   area.h = g.panel.bottom() - area.y - S(16);
   buildDiagram(fam, slot, area, now);
-  prompt({"face.south"}, TR("Change"));
+  prompt({"ui.confirm"}, TR("Change"));
   prompt({"face.west"}, TR("Next Pad"));
   prompt({"face.north"}, TR("Reset"));
-  prompt({"face.east"}, TR("Back"));
+  prompt({"ui.cancel"}, TR("Back"));
 }
 
 // ------------------------------------------------------------------ actions
@@ -818,11 +877,15 @@ void UI::activateRow(const std::string& page, size_t row) {
     else if (row == 1) d_.app->tryRom(r.path);
     else if (row - 2 < projects.size()) d_.app->continueProject(projects[row - 2].path);
   } else if (page == "controls.controller") {
-    if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) {
-      const std::string& el = diagramIds_[size_t(diagramFocus_)];
-      if (InputRouter::isReserved(el.substr(el.find(':') + 1))) notice(TR("R3 / Guide: ReplayNES menu (reserved)"));
-      else assignElement_ = el;
-    }
+    if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) openAssign(diagramIds_[size_t(diagramFocus_)]);
+  } else if (page == "controls.assign") {
+    int slot = 0;
+    rnf_input_controller_slot(assignElement_.c_str(), &slot);
+    std::vector<const char*> choices(rnf_input_assign_choices(slot, nullptr, 0));
+    rnf_input_assign_choices(slot, choices.data(), choices.size());
+    if (row >= choices.size() || assignElement_.empty()) return;
+    d_.input->setAssignment(assignElement_, choices[row]);
+    menuEvent(rnf_menu_back(menu_), 0);  // back to the picture, on the same button
   }
 }
 

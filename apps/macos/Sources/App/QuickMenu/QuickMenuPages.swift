@@ -16,6 +16,8 @@ struct QMItem: Identifiable {
         case choice([String], Int)
         case slider(Double, ClosedRange<Double>, String)   // value, range, shown text
         case text(String)
+        /// Button glyphs with their verbs ("Ⓑ Confirm  Ⓐ Back"), switched with ← / →.
+        case buttons([(glyph: String, verb: String)])
     }
     let id: String
     var icon: String
@@ -67,6 +69,7 @@ enum QuickMenuPages {
             return QMContent(items: crtDetail(), y: QMAction(label: String(localized: "Defaults")) { CRTSettingsModel.shared.resetToNestermDefaults() })
         case .controls: return QMContent(items: controls(m))
         case .controller: return controller(m, menu)
+        case .assign: return assign(m, menu)
         case .bindings: return bindings(m, menu)
         case .controlsDetail: return QMContent(items: controlsDetail(m))
         case .sound: return QMContent(items: sound(m))
@@ -294,12 +297,39 @@ enum QuickMenuPages {
     // MARK: Settings › Controls
 
     private static func controls(_ m: AppModel) -> [QMItem] {
-        let c = m.inputConfig
-        let rate = 60.0988 / Double(max(1, c.turboPeriod))
         return [
             link("controller", "gamecontroller", String(localized: "Controller"),
                  String(localized: "See and change the buttons on a picture of your controller"), .controller),
-            link("bindings", "keyboard", String(localized: "Keyboard"), String(localized: "Assign keys (and buttons) to each action"), .bindings),
+            link("bindings", "keyboard", String(localized: "Keyboard"), String(localized: "Keys for the game and the hotkeys"), .bindings),
+            confirmButton(m),
+            toggle("dpadPaused", "dpad", String(localized: "D-pad While Paused"),
+                   String(localized: "← / → step one frame while paused"), m.dpadStepWhenPaused) { m.dpadStepWhenPaused = $0 },
+            toggle("pauseRewind", "pause.circle", String(localized: "Pause After Rewind"),
+                   String(localized: "Pause when rewind / fast-forward is released"), m.pauseAfterRewind) { m.pauseAfterRewind = $0 },
+            link("controlsDetail", "slider.horizontal.3", String(localized: "Controls Details"),
+                 String(localized: "Turbo, opposite directions, stick"), .controlsDetail),
+        ]
+    }
+
+    /// Settings › Controls › Confirm Button: which face button confirms in menus (east by default,
+    /// Nintendo style, on every family), as the glyph pair of the connected controller family.
+    private static func confirmButton(_ m: AppModel) -> QMItem {
+        let south = m.southConfirm
+        let info = m.input.controllerMonitor.controllers.min { $0.slot < $1.slot }
+        let label = { (e: String) in info?.label(e) ?? ControllerFamily.xbox.label(e) }
+        let ok = String(cString: rnf_ui_confirm_element(south ? 1 : 0)), back = String(cString: rnf_ui_cancel_element(south ? 1 : 0))
+        let set = { (s: Bool) in m.southConfirm = s }
+        return QMItem(id: "confirmButton", icon: "checkmark.circle", title: String(localized: "Confirm Button"),
+                      detail: String(localized: "Which button confirms in menus (the other goes back)"),
+                      value: .buttons([(label(ok), String(localized: "Confirm")), (label(back), String(localized: "Back"))]),
+                      confirm: { set(!south) }, adjust: { _ in set(!south) }, verb: String(localized: "Change"))
+    }
+
+    private static func controlsDetail(_ m: AppModel) -> [QMItem] {
+        let c = m.inputConfig
+        let policies = ["neutral", "last_wins", "allow"]
+        let rate = 60.0988 / Double(max(1, c.turboPeriod))
+        return [
             QMItem(id: "turbo", icon: "bolt", title: String(localized: "Turbo Speed"),
                    detail: String(localized: "Presses per second of Turbo A / B"),
                    value: .slider(Double(32 - c.turboPeriod), 2...30, String(format: "%.1f/s", rate)),
@@ -311,19 +341,6 @@ enum QuickMenuPages {
                        let p = min(30, max(2, 30 - Int((f * 28).rounded())))
                        m.input.setTurbo(period: p, duty: min(c.turboDuty, p - 1))
                    }),
-            toggle("dpadPaused", "dpad", String(localized: "D-pad While Paused"),
-                   String(localized: "While paused, ←/→ step frames and A resumes"), m.dpadStepWhenPaused) { m.dpadStepWhenPaused = $0 },
-            toggle("pauseRewind", "pause.circle", String(localized: "Pause After Rewind"),
-                   String(localized: "Pause when rewind / fast-forward is released"), m.pauseAfterRewind) { m.pauseAfterRewind = $0 },
-            link("controlsDetail", "slider.horizontal.3", String(localized: "Controls Details"),
-                 String(localized: "Opposite directions, stick, turbo press length"), .controlsDetail),
-        ]
-    }
-
-    private static func controlsDetail(_ m: AppModel) -> [QMItem] {
-        let c = m.inputConfig
-        let policies = ["neutral", "last_wins", "allow"]
-        return [
             choice("socd", "arrow.left.and.right", String(localized: "Opposite Directions"),
                    String(localized: "What ←+→ or ↑+↓ pressed together does"),
                    [String(localized: "Neither"), String(localized: "Last Wins"), String(localized: "Both")],
@@ -343,7 +360,8 @@ enum QuickMenuPages {
         ]
     }
 
-    /// Controller diagram: the item list is empty; the page draws the diagram (QuickMenuView).
+    /// Controller diagram: the item list is empty; the page draws the diagram (QuickMenuView) and
+    /// the controller focus moves between its elements (QuickMenuController.handleController).
     private static func controller(_ m: AppModel, _ menu: QuickMenuController) -> QMContent {
         let slot = menu.listPageIndex(.controller)
         let monitor = m.input.controllerMonitor
@@ -351,7 +369,56 @@ enum QuickMenuPages {
         let player = slot == 0 ? "1P" : "2P"
         let name = info?.name ?? String(localized: "Not Connected")
         return QMContent(items: [], pageCount: 2, caption: String(localized: "Pad \(slot + 1) (\(player)): \(name)"),
+                         x: QMAction(label: String(localized: "Next Pad")) { menu.setListPage((slot + 1) % 2, on: .controller) },
                          y: QMAction(label: String(localized: "Defaults")) { m.input.resetController(slot: slot) })
+    }
+
+    /// The diagram's family for pad `slot`: the connected controller's, or the setting
+    /// "diagramFamily" (a ControllerFamily raw value; "" / "auto" = the controller's).
+    static func diagramFamily(_ m: AppModel, slot: Int) -> ControllerFamily {
+        if let forced = UserDefaults.standard.string(forKey: "diagramFamily"), let f = ControllerFamily(rawValue: forced) { return f }
+        return m.input.controllerMonitor.controllers.first { $0.slot == slot }?.family ?? .generic
+    }
+
+    /// "" (None) + the pad's own player's actions, the other player's, the hotkeys (shared core).
+    static func assignChoices(slot: Int) -> [String] {
+        let n = rnf_input_assign_choices(Int32(slot), nil, 0)
+        var buf = [UnsafePointer<CChar>?](repeating: nil, count: n)
+        _ = buf.withUnsafeMutableBufferPointer { rnf_input_assign_choices(Int32(slot), $0.baseAddress, n) }
+        return buf.map { $0.map { String(cString: $0) } ?? "" }
+    }
+
+    /// Settings › Controls › Controller › a button: its action, 6 rows per sheet (L / R), no scrolling.
+    private static func assign(_ m: AppModel, _ menu: QuickMenuController) -> QMContent {
+        guard let id = menu.assignElement, let colon = id.firstIndex(of: ":") else { return QMContent(items: []) }
+        let element = String(id[id.index(after: colon)...])
+        let slot = Int(id.dropFirst(2).prefix { $0.isNumber }) ?? 0
+        let current = ControllerAssignments.actions(element: element, slot: slot, config: m.inputConfig)
+        let all = assignChoices(slot: slot).map { a -> QMItem in
+            let action = InputCatalog.allActions.first { $0.id == a }
+            let title: String
+            switch action?.group {
+            case nil: title = String(localized: "None")
+            case .player1?: title = "1P " + (action?.label ?? a)
+            case .player2?: title = "2P " + (action?.label ?? a)
+            case .hotkey?: title = action?.label ?? a
+            }
+            let on = a.isEmpty ? current.isEmpty : current.contains(a)
+            return QMItem(id: "assign:" + a, icon: a.isEmpty ? "xmark" : action?.group == .hotkey ? "bolt" : "gamecontroller",
+                          title: title, detail: action?.group == .hotkey ? String(localized: "Hotkeys (not recorded)") : "",
+                          value: .text(on ? "✓" : ""),
+                          confirm: { [weak menu] in
+                              m.input.setAssignment(id, action: a.isEmpty ? nil : a)
+                              menu?.back()
+                          }, verb: String(localized: "Assign"))
+        }
+        let per = QMPage.assign.capacity
+        let pages = QuickMenuNav.pageCount(items: all.count, perPage: per)
+        let range = QuickMenuNav.pageRange(items: all.count, perPage: per, page: menu.listPageIndex(.assign))
+        let family = diagramFamily(m, slot: slot)
+        let labels = m.input.controllerMonitor.controllers.first { $0.slot == slot }?.labels ?? [:]
+        return QMContent(items: Array(all[range]), pageCount: pages,
+                         caption: ControllerAssignments.title(element: element, family: family, labels: labels))
     }
 
     /// Bindings, 6 per page: 1P, 2P, hotkeys.
@@ -379,10 +446,10 @@ enum QuickMenuPages {
             let ids = m.inputConfig.inputs(for: a.id).sorted()
             let names = ids.map { InputCatalog.displayName($0, controllers: controllers) }
             let capturing = m.capturingAction == a.id
-            let text = capturing ? String(localized: "Press a key or button…")
+            let text = capturing ? String(localized: "Press a key…")
                 : (names.isEmpty ? String(localized: "None") : names.joined(separator: ", "))
             return QMItem(id: a.id, icon: a.group == .hotkey ? "command" : "gamecontroller", title: a.label,
-                          detail: names.isEmpty ? String(localized: "Not assigned · Enter adds a key or button")
+                          detail: names.isEmpty ? String(localized: "Not assigned · Enter adds a key")
                                                 : String(localized: "Assigned: \(names.joined(separator: ", "))"),
                           value: .text(text),
                           confirm: { startCapture(m, menu, a.id) },

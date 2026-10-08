@@ -6,10 +6,14 @@
 // paused D-pad frame stepping (routed away from the game, InputManager.swift on macOS), the live
 // "pressed" set and connected pads for the settings diagram, and "press a key to assign".
 // The Quick Menu (docs/design/UI_REDESIGN.md) is the action "hk.menu": pad 1's L+R combo through
-// the shared chord detector (rnf_chord: L or R alone fire on release or after 100 ms, then go
-// their usual way - pause / slow in play, previous / next page in menus) and Esc. The right stick
-// click (R3) and the Guide button open it too (reserved, never reach the game). While paused in
-// play (the seek bar), A / B resume instead of reaching the game.
+// the shared chord detector (rnf_chord) and Esc. L or R alone act on their RELEASE (never in the
+// way of the chord): their own bindings in play (pause / slow), previous / next page in menus, a
+// frame step back / forward while paused (held >= 400 ms: repeated), a held marker move while a
+// seek bar marker is edited. The right stick click (R3) and the Guide button open the menu too
+// (reserved, never reach the game). While paused in play (the seek bar), the UI's cancel button
+// tapped resumes, confirm tapped drops a marker, up tapped goes to the markers (taps: they still
+// reach the game, so a held button survives frame steps); with a marker focused the pad is the
+// seek bar's (onSeekInput) and nothing reaches the game.
 // Frame-loop thread only (SDL events are polled there); rn_input itself is internally locked.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
@@ -58,7 +62,15 @@ class InputRouter {
   // Hooks.
   std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / Guide / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
-  std::function<void()> onPausedConfirm;                 // A / B tapped while paused in play: resume
+  std::function<void()> onPausedResume;                  // cancel tapped while paused in play: resume
+  /// The paused seek bar's controller input (docs/design/UI_REDESIGN.md): taps on the bar (ok, up,
+  /// y: press only), everything while a marker is focused / edited (press and release).
+  enum class SeekInput { ok, cancel, up, down, left, right, x, y };
+  std::function<void(SeekInput in, bool down)> onSeekInput;
+  /// L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
+  std::function<void(int dir)> onPausedShoulder;
+  /// L / R held while a marker is edited: the marker moves (-1 / +1) until released.
+  std::function<void(int dir, bool down)> onMarkerHold;
   /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).
   std::function<void(int dir)> onUiShoulder;
   std::function<void(const std::string& name)> onDisconnect;
@@ -70,6 +82,8 @@ class InputRouter {
   /// Emulation paused state (paused D-pad stepping). Entering pause releases D-pad left/right held
   /// for the game, so a following frame advance does not record them.
   void setPausedStepMode(bool paused);
+  /// The seek bar's focus while paused: 0 = the bar, 1 = a marker, 2 = a marker being edited.
+  void setSeekFocus(int focus);
 
   /// One SDL event (keyboard / gamepad). evTime: the event's time on the CLOCK_MONOTONIC clock.
   /// keyboardForUI: ImGui wants the keyboard (text field or menu).
@@ -125,7 +139,10 @@ class InputRouter {
   void padAxis(int slot, int axis, float v, double t);
   void stickDirections(int slot, const char* stick, float x, float y, double t);
   bool routePausedStep(const std::string& id, bool down);
-  bool routePausedConfirm(const std::string& id, bool down);
+  bool routePausedTap(const std::string& id, bool down);
+  bool routeSeek(const std::string& id, bool down);
+  void updateRepeat();
+  bool isGameMember(const std::string& id) const;
   void pumpChord();
   void routeButton(const std::string& id, bool down, double t);
   bool captureFrom(const std::string& id, bool keyboard);
@@ -151,7 +168,11 @@ class InputRouter {
   bool captureKeysOnly_ = false;
   rnf_chord* chord_ = nullptr;
   std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
-  ConfirmTap confirmTap_;                 // A / B pressed while paused: a tap resumes
+  ConfirmTap confirmTap_;                 // confirm / cancel / up / Y pressed while paused: taps
+  int seekFocus_ = 0;
+  std::set<std::string> gameMembers_;     // chord members bound to game input (held, not tapped)
+  std::set<std::string> forwardedMembers_;  // ... pressed for the game now
+  std::map<std::string, int> holdMembers_;  // members moving an edited marker now -> -1 / +1
   // parsed config
   std::vector<std::pair<std::string, std::string>> bindingPairs_;
   std::vector<rnf_binding> bindingView_;

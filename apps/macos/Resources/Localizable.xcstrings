@@ -121,6 +121,16 @@
         }
       }
     },
+    "%lld projects · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld件・%2$@"
+          }
+        }
+      }
+    },
     "%lldA": {
       "localizations": {
         "ja": {
@@ -331,6 +341,16 @@
         }
       }
     },
+    "A marker is already here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここにはマーカーがあります"
+          }
+        }
+      }
+    },
     "A new version of ReplayNES is available (Settings › System › Updates).": {
       "localizations": {
         "ja": {
@@ -407,6 +427,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "A/B %lld"
+          }
+        }
+      }
+    },
+    "A/B %lld: A %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B %lld：A %@"
+          }
+        }
+      }
+    },
+    "A/B %lld: A %@ → B %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B %lld：A %@ → B %@"
           }
         }
       }
@@ -493,16 +533,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "アクション"
-          }
-        }
-      }
-    },
-    "Action for this button": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このボタンに割り当てる操作"
           }
         }
       }
@@ -719,12 +749,12 @@
         }
       }
     },
-    "Assign keys (and buttons) to each action": {
+    "Assign": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "動作ごとにキー（やボタン）を割り当てます"
+            "value": "割り当て"
           }
         }
       }
@@ -1069,6 +1099,16 @@
         }
       }
     },
+    "Button Action": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンの動作"
+          }
+        }
+      }
+    },
     "Buttons restored to the defaults": {
       "localizations": {
         "ja": {
@@ -1195,6 +1235,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "このゲームを閉じてライブラリに戻ります"
+          }
+        }
+      }
+    },
+    "Confirm": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決定"
+          }
+        }
+      }
+    },
+    "Confirm Button": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決定ボタン"
           }
         }
       }
@@ -1365,16 +1425,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "新しいプロジェクトで使うNES ROM (.nes) を選んでください。ROMはプロジェクトにコピーされません。"
-          }
-        }
-      }
-    },
-    "Choosing one makes it the only action assigned to this button.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選ぶと、このボタンの割り当てはその操作だけになります。"
           }
         }
       }
@@ -2052,6 +2102,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "アップデートをダウンロードしています… %lld%%"
+          }
+        }
+      }
+    },
+    "East Confirms": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "東で決定"
           }
         }
       }
@@ -3528,6 +3588,26 @@
         }
       }
     },
+    "Marker": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マーカー"
+          }
+        }
+      }
+    },
+    "Markers": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マーカーへ"
+          }
+        }
+      }
+    },
     "Marks the current position": {
       "localizations": {
         "ja": {
@@ -3874,12 +3954,12 @@
         }
       }
     },
-    "Not assigned · Enter adds a key or button": {
+    "Not assigned · Enter adds a key": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "割り当てなし・決定でキーかボタンを追加"
+            "value": "割り当てなし・決定でキーを追加"
           }
         }
       }
@@ -4094,16 +4174,6 @@
         }
       }
     },
-    "Opposite directions, stick, turbo press length": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "逆方向の同時押し・スティック・連射の押す長さ"
-          }
-        }
-      }
-    },
     "Original": {
       "localizations": {
         "ja": {
@@ -4270,12 +4340,12 @@
         }
       }
     },
-    "Paused. Press Space or R on the controller (or the ▶︎ button) to resume": {
+    "Paused. Press Space, or the back button on the controller, to resume": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "一時停止中です。Space キー / コントローラーの R（または ▶︎ ボタン）で再開します"
+            "value": "一時停止中。Space キーかコントローラーの戻るボタンで再開します"
           }
         }
       }
@@ -4616,16 +4686,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "練習中（録画しない）"
-          }
-        }
-      }
-    },
-    "Press a key or button…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーかボタンを押してください…"
           }
         }
       }
@@ -5405,16 +5465,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "巻き戻し（押している間）"
-          }
-        }
-      }
-    },
-    "Rewind / Fast-forward": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "巻き戻し／早送り"
           }
         }
       }
@@ -6281,6 +6331,16 @@
         }
       }
     },
+    "South Confirms": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "南で決定"
+          }
+        }
+      }
+    },
     "Space": {
       "localizations": {
         "ja": {
@@ -7059,16 +7119,6 @@
         }
       }
     },
-    "Turbo press length, opposite directions, stick": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連射の長さ・逆方向・スティック"
-          }
-        }
-      }
-    },
     "Turbo Speed": {
       "localizations": {
         "ja": {
@@ -7079,12 +7129,32 @@
         }
       }
     },
+    "Turbo, opposite directions, stick": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射、逆方向の同時押し、スティック"
+          }
+        }
+      }
+    },
     "Turn the console off and on again (recorded)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "本体の電源を入れ直します（録画されます）"
+          }
+        }
+      }
+    },
+    "Two markers already (X deletes one)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マーカーは2つまで（Xで削除）"
           }
         }
       }
@@ -7115,6 +7185,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "アンダーラン / 破棄サンプル"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元に戻す"
           }
         }
       }
@@ -7349,12 +7429,12 @@
         }
       }
     },
-    "While paused, ←/→ step frames and A resumes": {
+    "Which button confirms in menus (the other goes back)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "一時停止中は←→でコマ送り、Aで再開"
+            "value": "メニューで決定に使うボタン（もう一方は戻る）"
           }
         }
       }

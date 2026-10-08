@@ -25,12 +25,13 @@ final class ControllerLayoutTests: XCTestCase {
             ("xbox", .xbox, defaults, []),
             ("playstation", .playStation, defaults, ["gc0:rightTrigger"]),
             ("generic", .generic, defaults, []),
+            ("steamdeck", .steamDeck, defaults, ["gc0:face.south"]),
             ("nintendo-custom", .nintendo, custom, ["gc0:dpad.left"]),
             ("playstation-custom", .playStation, custom, []),
         ]
         for (name, family, config, pressed) in cases {
-            let view = ControllerDiagramView(family: family, slot: 0, config: config, pressed: pressed)
-                .padding(10).background(Color.white).environment(\.colorScheme, .light)
+            let view = ControllerDiagramView(family: family, slot: 0, config: config, pressed: pressed, focused: "face.east")
+                .padding(10).background(Color(red: 0.08, green: 0.08, blue: 0.09)).environment(\.colorScheme, .dark)
             let r = ImageRenderer(content: view)
             r.scale = 2
             let image = try XCTUnwrap(r.cgImage, name)
@@ -38,5 +39,21 @@ final class ControllerLayoutTests: XCTestCase {
             let png = try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
             try png.write(to: dir.appendingPathComponent("controller-\(name).png"))
         }
+    }
+
+    /// The outline comes from the core (no grips): one body for every family; the Steam Deck adds
+    /// its screen and two trackpads, PlayStation its touchpad. Everything stays on the canvas.
+    func testDecor() {
+        let canvas = CGRect(origin: .zero, size: ControllerDiagramLayout.canvas)
+        for f in ControllerFamily.allCases {
+            let d = ControllerDiagramLayout(family: f).decor
+            XCTAssertEqual(d.first?.kind, .body, "\(f)")
+            XCTAssertEqual(d.filter { $0.kind == .body }.count, 1, "\(f)")
+            for x in d { XCTAssertTrue(canvas.contains(x.rect), "\(f): \(x.rect)") }
+        }
+        let deck = ControllerDiagramLayout(family: .steamDeck).decor
+        XCTAssertEqual(deck.filter { $0.kind == .screen }.count, 1)
+        XCTAssertEqual(deck.filter { $0.kind == .pad }.count, 2)
+        XCTAssertEqual(ControllerDiagramLayout(family: .playStation).decor.filter { $0.kind == .pad }.count, 1)
     }
 }

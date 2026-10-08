@@ -60,7 +60,10 @@ Controls: the shared bindings (Steam Deck / Xbox layout by button position) and 
 (docs/design/UI_REDESIGN.md) - see [STEAM_DECK.md](STEAM_DECK.md#controls) and
 `apps/windows/README.txt`; gamepads through SDL3 (XInput, GameInput, raw input / HIDAPI for
 PlayStation and Switch Pro). **L+R together (LB+RB / L1+R1) opens the Quick Menu**, R alone pauses
-(seek bar), L alone toggles slow motion; on the keyboard **Esc** (or F1) opens / closes it, and in
+(seek bar), L alone toggles slow motion (both on release); paused, L / R step frames, the south
+button (A / Xbox) tapped resumes and the east button (B) drops an A/B marker. Menus confirm with the
+east button and go back with the south one (Settings › Controls › Confirm Button swaps them); the
+controller diagram and its action picker work with the controller alone. On the keyboard **Esc** (or F1) opens / closes it, and in
 menus arrows / Enter / Backspace / Page Up / Page Down / Delete / F2 do what the hint bar shows. With
 no controller the "☰ Menu Esc" pill in the top-right corner is a button (mouse / touch). F11 full
 screen, F3 statistics. The built-in on-screen keyboard works with a controller; Steam's keyboard is

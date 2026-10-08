@@ -12,6 +12,8 @@ final class QuickMenuController: ObservableObject {
     @Published private(set) var listPage: [QMPage: Int] = [:]
     /// Bumped after an action so values read from preferences are shown fresh.
     @Published private(set) var revision = 0
+    /// The physical id ("gc0:face.east") whose action the .assign page picks.
+    @Published private(set) var assignElement: String?
     /// +1 / -1: direction of the last page change (transition), 0 = none.
     private(set) var lastMove = 0
 
@@ -110,6 +112,7 @@ final class QuickMenuController: ObservableObject {
     func handle(_ n: NavInput) {
         guard isOpen, let m = model else { return }
         let p = page
+        if p == .controller { handleController(n, m); return }
         let content = QuickMenuPages.content(p, model: m, menu: self)
         let items = content.items
         let i = min(focusIndex(p), max(0, items.count - 1))
@@ -151,6 +154,62 @@ final class QuickMenuController: ObservableObject {
                 switchTab(to: tabs[(k + by + tabs.count) % tabs.count])
             }
         }
+    }
+
+    // MARK: controller diagram
+
+    /// The diagram's elements for the pad shown (focus = an index into them).
+    func diagramElements(_ m: AppModel) -> [DiagramElement] {
+        ControllerDiagramLayout(family: QuickMenuPages.diagramFamily(m, slot: listPageIndex(.controller))).elements
+    }
+
+    /// Settings › Controls › Controller: the D-pad / left stick move between the buttons on the
+    /// picture (the nearest one in that direction), confirm opens the action picker, X = next pad,
+    /// Y = defaults, cancel = back, L / R = the other pad.
+    private func handleController(_ n: NavInput, _ m: AppModel) {
+        let p = QMPage.controller
+        let content = QuickMenuPages.content(p, model: m, menu: self)
+        let els = diagramElements(m)
+        let i = min(max(0, focusIndex(p)), max(0, els.count - 1))
+        switch n {
+        case .menu, .escape: close()
+        case .back: back()
+        case .up, .down, .left, .right:
+            guard els.indices.contains(i) else { return }
+            let dx: CGFloat = n == .left ? -1 : n == .right ? 1 : 0, dy: CGFloat = n == .up ? -1 : n == .down ? 1 : 0
+            let c = els[i].center
+            var best: Int?, bestScore = CGFloat.greatestFiniteMagnitude
+            for (j, e) in els.enumerated() where j != i {
+                let vx = e.center.x - c.x, vy = e.center.y - c.y
+                let along = vx * dx + vy * dy, across = abs(vx * dy) + abs(vy * dx)
+                if along <= 1 { continue }
+                let score = along + across * 2.2
+                if score < bestScore { bestScore = score; best = j }
+            }
+            if let b = best { setFocus(b, on: p) }
+        case .confirm:
+            if els.indices.contains(i) { openAssign("gc\(listPageIndex(p)):\(els[i].element)") }
+        case .x: content.x?.run(); touch()
+        case .y: content.y?.run(); touch()
+        case .pagePrev, .pageNext: flipPage(p, content: content, by: n == .pagePrev ? -1 : 1)
+        }
+    }
+
+    /// The action picker of a controller button (page .assign): focus on the action assigned now.
+    func openAssign(_ physicalID: String) {
+        guard let m = model, let colon = physicalID.firstIndex(of: ":") else { return }
+        let element = String(physicalID[physicalID.index(after: colon)...])
+        let slot = Int(physicalID.dropFirst(2).prefix { $0.isNumber }) ?? 0
+        if let i = diagramElements(m).firstIndex(where: { $0.element == element }), slot == listPageIndex(.controller) {
+            setFocus(i, on: .controller)
+        }
+        assignElement = physicalID
+        let current = ControllerAssignments.actions(element: element, slot: slot, config: m.inputConfig).first ?? ""
+        let k = QuickMenuPages.assignChoices(slot: slot).firstIndex(of: current) ?? 0
+        let per = QMPage.assign.capacity
+        listPage[.assign] = k / per
+        focus[.assign] = k % per
+        if page != .assign { push(.assign) }
     }
 
     private func flipPage(_ p: QMPage, content: QMContent, by: Int) {

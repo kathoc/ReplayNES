@@ -145,6 +145,7 @@ void App::applySettings() {
 void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
+  input_->setSeekFocus(inter ? 0 : ui_->seekFocus());
   ImGuiIO& io = ImGui::GetIO();
   if (inter) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
   else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
@@ -219,6 +220,17 @@ int App::run(const AppOptions& opt) {
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
     std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
     return 1;
+  }
+  if (opt.virtualPad) {
+    // A gamepad for --script's "pad" presses on machines without one (VMs): it attaches like a
+    // real pad (slot 0), so the injected events go the whole way (chord, seek bar, game).
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    desc.name = "ReplayNES Virtual Pad";
+    if (!SDL_AttachVirtualJoystick(&desc)) std::fprintf(stderr, "virtual pad: %s\n", SDL_GetError());
   }
   // Language: Japanese iff the first preferred language is Japanese (before any other thread
   // reads localized strings).
@@ -299,7 +311,10 @@ int App::run(const AppOptions& opt) {
   emu_->pressSequence = [this] { return input_->pressSequence(); };
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
-  input_->onPausedConfirm = [this] { ui_->resumeFromSeekBar(); };
+  input_->onPausedResume = [this] { ui_->resumeFromSeekBar(); };
+  input_->onSeekInput = [this](InputRouter::SeekInput in, bool down) { ui_->seekInput(int(in), down); };
+  input_->onMarkerHold = [this](int dir, bool down) { ui_->markerHold(dir, down); };
+  input_->onPausedShoulder = [this](int dir) { ui_->pausedShoulder(dir); };
   input_->onUiShoulder = [this](int dir) { ui_->shoulder(dir); };
   ui_->onLanguage = [this](const std::string& l) { pendingLanguage_ = l; };
   input_->onDisconnect = [this](const std::string& name) {
@@ -663,6 +678,7 @@ void printUsage(const PlatformHooks& platform) {
       "  --label NAME          label of the summary\n"
       "  --flash 0-3           flash reduction level for this run (off / low / standard / high)\n"
       "  --script \"CMD; ...\"   scripted UI steps (see apps/desktop/src/script.h)\n"
+      "  --virtual-pad         attach a virtual gamepad (scripted checks without a controller)\n"
       "  --crt | --no-crt      CRT display on / off for this run (Settings -> Display -> CRT Display saves it)\n"
       "  --crt-max-width N     tube width cap (default 1600); --crt-fixed: no adaptive resolution;\n"
       "  --crt-no-build-ahead  never build CRT pictures one frame ahead\n"
@@ -711,6 +727,7 @@ bool parseAppArgs(int argc, char** argv, const PlatformHooks& platform, AppOptio
     else if (a == "--windowed") o->fullscreen = 0;
     else if (a == "--vrr") o->vrr = true;
     else if (a == "--inject-input") o->injectInput = true;
+    else if (a == "--virtual-pad") o->virtualPad = true;
     else if (a == "--resume") o->resume = true;  // the default since resume.json
     else if (a == "--no-resume") o->resume = false;
     else if (a == "--help" || a == "-h") { printUsage(platform); std::exit(0); }

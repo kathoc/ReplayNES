@@ -60,6 +60,7 @@ if(TARGET replaynes_frontend)
   rn_add_frontend_test(test_frontend_playback)
   rn_add_frontend_test(test_frontend_export)
   rn_add_frontend_test(test_frontend_menu)
+  rn_add_frontend_test(test_frontend_seekbar)
   # Game database + library catalog; also identifies the developer's own ROMs in <repo>/roms.
   rn_add_frontend_test(test_frontend_gamedb)
   target_compile_definitions(test_frontend_gamedb PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")

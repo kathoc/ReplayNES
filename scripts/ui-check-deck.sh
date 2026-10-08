@@ -15,9 +15,10 @@
 # Script commands: apps/desktop/src/script.h. "shot NAME" writes into the remote shots folder;
 # "pad a|b|x|y|up|down|left|right|l1|r1|l2|r2|menu|view|r3" injects a controller press (SDL events
 # of pad 0, through the same path as a real press).
-# The app runs with a scratch session folder (~/.var/app/<id>/data/ui-check/session), so the
-# user's own session is never touched; the library is the real ~/Documents/ReplayNES unless
-# LIBRARY=scratch.
+# The app runs with a scratch session folder (~/.var/app/<id>/data/ui-check/session) and a scratch
+# copy of the user's settings + bindings (XDG_CONFIG_HOME=~/.var/app/<id>/data/ui-check/config,
+# copied fresh unless KEEP_SESSION=1), so the user's own session and settings are never touched;
+# the library is the real ~/Documents/ReplayNES unless LIBRARY=scratch.
 set -euo pipefail
 HOST="${HOST:-deck@steamdeck.local}"
 APP_ID=io.github.replaynes.ReplayNES
@@ -50,6 +51,12 @@ D=~/.var/app/$APP_ID/data/ui-check
 SHOTS=$D/shots
 rm -rf "$SHOTS"; mkdir -p "$SHOTS"
 [ "$KEEP" = "1" ] || rm -rf "$D/session"
+# Settings / bindings: a scratch copy (scripts change settings; the user's stay as they are).
+if [ "$KEEP" != "1" ] || [ ! -d "$D/config/ReplayNES" ]; then
+  rm -rf "$D/config"; mkdir -p "$D/config"
+  [ -d ~/.var/app/$APP_ID/config/ReplayNES ] && cp -a ~/.var/app/$APP_ID/config/ReplayNES "$D/config/"
+fi
+CMD="${CMD/flatpak run/flatpak run --env=XDG_CONFIG_HOME=$D/config}"
 # "shot NAME" -> "shot <shots dir>/NAME"
 CMDS=$(printf '%s' "$SCRIPT_CMDS" | sed -E "s#shot ([^;/ ]+)#shot $SHOTS/\1#g")
 case "$SESSION" in

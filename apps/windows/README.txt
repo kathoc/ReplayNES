@@ -24,7 +24,9 @@ Controls
   Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers through SDL.
     D-pad / left stick = NES D-pad, A = NES B, B = NES A (by position), X / Y = turbo,
     Menu = START, View = SELECT, L+R together (LB+RB) = Quick Menu, R = pause (seek bar),
-    L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward.
+    L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward. Paused: L / R step frames, A (tap)
+    resumes, B drops an A/B marker (up = to the markers). Menus: B confirms, A goes back
+    (Settings > Controls > Confirm Button swaps them).
   Keyboard: arrows, X = A, Z = B, S / A = turbo, Enter = START, right Shift = SELECT, Space pause,
     Backspace rewind, Tab fast-forward, L slow, comma / period step, B bookmark, Esc / F1 Quick
     Menu, F11 full screen, F3 statistics. In menus: arrows, Enter, Backspace (back), Page Up / Down.

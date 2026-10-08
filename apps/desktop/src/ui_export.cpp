@@ -280,7 +280,7 @@ void UI::buildExportDialog() {
       inlinePrompts(TR("Cancel"));
     }
     if (!appearing && !io.WantTextInput &&
-        (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+        (ImGui::IsKeyPressed(cancelKey(), false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
       close = true;
     if (close) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();

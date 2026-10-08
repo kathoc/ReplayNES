@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingOpen = []
         if let keys = arg("--inject-keys") { model.scheduleInjectedKeys(keys) }
         if let pad = arg("--inject-pad") { model.scheduleInjectedPad(pad) }
+        if let fam = arg("--fake-controller") { model.input.addFakeController(family: ControllerFamily(rawValue: fam) ?? .xbox) }
         if let acts = arg("--test-actions") { model.scheduleTestActions(acts) }
         if let snaps = arg("--snapshot-at") { model.scheduleSnapshots(snaps) }
         if let snaps = arg("--snapshot-windows") { model.scheduleWindowSnapshots(snaps) }

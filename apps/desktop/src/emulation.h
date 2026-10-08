@@ -149,6 +149,8 @@ class EmulationController {
   void stepBack(uint64_t n = 1);
   /// Paused D-pad stepping (InputRouter): step now, repeat while held.
   void pausedStep(int dir, bool down);
+  /// One frame back (-1) / forward (+1), paused (L / R released while paused).
+  void step(int dir) { stepFrame(dir); }
   void toggleSlow();
   void toggleRecord();
   void setRecording(bool rec);
@@ -181,7 +183,9 @@ class EmulationController {
   void practiceSetB(int slot);
   void practiceRename(int slot, const std::string& name);
   void practiceClear(int slot);
-  void practiceSetRange(int slot, uint64_t a, uint64_t b);
+  void practiceSetRange(int slot, uint64_t a, uint64_t b, bool fromMarkers = false);
+  /// "A only" at a take frame (the seek bar's markers), the cursor stays.
+  void practiceSetAAt(int slot, uint64_t frame);
   void timelineMarkA(int slot);
   void timelineMarkB(int slot);
 
@@ -243,7 +247,7 @@ class EmulationController {
   bool uiRewindHeld_ = false, uiFastForwardHeld_ = false;
   uint8_t pendingEvents_ = 0;
   bool rewinding_ = false, fastForward_ = false;
-  int rewindTicks_ = 0;
+  int rewindTicks_ = 0, ffTicks_ = 0;  // ticks of the hold (rnf_hold_speed)
   uint64_t tickCount_ = 0;
   bool endOfTake_ = false;
   uint64_t lastPressSeq_ = 0;

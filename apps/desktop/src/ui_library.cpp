@@ -190,12 +190,12 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   } else if (dy < 0) {
     libFocus_ = kFocusBar;
   }
-  bool confirm = pressed(ImGuiKey_GamepadFaceDown, false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
+  bool confirm = pressed(confirmKey(), false) || pressed(ImGuiKey_Enter, false) || pressed(ImGuiKey_KeypadEnter, false);
   bool keyX = pressed(kPadX, false) || pressed(ImGuiKey_Delete, false);
   bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false);
   bool keySort = pressed(ImGuiKey_GamepadBack, false) || pressed(ImGuiKey_Tab, false);
   bool keySearch = (ImGui::GetIO().KeyCtrl && pressed(ImGuiKey_F, false)) || pressed(ImGuiKey_Slash, false);
-  bool back = pressed(ImGuiKey_GamepadFaceRight, false) || pressed(ImGuiKey_Backspace, false);
+  bool back = pressed(cancelKey(), false) || pressed(ImGuiKey_Backspace, false);
   const std::vector<const LibraryROM*>& roms = libraryRoms();
   const LibraryROM* focused = libFocus_ >= 0 && libFocus_ < n ? roms[size_t(libFocus_)] : nullptr;
   if (confirm) {
@@ -300,7 +300,7 @@ void UI::buildSearchField(const LRect& r) {
   ImGui::InputTextWithHint("##search", hint.c_str(), search_, sizeof search_);
   ImGui::PopStyleVar();
   ImGuiID sid = ImGui::GetItemID();
-  bool held = ImGui::IsKeyDown(ImGuiKey_GamepadFaceDown) || ImGui::IsKeyDown(ImGuiKey_GamepadFaceRight) ||
+  bool held = ImGui::IsKeyDown(confirmKey()) || ImGui::IsKeyDown(cancelKey()) ||
               ImGui::IsKeyDown(ImGuiKey_Enter) || ImGui::IsKeyDown(ImGuiKey_KeypadEnter) || ImGui::IsKeyDown(ImGuiKey_Slash);
   if (focusSearch_ && !held) {
     // On the release of the button that asked for it: the press must not reach the keyboard.
@@ -406,7 +406,7 @@ void UI::buildLibrary(double now) {
       }
     }
     if (!lib->folderError().empty()) description_ = lib->folderError();
-    prompt({"face.south"}, TR("Open Folder"));
+    prompt({"ui.confirm"}, TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
   } else {
     // Continue: the last session (also after a crash), else the latest project.
@@ -509,15 +509,15 @@ void UI::buildLibrary(double now) {
           dl->AddCircleFilled(ImVec2(dx0 + float(p) * (dot + gap) + dot / 2, dy0 + dot / 2), dot / 2, p == libPage_ ? kText : kTextFaint);
     }
     if (libFocus_ == kFocusHero) {
-      prompt({"face.south"}, TR("Continue"));
+      prompt({"ui.confirm"}, TR("Continue"));
     } else if (libFocus_ == kFocusBar) {
-      prompt({"face.south"}, TR("Select"));
+      prompt({"ui.confirm"}, TR("Select"));
       if (libBar_ < RNF_LIBRARY_FILTER_COUNT) description_ = rnf_library_filter_name(rnf_library_filter(libBar_));
       else if (libBar_ == kBarSort) description_ = TRF("Sort by %@", {std::string(rnf_library_sort_name(lib->sort()))});
       else description_ = TR("Search ROMs");
     } else if (n > 0) {
       const LibraryROM* fr = libFocus_ >= 0 && libFocus_ < n ? roms[size_t(libFocus_)] : nullptr;
-      prompt({"face.south"}, TR("Play"));
+      prompt({"ui.confirm"}, TR("Play"));
       if (fr) prompt({"face.north"}, lib->isFavorite(*fr) ? TR("Unfavorite") : TR("Favorite"));
       prompt({"face.west"}, TR("Projects"));
     }

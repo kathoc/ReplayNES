@@ -31,6 +31,8 @@ struct Settings {
   bool pauseAfterRewind = true;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
+  // UI confirm / cancel (rnf_ui_confirm_element): false = east confirms, south goes back (default).
+  bool southConfirm = false;
   // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),
   // "builtin" (ReplayNES's controller keyboard), "steam" (Steam's only). See osk.h.
   std::string onScreenKeyboard = "auto";

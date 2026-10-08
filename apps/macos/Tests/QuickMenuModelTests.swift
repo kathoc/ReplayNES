@@ -32,7 +32,8 @@ final class ChordDetectorTests: XCTestCase {
         let c = detector()
         XCTAssertTrue(c.feed(r, down: true, now: 1).taken)
         XCTAssertEqual(c.nextDeadline ?? 0, 1 + w, accuracy: 1e-9)
-        XCTAssertEqual(c.feed(r, down: false, now: 1.05).events, [.alone(r, down: true), .alone(r, down: false)])
+        XCTAssertEqual(c.feed(r, down: false, now: 1.05).events,
+                       [.alone(r, down: true, member: 1, repeats: 0), .alone(r, down: false, member: 1, repeats: 0)])
         XCTAssertNil(c.nextDeadline)
     }
 
@@ -40,9 +41,28 @@ final class ChordDetectorTests: XCTestCase {
         let c = detector()
         _ = c.feed(l, down: true, now: 0)
         XCTAssertEqual(c.tick(now: w * 0.5), [])
-        XCTAssertEqual(c.tick(now: w), [.alone(l, down: true)])
+        XCTAssertEqual(c.tick(now: w), [.alone(l, down: true, member: 0, repeats: 0)])
         XCTAssertEqual(c.tick(now: w * 3), [])
-        XCTAssertEqual(c.feed(l, down: false, now: 1).events, [.alone(l, down: false)])
+        XCTAssertEqual(c.feed(l, down: false, now: 1).events, [.alone(l, down: false, member: 0, repeats: 0)])
+    }
+
+    /// Paused: a member held alone repeats (frame steps) at press + 400 ms, then every 50 ms; its
+    /// release carries the count (the single step is skipped). Off: no repeats.
+    func testRepeatModeWhilePaused() {
+        let c = detector()
+        c.repeatMode = true
+        XCTAssertTrue(c.repeatMode)
+        _ = c.feed(r, down: true, now: 0)
+        XCTAssertEqual(c.tick(now: w), [.alone(r, down: true, member: 1, repeats: 0)])
+        XCTAssertEqual(c.nextDeadline ?? 0, Double(RNF_CHORD_HOLD_DELAY), accuracy: 1e-9, "the repeat deadline is scheduled")
+        XCTAssertEqual(c.tick(now: Double(RNF_CHORD_HOLD_DELAY)), [.repeated(r, member: 1)])
+        XCTAssertEqual(c.tick(now: Double(RNF_CHORD_HOLD_DELAY + RNF_CHORD_REPEAT_INTERVAL)), [.repeated(r, member: 1)])
+        XCTAssertEqual(c.feed(r, down: false, now: 0.47).events, [.alone(r, down: false, member: 1, repeats: 2)])
+        c.repeatMode = false
+        _ = c.feed(l, down: true, now: 1)
+        XCTAssertEqual(c.tick(now: 1 + w), [.alone(l, down: true, member: 0, repeats: 0)])
+        XCTAssertEqual(c.tick(now: 2), [])
+        XCTAssertEqual(c.feed(l, down: false, now: 2).events, [.alone(l, down: false, member: 0, repeats: 0)])
     }
 
     func testOtherInputsPassAndRepeatOrResetFireNothing() {
@@ -58,7 +78,24 @@ final class ChordDetectorTests: XCTestCase {
     }
 }
 
-/// The paused seek bar's "A = resume" is a tap: holding A / B for a frame advance never resumes.
+/// Menus confirm with east and go back with south by default (Nintendo style on every family);
+/// "southConfirm" swaps them (shared core: rnf_ui_confirm_element).
+final class ConfirmElementTests: XCTestCase {
+    func testDefaultEastConfirms() {
+        XCTAssertEqual(String(cString: rnf_ui_confirm_element(0)), "face.east")
+        XCTAssertEqual(String(cString: rnf_ui_cancel_element(0)), "face.south")
+        XCTAssertEqual(String(cString: rnf_ui_confirm_element(1)), "face.south")
+        XCTAssertEqual(String(cString: rnf_ui_cancel_element(1)), "face.east")
+    }
+
+    func testHoldSpeedCurve() {
+        XCTAssertEqual(rnf_hold_speed(1), 2)
+        XCTAssertEqual(rnf_hold_speed(Int32(RNF_HOLD_SPEED_FAST_AFTER) + 1), 3)
+        XCTAssertEqual(rnf_hold_speed(Int32(RNF_HOLD_SPEED_FASTEST_AFTER) + 1), 4)
+    }
+}
+
+/// The paused seek bar's cancel = resume is a tap: holding A / B for a frame advance never resumes.
 final class ConfirmTapTests: XCTestCase {
     func testTapResumesButHoldingForAStepDoesNot() {
         var t = ConfirmTap()
@@ -157,8 +194,11 @@ final class CoreMenuTreeTests: XCTestCase {
         XCTAssertEqual(settings, QMPage.settingsTabs.compactMap(\.coreID), "settings pages and their L / R order")
         for p in QMPage.allCases {
             guard let id = p.coreID, let up = p.parent, let upID = up.coreID else { continue }
+            // The action picker is pushed from the diagram (no PAGE item opens it).
+            if p == .assign { XCTAssertNil(parent[id]); continue }
             XCTAssertEqual(parent[id], upID, "\(p) is under \(up) on macOS")
         }
+        XCTAssertEqual(QMPage.assign.parent, .controller)
     }
 
     func testLayoutsMatchPageKinds() {
@@ -203,9 +243,15 @@ final class QuickMenuModelTests: XCTestCase {
     }
 
     func testDepthIsAtMostThreeLevels() {
-        for p in QMPage.allCases { XCTAssertLessThanOrEqual(p.depth, 2, "\(p): Quick Menu › … at most 3 levels") }
+        for p in QMPage.allCases {
+            // Controls › Controller › Button Action is the only third level below the top.
+            XCTAssertLessThanOrEqual(p.depth, p == .assign ? 3 : 2, "\(p): Quick Menu › … at most 3 levels below the top")
+        }
         XCTAssertEqual(QMPage.crtDetail.path, [.top, .display, .crtDetail])
         XCTAssertEqual(QMPage.controller.path, [.top, .controls, .controller])
+        XCTAssertEqual(QMPage.assign.path, [.top, .controls, .controller, .assign])
+        XCTAssertTrue(QMPage.assign.paged)
+        XCTAssertEqual(QMPage.assign.layout, .rows)
         XCTAssertTrue(QMPage.crtDetail.isSettings)
         XCTAssertFalse(QMPage.takes.isSettings)
     }

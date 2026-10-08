@@ -33,15 +33,41 @@ extension EmulationController {
                                       takeLength: s.takeLength).first
     }
 
-    /// Defines slot = [a, b) on the take (drag on the timeline / A-B handles).
-    func practiceSetRange(_ slot: Int, a: UInt64, b: UInt64) {
+    /// Defines slot = [a, b) on the take (drag on the timeline / A-B handles; `fromMarkers`: the
+    /// seek bar's controller markers, a short notice).
+    func practiceSetRange(_ slot: Int, a: UInt64, b: UInt64, fromMarkers: Bool = false) {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
         do {
             try s.practiceSetRange(slot, a: a, b: b)
             markStructureDirty()
-            notice(String(localized: "Section \(slot + 1): A \(Engine.timecode(forFrame: a)) → B \(Engine.timecode(forFrame: b)) (length \(Engine.timecode(forFrame: b - a))). Click the section to practice it"))
+            if fromMarkers {
+                notice(String(localized: "A/B \(slot + 1): A \(Engine.timecode(forFrame: a)) → B \(Engine.timecode(forFrame: b))"))
+            } else {
+                notice(String(localized: "Section \(slot + 1): A \(Engine.timecode(forFrame: a)) → B \(Engine.timecode(forFrame: b)) (length \(Engine.timecode(forFrame: b - a))). Click the section to practice it"))
+            }
         } catch { reportError(String(localized: "Couldn’t set the section"), error) }
+    }
+
+    /// "A only" at a take frame (the seek bar's markers); the cursor stays. A is the machine state
+    /// at that frame: go there, take it, come back (paused, silent).
+    func practiceSetAAt(_ slot: Int, frame: UInt64) {
+        guard let s = session else { return }
+        if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
+        let back = s.frame
+        let f = min(frame, s.takeLength)
+        do {
+            if f != back { try s.seek(f) }
+        } catch { reportError(String(localized: "Couldn’t move"), error); return }
+        do {
+            try s.practiceSetA(slot)
+            markStructureDirty()
+            notice(String(localized: "A/B \(slot + 1): A \(Engine.timecode(forFrame: f))"))
+        } catch { reportError(String(localized: "Couldn’t set A"), error) }
+        if f != back { try? s.seek(back) }
+        paused = true
+        audio.setMuted(true)
+        publishVideo()
     }
 
     /// "Set A Here": A at the playhead, keeping B when it is still after A.
@@ -78,8 +104,8 @@ extension EmulationController {
 }
 
 extension AppModel {
-    func timelineSetRange(_ slot: Int, a: UInt64, b: UInt64) {
-        emu.perform { e in e.practiceSetRange(slot, a: a, b: b) }
+    func timelineSetRange(_ slot: Int, a: UInt64, b: UInt64, fromMarkers: Bool = false) {
+        emu.perform { e in e.practiceSetRange(slot, a: a, b: b, fromMarkers: fromMarkers) }
     }
     func timelineMarkA() {
         let slot = FilmstripModel.shared.selectedSlot

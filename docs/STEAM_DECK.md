@@ -154,13 +154,18 @@ An empty library is one card with the folder, Open Folder and Reload.
 in slow motion, at the end of the take or while flashes are reduced).
 
 **Pause (R).** Only the seek bar: the filmstrip timeline with the time, REC / PLAY and the A/B lane.
-A or B resumes (R again too), L2 / R2 hold rewind / fast-forward, the D-pad ←/→ steps frames. Touch /
-mouse: drag the strip to move, drag the thin band above it to set an A/B range, drag a range's end to
-adjust it, tap a range to practice it.
+A (the back button) tapped resumes; L / R (released) and the D-pad ←/→ step frames (held: repeat);
+L2 / R2 hold rewind / fast-forward. **A/B markers**: B (confirm) drops a flag at the playhead for the
+selected section ("A/B n", Y picks the next): the first is A, the second makes the range (left = A,
+right = B). ↑ goes to the flags (← / → pick, ↓ / A back); B on a flag moves it (← / → one frame,
+L / R held at the rewind / fast-forward speed, the picture follows; B keeps it, A undoes it; passing
+the other flag swaps A and B); X deletes the focused flag (one of two left: "A only"). The hint bar
+shows the buttons of each state. Touch / mouse: drag the strip to move, drag the thin band above it
+to set an A/B range, drag a range's end to adjust it, tap a range to practice it.
 
 **Quick Menu (L+R).** Press L and R together (within 0.1 s, either order); the game pauses and stays
-visible, dimmed, behind six tiles in one row. L+R again (or B on the tiles) resumes; B goes back one
-level. L / R switch pages (Settings), L2 / R2 still rewind / fast-forward the game behind.
+visible, dimmed, behind six tiles in one row. L+R again (or A on the tiles) resumes; A goes back one
+level, B confirms (Settings › Controls › Confirm Button swaps them). L / R switch pages (Settings), L2 / R2 still rewind / fast-forward the game behind.
 
 | Tile | What is behind it |
 |---|---|
@@ -168,7 +173,7 @@ level. L / R switch pages (Settings), L2 / R2 still rewind / fast-forward the ga
 | Retry | Record from Here (re-record, the old continuation is kept as a take), Previous Try, Takes (every take: A switches), Bookmarks (Add Bookmark, A jumps, Y renames, X deletes), Watch (playback mode on / off) |
 | Practice | the 8 A/B sections as cards (picture of A, name, length): A on an empty card sets A at the current position, then B, then practices; Y renames, X clears (or stops practicing) |
 | Share | Export MP4 (the export dialog) |
-| Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad: A on a button picks its action, X next pad, Y reset -, Keyboard › - A sets a key, X clears -, Turbo Speed, D-pad While Paused, On-screen Keyboard, More › with turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Updates ›, Add to Steam, About ›, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
+| Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad (Steam Deck: wide body, screen, trackpads): the D-pad / stick move a red ring over the buttons, confirm opens the action picker (six per page, L / R pages, back cancels), X next pad, Y reset -, Keyboard › - confirm sets a key, X clears -, Confirm Button (B Confirm · A Back, or swapped), D-pad While Paused, On-screen Keyboard, More › with pause after rewind, turbo speed, turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Updates ›, Add to Steam, About ›, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
 | Game | Choose Game (back to the library; a temporary session asks "Do you want to save?" first), Save, Save As, Open Project, Reset (Soft Reset, Power Cycle - recorded like the console's buttons - or Reset Project…) |
 
 Save in a temporary session asks where, in a file chooser rooted at `~/Documents/ReplayNES/Projects`
@@ -223,29 +228,35 @@ override it). Japanese text uses the system's CJK font through fontconfig
 
 ## Controls
 
-| Input | In play | In menus (Quick Menu, Settings, library) |
-|---|---|---|
-| **L+R together** (within 0.1 s, either order) | open the Quick Menu (pauses) | close it (resume play) |
-| R alone | pause / resume (the seek bar only) | next page (Settings pages, list pages, library pages) |
-| L alone | slow motion 1/2 on / off | previous page |
-| L2 / R2 hold | rewind / fast-forward (recorded part only) | rewind / fast-forward the game behind |
-| D-pad / left stick | NES D-pad (paused: ←/→ step frames) | move the focus |
-| A (south) | NES B (by position, as on macOS: Nintendo's A/B); paused: a tap resumes | confirm |
-| B (east) | NES A; paused: a tap resumes | back (on the top level: resume) |
-| Y (north) / X (west) | turbo A / turbo B | what the hint bar shows (rename / clear / search / projects …) |
-| Menu (≡) / View (⧉) | START / SELECT | - |
-| R3 / Steam (Guide) | Quick Menu (reserved) | close the menu |
+| Input | In play | Paused (the seek bar) | In menus (Quick Menu, Settings, library) |
+|---|---|---|---|
+| **L+R together** (within 0.1 s, either order) | open the Quick Menu (pauses) | open the Quick Menu | close it (resume play) |
+| R alone (on release) | pause (the seek bar only) | step 1 frame forward (held ≥ 0.4 s: repeat) | next page (Settings pages, list pages, library pages) |
+| L alone (on release) | slow motion 1/2 on / off | step 1 frame back (held ≥ 0.4 s: repeat) | previous page |
+| L2 / R2 hold | rewind / fast-forward (recorded part only; the same speed curve) | rewind / fast-forward | rewind / fast-forward the game behind |
+| D-pad / left stick | NES D-pad | ←/→ step frames, ↑ to the A/B markers | move the focus |
+| B (east) | NES A (by position, as on macOS: Nintendo's A/B) | tap: drop an A/B marker | **confirm** |
+| A (south) | NES B | tap: **resume** | **back** (on the top level: resume) |
+| Y (north) / X (west) | turbo A / turbo B | Y tap: next A/B slot · X: delete the focused marker | what the hint bar shows (rename / clear / search / projects …) |
+| Menu (≡) / View (⧉) | START / SELECT | START / SELECT | - |
+| R3 / Steam (Guide) | Quick Menu (reserved) | Quick Menu | close the menu |
 
-L or R alone acts when it is released (or after 0.1 s held), so a single press is at most 0.1 s later
-than before - the price of L+R. The chord is the action "Quick Menu" bound to the two-button combo
-`gc0:leftShoulder+gc0:rightShoulder` (detected by the shared core, `rnf_chord`, the same on every
-platform); it stays remappable. Saved assignments from before get L+R and Esc added once (layout 5);
-R keeps pausing, it just no longer opens a menu. Older versions cannot read an assignments file that
-has the Quick Menu in it.
+L or R alone acts when it is **released** (the shared core's chord detector, `rnf_chord`: ALONE_UP is
+the trigger), so a single press never gets in the way of L+R. The chord is the action "Quick Menu"
+bound to the two-button combo `gc0:leftShoulder+gc0:rightShoulder` (the same on every platform); it
+stays remappable. Saved assignments from before get L+R and Esc added once (layout 5); R keeps
+pausing. Older versions cannot read an assignments file that has the Quick Menu in it.
 
-While paused, A / B resume only as a tap: they still reach the game, so you can hold a button (B to
-run, say) and step with D-pad → to advance frames with it held; a button held through a step, or
-while another button is pressed, does not resume on release.
+Confirm / back: B (east) / A (south) by default on every controller (Nintendo style); Settings ›
+Controls › Confirm Button swaps them (hint bars, dialogs, the on-screen keyboard and the seek bar
+follow; the game's buttons never change). Rewind and fast-forward move at the same rate in opposite
+directions (2 frames per tick for 0.5 s, 3 until 1.5 s, then 4: `rnf_hold_speed`), and so does a
+marker moved with L / R held.
+
+While paused, A (resume), B (marker), ↑ (markers) and Y (next slot) act only as a tap: they still
+reach the game, so you can hold a button (A to run, say) and step with D-pad → or R to advance
+frames with it held; a button held through a step, or while another button is pressed, does nothing
+on release. With a marker focused the pad belongs to the seek bar (nothing reaches the game).
 
 Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
 Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, **Esc (or F1) the Quick
