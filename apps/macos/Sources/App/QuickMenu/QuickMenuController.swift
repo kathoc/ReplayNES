@@ -192,6 +192,7 @@ final class QuickMenuController: ObservableObject {
         case .x: content.x?.run(); touch()
         case .y: content.y?.run(); touch()
         case .pagePrev, .pageNext: flipPage(p, content: content, by: n == .pagePrev ? -1 : 1)
+        case .options, .search: break
         }
     }
 

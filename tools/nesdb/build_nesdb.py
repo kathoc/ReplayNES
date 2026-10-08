@@ -43,18 +43,34 @@ USER_AGENT = "ReplayNES-nesdb/1.0 (https://github.com/kathoc/ReplayNES)"
 # Famicom Disk System (Q135321) is deliberately not included: disk-only games
 # drop out, games also released on cartridge carry Q172742 as well.
 PLATFORMS = "wd:Q172742 wd:Q491640"
-BASE = "VALUES ?p { %s } ?i wdt:P400 ?p ." % PLATFORMS
+# Plus items whose Japanese Wikipedia article is in カテゴリ:ファミリーコンピュータ用ソフト
+# (only used to select items; every field still comes from Wikidata). Many Japan-only
+# Famicom games lack P400 on Wikidata.
+JA_CATEGORY = "Category:ファミリーコンピュータ用ソフト"
+BASE = """{ VALUES ?p { %s } ?i wdt:P400 ?p . } UNION {
+  SERVICE wikibase:mwapi {
+    bd:serviceParam wikibase:api "Generator" ; wikibase:endpoint "ja.wikipedia.org" ;
+      mwapi:generator "categorymembers" ; mwapi:gcmtitle "%s" ;
+      mwapi:gcmlimit "max" ; mwapi:gcmnamespace "0" .
+    ?i wikibase:apiOutputItem mwapi:item . } }
+  FILTER(BOUND(?i))""" % (PLATFORMS, JA_CATEGORY)
 
+# Item set: SELECT ?i only (the category service is slow to join with other patterns).
+IDS_QUERY = "SELECT DISTINCT ?i WHERE { %s }" % BASE
+
+# Per-field queries, run over VALUES chunks of the item set ("%s" = VALUES clause).
 QUERIES = {
     # "mul" (multiple languages) labels replace identical en labels on many items.
     "items": """SELECT DISTINCT ?i ?en ?ja ?mul WHERE { %s
   OPTIONAL { ?i rdfs:label ?en FILTER(LANG(?en) = "en") }
   OPTIONAL { ?i rdfs:label ?mul FILTER(LANG(?mul) = "mul") }
-  OPTIONAL { ?i rdfs:label ?ja FILTER(LANG(?ja) = "ja") } }""" % BASE,
-    "types": """SELECT DISTINCT ?i ?t WHERE { %s ?i wdt:P31 ?t . }""" % BASE,
+  OPTIONAL { ?i rdfs:label ?ja FILTER(LANG(?ja) = "ja") } }""",
+    "types": """SELECT DISTINCT ?i ?t WHERE { %s ?i wdt:P31 ?t . }""",
     "aliases": """SELECT DISTINCT ?i ?a (LANG(?a) AS ?l) WHERE { %s
-  ?i skos:altLabel ?a FILTER(LANG(?a) = "en" || LANG(?a) = "ja" || LANG(?a) = "mul") }""" % BASE,
-    "kana": """SELECT DISTINCT ?i ?k WHERE { %s ?i wdt:P1814 ?k . }""" % BASE,
+  ?i skos:altLabel ?a FILTER(LANG(?a) = "en" || LANG(?a) = "ja" || LANG(?a) = "mul") }""",
+    "kana": """SELECT DISTINCT ?i ?k WHERE { %s ?i wdt:P1814 ?k . }""",
+    # P2125 (Revised Hepburn romanization): romanized title, matches No-Intro names.
+    "romaji": """SELECT DISTINCT ?i ?r WHERE { %s ?i wdt:P2125 ?r . }""",
     "publishers": """SELECT DISTINCT ?i ?pub ?rank ?place ?plat ?en ?mul ?ja ?inc WHERE { %s
   ?i p:P123 ?st . ?st ps:P123 ?pub ; wikibase:rank ?rank .
   FILTER(?rank != wikibase:DeprecatedRank)
@@ -63,20 +79,21 @@ QUERIES = {
   OPTIONAL { ?pub wdt:P571 ?inc }
   OPTIONAL { ?pub rdfs:label ?en FILTER(LANG(?en) = "en") }
   OPTIONAL { ?pub rdfs:label ?mul FILTER(LANG(?mul) = "mul") }
-  OPTIONAL { ?pub rdfs:label ?ja FILTER(LANG(?ja) = "ja") } }""" % BASE,
+  OPTIONAL { ?pub rdfs:label ?ja FILTER(LANG(?ja) = "ja") } }""",
     "dates": """SELECT DISTINCT ?i ?d ?place ?plat WHERE { %s
   ?i p:P577 ?st . ?st psv:P577 ?v . ?v wikibase:timeValue ?d .
   ?st wikibase:rank ?rank FILTER(?rank != wikibase:DeprecatedRank)
   OPTIONAL { ?st pq:P291 ?place }
-  OPTIONAL { ?st pq:P400 ?plat } }""" % BASE,
+  OPTIONAL { ?st pq:P400 ?plat } }""",
     "genres": """SELECT DISTINCT ?i ?g ?gl WHERE { %s ?i wdt:P136 ?g .
-  OPTIONAL { ?g rdfs:label ?gl FILTER(LANG(?gl) = "en") } }""" % BASE,
+  OPTIONAL { ?g rdfs:label ?gl FILTER(LANG(?gl) = "en") } }""",
     # Japanese Wikipedia article title: ja title fallback when the ja label is missing.
     "jawiki": """SELECT DISTINCT ?i ?n WHERE { %s
-  ?a schema:about ?i ; schema:isPartOf <https://ja.wikipedia.org/> ; schema:name ?n . }""" % BASE,
+  ?a schema:about ?i ; schema:isPartOf <https://ja.wikipedia.org/> ; schema:name ?n . }""",
     # P1476 (title) in Japanese.
-    "titles": """SELECT DISTINCT ?i ?t WHERE { %s ?i wdt:P1476 ?t . FILTER(LANG(?t) = "ja") }""" % BASE,
+    "titles": """SELECT DISTINCT ?i ?t WHERE { %s ?i wdt:P1476 ?t . FILTER(LANG(?t) = "ja") }""",
 }
+CHUNK = 300
 
 # ---------------------------------------------------------------- network
 
@@ -125,14 +142,33 @@ def write_cache(name, rows):
     print("  wrote %s (%d rows)" % (os.path.relpath(path, ROOT), len(rows)))
 
 
+def item_ids():
+    """The item set: NES/Famicom platform or ja category, plus every Q-id the overrides
+    name (so an override can pull in any Wikidata item)."""
+    print("querying item set ...")
+    ids = {qid(val(b, "i")) for b in sparql(IDS_QUERY)}
+    with open(OVERRIDES, encoding="utf-8") as f:
+        ov = json.load(f)
+    extra = set(ov.get("games", {})) | {h["game"] for h in ov.get("hashes", [])}
+    ids |= {q for q in extra if re.fullmatch(r"Q\d+", q)}
+    return sorted(ids, key=qnum)
+
+
 def refresh(names=None):
     os.makedirs(CACHE_DIR, exist_ok=True)
+    ids = item_ids()
+    print("  %d items" % len(ids))
     for name, q in QUERIES.items():
         if names and name not in names:
             continue
         print("querying %s ..." % name)
         rows = []
-        for b in sparql(q):
+        bindings = []
+        for k in range(0, len(ids), CHUNK):
+            values = "VALUES ?i { %s }" % " ".join("wd:" + x for x in ids[k:k + CHUNK])
+            bindings += sparql(q % values)
+            time.sleep(1)
+        for b in bindings:
             i = qid(val(b, "i"))
             if name == "items":
                 rows.append([i, val(b, "en"), val(b, "ja"), val(b, "mul")])
@@ -157,8 +193,8 @@ def refresh(names=None):
                 rows.append([i, qid(val(b, "g")), val(b, "gl")])
             elif name == "jawiki":
                 rows.append([i, val(b, "n")])
-            elif name == "titles":
-                rows.append([i, val(b, "t")])
+            elif name in ("titles", "romaji"):
+                rows.append([i, val(b, "t" if name == "titles" else "r")])
         if name == "publishers":
             # Keep one row per statement: the earliest inception year of the publisher.
             best = {}
@@ -365,6 +401,47 @@ def alias_reading_ok(title, reading):
     return re.fullmatch("".join(parts), reading) is not None
 
 
+_KANA_ROMA = dict(zip(
+    "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン"
+    "ガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴ",
+    "a i u e o ka ki ku ke ko sa shi su se so ta chi tsu te to na ni nu ne no ha hi fu he ho "
+    "ma mi mu me mo ya yu yo ra ri ru re ro wa o n ga gi gu ge go za ji zu ze zo da ji zu de do "
+    "ba bi bu be bo pa pi pu pe po vu".split()))
+_KANA_SMALL = {"ャ": "ya", "ュ": "yu", "ョ": "yo", "ァ": "a", "ィ": "i", "ゥ": "u", "ェ": "e", "ォ": "o"}
+
+
+def romanize(reading):
+    """Katakana reading -> romanized title as No-Intro file names spell Japanese titles
+    (Hepburn, long vowels written out: ショウタイジョウ -> shoutaijou, ッチ -> cch).
+    Loanwords come out as kana sounds (スーパー -> suupaa) and simply never match."""
+    out = []
+    for c in reading:
+        if c == "ッ":
+            out.append("*")
+        elif c == "ー":
+            m = re.search(r"[aeiou]$", "".join(out))
+            out.append(m.group(0) if m else "")
+        elif c in _KANA_SMALL and out and out[-1] not in ("*", ""):
+            prev, v = out[-1], _KANA_SMALL[c]
+            if v[0] == "y" and prev.endswith("i") and len(prev) >= 2:
+                stem = prev[:-1]
+                out[-1] = stem + (v[1] if stem in ("sh", "ch", "j") else v)
+            elif prev == "u":
+                out[-1] = "w" + v
+            else:
+                out[-1] = prev[:-1] + v
+        elif c in _KANA_ROMA:
+            out.append(_KANA_ROMA[c])
+        elif c in _KANA_SMALL:
+            out.append(_KANA_SMALL[c])
+        else:
+            out.append(c)
+    s = re.sub(r"\*ch", "cch", "".join(out))
+    s = re.sub(r"\*([a-z])", r"\1\1", s)
+    s = s.replace("*", "")
+    return s[:1].upper() + s[1:]
+
+
 def qnum(key):
     return int(key[1:]) if re.fullmatch(r"Q\d+", key) else 1 << 62
 
@@ -434,6 +511,8 @@ def build():
         types.setdefault(i, set()).add(t)
     for i, lang, a in load_cache("aliases"):
         aliases.setdefault(i, []).append((lang, a))
+    for i, r in load_cache("romaji"):
+        aliases.setdefault(i, []).append(("en", r))
     for i, k in load_cache("kana"):
         kana.setdefault(i, []).append(k)
     for row in load_cache("publishers"):
@@ -573,7 +652,18 @@ def build():
                 continue
             seen.add(a.casefold())
             out.append(a)
-        g["aliases"] = out[:8]
+        out = out[:8]
+        # Romanized reading of a Japanese title, for No-Intro style "(Japan)" file names
+        # ("Akuma no Shoutaijou" for 悪魔の招待状). Spaces do not matter for matching.
+        # Readings with loanword marks (ー, ヴ, small vowels) are skipped: file names spell
+        # loanwords in English (スーパー = Super), so their romanization never matches.
+        if reading and not re.search("[ーヴァィゥェォ]", reading) and any(_is_kanji(c) or _is_kata(c) or 0x3041 <= ord(c) <= 0x3096
+                           for c in g["ja"]):
+            rom = romanize(reading)
+            keys = {re.sub(r"[^a-z0-9]", "", x.lower()) for x in [g["en"]] + out}
+            if re.fullmatch(r"[A-Za-z0-9]+", rom) and rom.lower() not in keys:
+                out.append(rom)
+        g["aliases"] = out
 
     # Deduplicate identical records (keep the lowest id).
     seen, dup = {}, []

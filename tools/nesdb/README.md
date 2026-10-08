@@ -9,7 +9,7 @@ TSV is committed.
 
 | source | licence | used for |
 |---|---|---|
-| Wikidata, cached in `cache/wikidata-*.json` | CC0 | games with platform (P400) Nintendo Entertainment System (Q172742) or Family Computer (Q491640): labels (en/ja/mul), aliases, P1814 kana name, P123 publisher, P577 date (+ P291 place / P400 platform qualifiers), P136 genre, P1476 ja title, ja Wikipedia article title |
+| Wikidata, cached in `cache/wikidata-*.json` | CC0 | items with platform (P400) Nintendo Entertainment System (Q172742) or Family Computer (Q491640), items whose Japanese Wikipedia article is in カテゴリ:ファミリーコンピュータ用ソフト (category membership only selects items), and every Q-id named in the overrides: labels (en/ja/mul), aliases, P1814 kana name, P2125 Hepburn romanization, P123 publisher, P577 date (+ P291 place / P400 platform qualifiers), P136 genre, P1476 ja title, ja Wikipedia article title |
 | `frontend/data/nesdb-overrides.json` | project | hand-written fixes, readings, extra games, hash keys, exclusions |
 | `third_party/nestopia/NstDatabase.xml` | GPL-2.0+ | only validates override hash keys and derives their region (Famicom = JP, NES-NTSC = NA, NES-PAL* = EU); no data is copied |
 
@@ -44,6 +44,12 @@ Reading priority: override > Wikidata P1814 > ja title if written only in kana
 (hiragana converted to katakana, punctuation dropped, digits kept) > a kana ja alias
 that is consistent with the kana parts of the ja title > empty.
 
+For a Japanese title with a reading, the romanized reading (Hepburn as No-Intro
+spells it, e.g. 悪魔の招待状 -> `Akumanoshoutaijou`) is appended to the aliases so
+"(Japan)" ROM file names match; readings containing loanword marks (ー, ヴ, small
+vowels) are skipped. No-Intro titles that differ from that (translations, other
+spellings) are hand-added as override `aliases`.
+
 ## Overrides (`frontend/data/nesdb-overrides.json`)
 
 ```json
@@ -62,6 +68,7 @@ that is consistent with the kana parts of the ja title > empty.
 ```
 
 Game fields (all optional): `en`, `ja`, `reading`, `publisher` (key), `year`,
-`genre`, `region`, `aliases` (prepended to the Wikidata aliases). An override for a
-Q-id that is not in the cache needs at least `en` or `ja`, otherwise it is skipped
-with a warning. Hash keys missing from NstDatabase.xml are reported by `--report`.
+`genre`, `region`, `aliases` (prepended to the Wikidata aliases). Any Wikidata Q-id
+named in `games` or `hashes` is fetched by `--refresh` even if it is outside the
+platform/category set; until then an override for an uncached Q-id needs `en` or
+`ja`, otherwise it is skipped with a warning. Hash keys missing from NstDatabase.xml are reported by `--report`.
