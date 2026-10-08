@@ -611,6 +611,32 @@ TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
   CHECK_EQ(menuChordGlyph(RNF_FAMILY_PLAYSTATION, false), std::string("Esc"));
 }
 
+TEST_CASE("controller conventions: A / B resume the paused seek bar only as a tap") {
+  ConfirmTap tap;
+  // A tap resumes.
+  tap.cancel();
+  tap.press("gc0:face.south");
+  CHECK(tap.release("gc0:face.south"));
+  // B held for a frame advance (D-pad step / another button while held): no resume on release.
+  tap.cancel();
+  tap.press("gc0:face.east");
+  tap.cancel();  // gc0:dpad.right steps a frame
+  CHECK(!tap.release("gc0:face.east"));
+  // A release without a press while paused (pressed before pausing) does nothing.
+  CHECK(!tap.release("gc0:face.south"));
+  // Two confirm buttons: the second press cancels the first; the second is still a tap.
+  tap.cancel();
+  tap.press("gc0:face.south");
+  tap.cancel();
+  tap.press("gc0:face.east");
+  CHECK(!tap.release("gc0:face.south"));
+  CHECK(tap.release("gc0:face.east"));
+  // clear() (menu opened, pad detached) forgets held presses.
+  tap.press("gc1:face.south");
+  tap.clear();
+  CHECK(!tap.release("gc1:face.south"));
+}
+
 TEST_CASE("menu icons: every icon of the menu model is in the bundled Tabler subset") {
   struct Entry {
     const char* name;

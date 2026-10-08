@@ -261,6 +261,12 @@ struct AppCommands: Commands {
             Toggle("Stream Output (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
         }
 
+        // Window: Close (⌘W), which AppKit puts in the File menu (gone: its items live in Game).
+        CommandGroup(before: .windowSize) {
+            Button("Close") { NSApp.keyWindow?.performClose(nil) }.keyboardShortcut("w")
+            Divider()
+        }
+
         // Help
         CommandGroup(replacing: .help) {
             Button("Controls") { model.quickMenu.open(at: .controller) }.keyboardShortcut("?", modifiers: [.command])

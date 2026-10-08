@@ -300,6 +300,92 @@ TEST_CASE("full chain from 0.1.x") {
   CHECK(asSet(l3) == asSet(defaultConfig()));
 }
 
+// A bindings.json written by 0.4.0 (macOS defaults, layout 4: no "hk.menu"), byte for byte as the
+// engine saved it apart from whitespace. Old builds cannot read the "hk.menu" a new build adds
+// (accepted); a new build reading this file must load it and migrate it cleanly.
+static const char* kBindings040 = R"JSON({"version":1,"bindings":[
+{"input":"gc0:dpad.down","action":"p1.down"},{"input":"gc0:dpad.left","action":"p1.left"},{"input":"gc0:dpad.right","action":"p1.right"},
+{"input":"gc0:dpad.up","action":"p1.up"},{"input":"gc0:face.east","action":"p1.a"},{"input":"gc0:face.north","action":"p1.turbo_a"},
+{"input":"gc0:face.south","action":"p1.b"},{"input":"gc0:face.west","action":"p1.turbo_b"},{"input":"gc0:leftShoulder","action":"hk.slow"},
+{"input":"gc0:leftTrigger","action":"hk.rewind"},{"input":"gc0:lstick.down","action":"p1.down"},{"input":"gc0:lstick.left","action":"p1.left"},
+{"input":"gc0:lstick.right","action":"p1.right"},{"input":"gc0:lstick.up","action":"p1.up"},{"input":"gc0:menu","action":"p1.start"},
+{"input":"gc0:options","action":"p1.select"},{"input":"gc0:rightShoulder","action":"hk.pause"},{"input":"gc0:rightTrigger","action":"hk.fast_forward"},
+{"input":"gc1:dpad.down","action":"p2.down"},{"input":"gc1:dpad.left","action":"p2.left"},{"input":"gc1:dpad.right","action":"p2.right"},
+{"input":"gc1:dpad.up","action":"p2.up"},{"input":"gc1:face.east","action":"p2.a"},{"input":"gc1:face.north","action":"p2.turbo_a"},
+{"input":"gc1:face.south","action":"p2.b"},{"input":"gc1:face.west","action":"p2.turbo_b"},{"input":"gc1:lstick.down","action":"p2.down"},
+{"input":"gc1:lstick.left","action":"p2.left"},{"input":"gc1:lstick.right","action":"p2.right"},{"input":"gc1:lstick.up","action":"p2.up"},
+{"input":"gc1:menu","action":"p2.start"},{"input":"gc1:options","action":"p2.select"},{"input":"kb:0","action":"p1.turbo_b"},
+{"input":"kb:1","action":"p1.turbo_a"},{"input":"kb:11","action":"hk.bookmark"},{"input":"kb:123","action":"p1.left"},
+{"input":"kb:124","action":"p1.right"},{"input":"kb:125","action":"p1.down"},{"input":"kb:126","action":"p1.up"},
+{"input":"kb:36","action":"p1.start"},{"input":"kb:37","action":"hk.slow"},{"input":"kb:42","action":"p1.select"},
+{"input":"kb:43","action":"hk.step_back"},{"input":"kb:47","action":"hk.frame_advance"},{"input":"kb:48","action":"hk.fast_forward"},
+{"input":"kb:49","action":"hk.pause"},{"input":"kb:51","action":"hk.rewind"},{"input":"kb:6","action":"p1.b"},
+{"input":"kb:60","action":"p1.select"},{"input":"kb:7","action":"p1.a"}
+],"turbo":{"period":4,"duty":2},"socd":"neutral","analogThreshold":0.5})JSON";
+
+TEST_CASE("an old (0.4.0) bindings.json loads and migrates to layout 5") {
+  rn_input* h = rn_input_new();
+  REQUIRE_EQ(rn_input_load_json(h, kBindings040), RN_OK);
+  auto bindingsOf = [](rn_input* in) {
+    char* json = rn_input_save_json(in);
+    rnf_input_config* c = nullptr;
+    REQUIRE_EQ(rnf_input_config_parse(json, &c), RN_OK);
+    rnf_string_free(json);
+    Pairs out;
+    for (size_t i = 0, n = rnf_input_config_binding_count(c); i < n; ++i) {
+      rnf_binding b{};
+      if (rnf_input_config_binding_get(c, i, &b)) out.emplace_back(b.input, b.action);
+    }
+    rnf_input_config_free(c);
+    return out;
+  };
+  Pairs before = bindingsOf(h);
+  CHECK_FALSE(asSet(before).count("kb:53=hk.menu"));
+  // Layout 4 -> 5 (the only step from 0.4.0), applied to the engine table as the frontends do.
+  {
+    Bindings b{before};
+    auto v = b.view();
+    rnf_list *u = nullptr, *n = nullptr;
+    rnf_input_menu_migration(v.data(), v.size(), RNF_KEYBOARD_MACOS, &u, &n);
+    CHECK(rnf_input_apply_plan(h, u, n));
+    rnf_list_free(u);
+    rnf_list_free(n);
+  }
+  Pairs after = bindingsOf(h);
+  CHECK(asSet(after) == asSet(defaultConfig()));  // == a fresh install's bindings
+  // Everything the user had is still there; only the two Quick Menu bindings were added.
+  for (auto& p : before) CHECK(contains(after, p.first, p.second));
+  CHECK_EQ(after.size(), before.size() + 2);
+  // The migrated file round-trips through the engine, and migrating again changes nothing.
+  char* saved = rn_input_save_json(h);
+  rn_input* h2 = rn_input_new();
+  REQUIRE_EQ(rn_input_load_json(h2, saved), RN_OK);
+  rnf_string_free(saved);
+  Pairs again = bindingsOf(h2);
+  CHECK(asSet(again) == asSet(after));
+  {
+    Bindings b{again};
+    auto v = b.view();
+    rnf_list *u = nullptr, *n = nullptr;
+    rnf_input_menu_migration(v.data(), v.size(), RNF_KEYBOARD_MACOS, &u, &n);
+    CHECK_EQ(rnf_list_count(u), size_t(0));
+    CHECK_EQ(rnf_list_count(n), size_t(0));
+    rnf_list_free(u);
+    rnf_list_free(n);
+  }
+  // The chord detector finds pad 1's L+R in the migrated table.
+  {
+    Bindings b{again};
+    auto v = b.view();
+    rnf_chord* ch = rnf_chord_new(0);
+    CHECK_EQ(rnf_chord_configure(ch, v.data(), v.size(), "hk.menu"), size_t(1));
+    CHECK(rnf_chord_is_member(ch, "gc0:leftShoulder"));
+    rnf_chord_free(ch);
+  }
+  rn_input_free(h2);
+  rn_input_free(h);
+}
+
 TEST_CASE("per-controller reset") {
   Pairs c = defaultConfig();
   removeIf(c, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:face.east"; });

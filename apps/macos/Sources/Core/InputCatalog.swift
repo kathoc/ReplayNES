@@ -87,6 +87,15 @@ enum InputCatalog {
     /// swap to L2 rewind / R2 fast-forward. Customised triggers are kept.
     static func triggerSwapMigration(_ c: Config) -> Plan { plan(c) { rnf_input_trigger_swap_migration($0, $1, $2, $3) } }
 
+    /// Layout 4 -> 5: the Quick Menu action "hk.menu": pad 1's L+R combo (unless pad 1 has one) and
+    /// Esc (unless Esc is bound or hk.menu is bound anywhere). R (pause) and L (slow) stay.
+    static func menuMigration(_ c: Config) -> Plan {
+        plan(c) { rnf_input_menu_migration($0, $1, keyboardScheme, $2, $3) }
+    }
+
+    /// A two-input combo id ("gc0:leftShoulder+gc0:rightShoulder": both held).
+    static func isCombo(_ input: String) -> Bool { rnf_input_combo_split(input, nil, nil) != 0 }
+
     /// Layout 2 -> 3, step 2 (when a controller attaches to `slot`): customised bindings that still
     /// use GameController names move to the position that name has on THAT controller.
     static func legacyFaceTranslation(_ c: Config, slot: Int, positions: [String: FacePosition]) -> Plan {

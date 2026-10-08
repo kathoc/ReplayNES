@@ -34,7 +34,8 @@ final class InputManager {
 
     /// Main thread: navigation input (menus open / library shown, the L+R chord and Esc always).
     var onNav: ((NavInput) -> Void)?
-    /// Main thread: confirm (south face button) pressed while the game is paused = resume.
+    /// Main thread: confirm (south face button) tapped while the game is paused = resume
+    /// (ConfirmTap.swift: holding it for a frame advance never resumes).
     var onPausedConfirm: (() -> Void)?
 
     // Navigation mode: the Quick Menu or the library is on screen. Controller and keyboard input
@@ -44,15 +45,15 @@ final class InputManager {
     private var isNavMode: Bool { navLock.lock(); defer { navLock.unlock() }; return navOn }
     private var navRepeat: [String: DispatchWorkItem] = [:]   // gcQueue only
 
-    // L+R chord (ShoulderChord.swift), one detector per controller slot (gcQueue only).
-    private lazy var chords: [ShoulderChordDetector] = (0..<4).map { _ in Self.makeChordDetector() }
-    /// Shoulders whose solo press was handed to the game (their release follows).
-    private var forwardedShoulders: Set<String> = []  // gcQueue only
-    /// Shoulder ids bound to game input (p1/p2): no chord detection for them, no added delay.
-    private var gameShoulders: Set<String> = []       // stepLock
-
-    /// TODO(core-chord): construct the shared core's detector (rnf_chord_*) here after the merge.
-    static func makeChordDetector() -> ShoulderChordDetector { SwiftShoulderChord() }
+    // The Quick Menu is the action "hk.menu": combos bound to it (pad 1's L+R) go through the shared
+    // core's chord detector (ChordDetector.swift, gcQueue only); single inputs bound to it (Esc)
+    // open it directly and never reach the game.
+    private let chord = ChordDetector()
+    /// Combo members whose solo press was handed on (their release follows).
+    private var forwardedMembers: Set<String> = []  // gcQueue only
+    private var menuIDs: Set<String> = []           // stepLock
+    /// Paused seek bar: confirm taps resume (gcQueue only).
+    private var confirmTap = ConfirmTap()
 
     /// Called (main thread) with the physical id while capturing a binding. Esc cancels (nil).
     var captureHandler: ((String?) -> Void)? {
@@ -108,7 +109,7 @@ final class InputManager {
     // MARK: configuration (persisted as the engine's own JSON in Application Support)
 
     private func loadConfig() {
-        defer { refreshStepDirections() }
+        defer { refreshBindingState() }
         if let text = try? String(contentsOf: Self.configURL, encoding: .utf8),
            rn_input_load_json(handle, text) == RN_OK {
             migrateControllerLayout()
@@ -123,6 +124,7 @@ final class InputManager {
     /// layout 3: GameController face-button names -> positional ids (fixes A/B, X/Y on Nintendo
     /// controllers). Customised face buttons are translated when their controller attaches.
     /// layout 4: untouched trigger hotkeys swap to L2 rewind / R2 fast-forward.
+    /// layout 5: the Quick Menu ("hk.menu"): pad 1's L+R and Esc (unless Esc is taken).
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
         let from = d.integer(forKey: "controllerLayoutVersion")
@@ -132,6 +134,7 @@ final class InputManager {
         if from < 2 { changed = apply(InputCatalog.controllerLayoutMigration(config)) || changed }
         if from < 3 { changed = apply(InputCatalog.faceLayoutMigration(config)) || changed }
         if from < 4 { changed = apply(InputCatalog.triggerSwapMigration(config)) || changed }
+        if from < 5 { changed = apply(InputCatalog.menuMigration(config)) || changed }
         guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
@@ -147,13 +150,29 @@ final class InputManager {
         return !plan.unbind.isEmpty || !plan.bind.isEmpty
     }
 
-    private func refreshStepDirections() {
+    /// After the bindings changed: paused-step directions, the Quick Menu's inputs and combos.
+    private func refreshBindingState() {
         let c = config
         let dirs = InputCatalog.pausedStepDirections(c)
-        let shoulders = Set(c.bindings.filter { b in
-            (b.input.hasSuffix(":leftShoulder") || b.input.hasSuffix(":rightShoulder")) && !b.action.hasPrefix("hk.")
-        }.map(\.input))
-        stepLock.lock(); stepDirs = dirs; gameShoulders = shoulders; stepLock.unlock()
+        let menu = Set(c.bindings.filter { $0.action == "hk.menu" && !InputCatalog.isCombo($0.input) }.map(\.input))
+        stepLock.lock(); stepDirs = dirs; menuIDs = menu; stepLock.unlock()
+        gcQueue.async { [weak self] in
+            guard let self else { return }
+            // Reconfiguring drops the detector's state: members handed on are released here.
+            self.releaseForwardedMembers()
+            self.chord.configure(c.bindings)
+        }
+    }
+
+    /// gcQueue
+    private func releaseForwardedMembers() {
+        for id in forwardedMembers { setPressed(id, false) }
+        forwardedMembers.removeAll()
+    }
+
+    private func isMenuInput(_ id: String) -> Bool {
+        stepLock.lock(); defer { stepLock.unlock() }
+        return menuIDs.contains(id)
     }
 
     // MARK: navigation mode
@@ -175,6 +194,7 @@ final class InputManager {
             for w in self.navRepeat.values { w.cancel() }
             self.navRepeat.removeAll()
             guard on else { return }
+            self.confirmTap.clear()
             for id in self.routedSteps {
                 self.stepLock.lock(); let d = self.stepDirs[id]; self.stepLock.unlock()
                 if let d { self.onPausedStep?(d, false) }
@@ -212,6 +232,8 @@ final class InputManager {
         case "face.west": post(.x)
         case "face.north": post(.y)
         case "menu": post(.menu)
+        case "leftShoulder": post(.pagePrev)    // pads 2-4 (pad 1's come through the chord detector)
+        case "rightShoulder": post(.pageNext)
         default: break
         }
     }
@@ -228,57 +250,55 @@ final class InputManager {
 
     // MARK: L+R chord (gcQueue)
 
-    private func handleShoulder(slot: Int, prefix: String, _ s: Shoulder, _ down: Bool) {
-        emitChord(chords[slot].update(s, down: down, now: ProcessInfo.processInfo.systemUptime), prefix: prefix)
-        scheduleChordTick(slot: slot, prefix: prefix)
-    }
+    private func now() -> Double { ProcessInfo.processInfo.systemUptime }
 
-    private func scheduleChordTick(slot: Int, prefix: String) {
-        guard let deadline = chords[slot].nextDeadline else { return }
-        let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+    private func scheduleChordTick() {
+        guard let deadline = chord.nextDeadline else { return }
+        let delay = max(0, deadline - now())
         gcQueue.asyncAfter(deadline: .now() + delay + 0.001) { [weak self] in
             guard let self else { return }
-            self.emitChord(self.chords[slot].tick(now: ProcessInfo.processInfo.systemUptime), prefix: prefix)
-            self.scheduleChordTick(slot: slot, prefix: prefix)
+            self.emitChord(self.chord.tick(now: self.now()))
+            self.scheduleChordTick()
         }
     }
 
-    private func emitChord(_ events: [ChordEvent], prefix: String) {
+    private func emitChord(_ events: [ChordEvent]) {
         for e in events {
             switch e {
-            case .chord:
+            case .comboDown:
                 post(.menu)
-            case .alone(let s, let down):
-                let id = prefix + (s == .left ? "leftShoulder" : "rightShoulder")
+            case .comboUp:
+                break
+            case .alone(let id, let down):
                 if down && isNavMode {
-                    post(s == .left ? .pagePrev : .pageNext)
+                    post(id.hasSuffix("leftShoulder") ? .pagePrev : .pageNext)
                 } else if down {
-                    forwardedShoulders.insert(id)
+                    forwardedMembers.insert(id)
+                    confirmTap.cancel()
                     setPressed(id, true)
-                } else if forwardedShoulders.remove(id) != nil {
+                } else if forwardedMembers.remove(id) != nil {
                     setPressed(id, false)
                 }
             }
         }
     }
 
-    private static func shoulder(_ name: String) -> Shoulder? {
-        name == "leftShoulder" ? .left : name == "rightShoulder" ? .right : nil
+    /// gcQueue: the confirm button while paused resumes as a tap (ConfirmTap.swift); it still
+    /// reaches the game. Returns whether to resume (on the release).
+    private func trackPausedConfirm(_ id: String, _ name: String, _ down: Bool) -> Bool {
+        if down {
+            confirmTap.cancel()
+            guard name == "face.south" else { return false }
+            stepLock.lock(); let paused = stepModeOn && stepEnabled; stepLock.unlock()
+            if paused { confirmTap.press(id) }
+            return false
+        }
+        return confirmTap.release(id)
     }
 
-    /// gcQueue: the confirm button while paused resumes (the seek bar's "A = resume").
-    private func routePausedConfirm(_ id: String, _ name: String, _ down: Bool) -> Bool {
-        guard name == "face.south" else { return false }
-        stepLock.lock()
-        let active = stepModeOn && stepEnabled
-        stepLock.unlock()
-        if down {
-            guard active else { return false }
-            routedSteps.insert(id)
-            DispatchQueue.main.async { [weak self] in self?.onPausedConfirm?() }
-            return true
-        }
-        return routedSteps.remove(id) != nil
+    /// Any thread: a key or a menu command (frame advance, ...) while a confirm button may be held.
+    func cancelPausedConfirm() {
+        gcQueue.async { [weak self] in self?.confirmTap.cancel() }
     }
 
     /// Setting "While paused, the D-pad ←/→ steps frames".
@@ -313,6 +333,7 @@ final class InputManager {
         guard let dir else { return false }
         if down {
             guard active else { return false }
+            confirmTap.cancel()
             routedSteps.insert(id)
             onPausedStep?(dir, true)
             return true
@@ -340,7 +361,7 @@ final class InputManager {
                 NSLog("ReplayNES: failed to save bindings: \(error)")
             }
         }
-        refreshStepDirections()
+        refreshBindingState()
         onConfigChanged?(config)
     }
 
@@ -468,16 +489,23 @@ final class InputManager {
             setPressed(id, false, at: ev.timestamp)
             return keyboardEnabled() ? nil : ev
         case .keyDown:
+            // Any key (also ⌘→ frame advance) while a pad's confirm is held: not a resume tap.
+            if !ev.isARepeat { cancelPausedConfirm() }
             // Command shortcuts belong to the menu; text fields keep their keys.
             if ev.modifierFlags.contains(.command) || !keyboardEnabled() { return ev }
-            let nav = isNavMode
-            if nav || ev.keyCode == 53 {
-                if let n = Self.navKey(ev), nav || n == .escape {
+            if isNavMode {
+                if let n = Self.navKey(ev) {
                     // Arrows follow the key repeat; other keys act once per press.
                     if !ev.isARepeat || [.up, .down, .left, .right].contains(n) { onNav?(n) }
-                    return nil
+                } else if isMenuInput(id) && !ev.isARepeat {
+                    onNav?(.menu)
                 }
-                if nav { return nil }   // nothing reaches the game behind a menu
+                return nil   // nothing reaches the game behind a menu
+            }
+            // Keys bound to the Quick Menu ("hk.menu": Esc by default) open it; never game input.
+            if isMenuInput(id) {
+                if !ev.isARepeat { onNav?(.menu) }
+                return nil
             }
             if !ev.isARepeat { setPressed(id, true, at: ev.timestamp) }
             return nil
@@ -582,8 +610,10 @@ final class InputManager {
         rn_input_release_prefix(handle, prefix)
         gcQueue.async { [weak self] in
             guard let self else { return }
-            self.chords[slot].reset()
-            self.forwardedShoulders = self.forwardedShoulders.filter { !$0.hasPrefix(prefix) }
+            // The detector's state is shared by every pad: forget it and release what it handed on.
+            self.chord.reset()
+            self.releaseForwardedMembers()
+            self.confirmTap.clear()
             self.lastState = self.lastState.filter { !$0.key.hasPrefix(prefix) }
             for id in self.routedSteps where id.hasPrefix(prefix) {
                 self.routedSteps.remove(id)
@@ -624,14 +654,19 @@ final class InputManager {
             }
             return
         }
-        if let sh = Self.shoulder(name), let slot = Int(prefix.dropFirst(2).dropLast()), slot < chords.count {
-            stepLock.lock(); let game = gameShoulders.contains(id); stepLock.unlock()
-            if !game { handleShoulder(slot: slot, prefix: prefix, sh, down); return }
+        // The Quick Menu: a combo member (L+R) or an input of its own.
+        let fed = chord.feed(id, down: down, now: now())
+        emitChord(fed.events)
+        if fed.taken { scheduleChordTick(); return }
+        if isMenuInput(id) {
+            if down { post(.menu) }
+            return
         }
         if isNavMode { routeNav(id, name, down); return }
-        if routePausedConfirm(id, name, down) { return }
         if routePausedStep(id, down) { return }
+        let resume = trackPausedConfirm(id, name, down)
         setPressed(id, down, at: gcEventTime)
+        if resume { DispatchQueue.main.async { [weak self] in self?.onPausedConfirm?() } }
     }
 
     /// Test hook (--inject-pad): a controller element change on slot 0, through the same path
@@ -659,6 +694,7 @@ final class InputManager {
             } else if nav {
                 routeNav(id, name + "." + dir, on)
             } else {
+                if on { confirmTap.cancel() }
                 noteEvent(at: gcEventTime)
             }
         }

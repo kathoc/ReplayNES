@@ -20,6 +20,39 @@ enum QMPage: String, CaseIterable, Hashable {
     /// The four settings pages (L / R switch between them; the Settings tile opens the first).
     static let settingsTabs: [QMPage] = [.display, .controls, .sound, .system]
 
+    /// The top level's tiles, in order: the item ids of the shared core's "quick" page
+    /// (frontend/src/menu.cpp, rnf_menu_*), which the Linux / Windows frontends draw.
+    static let topTileIDs = ["resume", "retry", "practice", "share", "settings", "game"]
+
+    /// The shared core's page this one draws (rnf_menu_page_find), nil for pages only macOS has:
+    /// Share › Stream Output (the core's Share has a Stream on / off toggle; macOS adds the Syphon
+    /// picture options) and Game › Reset (the core's Game › Reset opens a dialog). The core's
+    /// System › More is folded into System here (macOS has no full-screen / UI-size rows), and
+    /// its "library.projects" is the library's projects list, not a Quick Menu page.
+    /// Tests/QuickMenuModelTests.swift checks this tree against the core's.
+    var coreID: String? {
+        switch self {
+        case .top: return "quick"
+        case .retry: return "retry"
+        case .takes: return "takes"
+        case .bookmarks: return "bookmarks"
+        case .practice: return "practice"
+        case .share: return "share"
+        case .display: return "settings.display"
+        case .crtDetail: return "display.crt"
+        case .controls: return "settings.controls"
+        case .controller: return "controls.controller"
+        case .bindings: return "controls.keyboard"
+        case .controlsDetail: return "controls.detail"
+        case .sound: return "settings.sound"
+        case .system: return "settings.system"
+        case .updates: return "system.updates"
+        case .about: return "system.about"
+        case .game: return "game"
+        case .stream, .reset: return nil
+        }
+    }
+
     var parent: QMPage? {
         switch self {
         case .top: return nil

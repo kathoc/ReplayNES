@@ -38,7 +38,8 @@ PY
 
 # Input model through the real controller / keyboard paths (--inject-pad / --inject-keys):
 # L+R chord opens the menu, D-pad + A navigate, B goes back, L+R closes (resumes), R alone pauses
-# and resumes, L alone toggles slow, Esc opens / closes.
+# and resumes, L alone toggles slow, Esc opens / closes; while paused, A tapped resumes but A held
+# through a D-pad frame step does not.
 input_check() {
   local dir="$OUT/input"
   mkdir -p "$dir/library/ROM" "$dir/session"
@@ -46,10 +47,14 @@ input_check() {
   pad="$pad,4.5:dpad.right:d,4.6:dpad.right:u,5:face.south:d,5.1:face.south:u,6.5:face.east:d,6.6:face.east:u"
   pad="$pad,7.5:rightShoulder:d,7.53:leftShoulder:d,7.7:leftShoulder:u,7.7:rightShoulder:u"
   pad="$pad,9:rightShoulder:d,9.05:rightShoulder:u,11:rightShoulder:d,11.05:rightShoulder:u,12:leftShoulder:d,12.4:leftShoulder:u"
-  local snaps="4:$dir/a.png,6:$dir/b.png,7:$dir/c.png,8.5:$dir/d.png,10:$dir/e.png,11.8:$dir/f.png,13:$dir/g.png,15:$dir/h.png,17:$dir/i.png"
+  pad="$pad,17.5:rightShoulder:d,17.55:rightShoulder:u,18.5:face.south:d,18.6:dpad.right:d,18.7:dpad.right:u,18.9:face.south:u"
+  pad="$pad,20:face.south:d,20.1:face.south:u"
+  local snaps="4:$dir/a.png,6:$dir/b.png,7:$dir/c.png,8.5:$dir/d.png,10:$dir/e.png,11.5:$dir/f.png,13:$dir/g.png,15:$dir/h.png,17:$dir/i.png,19.5:$dir/j.png,21:$dir/k.png"
   "$BIN" --rom "$ROM" --autoplay --library-root "$dir/library" --session-root "$dir/session" --no-updater \
     --inject-pad "$pad" --inject-keys "14:53:d,14.05:53:u,16:53:d,16.05:53:u" --snapshot-at "$snaps" \
-    --test-actions "0.5:screen:0,19:quit" -AppleLanguages "(en)" -ApplePersistenceIgnoreState YES >"$dir/app.log" 2>&1 || true
+    --test-actions "0.5:screen:0,2:dumpMenus,22:quit" -AppleLanguages "(en)" -ApplePersistenceIgnoreState YES >"$dir/app.log" 2>&1 || true
+  # Close (⌘W) lives in the Window menu (the File menu is gone).
+  grep -q "menu: Window | Close | ⌘w" "$dir/app.log" && echo "$dir: ⌘W close ok" || { echo "$dir: ⌘W close missing"; fail=1; }
   python3 - "$dir" <<'PY' || fail=1
 import json, sys
 d = sys.argv[1]
@@ -57,14 +62,22 @@ want = {  # snapshot: (menuOpen, page, paused, slow)
     "a": (True, "top", True, "Normal"), "b": (True, "retry", True, "Normal"), "c": (True, "top", True, "Normal"),
     "d": (False, None, False, "Normal"), "e": (False, None, True, "Normal"), "f": (False, None, False, "Normal"),
     "g": (False, None, False, "1/2"), "h": (True, "top", True, "1/2"), "i": (False, None, False, "1/2"),
+    "j": (False, None, True, "1/2"), "k": (False, None, False, "1/2"),
 }
 bad = []
+skipped = []
 for k, (menu, page, paused, slow) in want.items():
     j = json.load(open(f"{d}/{k}.json"))
+    # h / i need the Esc key: injected keys only reach the app while it is frontmost (macOS does not
+    # let an app launched from a background shell activate itself).
+    if k in ("h", "i") and not j.get("keyboardEnabled", True):
+        skipped.append(k)
+        continue
     got = (j["menuOpen"], j["menuPage"] if menu else None, j["paused"], j["slow"])
     if got != (menu, page, paused, slow) or j["pillMetalVisible"] != (not menu and not paused):
         bad.append(f"{k}: got {got} pill {j['pillMetalVisible']}, want {(menu, page, paused, slow)}")
-print(f"{d}: input model " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad)))
+print(f"{d}: input model " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
+      + (f" (Esc steps {', '.join(skipped)} skipped: the app was not frontmost)" if skipped else ""))
 sys.exit(1 if bad else 0)
 PY
 }

@@ -25,6 +25,7 @@
 
 #include "replaynes/frontend.h"
 #include "replaynes/replaynes.h"
+#include "ui_logic.h"
 
 namespace rnl {
 
@@ -57,7 +58,7 @@ class InputRouter {
   // Hooks.
   std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / Guide / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
-  std::function<void()> onPausedConfirm;                 // A / B while paused in play: resume
+  std::function<void()> onPausedConfirm;                 // A / B tapped while paused in play: resume
   /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).
   std::function<void(int dir)> onUiShoulder;
   std::function<void(const std::string& name)> onDisconnect;
@@ -150,7 +151,7 @@ class InputRouter {
   bool captureKeysOnly_ = false;
   rnf_chord* chord_ = nullptr;
   std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
-  std::set<std::string> routedConfirm_;   // A / B pressed while paused: their release is ours too
+  ConfirmTap confirmTap_;                 // A / B pressed while paused: a tap resumes
   // parsed config
   std::vector<std::pair<std::string, std::string>> bindingPairs_;
   std::vector<rnf_binding> bindingView_;

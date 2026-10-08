@@ -208,6 +208,7 @@ void InputRouter::setUIMode(bool ui) {
   if (ui) {
     rn_input_release_all(in_);  // nothing held for the game while the menu is up
     routedSteps_.clear();
+    confirmTap_.clear();
   }
 }
 
@@ -229,6 +230,7 @@ bool InputRouter::routePausedStep(const std::string& id, bool down) {
   bool active = pausedStepMode_ && (!settings_ || settings_->dpadStepWhenPaused);
   if (down) {
     if (!active) return false;
+    confirmTap_.cancel();
     routedSteps_.insert(id);
     if (onPausedStep) onPausedStep(it->second, true);
     return true;
@@ -240,19 +242,19 @@ bool InputRouter::routePausedStep(const std::string& id, bool down) {
   return false;
 }
 
+// Paused in play (the seek bar): A / B resume as a tap (rnl::ConfirmTap). They still reach the game,
+// so a button can be held for a frame advance; holding one and stepping never resumes.
 bool InputRouter::routePausedConfirm(const std::string& id, bool down) {
   if (down) {
-    // Paused in play (the seek bar): A / B resume; nothing reaches the game.
     if (ui_ || !pausedStepMode_) return false;
     size_t colon = id.find(':');
     if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
     std::string el = id.substr(colon + 1);
     if (el != "face.south" && el != "face.east") return false;
-    routedConfirm_.insert(id);
-    if (onPausedConfirm) onPausedConfirm();
-    return true;
+    confirmTap_.press(id);
+    return false;
   }
-  return routedConfirm_.erase(id) > 0;
+  return confirmTap_.release(id) && pausedStepMode_ && !ui_;
 }
 
 // The chord detector's outcome: the Quick Menu, or L / R alone going their usual way.
@@ -286,17 +288,22 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
     if (down && onUiShoulder && (el == "leftShoulder" || el == "rightShoulder")) onUiShoulder(el == "leftShoulder" ? -1 : 1);
     return;
   }
-  if (routePausedStep(id, down) || routePausedConfirm(id, down)) {
+  if (routePausedStep(id, down)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
     return;
   }
   setPressed(id, down, t, true);
+  if (routePausedConfirm(id, down) && onPausedConfirm) onPausedConfirm();
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
-  if (down) pressed_.insert(id);
-  else pressed_.erase(id);
+  if (down) {
+    pressed_.insert(id);
+    confirmTap_.cancel();
+  } else {
+    pressed_.erase(id);
+  }
   if (!game) return;
   rn_input_set_pressed(in_, id.c_str(), down ? 1 : 0);
   if (down) {
@@ -343,8 +350,7 @@ void InputRouter::detach(SDL_JoystickID id) {
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
-  for (auto it = routedConfirm_.begin(); it != routedConfirm_.end();)
-    it = it->compare(0, prefix.size(), prefix) == 0 ? routedConfirm_.erase(it) : std::next(it);
+  confirmTap_.clear();
   for (auto it = routedSteps_.begin(); it != routedSteps_.end();) {
     if (it->compare(0, prefix.size(), prefix) == 0) {
       auto d = stepDirs_.find(*it);
@@ -402,8 +408,12 @@ void InputRouter::stickDirections(int slot, const char* stick, float x, float y,
     bool& st = stickState_[id];
     if (st == on) continue;
     st = on;
-    if (on) pressed_.insert(id);
-    else pressed_.erase(id);
+    if (on) {
+      pressed_.insert(id);
+      confirmTap_.cancel();
+    } else {
+      pressed_.erase(id);
+    }
     if (on && capture_) {
       captureFrom(id, false);
     } else if (on && !ui_) {

@@ -41,16 +41,6 @@
         }
       }
     },
-    "%@ (%@) · Pressed buttons light up · Click a button on the picture to change its assignment": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@（%2$@）・押したボタンが光ります・図のボタンをクリックで割り当てを変更"
-          }
-        }
-      }
-    },
     "%@ (%llu frames, 60.0988 fps, AAC 48 kHz)": {
       "localizations": {
         "ja": {
@@ -291,16 +281,6 @@
         }
       }
     },
-    "8:7 pixel aspect ratio (as on a CRT TV)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ピクセル比 8:7（ブラウン管の見た目）"
-          }
-        }
-      }
-    },
     "8:7 Pixels": {
       "localizations": {
         "ja": {
@@ -321,16 +301,6 @@
         }
       }
     },
-    "A = start of the section, B = the end you reach by playing on from A. Practice a section as often as you like (nothing is recorded).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A＝区間の始まり、B＝Aから続けてプレイした終わりの位置。設定した区間を何度でも練習できます（録画はされません）。"
-          }
-        }
-      }
-    },
     "A = the start of the section: the current position": {
       "localizations": {
         "ja": {
@@ -341,32 +311,12 @@
         }
       }
     },
-    "A Direct3D 11 port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "nesterm の「CRT（物理モデル・実験）」を Direct3D 11 に移植した表示です。NES の画素コード → RF/IF → 復調 → 管面（スロットマスク・散乱・残光）。未校正の実験モデルで、実在のテレビの再現ではありません。表示だけの処理で、記録・ゲームの進行・再現性には影響しません。画面は 4:3（ピクセル比の設定は使いません）です。"
-          }
-        }
-      }
-    },
     "A backup copy of the project is moved to the Recycle Bin first, so you can still recover it from there.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "先にプロジェクトのバックアップコピーをごみ箱に移すので、そこから元に戻せます。"
-          }
-        }
-      }
-    },
-    "A new version of ReplayNES is available (menu: Update).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ReplayNES の新しいバージョンがあります（メニュー: アップデート）。"
           }
         }
       }
@@ -411,16 +361,6 @@
         }
       }
     },
-    "A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental model, not a reproduction of any real TV. It only affects the display; recording, game progress and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "nesterm の「CRT（物理モデル・実験）」を Vulkan に移植した表示です。NES の画素コード → RF/IF → 復調 → 管面（スロットマスク・散乱・残光）。未校正の実験モデルで、実在のテレビの再現ではありません。表示だけの処理で、記録・ゲームの進行・再現性には影響しません。画面は 4:3（ピクセル比の設定は使いません）です。"
-          }
-        }
-      }
-    },
     "A and B are at the same position. Play a little further before setting B": {
       "localizations": {
         "ja": {
@@ -447,16 +387,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォルダの場所に同名のファイルがあります: %@"
-          }
-        }
-      }
-    },
-    "A glowing red “Record” means record mode. Click it to switch to gray playback mode, which plays the recorded take (from the start if you are at the end). Click again to return to a paused state where you can continue recording from that position. If you rewind and then play, a new take branches off automatically and the old continuation is kept.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "赤く光っている「録画」は録画モード。クリックすると灰色の再生モードになり、録画したテイクを再生します（終端にいたら先頭から）。もう一度クリックすると、その位置から続きを録画できる状態（一時停止）に戻ります。巻き戻してからプレイすると自動で新しいテイクに分岐し、以前の続きも残ります。"
           }
         }
       }
@@ -531,16 +461,6 @@
         }
       }
     },
-    "About %.1f presses per second. The recording stores the button state after turbo is applied, so playback doesn’t depend on this setting.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "約 %.1f 回/秒。記録されるのは連射変換後のボタン状態なので、再生は設定に依存しません。"
-          }
-        }
-      }
-    },
     "Action": {
       "localizations": {
         "ja": {
@@ -557,16 +477,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このボタンに割り当てる操作"
-          }
-        }
-      }
-    },
-    "Active": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用中"
           }
         }
       }
@@ -591,32 +501,12 @@
         }
       }
     },
-    "Add a bookmark at the current position": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在位置にブックマークを追加"
-          }
-        }
-      }
-    },
     "Add Here": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ここに追加"
-          }
-        }
-      }
-    },
-    "Add some ROMs": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM を追加してください"
           }
         }
       }
@@ -671,42 +561,12 @@
         }
       }
     },
-    "Adds ReplayNES to the Steam library with its artwork, for every Steam account on this device. Close Steam first (Desktop Mode).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この端末のすべての Steam アカウントのライブラリに、アートワーク付きで ReplayNES を追加します。先に Steam を終了してください（デスクトップモード）。"
-          }
-        }
-      }
-    },
-    "Add…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "追加…"
-          }
-        }
-      }
-    },
     "Advance": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "コマ送り"
-          }
-        }
-      }
-    },
-    "Advance by Frames": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "指定フレーム数だけ進める"
           }
         }
       }
@@ -737,16 +597,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存されていない前回のセッションが残っています"
-          }
-        }
-      }
-    },
-    "Analog Stick": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アナログスティック"
           }
         }
       }
@@ -811,16 +661,6 @@
         }
       }
     },
-    "Arrow keys / X / Z": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "矢印キー / X / Z"
-          }
-        }
-      }
-    },
     "Assign keys (and buttons) to each action": {
       "localizations": {
         "ja": {
@@ -837,36 +677,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "割り当て: %@"
-          }
-        }
-      }
-    },
-    "At B it pauses briefly, returns to A and repeats. Nothing is recorded.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bに着くと少し止まってAへ戻り、繰り返します。録画はされません。"
-          }
-        }
-      }
-    },
-    "Audio": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声"
-          }
-        }
-      }
-    },
-    "Audio & Controls": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声・操作"
           }
         }
       }
@@ -891,32 +701,12 @@
         }
       }
     },
-    "Audio is muted while paused, rewinding, seeking, in slow motion or fast-forwarding.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時停止・巻き戻し・シーク・スロー・早送り中は無音になります。"
-          }
-        }
-      }
-    },
     "Auto": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "自動"
-          }
-        }
-      }
-    },
-    "Auto (Steam’s if available, otherwise built-in)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動（使えれば Steam、なければ内蔵）"
           }
         }
       }
@@ -951,16 +741,6 @@
         }
       }
     },
-    "Automatically check for updates": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動的にアップデートを確認"
-          }
-        }
-      }
-    },
     "Autosave": {
       "localizations": {
         "ja": {
@@ -991,32 +771,12 @@
         }
       }
     },
-    "Autosave interval": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動保存の間隔"
-          }
-        }
-      }
-    },
     "B (legacy)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "B(旧設定)"
-          }
-        }
-      }
-    },
-    "B / A (Steam Deck, Xbox)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "B / A（Steam Deck・Xbox）"
           }
         }
       }
@@ -1041,16 +801,6 @@
         }
       }
     },
-    "Back (on the menu: resume play)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "戻る（メニューではプレイを再開）"
-          }
-        }
-      }
-    },
     "Back 1 Second": {
       "localizations": {
         "ja": {
@@ -1067,26 +817,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aへ戻る"
-          }
-        }
-      }
-    },
-    "Back to Library": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ゲーム選択に戻る"
-          }
-        }
-      }
-    },
-    "Back to Menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニューに戻る"
           }
         }
       }
@@ -1147,16 +877,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "最後に録り直す前のテイクへ"
-          }
-        }
-      }
-    },
-    "Backspace (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Backspace（押している間）"
           }
         }
       }
@@ -1237,16 +957,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "下ボタン"
-          }
-        }
-      }
-    },
-    "Branched From": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分岐元"
           }
         }
       }
@@ -1347,16 +1057,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "新しいバージョンを確認"
-          }
-        }
-      }
-    },
-    "Check now": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今すぐ確認"
           }
         }
       }
@@ -1501,32 +1201,12 @@
         }
       }
     },
-    "CRT Display": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブラウン管 (CRT)"
-          }
-        }
-      }
-    },
     "CRT Display settings, 4:3 (best with 1280×960). Slower.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "CRT表示の設定で描画（4:3、1280×960向き）。書き出しは遅くなります。"
-          }
-        }
-      }
-    },
-    "CRT display": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブラウン管 (CRT) 表示"
           }
         }
       }
@@ -1547,16 +1227,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力を追加できません"
-          }
-        }
-      }
-    },
-    "Can’t compute SHA-256": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SHA-256 を計算できません"
           }
         }
       }
@@ -1611,16 +1281,6 @@
         }
       }
     },
-    "Caution: this does not reliably prevent photosensitive seizures. If you feel unwell, stop playing immediately.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "注意: 光過敏性発作などを確実に防ぐものではありません。体調に異変を感じたら、すぐにプレイを中止してください。"
-          }
-        }
-      }
-    },
     "Check for Updates…": {
       "localizations": {
         "ja": {
@@ -1631,32 +1291,12 @@
         }
       }
     },
-    "Choose": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "決定"
-          }
-        }
-      }
-    },
     "Choose a ROM": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ROMを選択"
-          }
-        }
-      }
-    },
-    "Choose a ROM on the left to start playing right away. Open earlier projects with “Continue”.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "左の ROM を選ぶとすぐにプレイを始められます。以前のプロジェクトは「続きから」で開けます。"
           }
         }
       }
@@ -1711,26 +1351,6 @@
         }
       }
     },
-    "Close Project": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクトを閉じる"
-          }
-        }
-      }
-    },
-    "Close the Guide": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ガイドを閉じる"
-          }
-        }
-      }
-    },
     "Codec": {
       "localizations": {
         "ja": {
@@ -1751,16 +1371,6 @@
         }
       }
     },
-    "Continue the latest project of the ROM": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "そのROMの最新のプロジェクトを続ける"
-          }
-        }
-      }
-    },
     "Controller": {
       "localizations": {
         "ja": {
@@ -1777,36 +1387,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作"
-          }
-        }
-      }
-    },
-    "Controls Guide": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "操作ガイド"
-          }
-        }
-      }
-    },
-    "Controls Guide on / off": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "操作ガイドの表示／非表示"
-          }
-        }
-      }
-    },
-    "Copy them into the ROM folder (Open Folder shows it in Explorer), then press Reload.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM フォルダ（「フォルダを開く」でエクスプローラーに表示）にコピーしてから「再読み込み」を押してください。"
           }
         }
       }
@@ -2131,16 +1711,6 @@
         }
       }
     },
-    "Creates a new project and starts right away (autosaved in the Projects folder)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいプロジェクトを作ってすぐに始めます（Projects フォルダに自動保存）"
-          }
-        }
-      }
-    },
     "Current": {
       "localizations": {
         "ja": {
@@ -2151,42 +1721,12 @@
         }
       }
     },
-    "Current take #%llu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在のテイク #%llu"
-          }
-        }
-      }
-    },
     "D-pad": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "十字キー"
-          }
-        }
-      }
-    },
-    "D-pad / Left Stick": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "十字キー / 左スティック"
-          }
-        }
-      }
-    },
-    "D-pad threshold %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "十字キー判定のしきい値 %@"
           }
         }
       }
@@ -2207,16 +1747,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "十字←"
-          }
-        }
-      }
-    },
-    "D-pad ← / →": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "十字キー ← / →"
           }
         }
       }
@@ -2281,16 +1811,6 @@
         }
       }
     },
-    "Delete (on an empty field: close the keyboard)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1文字削除（空のときはキーボードを閉じる）"
-          }
-        }
-      }
-    },
     "Delete every take and record again from power-on": {
       "localizations": {
         "ja": {
@@ -2307,16 +1827,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "基準より早めに検出し、画面の 20% 以上の明滅を 1 秒に 2 回までに抑えます（推奨）。"
-          }
-        }
-      }
-    },
-    "Detects scenes where the whole screen flashes hard (explosions, lightning, …) and holds only the display toward the darker side to reduce the number of flashes (based on the WCAG 2.x general flash and red flash thresholds). Small flashes and normal scrolling are shown as they are. Recorded input, game progress and reproducibility are not affected. It can also be applied to MP4 exports.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画面全体が激しく点滅する場面（爆発・稲妻など）を検出し、表示だけを暗い側に抑えて明滅の回数を減らします（WCAG 2.x の一般閃光・赤色閃光の基準を目安にしています）。小さな点滅や通常のスクロールはそのまま表示します。記録される入力・ゲームの進行・再現性には影響しません。MP4 書き出しにも適用できます。"
           }
         }
       }
@@ -2394,16 +1904,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "表示 GPU (平均/最大)"
-          }
-        }
-      }
-    },
-    "Display Size": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "表示サイズ"
           }
         }
       }
@@ -2498,16 +1998,6 @@
         }
       }
     },
-    "Each time you re-record, a new take is created and the old continuation is kept. Usually “Back to Previous Take” is all you need.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録り直すたびに新しいテイクが作られ、以前の続きは消さずに残ります。通常は「前の試行へ戻す」だけで十分です。"
-          }
-        }
-      }
-    },
     "Eisu": {
       "localizations": {
         "ja": {
@@ -2588,16 +2078,6 @@
         }
       }
     },
-    "English (follows the system language)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "英語（システムの言語に合わせています）"
-          }
-        }
-      }
-    },
     "Every take of this project; switch to another one": {
       "localizations": {
         "ja": {
@@ -2624,16 +2104,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "この録画のすべての試行"
-          }
-        }
-      }
-    },
-    "Experiment: 110–220 lines": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "実験：110〜220本"
           }
         }
       }
@@ -2788,16 +2258,6 @@
         }
       }
     },
-    "FILL (fill the window, aspect ratio kept)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "FILL（縦横比を保ってウインドウいっぱい）"
-          }
-        }
-      }
-    },
     "Failed": {
       "localizations": {
         "ja": {
@@ -2818,52 +2278,12 @@
         }
       }
     },
-    "Fast-forward": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "早送り"
-          }
-        }
-      }
-    },
-    "Fast-forward (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "早送り（長押し）"
-          }
-        }
-      }
-    },
-    "Fast-forward (recorded range only; pauses at the end)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "早送り（録画済みの範囲だけ。終端で一時停止）"
-          }
-        }
-      }
-    },
     "Fast-forward (while held, recorded range only)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "早送り（押している間・録画済みの範囲だけ）"
-          }
-        }
-      }
-    },
-    "Files": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ファイル"
           }
         }
       }
@@ -2894,16 +2314,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "点滅抑制の表示"
-          }
-        }
-      }
-    },
-    "Flash Reduction (Photosensitivity)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "フラッシュ低減（光の点滅への配慮）"
           }
         }
       }
@@ -2948,16 +2358,6 @@
         }
       }
     },
-    "For text fields (Search ROMs, names). Built-in: ReplayNES’s controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Steam: Steam’s on-screen keyboard (Gaming Mode; it can type Japanese). Auto asks for Steam’s and shows the built-in one when a button press still reaches ReplayNES (Steam’s keyboard did not open).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字入力欄（ROMを検索、名前）で使います。内蔵：ReplayNES のコントローラー用キーボード（A 入力、B 削除、X スペース、Y シフト、L1 / R1 カーソル移動、ビュー（⧉）記号、メニュー（≡）完了）。Steam：Steam のスクリーンキーボード（ゲームモード。日本語を入力できます）。自動は Steam のキーボードを呼び出し、それでもボタン操作が ReplayNES に届いたとき（Steam のキーボードが開かなかったとき）は内蔵キーボードを表示します。"
-          }
-        }
-      }
-    },
     "Format": {
       "localizations": {
         "ja": {
@@ -2974,16 +2374,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "1秒進む"
-          }
-        }
-      }
-    },
-    "Forward 1 Second (Recorded Range)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1秒進む（録画済みの範囲）"
           }
         }
       }
@@ -3038,16 +2428,6 @@
         }
       }
     },
-    "Full screen / statistics": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "フルスクリーン / 統計表示"
-          }
-        }
-      }
-    },
     "Full screen, UI size, autosave": {
       "localizations": {
         "ja": {
@@ -3064,16 +2444,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゲーム"
-          }
-        }
-      }
-    },
-    "Game Input & Hotkeys": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ゲーム入力・ホットキー"
           }
         }
       }
@@ -3158,16 +2528,6 @@
         }
       }
     },
-    "Hide overscan (8 px on each side)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オーバースキャンを隠す（上下左右 8px）"
-          }
-        }
-      }
-    },
     "Hide overscan (crop 8 px on each side)": {
       "localizations": {
         "ja": {
@@ -3214,16 +2574,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ホットキー（記録されません）"
-          }
-        }
-      }
-    },
-    "Hotkeys are handled separately from game input and are not recorded. They also work while paused.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ホットキーはゲーム入力とは別に処理され、記録されません。一時停止中も有効です。"
           }
         }
       }
@@ -3288,16 +2638,6 @@
         }
       }
     },
-    "In the menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニュー内"
-          }
-        }
-      }
-    },
     "Input sampled before deadline": {
       "localizations": {
         "ja": {
@@ -3358,16 +2698,6 @@
         }
       }
     },
-    "Integer: largest integer scale that fits (sharp) / FILL: fill the window, aspect ratio kept": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等倍: 収まる最大の整数倍（くっきり） / FILL: 縦横比を保ってウインドウいっぱいに表示"
-          }
-        }
-      }
-    },
     "Integer: sharp pixels · FILL: fill the window": {
       "localizations": {
         "ja": {
@@ -3384,26 +2714,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等倍：くっきり・FILL：画面いっぱい"
-          }
-        }
-      }
-    },
-    "It downloads in the background: you can keep playing, then restart when it is installed.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バックグラウンドでダウンロードします。そのまま遊び続けて、インストールが終わったら再起動してください。"
-          }
-        }
-      }
-    },
-    "Japanese (follows the system language)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日本語（システムの言語に合わせています）"
           }
         }
       }
@@ -3494,16 +2804,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "キーボード"
-          }
-        }
-      }
-    },
-    "Keyboard (only while ReplayNES is in front)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーボード（ReplayNES が前面のときだけ）"
           }
         }
       }
@@ -3718,26 +3018,6 @@
         }
       }
     },
-    "L2 (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L2（押している間）"
-          }
-        }
-      }
-    },
-    "L2 / R2 (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L2 / R2（長押し）"
-          }
-        }
-      }
-    },
     "Language": {
       "localizations": {
         "ja": {
@@ -3754,26 +3034,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "最終確認: %@"
-          }
-        }
-      }
-    },
-    "Last pressed wins": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "後から押した方を優先"
-          }
-        }
-      }
-    },
-    "Last saved %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最終保存 %@"
           }
         }
       }
@@ -3824,26 +3084,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "遅延の表示"
-          }
-        }
-      }
-    },
-    "Later": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "後で"
-          }
-        }
-      }
-    },
-    "Layout": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "形"
           }
         }
       }
@@ -3938,42 +3178,12 @@
         }
       }
     },
-    "Length %@ (%llu frames) · Takes: %lld": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "長さ %1$@（%2$llu フレーム）・全%3$lldテイク"
-          }
-        }
-      }
-    },
-    "Letters / symbols": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "英字 / 記号の切り替え"
-          }
-        }
-      }
-    },
     "Level: %@ (Settings → Display). Off: exactly as recorded.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "強さ: %@（設定 → 表示）。オフなら記録どおりの映像です。"
-          }
-        }
-      }
-    },
-    "Library": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ライブラリ"
           }
         }
       }
@@ -4138,16 +3348,6 @@
         }
       }
     },
-    "Made a mistake? Go back and record it again. At the end, export one continuous play video.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ミスしたら戻って録り直す。最後に通しのプレイ動画を書き出す。"
-          }
-        }
-      }
-    },
     "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen.": {
       "localizations": {
         "ja": {
@@ -4228,26 +3428,6 @@
         }
       }
     },
-    "Menu (≡)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニュー（≡）"
-          }
-        }
-      }
-    },
-    "Menu (≡) / View (⧉)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニュー (≡) / ビュー (⧉)"
-          }
-        }
-      }
-    },
     "Metal isn’t available": {
       "localizations": {
         "ja": {
@@ -4318,72 +3498,12 @@
         }
       }
     },
-    "Move (hold = faster)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移動（長押しで速く）"
-          }
-        }
-      }
-    },
-    "Move / A / B": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移動 / A / B"
-          }
-        }
-      }
-    },
-    "Move between the keys": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーを選ぶ"
-          }
-        }
-      }
-    },
     "Move Cursor": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "カーソル移動"
-          }
-        }
-      }
-    },
-    "Move the focus (the orange frame)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選択（オレンジの枠）を動かす"
-          }
-        }
-      }
-    },
-    "Move the playhead (hold = faster; at the end of the recording: record one more frame)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生位置を動かす（長押しで速く。録画の終わりでは1フレーム録る）"
-          }
-        }
-      }
-    },
-    "Move the text cursor": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字カーソルを移動"
           }
         }
       }
@@ -4404,16 +3524,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "両方離す"
-          }
-        }
-      }
-    },
-    "NES A / B (Pro Controller A / B, Xbox B / A, PS ○ / ✕)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ファミコンの A / B（Proコン A / B・Xbox B / A・PS ○ / ✕）"
           }
         }
       }
@@ -4528,32 +3638,12 @@
         }
       }
     },
-    "No ROMs": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM がありません"
-          }
-        }
-      }
-    },
     "No ROMs match “%@”": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "「%@」に一致する ROM はありません"
-          }
-        }
-      }
-    },
-    "No bookmarks yet. Press B to add one.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブックマークはありません。B キーで現在位置に追加できます。"
           }
         }
       }
@@ -4594,16 +3684,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "なし"
-          }
-        }
-      }
-    },
-    "None yet. Start with “Play” and it is saved automatically.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "まだありません。「プレイ」で始めると自動で保存されます。"
           }
         }
       }
@@ -4678,16 +3758,6 @@
         }
       }
     },
-    "Not connected (once connected, pressed buttons light up on the picture) · Click a button on the picture to change its assignment": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未接続（接続すると、押したボタンが図の上で光ります）・図のボタンをクリックで割り当てを変更"
-          }
-        }
-      }
-    },
     "Nothing has been recorded yet": {
       "localizations": {
         "ja": {
@@ -4758,42 +3828,12 @@
         }
       }
     },
-    "On Steam Deck: copy them in Desktop Mode (Dolphin), or over the network, then press Reload.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Steam Deck では、デスクトップモード（Dolphin）やネットワーク経由でコピーしてから「再読み込み」を押してください。"
-          }
-        }
-      }
-    },
-    "On-screen keyboard": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スクリーンキーボード"
-          }
-        }
-      }
-    },
     "On-screen Keyboard": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "画面キーボード"
-          }
-        }
-      }
-    },
-    "On-screen keyboard (text fields: search, names)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スクリーンキーボード（文字入力欄：検索、名前）"
           }
         }
       }
@@ -4854,46 +3894,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ROMのライブラリを開きます"
-          }
-        }
-      }
-    },
-    "Open the menu / back to the game": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニューを開く／ゲームに戻る"
-          }
-        }
-      }
-    },
-    "Open the section panel with the “Practice” button, press “A” at the start of the section and “B” at the end you reach by playing on from A. Press ▶︎ to practice that section repeatedly. At B it pauses for 0.5 s, then rewinds to A and starts again. Nothing is recorded while practicing; “Stop Practicing” returns to the original position in the take. Up to 8 sections are saved in the project.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「練習」ボタンで区間パネルを開き、区間の始まりで「A」、Aから続けてプレイした終わりで「B」を押します。▶︎ でその区間を繰り返し練習できます。Bに着くと0.5秒止まり、巻き戻るようにAへ戻って再スタートします。練習中は何も録画されず、「練習をやめる」でテイクの元の位置に戻ります。区間はプロジェクトに8つまで保存されます。"
-          }
-        }
-      }
-    },
-    "Opens the ROM folder in Explorer": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM フォルダをエクスプローラーで開きます"
-          }
-        }
-      }
-    },
-    "Opens the ROM folder in the file manager (Desktop Mode)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM フォルダをファイルマネージャーで開きます（デスクトップモード）"
           }
         }
       }
@@ -5048,16 +4048,6 @@
         }
       }
     },
-    "Pause and open the menu (timeline, back to the library, settings, …)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時停止してメニューを開く（タイムライン、ゲーム選択に戻る、設定など）"
-          }
-        }
-      }
-    },
     "Pause when rewind / fast-forward is released": {
       "localizations": {
         "ja": {
@@ -5084,16 +4074,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "一時停止中です。Space キー / コントローラーの R（または ▶︎ ボタン）で再開します"
-          }
-        }
-      }
-    },
-    "Period: %lld frames": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "周期: %lld フレーム"
           }
         }
       }
@@ -5158,16 +4138,6 @@
         }
       }
     },
-    "Pixel-perfect (largest integer scale that fits)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等倍（収まる最大の整数倍・くっきり）"
-          }
-        }
-      }
-    },
     "Play": {
       "localizations": {
         "ja": {
@@ -5188,26 +4158,6 @@
         }
       }
     },
-    "Play (creates a new project)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プレイ（新しいプロジェクトを作成）"
-          }
-        }
-      }
-    },
-    "Play from Here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから再生"
-          }
-        }
-      }
-    },
     "Play the recorded take without recording": {
       "localizations": {
         "ja": {
@@ -5224,26 +4174,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "スロー中も半分の速さで音を鳴らす"
-          }
-        }
-      }
-    },
-    "Playback": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生"
-          }
-        }
-      }
-    },
-    "Playback mode (click to return to record mode and continue recording from here)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生モード（クリックで録画モードに戻り、この位置から続きを録画します）"
           }
         }
       }
@@ -5304,16 +4234,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "プレイ中"
-          }
-        }
-      }
-    },
-    "Plays without creating a project (stored temporarily; you can save it later)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクトを作らずにプレイします（一時保存。あとで保存できます）"
           }
         }
       }
@@ -5418,32 +4338,12 @@
         }
       }
     },
-    "Practice (A/B Repeat)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習（A/B リピート）"
-          }
-        }
-      }
-    },
     "Practice from A; open the menu where the section ends to set B": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "Aから練習。区間の終わりでメニューを開いてBを決めます"
-          }
-        }
-      }
-    },
-    "Practice Mode (A/B Repeat)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習モード（A/B リピート）"
           }
         }
       }
@@ -5518,16 +4418,6 @@
         }
       }
     },
-    "Practicing: %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習中：%@"
-          }
-        }
-      }
-    },
     "Press a key or button…": {
       "localizations": {
         "ja": {
@@ -5538,42 +4428,12 @@
         }
       }
     },
-    "Press a key/button… (Esc to cancel)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キー/ボタンを押す… (Escで中止)"
-          }
-        }
-      }
-    },
     "Press a key…": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "キーを押してください…"
-          }
-        }
-      }
-    },
-    "Press both (impossible on real hardware)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "両方押す（実機では不可能な入力）"
-          }
-        }
-      }
-    },
-    "Press length: %lld frames": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "押す長さ: %lld フレーム"
           }
         }
       }
@@ -5618,26 +4478,6 @@
         }
       }
     },
-    "Previous / Next Bookmark (or 5 s)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前／次のブックマーク（なければ5秒）"
-          }
-        }
-      }
-    },
-    "Previous / Next Page": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前／次のページ"
-          }
-        }
-      }
-    },
     "Previous Attempt": {
       "localizations": {
         "ja": {
@@ -5664,16 +4504,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "加工"
-          }
-        }
-      }
-    },
-    "Project": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクト"
           }
         }
       }
@@ -5718,12 +4548,12 @@
         }
       }
     },
-    "Projects for This ROM": {
+    "Projects Folder": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このROMのプロジェクト"
+            "value": "プロジェクトフォルダ"
           }
         }
       }
@@ -5754,16 +4584,6 @@
           "stringUnit": {
             "state": "translated",
             "value": ".nes ファイルを入れる場所"
-          }
-        }
-      }
-    },
-    "Put .nes files in the ROM folder and they appear here.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM フォルダに .nes ファイルを入れると、ここに表示されます。"
           }
         }
       }
@@ -5858,36 +4678,6 @@
         }
       }
     },
-    "R1 / Menu (≡)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "R1 / メニュー（≡）"
-          }
-        }
-      }
-    },
-    "R2 (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "R2（押している間）"
-          }
-        }
-      }
-    },
-    "R3 (right stick click)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "R3（右スティック押し込み）"
-          }
-        }
-      }
-    },
     "R3 / Guide: ReplayNES menu (reserved)": {
       "localizations": {
         "ja": {
@@ -5944,16 +4734,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "点滅を抑える"
-          }
-        }
-      }
-    },
-    "Rename the focused bookmark / practice section (also “Rename…” on its row)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "フォーカス中のブックマーク / 練習区間の名前を変更（各行の「名前変更…」でも可）"
           }
         }
       }
@@ -6058,26 +4838,6 @@
         }
       }
     },
-    "Restart now? The session is saved first.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今すぐ再起動しますか？ セッションは先に保存されます。"
-          }
-        }
-      }
-    },
-    "Restart to Update": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再起動してアップデート"
-          }
-        }
-      }
-    },
     "Restore": {
       "localizations": {
         "ja": {
@@ -6145,12 +4905,12 @@
         }
       }
     },
-    "ROM folder: %@": {
+    "ROM Folder": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ROM フォルダ: %@"
+            "value": "ROM フォルダ"
           }
         }
       }
@@ -6165,32 +4925,12 @@
         }
       }
     },
-    "ROMs: %@   Projects (autosaved): %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ROM: %1$@　プロジェクト（自動保存）: %2$@"
-          }
-        }
-      }
-    },
     "Range": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "範囲"
-          }
-        }
-      }
-    },
-    "Re-record from Here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから録り直す"
           }
         }
       }
@@ -6215,42 +4955,12 @@
         }
       }
     },
-    "Record": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画"
-          }
-        }
-      }
-    },
     "Record / playback (ends practice)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "録画 / 再生 切替（練習中は練習をやめる）"
-          }
-        }
-      }
-    },
-    "Record Button": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画ボタン"
-          }
-        }
-      }
-    },
-    "Record mode (click for playback mode: plays the recorded take)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画モード（クリックで再生モード：録画したテイクを再生します）"
           }
         }
       }
@@ -6285,26 +4995,6 @@
         }
       }
     },
-    "Reduced-line experiment": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "低走査線の仮想実験"
-          }
-        }
-      }
-    },
-    "Release both (neutral)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "両方離す（ニュートラル）"
-          }
-        }
-      }
-    },
     "Reload": {
       "localizations": {
         "ja": {
@@ -6321,16 +5011,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "名前を変更"
-          }
-        }
-      }
-    },
-    "Rename…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名前変更…"
           }
         }
       }
@@ -6385,16 +5065,6 @@
         }
       }
     },
-    "ReplayNES uses Japanese when the first language of the system is Japanese, English otherwise.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "システムの第一言語が日本語のときは日本語、それ以外は英語で表示します。"
-          }
-        }
-      }
-    },
     "Reset": {
       "localizations": {
         "ja": {
@@ -6445,62 +5115,12 @@
         }
       }
     },
-    "Reset to Defaults": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "初期設定に戻す"
-          }
-        }
-      }
-    },
-    "Reset to nesterm Defaults": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "nesterm の既定値に戻す"
-          }
-        }
-      }
-    },
-    "Reset…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "リセット…"
-          }
-        }
-      }
-    },
-    "Restart from A": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aからやり直す"
-          }
-        }
-      }
-    },
     "Resume": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "再開"
-          }
-        }
-      }
-    },
-    "Resume play (on a page: back to the menu)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プレイを再開（各ページではメニューに戻る）"
           }
         }
       }
@@ -6525,32 +5145,12 @@
         }
       }
     },
-    "Return / Right Shift, \\": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Return / 右Shift・\\"
-          }
-        }
-      }
-    },
     "Rewind": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "巻き戻し"
-          }
-        }
-      }
-    },
-    "Rewind (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "巻き戻し（長押し）"
           }
         }
       }
@@ -6581,16 +5181,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "巻き戻しに失敗しました"
-          }
-        }
-      }
-    },
-    "Rewind to Here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここまで戻る"
           }
         }
       }
@@ -6905,32 +5495,12 @@
         }
       }
     },
-    "Settings → Audio & Controls → On-screen keyboard: Auto, Built-in or Steam. Steam’s keyboard can type Japanese; with Auto, a button press that still reaches ReplayNES while Steam’s keyboard was asked for brings the built-in one.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定 → 音声・操作 → スクリーンキーボード：自動 / 内蔵 / Steam。Steam のキーボードは日本語を入力できます。自動では、Steam のキーボードを呼び出したあともボタン操作が ReplayNES に届くと、内蔵キーボードに切り替わります。"
-          }
-        }
-      }
-    },
     "Settings…": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "設定…"
-          }
-        }
-      }
-    },
-    "SHA-256 %@…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SHA-256 %@…"
           }
         }
       }
@@ -7025,26 +5595,6 @@
         }
       }
     },
-    "Scroll the page": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ページをスクロール"
-          }
-        }
-      }
-    },
-    "Search (on-screen keyboard)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "検索（スクリーンキーボード）"
-          }
-        }
-      }
-    },
     "Search ROMs": {
       "localizations": {
         "ja": {
@@ -7095,16 +5645,6 @@
         }
       }
     },
-    "Section set on the timeline (X: Set A, Y: Set B)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タイムラインで設定する区間（X: A点、Y: B点）"
-          }
-        }
-      }
-    },
     "Select": {
       "localizations": {
         "ja": {
@@ -7121,26 +5661,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aを設定"
-          }
-        }
-      }
-    },
-    "Set A (make the current position the start of the section)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aを設定（いまの位置を区間の始まりにする）"
-          }
-        }
-      }
-    },
-    "Set A / Set B of the section chosen on the Practice page": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習ページで選んだ区間のA点／B点を設定"
           }
         }
       }
@@ -7195,16 +5715,6 @@
         }
       }
     },
-    "Set B (make the current position, reached by playing on from A, the end)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bを設定（Aから続けてプレイした、いまの位置を終わりにする）"
-          }
-        }
-      }
-    },
     "Set B Here (Playhead)": {
       "localizations": {
         "ja": {
@@ -7255,26 +5765,6 @@
         }
       }
     },
-    "Settings file: %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定ファイル: %@"
-          }
-        }
-      }
-    },
-    "Settings tabs (other pages: previous / next page)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定のタブ切り替え（ほかのページでは前／次のページ）"
-          }
-        }
-      }
-    },
     "Share": {
       "localizations": {
         "ja": {
@@ -7291,16 +5781,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "シフト"
-          }
-        }
-      }
-    },
-    "Shift (twice: Caps Lock)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "シフト（2回で Caps Lock）"
           }
         }
       }
@@ -7355,26 +5835,6 @@
         }
       }
     },
-    "Show latency measurement": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "レイテンシ計測を表示"
-          }
-        }
-      }
-    },
-    "Show “Flash Reduction Active” on screen while reducing": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "低減中は画面に「フラッシュ低減中」と表示する"
-          }
-        }
-      }
-    },
     "Shows the screen as it is.": {
       "localizations": {
         "ja": {
@@ -7391,26 +5851,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "電波の強さ"
-          }
-        }
-      }
-    },
-    "Signal strength (source picture)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "電波の強さ（元の画像）"
-          }
-        }
-      }
-    },
-    "Simultaneous Opposite Directions (SOCD)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "左右・上下の同時押し（SOCD）"
           }
         }
       }
@@ -7475,16 +5915,6 @@
         }
       }
     },
-    "Slow 1/2 ⇔ normal speed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スロー 1/2 ⇔ 等速"
-          }
-        }
-      }
-    },
     "Slow Motion (1/2)": {
       "localizations": {
         "ja": {
@@ -7511,16 +5941,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ソフトリセット"
-          }
-        }
-      }
-    },
-    "Soft Reset and Power Cycle act on the game (they are recorded like the console’s buttons). Reset Project starts the whole recording over.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ソフトリセットと電源再投入はゲームに対する操作です（本体のボタンと同じく記録されます）。「プロジェクトをリセット」は録画全体を最初からやり直します。"
           }
         }
       }
@@ -7605,16 +6025,6 @@
         }
       }
     },
-    "Standard: 240 lines": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "標準：240本"
-          }
-        }
-      }
-    },
     "Start a new project from power-on": {
       "localizations": {
         "ja": {
@@ -7685,16 +6095,6 @@
         }
       }
     },
-    "Steam Deck / controller (defaults; can be changed in Settings)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Steam Deck / コントローラー（初期設定・設定で変更可）"
-          }
-        }
-      }
-    },
     "Steam is running. Close Steam first (Desktop Mode: Steam menu → Exit), then try again. Artwork that could be installed appears after Steam restarts.": {
       "localizations": {
         "ja": {
@@ -7761,16 +6161,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "1コマ戻る"
-          }
-        }
-      }
-    },
-    "Step back / Frame advance": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1コマ戻る / コマ送り"
           }
         }
       }
@@ -7865,26 +6255,6 @@
         }
       }
     },
-    "Switch Tabs": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タブ切り替え"
-          }
-        }
-      }
-    },
-    "Switch to This Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このテイクに切り替え"
-          }
-        }
-      }
-    },
     "Switched to take #%llu": {
       "localizations": {
         "ja": {
@@ -7915,26 +6285,6 @@
         }
       }
     },
-    "Tab (hold)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tab（押している間）"
-          }
-        }
-      }
-    },
-    "Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク"
-          }
-        }
-      }
-    },
     "Take #%llu": {
       "localizations": {
         "ja": {
@@ -7961,26 +6311,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "テイク一覧…"
-          }
-        }
-      }
-    },
-    "Temporary session: %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時保存: %@"
-          }
-        }
-      }
-    },
-    "The CRT display isn’t available on this GPU: %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この GPU ではブラウン管 (CRT) 表示を使えません: %@"
           }
         }
       }
@@ -8205,16 +6535,6 @@
         }
       }
     },
-    "Thicker scanlines where brighter": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "明るい所ほど走査線が太る"
-          }
-        }
-      }
-    },
     "Third-party software in ReplayNES": {
       "localizations": {
         "ja": {
@@ -8305,16 +6625,6 @@
         }
       }
     },
-    "Timeline (move the focus up to it)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "タイムライン（選択を上に動かして操作）"
-          }
-        }
-      }
-    },
     "Timeline: drag to move (muted, paused). Drag the top band (or Shift-drag) to set A/B of the selected section, drag a section edge to adjust it, click a section to practice it": {
       "localizations": {
         "ja": {
@@ -8355,16 +6665,6 @@
         }
       }
     },
-    "Try Without a Project": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクトなしで試す"
-          }
-        }
-      }
-    },
     "Try a ROM (No Project)…": {
       "localizations": {
         "ja": {
@@ -8395,32 +6695,12 @@
         }
       }
     },
-    "Turbo (Turbo A / B)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連射（Turbo A / B）"
-          }
-        }
-      }
-    },
     "Turbo A": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "連射 A"
-          }
-        }
-      }
-    },
-    "Turbo A / Turbo B (Pro Controller X / Y, Xbox Y / X, PS △ / □)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連射 A / 連射 B（Proコン X / Y・Xbox Y / X・PS △ / □）"
           }
         }
       }
@@ -8485,42 +6765,12 @@
         }
       }
     },
-    "Type the key": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選んだキーを入力"
-          }
-        }
-      }
-    },
-    "Type with the on-screen keyboard. Menu (≡) / Enter: done": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スクリーンキーボードで入力します。メニュー（≡）/ Enter：完了"
-          }
-        }
-      }
-    },
     "UI Size": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "UI の大きさ"
-          }
-        }
-      }
-    },
-    "Unassigned": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未割り当て"
           }
         }
       }
@@ -8561,26 +6811,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "アップデート"
-          }
-        }
-      }
-    },
-    "Update Available": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップデートがあります"
-          }
-        }
-      }
-    },
-    "Update Installed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップデートをインストールしました"
           }
         }
       }
@@ -8631,16 +6861,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このシステムでは ReplayNES のアップデートが許可されていません。次のコマンドで一度許可してください（デスクトップモードの Konsole）: %@"
-          }
-        }
-      }
-    },
-    "Updating… %lld%%": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップデート中… %lld%%"
           }
         }
       }
@@ -8705,16 +6925,6 @@
         }
       }
     },
-    "View (⧉)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ビュー（⧉）"
-          }
-        }
-      }
-    },
     "Volume": {
       "localizations": {
         "ja": {
@@ -8775,16 +6985,6 @@
         }
       }
     },
-    "When this is on, ReplayNES looks for a new version once a day. Updates come from the project’s GitHub releases; their signature is checked before they are installed, and ReplayNES restarts into the new version (the session is saved first).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オンにすると、ReplayNES は 1 日に 1 回新しいバージョンを確認します。アップデートはプロジェクトの GitHub リリースから取得し、署名を確認してからインストールします。インストール後は新しいバージョンで再起動します（セッションは先に保存されます）。"
-          }
-        }
-      }
-    },
     "Where to Save the MP4": {
       "localizations": {
         "ja": {
@@ -8805,32 +7005,12 @@
         }
       }
     },
-    "While paused, move the focus up to the timeline: the D-pad ←/→ steps back / advances (hold for faster).": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一時停止中は選択をタイムラインに上げると、十字キー←/→でコマ戻し／コマ送りできます（長押しで速く）。"
-          }
-        }
-      }
-    },
     "While paused, ←/→ step frames and A resumes": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "一時停止中は←→でコマ送り、Aで再開"
-          }
-        }
-      }
-    },
-    "While ReplayNES runs, the system checks its repository about every 30 minutes and shows a notice on the library. Check now looks right away and installs the update when there is one; restart ReplayNES to use it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ReplayNES の実行中は、システムが約 30 分ごとにリポジトリを確認し、アップデートがあればライブラリにお知らせを表示します。「今すぐ確認」はすぐに確認し、アップデートがあればインストールします。使うには ReplayNES を再起動してください。"
           }
         }
       }
@@ -8861,16 +7041,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Y(旧設定)"
-          }
-        }
-      }
-    },
-    "Y / X (Steam Deck, Xbox)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Y / X（Steam Deck・Xbox）"
           }
         }
       }
@@ -9015,16 +7185,6 @@
         }
       }
     },
-    "▶︎ PLAY": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "▶︎ 再生"
-          }
-        }
-      }
-    },
     "▶︎ Replay": {
       "localizations": {
         "ja": {
@@ -9041,26 +7201,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "◀◀ 巻き戻し中"
-          }
-        }
-      }
-    },
-    "● REC": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "● 録画"
-          }
-        }
-      }
-    },
-    "❚❚ Paused": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "❚❚ 一時停止"
           }
         }
       }

@@ -1,55 +1,187 @@
-// Quick Menu rules (docs/design/UI_REDESIGN.md): the L+R chord, page structure / limits, focus
-// movement and the menu pill's placement and fading.
+// Quick Menu rules (docs/design/UI_REDESIGN.md): the L+R chord (shared core), the paused seek bar's
+// A tap, the layout-5 binding migration, page structure / limits and the match with the core's
+// menu tree, focus movement and the menu pill's placement and fading.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import XCTest
 
-final class ShoulderChordTests: XCTestCase {
-    private let w = SwiftShoulderChord.window
+/// The L+R chord comes from the shared core (rnf_chord_*, tested in tests/test_frontend_menu.cpp);
+/// this checks the Swift wrapper and the default "hk.menu" binding it is configured from.
+final class ChordDetectorTests: XCTestCase {
+    private let w = ChordDetector.window
+    private let l = "gc0:leftShoulder", r = "gc0:rightShoulder", combo = "gc0:leftShoulder+gc0:rightShoulder"
+
+    private func detector() -> ChordDetector {
+        let c = ChordDetector()
+        let config = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
+        XCTAssertEqual(c.configure(config.bindings), 1, "the defaults bind pad 1's L+R to hk.menu")
+        return c
+    }
 
     func testBothWithinWindowIsChordEitherOrder() {
-        for (first, second) in [(Shoulder.left, Shoulder.right), (.right, .left)] {
-            let c = SwiftShoulderChord()
-            XCTAssertEqual(c.update(first, down: true, now: 0), [])
-            XCTAssertEqual(c.update(second, down: true, now: w * 0.6), [.chord])
-            // Releases of a chord are swallowed; nothing is pending afterwards.
-            XCTAssertEqual(c.update(first, down: false, now: 0.5), [])
-            XCTAssertEqual(c.update(second, down: false, now: 0.6), [])
+        for (first, second) in [(l, r), (r, l)] {
+            let c = detector()
+            XCTAssertEqual(c.feed(first, down: true, now: 0).events, [])
+            XCTAssertEqual(c.feed(second, down: true, now: w * 0.6).events, [.comboDown(combo)])
+            XCTAssertEqual(c.feed(first, down: false, now: 0.5).events, [])
+            XCTAssertEqual(c.feed(second, down: false, now: 0.6).events, [.comboUp(combo)])
             XCTAssertNil(c.nextDeadline)
         }
     }
 
     func testTapAloneFiresOnRelease() {
-        let c = SwiftShoulderChord()
-        XCTAssertEqual(c.update(.right, down: true, now: 1), [])
-        XCTAssertEqual(c.nextDeadline, 1 + w)
-        XCTAssertEqual(c.update(.right, down: false, now: 1.05), [.alone(.right, down: true), .alone(.right, down: false)])
+        let c = detector()
+        XCTAssertTrue(c.feed(r, down: true, now: 1).taken)
+        XCTAssertEqual(c.nextDeadline ?? 0, 1 + w, accuracy: 1e-9)
+        XCTAssertEqual(c.feed(r, down: false, now: 1.05).events, [.alone(r, down: true), .alone(r, down: false)])
         XCTAssertNil(c.nextDeadline)
     }
 
     func testHoldAloneFiresAtTimeout() {
-        let c = SwiftShoulderChord()
-        _ = c.update(.left, down: true, now: 0)
+        let c = detector()
+        _ = c.feed(l, down: true, now: 0)
         XCTAssertEqual(c.tick(now: w * 0.5), [])
-        XCTAssertEqual(c.tick(now: w), [.alone(.left, down: true)])
+        XCTAssertEqual(c.tick(now: w), [.alone(l, down: true)])
         XCTAssertEqual(c.tick(now: w * 3), [])
-        XCTAssertEqual(c.update(.left, down: false, now: 1), [.alone(.left, down: false)])
+        XCTAssertEqual(c.feed(l, down: false, now: 1).events, [.alone(l, down: false)])
     }
 
-    func testOtherShoulderAfterTimeoutIsNotAChord() {
-        let c = SwiftShoulderChord()
-        _ = c.update(.left, down: true, now: 0)
-        // The late R first lets the expired L fire, then waits on its own.
-        XCTAssertEqual(c.update(.right, down: true, now: w + 0.05), [.alone(.left, down: true)])
-        XCTAssertEqual(c.update(.right, down: false, now: w + 0.08), [.alone(.right, down: true), .alone(.right, down: false)])
-    }
-
-    func testRepeatAndResetFireNothing() {
-        let c = SwiftShoulderChord()
-        _ = c.update(.left, down: true, now: 0)
-        XCTAssertEqual(c.update(.left, down: true, now: 0.01), [])
+    func testOtherInputsPassAndRepeatOrResetFireNothing() {
+        let c = detector()
+        let other = c.feed("gc0:face.south", down: true, now: 0)
+        XCTAssertFalse(other.taken)
+        XCTAssertFalse(c.isMember("gc1:leftShoulder"), "only pad 1 has the chord by default")
+        _ = c.feed(l, down: true, now: 0)
+        XCTAssertEqual(c.feed(l, down: true, now: 0.01).events, [])
         c.reset()
         XCTAssertNil(c.nextDeadline)
-        XCTAssertEqual(c.update(.left, down: false, now: 0.02), [])
+        XCTAssertEqual(c.feed(l, down: false, now: 0.02).events, [])
+    }
+}
+
+/// The paused seek bar's "A = resume" is a tap: holding A / B for a frame advance never resumes.
+final class ConfirmTapTests: XCTestCase {
+    func testTapResumesButHoldingForAStepDoesNot() {
+        var t = ConfirmTap()
+        t.cancel(); t.press("gc0:face.south")
+        XCTAssertTrue(t.release("gc0:face.south"))
+        t.cancel(); t.press("gc0:face.south")
+        t.cancel()   // D-pad → steps a frame while it is held
+        XCTAssertFalse(t.release("gc0:face.south"))
+        XCTAssertFalse(t.release("gc0:face.south"), "pressed before pausing: its release does nothing")
+        t.press("gc1:face.south"); t.clear()
+        XCTAssertFalse(t.release("gc1:face.south"))
+    }
+}
+
+/// bindings.json from 0.4.0 (layout 4, no "hk.menu") migrates to layout 5 on load.
+final class MenuMigrationTests: XCTestCase {
+    func testLayout4FileGetsTheQuickMenuBindings() {
+        let defaults = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
+        let old = defaults.bindings.filter { $0.action != "hk.menu" }
+        let plan = InputCatalog.menuMigration(InputCatalog.Config(bindings: old, turboPeriod: defaults.turboPeriod,
+                                                                  turboDuty: defaults.turboDuty, socd: defaults.socd,
+                                                                  analogThreshold: defaults.analogThreshold))
+        XCTAssertTrue(plan.unbind.isEmpty)
+        XCTAssertEqual(Set(plan.bind.map { "\($0.0)=\($0.1)" }),
+                       ["gc0:leftShoulder+gc0:rightShoulder=hk.menu", "kb:53=hk.menu"])
+        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 5)
+        XCTAssertTrue(InputCatalog.isCombo("gc0:leftShoulder+gc0:rightShoulder"))
+        XCTAssertFalse(InputCatalog.isCombo("kb:53"))
+        // Esc already bound to something else: kept, only the pad chord is added.
+        let esc = InputCatalog.menuMigration(InputCatalog.Config(bindings: old + [(input: "kb:53", action: "hk.pause")],
+                                                                 turboPeriod: 4, turboDuty: 2, socd: "neutral", analogThreshold: 0.5))
+        XCTAssertEqual(esc.bind.map(\.0), ["gc0:leftShoulder+gc0:rightShoulder"])
+    }
+}
+
+/// The SwiftUI Quick Menu keeps its own page structure (QMPage), checked here against the shared
+/// core's menu tree (frontend/src/menu.cpp, drawn by the Linux / Windows frontends).
+final class CoreMenuTreeTests: XCTestCase {
+    private var menu: OpaquePointer!
+
+    override func setUp() {
+        let f = RNF_MENU_FEATURE_EXPORT.rawValue | RNF_MENU_FEATURE_STREAM.rawValue | RNF_MENU_FEATURE_CRT.rawValue
+            | RNF_MENU_FEATURE_UPDATES.rawValue
+        menu = rnf_menu_new(UInt32(f))
+    }
+
+    override func tearDown() { rnf_menu_free(menu) }
+
+    private func page(_ i: Int) -> rnf_menu_page_info {
+        var info = rnf_menu_page_info()
+        XCTAssertNotEqual(rnf_menu_page_get(menu, i, &info), 0)
+        return info
+    }
+
+    private func items(_ i: Int) -> [rnf_menu_item_info] {
+        (0..<page(i).count).compactMap { j in
+            var it = rnf_menu_item_info()
+            return rnf_menu_item_get(menu, i, j, &it) != 0 ? it : nil
+        }
+    }
+
+    /// Core pages macOS deliberately has no page for (see QMPage.coreID).
+    private let notOnMac: Set<String> = ["system.detail", "library.projects"]
+
+    func testTopLevelTilesMatch() {
+        let quick = Int(rnf_menu_page_find(menu, "quick"))
+        XCTAssertGreaterThanOrEqual(quick, 0)
+        XCTAssertEqual(items(quick).map { String(cString: $0.id) }, QMPage.topTileIDs)
+        XCTAssertEqual(QMPage.top.capacity, QMPage.topTileIDs.count)
+    }
+
+    func testEveryCorePageHasASwiftPageAndBack() {
+        let swiftIDs = Set(QMPage.allCases.compactMap(\.coreID))
+        for i in 0..<rnf_menu_page_count(menu) {
+            let id = String(cString: page(i).id)
+            if notOnMac.contains(id) { continue }
+            XCTAssertTrue(swiftIDs.contains(id), "core page \(id) has no QMPage")
+        }
+        for p in QMPage.allCases {
+            guard let id = p.coreID else { continue }
+            XCTAssertGreaterThanOrEqual(rnf_menu_page_find(menu, id), 0, "\(p): core page \(id) missing")
+        }
+    }
+
+    func testParentsAndSettingsPagesMatch() {
+        // Core parents: the page whose PAGE item opens it; the settings group's pages are all
+        // reached from the Quick Menu (its Settings tile opens the first, L / R the others).
+        var parent: [String: String] = [:]
+        var settings: [String] = []
+        for i in 0..<rnf_menu_page_count(menu) {
+            let pid = String(cString: page(i).id)
+            if String(cString: page(i).group) == "settings" { settings.append(pid) }
+            for it in items(i) where it.kind == RNF_MENU_ITEM_PAGE { parent[String(cString: it.target)] = pid }
+        }
+        for s in settings { parent[s] = "quick" }
+        XCTAssertEqual(settings, QMPage.settingsTabs.compactMap(\.coreID), "settings pages and their L / R order")
+        for p in QMPage.allCases {
+            guard let id = p.coreID, let up = p.parent, let upID = up.coreID else { continue }
+            XCTAssertEqual(parent[id], upID, "\(p) is under \(up) on macOS")
+        }
+    }
+
+    func testLayoutsMatchPageKinds() {
+        for p in QMPage.allCases {
+            guard let id = p.coreID else { continue }
+            let i = Int(rnf_menu_page_find(menu, id))
+            guard i >= 0 else { continue }
+            let kind = page(i).kind
+            let ok: Bool
+            switch (kind, p.layout) {
+            case (RNF_MENU_PAGE_TILES, .tiles), (RNF_MENU_PAGE_TILES, .actions): ok = true
+            case (RNF_MENU_PAGE_SETTINGS, .rows): ok = true
+            case (RNF_MENU_PAGE_CARDS, .cards): ok = true
+            case (RNF_MENU_PAGE_LIST, .cards), (RNF_MENU_PAGE_LIST, .rows): ok = true   // takes as thumbnails
+            case (RNF_MENU_PAGE_CUSTOM, .custom): ok = true
+            default: ok = false
+            }
+            XCTAssertTrue(ok, "\(p): \(p.layout) for core kind \(kind.rawValue)")
+            if kind == RNF_MENU_PAGE_TILES || kind == RNF_MENU_PAGE_SETTINGS {
+                XCTAssertLessThanOrEqual(page(i).count, p.capacity, "\(p): the core's items fit")
+            }
+        }
+        XCTAssertEqual(QMPage.practice.capacity, Int(RNF_MENU_MAX_CARDS))
     }
 }
 

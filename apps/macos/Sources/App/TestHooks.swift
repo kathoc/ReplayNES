@@ -20,7 +20,8 @@
 //                                                seek:<frame>, bookmark, undoTake,
 //                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
 //                                                screen:<n> (moves the main window to NSScreen.screens[n]),
-//                                                dumpLayers (logs the app's windows and the main window's layer tree).
+//                                                dumpLayers (logs the app's windows and the main window's layer tree),
+//                                                dumpMenus (logs the menu bar: "menu: <Menu> | <item> | <⌘ key>").
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
@@ -139,6 +140,7 @@ extension AppModel {
                 case "windowWidth":
                     if let w = self.mainWindow { var f = w.frame; f.size.width = CGFloat(n); w.setFrame(f, display: true) }
                 case "dumpLayers": Self.dumpWindowLayers()
+                case "dumpMenus": Self.dumpMenus()
                 case "screen":   // move the main window to NSScreen.screens[n] (0: the menu-bar screen)
                     let screens = NSScreen.screens
                     if let w = self.mainWindow, !screens.isEmpty {
@@ -149,6 +151,20 @@ extension AppModel {
                 }
             }
         }
+    }
+
+    /// Logs every item of the menu bar with its key equivalent (scripts/ui-check-macos.sh checks ⌘W).
+    static func dumpMenus() {
+        var out = "ReplayNES menus:\n"
+        for top in NSApp.mainMenu?.items ?? [] {
+            for i in top.submenu?.items ?? [] where !i.isSeparatorItem {
+                let mods = i.keyEquivalentModifierMask
+                let key = i.keyEquivalent.isEmpty ? "" : (mods.contains(.shift) ? "⇧" : "") + (mods.contains(.option) ? "⌥" : "")
+                    + (mods.contains(.command) ? "⌘" : "") + i.keyEquivalent
+                out += "menu: \(top.title) | \(i.title) | \(key)\n"
+            }
+        }
+        NSLog("%@", out)
     }
 
     /// Logs every window of the app and the main window's layer tree (direct-to-display checks:

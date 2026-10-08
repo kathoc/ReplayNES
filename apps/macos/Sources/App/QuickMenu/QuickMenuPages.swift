@@ -82,7 +82,7 @@ enum QuickMenuPages {
 
     private static func top(_ m: AppModel, _ menu: QuickMenuController) -> [QMItem] {
         let has = m.status.hasSession
-        return [
+        let items = [
             QMItem(id: "resume", icon: "play.fill", title: String(localized: "Resume"),
                    detail: String(localized: "Close the menu and keep playing"), enabled: has,
                    confirm: { menu.close(resume: true) }),
@@ -97,6 +97,8 @@ enum QuickMenuPages {
             QMItem(id: "game", icon: "gamecontroller.fill", title: String(localized: "Game"),
                    detail: String(localized: "Choose a game, save, reset"), page: .game),
         ]
+        assert(items.map(\.id) == QMPage.topTileIDs, "the shared core's Quick Menu tiles")
+        return items
     }
 
     // MARK: Retry

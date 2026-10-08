@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -31,5 +32,30 @@ std::string padGlyph(rnf_controller_family family, const char* element);
 /// The Quick Menu chord on the Menu pill: "L+R" (Steam Deck, Xbox, Nintendo, generic), "L1+R1"
 /// (PlayStation), "Esc" with no controller connected.
 std::string menuChordGlyph(rnf_controller_family family, bool controllerConnected);
+
+/// "A = resume" on the paused seek bar, as a tap: the confirm button pressed while paused still
+/// reaches the game (held for a frame advance, e.g. hold B and step with the D-pad), and resumes on
+/// its release only when nothing else was pressed or stepped while it was held.
+class ConfirmTap {
+ public:
+  /// Confirm pressed while paused (call after cancel() for this press).
+  void press(const std::string& id) { held_[id] = true; }
+  /// Another input pressed / a frame step: the confirm buttons held now are no longer taps.
+  void cancel() {
+    for (auto& h : held_) h.second = false;
+  }
+  /// Released: true = it was a tap (resume).
+  bool release(const std::string& id) {
+    auto it = held_.find(id);
+    if (it == held_.end()) return false;
+    bool tap = it->second;
+    held_.erase(it);
+    return tap;
+  }
+  void clear() { held_.clear(); }
+
+ private:
+  std::map<std::string, bool> held_;
+};
 
 }  // namespace rnl
