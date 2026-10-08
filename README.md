@@ -43,30 +43,27 @@ You can export it as-is to an MP4 with audio.
 
 ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and other x86_64 Linux systems as a Flatpak (`io.github.replaynes.ReplayNES`), with the same projects and features: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, MP4 export, English / Japanese. Full guide: [docs/STEAM_DECK.md](docs/STEAM_DECK.md).
 
-1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library (Update → Restart), Settings → Audio & Controls → Updates has "Check now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
-2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings → Audio & Controls → System → **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
-3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the ROM library: "Play" starts a project in `~/Documents/ReplayNES/Projects`, "Continue" reopens one.
-4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L2 hold = rewind, R2 hold = fast-forward, R1 = pause, L1 = slow 1/2**.
-5. **The menu: pause with R1** (or press R3 / the right stick). The paused screen is the menu: the game, the timeline and a row of large buttons - Resume, Back to Library, Settings, Practice, Takes, Bookmarks, Export…, Reset…, Controls Guide - all controller driven, with the focused item framed in orange and the buttons of your controller shown at the bottom.
+1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library; Settings › System › Updates has Update → Restart and "Check Now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
+2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings › System › **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
+3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the latest project, then large game cards - A plays (a new project in `~/Documents/ReplayNES/Projects`), X lists a game's projects, Y searches.
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward**.
+5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (record from here, previous try, takes, bookmarks, watch), Practice (the 8 A/B sections as cards), Share (MP4 export), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
 
-   | Button | In the menu |
-   |---|---|
-   | D-pad / left stick | move the focus |
-   | A | choose |
-   | B | back (on the menu: resume play) |
-   | R1 / Menu (≡) | resume play (on a page: back to the menu) |
-   | View (⧉) | Controls Guide on / off |
-   | L1 / R1 | Settings tabs, previous / next page |
-   | L2 / R2 hold | rewind / fast-forward |
-   | Timeline (focus it with ↑) | ←/→ move the playhead (hold = faster), L1 / R1 previous / next bookmark (or 5 s), X / Y set A / B, A play from here |
-   | Library | A play, X continue the latest project, Y search (on-screen keyboard), Menu (≡) Settings |
-   | Bookmarks / Practice pages | Y renames the focused bookmark / section (also "Rename…" on its row) |
+   | Button | In play | In menus |
+   |---|---|---|
+   | L+R together | Quick Menu (pauses) | close it (resume) |
+   | R alone | pause / resume: only the seek bar shows (A / B resume, ←/→ step, L2 / R2 scrub) | next page |
+   | L alone | slow 1/2 on / off | previous page |
+   | L2 / R2 hold | rewind / fast-forward | rewind / fast-forward |
+   | D-pad / left stick | NES D-pad | move the focus |
+   | A / B | NES B / A | confirm / back (on the top level: resume) |
+   | Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
 
-   Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
+   L or R alone acts on release (or after 0.1 s held), so it is at most 0.1 s later than a plain button - the price of L+R. Menu (≡) stays START while playing (games need it). Touch and the trackpad work on every screen too.
 
-   **Typing (search, names)**: a text field brings an on-screen keyboard. In Gaming Mode ReplayNES asks Steam for its keyboard (it can type Japanese); if it does not appear, press A for ReplayNES's built-in controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Settings → Audio & Controls → "On-screen keyboard": Auto, Built-in or Steam.
+   **Typing (search, names)**: a text field brings an on-screen keyboard. In Gaming Mode ReplayNES asks Steam for its keyboard (it can type Japanese); if it does not appear, press A for ReplayNES's built-in controller keyboard (A type, B delete, X space, Y Shift, L1 / R1 move the cursor, View (⧉) symbols, Menu (≡) done). Settings › Controls › On-screen Keyboard: Automatic, Built-in or Steam.
 
-Japanese text uses the system's CJK font (SteamOS has one). The UI is hidden while you play, so it does not add latency.
+Japanese text uses the system's CJK font (SteamOS has one). While you play only the Menu pill is drawn (in the game's own render pass), so the UI does not add latency.
 
 ## Windows (preview)
 
@@ -74,10 +71,10 @@ ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Ste
 
 1. **Install**: unzip `ReplayNES-<version>-windows-x64.zip` (`-arm64` for Windows on Arm) into a folder you can write to (e.g. under your user folder, not `Program Files`) and run `ReplayNES.exe` (no installer; `WinSparkle.dll` next to it is the updater). Not code-signed yet: SmartScreen may ask once ("More info" → "Run anyway").
 2. **ROMs**: put `.nes` files into `Documents\ReplayNES\ROM` ("Open Folder" in the library opens it in Explorer). "Play" starts a project in `Documents\ReplayNES\Projects`. The temporary session lives in `%LOCALAPPDATA%\ReplayNES\Session`, settings in `%APPDATA%\ReplayNES`. Reset Project / Save As move replaced projects to the Recycle Bin.
-3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L2 / R2 hold = rewind / fast-forward, R1 or R3 = pause + menu, L1 = slow); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 menu, F11 full screen. Everything is reassignable in Settings.
-4. **Display**: F11 / Settings → Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen. Settings → Display → CRT Display turns on the physical CRT model (Direct3D 11 compute; needs a Direct3D 11.0 GPU).
-5. **MP4 export**: menu → Export… (H.264 + AAC through Windows' Media Foundation; a hardware encoder when the GPU has one), saved in `Documents\ReplayNES\Exports`.
-6. **Updates**: ReplayNES checks GitHub for a new version once a day if you agree when it asks (on the second launch), or right away with Settings → Audio & Controls → "Check for Updates…". The update is downloaded, its signature checked, and ReplayNES restarts into the new version (the session is saved first). "Automatically check for updates" turns the daily check off.
+3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L+R together (LB+RB, L1+R1) = Quick Menu, R = pause, L = slow, L2 / R2 hold = rewind / fast-forward); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 Quick Menu, F11 full screen. Without a controller, the "☰ Menu Esc" pill (top right) is a button too. Everything is reassignable in Settings.
+4. **Display**: F11 / Settings › System › More › Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen. Settings › Display › CRT turns on the physical CRT model (Direct3D 11 compute; needs a Direct3D 11.0 GPU).
+5. **MP4 export**: Quick Menu › Share › Export MP4 (H.264 + AAC through Windows' Media Foundation; a hardware encoder when the GPU has one), saved in `Documents\ReplayNES\Exports`.
+6. **Updates**: ReplayNES checks GitHub for a new version once a day if you agree when it asks (on the second launch), or right away with Settings › System › Updates › Check Now. The update is downloaded, its signature checked, and ReplayNES restarts into the new version (the session is saved first). "Check Automatically" turns the daily check off.
 
 ## Usage
 
@@ -144,6 +141,7 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | START / SELECT | Menu / Options | + / − | ≡ / View | OPTIONS / CREATE | Return / Right Shift (or `\`) |
 | Rewind (while held) | **Left Trigger** | ZL | LT | L2 | Delete |
 | Fast-forward (while held) | **Right Trigger** | ZR | RT | R2 | Tab |
+| Quick Menu (Linux / Windows) | **Left + Right Shoulder together** | L + R | LB + RB | L1 + R1 | Esc |
 | Pause / Resume | **Right Shoulder** | R | RB | R1 | Space |
 | Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
 | Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | `,` / `.` |

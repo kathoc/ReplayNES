@@ -7,7 +7,7 @@ namespace rn {
 namespace {
 const char* kBtn[8] = {"a", "b", "select", "start", "up", "down", "left", "right"};
 const char* kHk[HK_COUNT] = {"pause", "frame_advance", "rewind", "slow", "bookmark", "soft_reset",
-                             "power_cycle", "toggle_mode", "save", "undo_take", "fast_forward", "step_back"};
+                             "power_cycle", "toggle_mode", "save", "undo_take", "fast_forward", "step_back", "menu"};
 enum : uint8_t { B_UP = 0x10, B_DOWN = 0x20, B_LEFT = 0x40, B_RIGHT = 0x80 };
 }  // namespace
 

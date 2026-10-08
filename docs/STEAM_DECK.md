@@ -55,14 +55,13 @@ replaced by Save As).
 ## Updates
 
 - **In the app:** while ReplayNES runs, the system's Flatpak portal checks the repository about every
-  30 minutes; a new version shows a notice on the library ("A new version of ReplayNES is available.
-  Update / Later") and an **Update** button on the pause hub. Update downloads in the background
-  (progress on the notice), then **Restart** saves the session, quits and starts the new version
-  (through the portal; Steam keeps showing the game as running). Later hides the notice until a
-  newer version appears.
-- **Settings -> Audio & Controls -> Updates:** "Automatically check for updates" (on by default;
-  off = no update monitor) and **Check now** (checks right away and installs the update when there
-  is one; "ReplayNES is up to date." otherwise). The app itself has no network access: the portal
+  30 minutes; a new version shows a notice in the library's top bar (and a short notice while
+  playing). **Settings › System › Updates** has the status, **Update** (downloads in the background),
+  then **Restart** (saves the session, quits and starts the new version through the portal; Steam
+  keeps showing the game as running).
+- **Settings › System › Updates:** "Check Automatically" (on by default; off = no update monitor) and
+  **Check Now** (checks right away and installs the update when there is one; "ReplayNES is up to
+  date." otherwise). The app itself has no network access: the portal
   (`org.freedesktop.portal.Flatpak`, outside the sandbox) does the checking and installing.
 - **Permission (once):** the first self-update asks "Update ReplayNES?" - in Desktop Mode KDE shows
   that dialog. Gaming Mode has no dialog for it (the gamescope portal set has no Access portal): the
@@ -96,7 +95,7 @@ wide capsules, hero background, logo, icon):
 
 1. Switch to **Desktop Mode** and **close Steam** (Steam icon in the system tray -> Exit, or Steam
    menu -> Exit). Steam keeps its shortcut list in memory and would overwrite the change otherwise.
-2. Start ReplayNES from the application menu and choose **Settings -> Audio & Controls -> System -> Add to Steam**, or
+2. Start ReplayNES from the application menu and choose **Settings › System › Add to Steam**, or
    run in Konsole:
    ```
    flatpak run io.github.replaynes.ReplayNES --add-to-steam --dry-run   # show what would change
@@ -129,50 +128,51 @@ The artwork is generated from the app icon (`apps/linux/steam/artwork/`, see its
 
 ## Using ReplayNES
 
-**Start screen = Library.** The ROMs in `~/Documents/ReplayNES/ROM` are listed (search field at the
-top; copy files in Desktop Mode with Dolphin, then "Reload" - the list also refreshes by itself
-while it is on screen). Pick a ROM: **Play** creates the project
-`~/Documents/ReplayNES/Projects/<ROM name> <date time>.nesrec` and starts recording at once
-(autosaved); **Continue** under "Projects for This ROM" reopens one (matched by the ROM's SHA-256, so
-renaming the ROM file is fine); **Try Without a Project** plays in a temporary session you can save
-later. "Open Project…" (header) browses `~/Documents/ReplayNES`.
+The menus follow `docs/design/UI_REDESIGN.md`: a few large tiles, short labels, one line describing
+the focused item at the bottom left and the buttons to press at the bottom right (the glyphs of the
+controller in use: Steam Deck / Xbox A B X Y, PlayStation ✕ ○ □ △, Nintendo by position, so the
+confirm button is the bottom one; key caps without a controller). No screen scrolls; the focused item
+has a red frame.
 
-**Playing.** Nothing is drawn over the game while it runs (status badges appear only when paused,
-rewinding, fast-forwarding, slow, practicing or reducing flashes). A tap / click shows the **dock**
-(transport + filmstrip timeline) for a moment.
+**The Menu pill.** "☰ Menu  L+R" (日本語: "☰ メニュー  L+R") is always in the top-right corner. It
+shows the chord of the controller in use (PlayStation: L1+R1, keyboard only: Esc) and is a button:
+a click or tap opens the menu (the way in without a controller). It sits beside the picture when
+there is room (integer scale); over the picture (FILL) it fades to 30 % after 3 s of play and comes
+back on a tap, a pause or the menu. On the very first start it pulses twice - there is no tutorial.
 
-**The menu (hub): pause with R1**, or press R3 (right stick) / Esc / F1. Every pause (also the
-end of a rewind / fast-forward, an opened project) shows it; the game waits and nothing reaches it.
-The game stays visible above the timeline, the transport (Record toggle, go to start, rewind,
-step back, play, step forward, fast-forward, Slow, Integer / FILL, "···") and a row of large
-buttons, controller first:
+**Start screen = Library.** A **Continue** card on top (the latest project: its last picture, the
+game and when it was played; A resumes it), then the games as large cards, four per row and eight
+per page (L / R turn the pages; each card shows the last picture of that game, or a tile made from
+its name). **A** plays the focused game (a new project `~/Documents/ReplayNES/Projects/<ROM name>
+<date time>.nesrec`, recording at once, autosaved), **X** lists its projects (New Game, Try Without
+Saving - a temporary session you can save later -, then every project, matched by the ROM's SHA-256),
+**Y** searches (on-screen keyboard). The menu (L+R / the pill) opens Settings. ROMs go into
+`~/Documents/ReplayNES/ROM` (copy them in Desktop Mode with Dolphin; the library refreshes by itself).
+An empty library is one card with the folder, Open Folder and Reload.
 
-| Button | What it does |
+**Playing.** Only the Menu pill is on screen (status badges appear while rewinding, fast-forwarding,
+in slow motion, at the end of the take or while flashes are reduced).
+
+**Pause (R).** Only the seek bar: the filmstrip timeline with the time, REC / PLAY and the A/B lane.
+A or B resumes (R again too), L2 / R2 hold rewind / fast-forward, the D-pad ←/→ steps frames. Touch /
+mouse: drag the strip to move, drag the thin band above it to set an A/B range, drag a range's end to
+adjust it, tap a range to practice it.
+
+**Quick Menu (L+R).** Press L and R together (within 0.1 s, either order); the game pauses and stays
+visible, dimmed, behind six tiles in one row. L+R again (or B on the tiles) resumes; B goes back one
+level. L / R switch pages (Settings), L2 / R2 still rewind / fast-forward the game behind.
+
+| Tile | What is behind it |
 |---|---|
-| Resume | back to the game (also B, R1 or Menu (≡) anywhere on the hub) |
-| Back to Library | closes the game (a temporary session asks "Do you want to save?" first) and shows the start screen |
-| Settings | Display, Audio & Controls, Controller (a diagram of the connected pad: select a button, press A and pick its action), Game Input & Hotkeys; L1 / R1 switch these tabs |
-| Practice | the 8 A/B sections (set A / B, practice, rename - Y on a row or "Rename…" -, clear) and which section the timeline's X / Y set |
-| Takes | "Re-record from Here", "Back to Previous Take", every take with its branch point |
-| Bookmarks | add, rewind to, rename (Y on a row, or "Rename…"; an on-screen keyboard opens), delete |
-| Export… | MP4 export (picture / processing in two columns; codec and the output folder under "Advanced") |
-| Reset… | Soft Reset, Power Cycle (recorded like the console's buttons) or Reset Project… |
-| Controls Guide | the tables below (also View (⧉) from anywhere) |
+| Resume | back to the game (focused first) |
+| Retry | Record from Here (re-record, the old continuation is kept as a take), Previous Try, Takes (every take: A switches), Bookmarks (Add Bookmark, A jumps, Y renames, X deletes), Watch (playback mode on / off) |
+| Practice | the 8 A/B sections as cards (picture of A, name, length): A on an empty card sets A at the current position, then B, then practices; Y renames, X clears (or stops practicing) |
+| Share | Export MP4 (the export dialog) |
+| Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad: A on a button picks its action, X next pad, Y reset -, Keyboard › - A sets a key, X clears -, Turbo Speed, D-pad While Paused, On-screen Keyboard, More › with turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Updates ›, Add to Steam, About ›, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
+| Game | Choose Game (back to the library; a temporary session asks "Do you want to save?" first), Save, Save As, Open Project, Reset (Soft Reset, Power Cycle - recorded like the console's buttons - or Reset Project…) |
 
-Pages return to the hub with B (or Menu (≡)); on Practice / Takes / Bookmarks / Guide, L1 / R1 go to
-the previous / next page. **The timeline**: move the focus up to it - D-pad ←/→ moves the playhead
-(hold = faster; at the end of the recording it records one more frame, like the old paused frame
-stepping), L1 / R1 jump to the previous / next bookmark (or 5 s), X / Y set A / B of the selected
-section, A plays from there. Touch / mouse as before: drag the strip to move, drag the thin band
-above it to set an A/B range, drag a range's end to adjust it, tap a range to practice it. Up from
-the timeline: "Save" and "Project ▾" (Save As…, Export…, Open Project…, Reset Project…, Close
-Project, Quit). The focused item has a thick orange frame, and the bar at the bottom shows the
-buttons of the controller in use (Steam Deck / Xbox: A B X Y, PlayStation: ✕ ○ □ △, Nintendo: by
-position, so the confirm button is the bottom one, "B").
-
-Header: "Save" (a temporary session asks where, in a file chooser rooted at
-`~/Documents/ReplayNES/Projects`; an existing project of the same name is moved to the Trash first)
-and "Project ▾" (Save As…, Export…, Open Project…, Reset Project…, Close Project, Quit).
+Save in a temporary session asks where, in a file chooser rooted at `~/Documents/ReplayNES/Projects`
+(an existing project of the same name is moved to the Trash first).
 
 **Reset Project…** starts the project over from power-on (all takes, bookmarks and the take history
 are deleted; "Keep A/B repeat sections" is on by default). A saved project is first copied and the
@@ -190,8 +190,8 @@ from an earlier run is offered for saving first. A second running copy of Replay
 nor keeps sessions.
 
 **Typing: on-screen keyboards.** A text field (Search ROMs, a bookmark / section name, Save As, the
-export file name) brings an on-screen keyboard; Settings → Audio & Controls → "On-screen keyboard"
-chooses which:
+export file name) brings an on-screen keyboard; Settings › Controls › On-screen Keyboard chooses
+which:
 
 - **Auto** (default): Steam's keyboard where it can be asked for (Steam on a Steam Deck: SDL opens
   `steam://open/keyboard`, which goes through the OpenURI portal to Steam), otherwise the built-in
@@ -213,44 +213,48 @@ overlay stayed hidden; STEAM+X did not show it either), while freshly started Re
 Steam's keyboard every time. ReplayNES runs as an X11 client of gamescope's Xwayland there
 (`DISPLAY=:1`, no `WAYLAND_DISPLAY`), so the video driver is not the cause; the Flatpak sandbox drops
 Steam's overlay (`LD_PRELOAD` of `gameoverlayrenderer.so`), which Steam's keyboard does not need
-here. **Renaming**: Bookmarks and Practice pages - Y on the focused row (the prompt bar shows "Y
-Rename") or its "Rename…" button. Takes have numbers only; a project's name is its file name (Save As).
+here. **Renaming**: Retry › Bookmarks and Practice - Y on the focused row / card (the hint bar shows
+"Y Rename"). Takes have numbers only; a project's name is its file name (Save As).
 
-**Language:** Japanese when the system's first language is Japanese, English otherwise
-(`REPLAYNES_LANG=ja|en` overrides it). Japanese text uses the system's CJK font through fontconfig
+**Language:** Settings › System › Language: Automatic (Japanese when the system's first language is
+Japanese, English otherwise), 日本語 or English; it switches at once (`--lang` / `REPLAYNES_LANG=ja|en`
+override it). Japanese text uses the system's CJK font through fontconfig
 (SteamOS: Noto Sans CJK); without one the UI stays in English.
 
 ## Controls
 
-| Input | In play | In the menu (hub, pages, library, dialogs) |
+| Input | In play | In menus (Quick Menu, Settings, library) |
 |---|---|---|
-| D-pad / left stick | NES D-pad | move the focus |
-| A (south) | NES B (by position, as on macOS: Nintendo's A/B) | choose |
-| B (east) | NES A | back (hub: resume play; dialogs: cancel) |
-| Y (north) / X (west) | turbo A / turbo B | library: Y search (on-screen keyboard), X continue the latest project; Bookmarks / Practice: Y rename the focused row; timeline: Y / X set B / A |
-| Menu (≡) | START | hub: resume; page: back to the hub; library: Settings |
-| View (⧉) | SELECT | Controls Guide on / off |
-| L2 hold | rewind | rewind (hub) |
-| R2 hold | fast-forward (recorded part only) | fast-forward (hub) |
-| L1 | slow motion 1/2 on/off | Settings tabs / previous page; timeline: previous bookmark (or -5 s); hub: slow on/off |
-| R1 | pause + menu (hub) | resume (hub); Settings tabs / next page; timeline: next bookmark (or +5 s) |
-| R3 (right stick click) | menu (hub) | back to the game (reserved: cannot be assigned) |
-| right stick | - | scroll the page |
+| **L+R together** (within 0.1 s, either order) | open the Quick Menu (pauses) | close it (resume play) |
+| R alone | pause / resume (the seek bar only) | next page (Settings pages, list pages, library pages) |
+| L alone | slow motion 1/2 on / off | previous page |
+| L2 / R2 hold | rewind / fast-forward (recorded part only) | rewind / fast-forward the game behind |
+| D-pad / left stick | NES D-pad (paused: ←/→ step frames) | move the focus |
+| A (south) | NES B (by position, as on macOS: Nintendo's A/B); paused: resume | confirm |
+| B (east) | NES A; paused: resume | back (on the top level: resume) |
+| Y (north) / X (west) | turbo A / turbo B | what the hint bar shows (rename / clear / search / projects …) |
+| Menu (≡) / View (⧉) | START / SELECT | - |
+| R3 / Steam (Guide) | Quick Menu (reserved) | close the menu |
 
-Menu (≡) stays the NES START button while playing (games need it); the menu opens with R1 or R3.
-Before this version the triggers were the other way round (R2 rewind, L2 fast-forward): saved
-assignments that still have exactly those defaults are switched automatically; changed ones are kept.
+L or R alone acts when it is released (or after 0.1 s held), so a single press is at most 0.1 s later
+than before - the price of L+R. The chord is the action "Quick Menu" bound to the two-button combo
+`gc0:leftShoulder+gc0:rightShoulder` (detected by the shared core, `rnf_chord`, the same on every
+platform); it stays remappable. Saved assignments from before get L+R and Esc added once (layout 5);
+R keeps pausing, it just no longer opens a menu.
 
 Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
-Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, Esc/F1 menu (hub) / back to the game, F11 full
-screen, F3 statistics overlay. Every assignment can be changed in Settings (saved in
-`~/.var/app/io.github.replaynes.ReplayNES/config/ReplayNES/bindings.json`, the macOS format).
+Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, **Esc (or F1) the Quick
+Menu**, F11 full screen, F3 statistics overlay. In menus: arrows move, Enter confirms, Backspace goes
+back, Page Up / Page Down switch pages, Delete / F2 are X / Y. Every assignment can be changed in
+Settings (saved in `~/.var/app/io.github.replaynes.ReplayNES/config/ReplayNES/bindings.json`, the
+macOS format).
 
 ## UI and latency
 
 The UI is Dear ImGui drawn in the same Vulkan render pass as the game picture (one present per
 frame; gamescope composites the window as a whole anyway). While playing it costs ~0.05 ms per frame
-(an empty ImGui frame; badges and the practice pill are a few quads), and ImGui does not read the
+(the Menu pill, badges and the practice pill are a few quads on the foreground list; menus are built
+only while they are open), and ImGui does not read the
 gamepads at all (its polling would contend with the controller thread): the SDL gamepad events are
 passed to it, and it navigates only while the menu, the library or a dialog is up (the game is
 paused then). Work that is not

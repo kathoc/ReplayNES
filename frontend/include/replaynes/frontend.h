@@ -287,7 +287,7 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 4
+#define RNF_CONTROLLER_LAYOUT_VERSION 5
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
@@ -331,6 +331,16 @@ void rnf_input_controller_reset_plan(const rnf_binding* bindings, size_t count, 
                                      rnf_list** bind);
 /* Applies a plan to an engine input table. Returns 1 if it did anything. */
 int rnf_input_apply_plan(rn_input* in, const rnf_list* unbind, const rnf_list* bind);
+/* Layout 4 -> 5: the Quick Menu action "hk.menu" (docs/design/UI_REDESIGN.md). Binds pad 1's L+R combo
+ * ("gc0:leftShoulder+gc0:rightShoulder") unless pad 1 already has an hk.menu binding, and Esc (kb:53 macOS /
+ * kb:41 SDL) unless Esc is bound to something or hk.menu is bound anywhere. R (hk.pause) and L (hk.slow) stay;
+ * the menu no longer opens on a pause. */
+void rnf_input_menu_migration(const rnf_binding* bindings, size_t count, rnf_keyboard_scheme scheme, rnf_list** unbind,
+                              rnf_list** bind);
+/* Two-input combo ids "<a>+<b>" (both held: e.g. the Quick Menu's L+R). rnf_input_combo_id: NULL for an empty
+ * part. rnf_input_combo_split: 1 and the parts (free with rnf_string_free) when id is a combo. */
+char* rnf_input_combo_id(const char* a, const char* b);
+int rnf_input_combo_split(const char* id, char** a, char** b);
 /* Frame-step direction while paused: controller ids bound to a D-pad left/right game action
  * (a = input, value = -1 back / +1 forward). Sticks are excluded. */
 rnf_list* rnf_input_paused_step_directions(const rnf_binding* bindings, size_t count);
@@ -423,6 +433,161 @@ typedef enum rnf_group_summary { RNF_GROUP_NONE = 0, RNF_GROUP_MOVEMENT = 1, RNF
  * directions map 1:1 to one player's directions; NONE when nothing is bound. */
 rnf_group_summary rnf_input_group_summary(const rnf_binding* bindings, size_t count, const char* group, int slot,
                                           char** movement_text);
+
+/* ------------------------------------------------------------------ chord detector (L+R)
+ * Two-button combos bound to an action (the Quick Menu's "gc0:leftShoulder+gc0:rightShoulder" ->
+ * "hk.menu"). The frontend feeds the presses / releases of the combo members here instead of
+ * passing them on; the detector decides:
+ *   - both members pressed within the window (either order): one RNF_CHORD_COMBO_DOWN (the frontend
+ *     presses the combo id: menu toggle), RNF_CHORD_COMBO_UP once both are released. Neither member
+ *     fires alone. Presses while the chord is held (re-pressing one of them) do nothing.
+ *   - a member alone: RNF_CHORD_ALONE_DOWN when it is released before the window ended (a tap: DOWN and
+ *     UP together) or when the window ended while it is held (rnf_chord_tick); RNF_CHORD_ALONE_UP on
+ *     its release. The frontend presses / releases the member's own id then (pause, slow, ...).
+ *     Single presses lose at most the window of responsiveness.
+ *   - repeated presses of a held id (key repeat) are ignored.
+ * Times are seconds on one monotonic clock (event timestamps). Not thread-safe. */
+#define RNF_CHORD_WINDOW 0.100
+typedef struct rnf_chord rnf_chord;
+typedef enum rnf_chord_kind {
+  RNF_CHORD_COMBO_DOWN = 0, /* both down: press the combo id (input = "<a>+<b>") */
+  RNF_CHORD_COMBO_UP = 1,   /* both released after COMBO_DOWN: release the combo id */
+  RNF_CHORD_ALONE_DOWN = 2, /* member alone: press its id (input = the member id) */
+  RNF_CHORD_ALONE_UP = 3    /* that member released */
+} rnf_chord_kind;
+typedef struct rnf_chord_event {
+  rnf_chord_kind kind;
+  const char* input; /* valid until the next call on the handle */
+  int member;        /* ALONE_*: 0 = the combo's first id (L), 1 = the second (R); COMBO_*: -1 */
+  double time;       /* when it happened (the release, or press + window for a held member) */
+} rnf_chord_event;
+rnf_chord* rnf_chord_new(double window); /* <= 0: RNF_CHORD_WINDOW */
+void rnf_chord_free(rnf_chord* c);
+/* Combos from a binding table: every binding of `action` (NULL: "hk.menu") whose input is a combo id.
+ * Replaces the previous combos and drops all state. Returns the number of combos. */
+size_t rnf_chord_configure(rnf_chord* c, const rnf_binding* bindings, size_t count, const char* action);
+/* Adds one combo; returns its index (-1: bad ids or a member already used). */
+int rnf_chord_add(rnf_chord* c, const char* a, const char* b);
+size_t rnf_chord_combo_count(const rnf_chord* c);
+int rnf_chord_is_member(const rnf_chord* c, const char* physical_id);
+/* A press (1) / release (0) of physical_id at time t. Returns 1 when the id is a combo member (the event
+ * is taken: its outcome comes from rnf_chord_poll), 0 otherwise (pass it on as usual). */
+int rnf_chord_feed(rnf_chord* c, const char* physical_id, int pressed, double t);
+/* Fires the members held alone for the whole window (call every frame / poll, with the current time). */
+void rnf_chord_tick(rnf_chord* c, double t);
+/* Earliest time a tick can fire something (0: nothing pending). */
+double rnf_chord_deadline(const rnf_chord* c);
+/* Next event (1) or none (0). */
+int rnf_chord_poll(rnf_chord* c, rnf_chord_event* out);
+/* Forgets everything held / pending without events (controller disconnected, focus lost). */
+void rnf_chord_reset(rnf_chord* c);
+
+/* ================================================================== quick menu model
+ * The menu tree of docs/design/UI_REDESIGN.md, shared by every frontend: the Quick Menu (six tiles in
+ * one row), the pages behind them, the four Settings pages and their detail pages, and the navigation
+ * state (back stack with each level's focus, breadcrumb, L / R page switching). No page scrolls: a page
+ * holds at most RNF_MENU_MAX_ITEMS items (the Practice page's A/B slots: RNF_MENU_MAX_CARDS cards, 4 x 2);
+ * user data (takes, bookmarks, key bindings, projects) are LIST pages whose rows the frontend counts
+ * (rnf_menu_set_count) and that show RNF_MENU_MAX_ITEMS rows per sheet (L / R or moving past the end
+ * switch sheets). Labels / descriptions are localization keys (rnf_menu_text); icons are Tabler Icons
+ * names (SF Symbols on macOS are the frontend's mapping). Values and enabled states are the frontend's.
+ * Not thread-safe. */
+#define RNF_MENU_MAX_ITEMS 6
+#define RNF_MENU_MAX_CARDS 8
+#define RNF_MENU_MAX_DEPTH 4 /* Quick Menu > Settings > Display > CRT details */
+typedef enum rnf_menu_feature {
+  RNF_MENU_FEATURE_EXPORT = 1u << 0,      /* Share > Export MP4 */
+  RNF_MENU_FEATURE_STREAM = 1u << 1,      /* Share > Stream output (Syphon / Spout) */
+  RNF_MENU_FEATURE_CRT = 1u << 2,         /* Display > CRT + CRT details */
+  RNF_MENU_FEATURE_STEAM = 1u << 3,       /* System > Add to Steam */
+  RNF_MENU_FEATURE_OSK = 1u << 4,         /* Controls > On-screen keyboard */
+  RNF_MENU_FEATURE_UPDATES = 1u << 5,     /* System > Updates */
+  RNF_MENU_FEATURE_SLOW_AUDIO = 1u << 6,  /* Sound > Sound in slow motion */
+  RNF_MENU_FEATURE_LOW_LATENCY = 1u << 7, /* Sound > Low latency */
+  RNF_MENU_FEATURE_QUIT = 1u << 8,        /* System > Quit */
+  RNF_MENU_FEATURE_FULLSCREEN = 1u << 9,  /* System > More > Full screen */
+  RNF_MENU_FEATURE_UI_SCALE = 1u << 10    /* System > More > UI size */
+} rnf_menu_feature;
+typedef enum rnf_menu_page_kind {
+  RNF_MENU_PAGE_TILES = 0,    /* one row of large icon tiles (Quick Menu, Retry, Share, Game) */
+  RNF_MENU_PAGE_SETTINGS = 1, /* rows: label + value (up / down move, left / right adjust) */
+  RNF_MENU_PAGE_CARDS = 2,    /* a grid of cards (Practice: 4 x 2) */
+  RNF_MENU_PAGE_LIST = 3,     /* rows of frontend data, RNF_MENU_MAX_ITEMS per sheet */
+  RNF_MENU_PAGE_CUSTOM = 4    /* drawn and navigated by the frontend (controller diagram) */
+} rnf_menu_page_kind;
+typedef enum rnf_menu_item_kind {
+  RNF_MENU_ITEM_RESUME = 0, /* closes the menu */
+  RNF_MENU_ITEM_ACTION = 1, /* the frontend performs it */
+  RNF_MENU_ITEM_PAGE = 2,   /* opens `target` */
+  RNF_MENU_ITEM_TOGGLE = 3, /* on / off (A flips, left / right set) */
+  RNF_MENU_ITEM_CHOICE = 4, /* one of `choice_count` values (left / right) */
+  RNF_MENU_ITEM_SLIDER = 5, /* a number (left / right; range is the frontend's) */
+  RNF_MENU_ITEM_INFO = 6    /* read-only text */
+} rnf_menu_item_kind;
+typedef struct rnf_menu_page_info {
+  const char* id;    /* "quick", "retry", "settings.display" ... (static) */
+  const char* title; /* localization key */
+  const char* icon;
+  rnf_menu_page_kind kind;
+  int columns;       /* grid columns (TILES: the item count; SETTINGS / LIST: 1; CARDS: 4) */
+  size_t count;      /* items / cards / rows */
+  const char* group; /* "settings": L / R switch between the group's pages; "" none */
+} rnf_menu_page_info;
+typedef struct rnf_menu_item_info {
+  const char* id;          /* "resume", "display.crt" ... (static) */
+  const char* label;       /* localization key */
+  const char* description; /* localization key of the one line at the bottom ("" none) */
+  const char* icon;        /* Tabler Icons name ("" none) */
+  rnf_menu_item_kind kind;
+  const char* target;      /* PAGE: the page id; else "" */
+  size_t choice_count;     /* CHOICE */
+} rnf_menu_item_info;
+typedef struct rnf_menu_crumb {
+  const char* label; /* localization key */
+  const char* icon;
+} rnf_menu_crumb;
+typedef enum rnf_menu_event {
+  RNF_MENU_EVENT_NONE = 0,     /* nothing (edge of a page, nothing to adjust) */
+  RNF_MENU_EVENT_MOVED = 1,    /* the focus moved */
+  RNF_MENU_EVENT_PUSHED = 2,   /* a page opened (its first item focused) */
+  RNF_MENU_EVENT_POPPED = 3,   /* back to the parent page (its focus restored) */
+  RNF_MENU_EVENT_SWITCHED = 4, /* L / R: the group's next page, or a LIST's next sheet */
+  RNF_MENU_EVENT_ACTIVATE = 5, /* the frontend performs the focused item (ACTION / TOGGLE / CARDS / LIST / CUSTOM) */
+  RNF_MENU_EVENT_ADJUST = 6,   /* left / right on a TOGGLE / CHOICE / SLIDER (or a LIST row): *dir = -1 / +1 */
+  RNF_MENU_EVENT_CLOSE = 7     /* leave the menu: Resume, or back on the root page */
+} rnf_menu_event;
+typedef struct rnf_menu rnf_menu;
+rnf_menu* rnf_menu_new(uint32_t features);
+void rnf_menu_free(rnf_menu* m);
+size_t rnf_menu_page_count(const rnf_menu* m);
+int rnf_menu_page_get(const rnf_menu* m, size_t page, rnf_menu_page_info* out);
+int rnf_menu_page_find(const rnf_menu* m, const char* id); /* index, -1 if none (or left out by features) */
+int rnf_menu_item_get(const rnf_menu* m, size_t page, size_t item, rnf_menu_item_info* out); /* not LIST / CARDS rows */
+int rnf_menu_item_find(const rnf_menu* m, size_t page, const char* id); /* index, -1 if none */
+/* Localization key of choice `choice` of a CHOICE item; NULL out of range. Keys starting with "=" are
+ * literal text (language names): rnf_menu_text shows them without lookup. */
+const char* rnf_menu_item_choice(const rnf_menu* m, size_t page, size_t item, size_t choice);
+/* LIST / CARDS pages: the number of rows / cards (the frontend's data). Keeps the focus in range. */
+void rnf_menu_set_count(rnf_menu* m, size_t page, size_t count);
+/* Navigation. rnf_menu_open: a new stack with `root_page` (NULL: "quick"), its first item focused. */
+int rnf_menu_open(rnf_menu* m, const char* root_page);
+void rnf_menu_close(rnf_menu* m);
+size_t rnf_menu_depth(const rnf_menu* m);                    /* 0 = closed */
+size_t rnf_menu_level_page(const rnf_menu* m, size_t level); /* page index of a stack level (0 = root) */
+size_t rnf_menu_current(const rnf_menu* m);                  /* page index of the top */
+size_t rnf_menu_focus(const rnf_menu* m);                    /* focused item (LIST: the absolute row) */
+void rnf_menu_set_focus(rnf_menu* m, size_t item);           /* pointer hover / tap; clamped */
+size_t rnf_menu_sheet(const rnf_menu* m);                    /* LIST: sheet of the focus; else 0 */
+size_t rnf_menu_sheet_count(const rnf_menu* m);              /* LIST: sheets (>= 1); else 1 */
+rnf_menu_event rnf_menu_move(rnf_menu* m, int dx, int dy, int* adjust_dir);
+rnf_menu_event rnf_menu_confirm(rnf_menu* m);
+rnf_menu_event rnf_menu_back(rnf_menu* m);
+rnf_menu_event rnf_menu_switch(rnf_menu* m, int dir); /* L (-1) / R (+1) */
+rnf_menu_event rnf_menu_push(rnf_menu* m, const char* page_id);
+/* Breadcrumb of the open stack (the root page left out; a group's title before its first page). */
+size_t rnf_menu_breadcrumb(const rnf_menu* m, rnf_menu_crumb* out, size_t cap);
+/* The UI string of a key: rnf_l10n_lookup, or the literal after a leading "=". */
+const char* rnf_menu_text(const char* key);
 
 /* ================================================================== session resume
  * Always-on session persistence. A session folder holds the temporary project of a session

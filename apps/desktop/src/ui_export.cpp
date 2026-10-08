@@ -1,5 +1,5 @@
 // "Export…" (MP4, export/mp4_export.h: H.264 + AAC on a worker thread - FFmpeg on Linux, Media
-// Foundation on Windows - the project is never touched and play continues) and the CRT display settings (render/post_process.h).
+// Foundation on Windows - the project is never touched and play continues) and the CRT display parameters.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -45,75 +45,6 @@ CrtSettings UI::crtSettings() const {
   c.supply = s.crtSupply;
   c.antennaDbuv = s.crtAntenna;
   return c.sanitized();
-}
-
-// ------------------------------------------------------------------ CRT settings
-
-void UI::buildCrtSettings() {
-  Settings& s = *d_.settings;
-  PostProcessStatus ps = d_.renderer->postProcessStatus();
-#if !RNL_HAVE_CRT
-  (void)s;
-  (void)ps;
-  return;  // a platform without the CRT display: no section
-#endif
-  ImGui::SeparatorText(TR("CRT Display"));
-  ImGui::BeginDisabled(!ps.crtAvailable);
-  if (ImGui::Checkbox(TR("CRT display"), &s.crt)) changed();
-  ImGui::EndDisabled();
-  if (!ps.crtAvailable)
-    ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s",
-                       TRF("The CRT display isn’t available on this GPU: %@", {ps.crtError}).c_str());
-  if (kWindows)
-    wrappedDisabled(TR("A Direct3D 11 port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → "
-                       "demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental "
-                       "model, not a reproduction of any real TV. It only affects the display; recording, game progress "
-                       "and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used)."));
-  else
-    wrappedDisabled(TR("A Vulkan port of nesterm’s “CRT (physical model, experimental)”: NES pixel codes → RF/IF → "
-                       "demodulation → screen (slot mask, scattering, persistence). It is an uncalibrated experimental "
-                       "model, not a reproduction of any real TV. It only affects the display; recording, game progress "
-                       "and reproducibility are unaffected. The picture is 4:3 (the pixel aspect setting isn’t used)."));
-  ImGui::BeginDisabled(!s.crt);
-  if (ImGui::Checkbox(TR("Thicker scanlines where brighter"), &s.crtBeamGrowth)) changed();
-  if (ImGui::Checkbox(TR("Phosphor persistence"), &s.crtPersistence)) changed();
-  if (ImGui::Checkbox(TR("Bright screens widen and dim the picture"), &s.crtSupply)) changed();
-  float ant = float(s.crtAntenna);
-  ImGui::SetNextItemWidth(S(360));
-  if (ImGui::SliderFloat("##antenna", &ant, 20, 90, "%.0f dBuV")) s.crtAntenna = std::round(ant);
-  if (ImGui::IsItemDeactivatedAfterEdit()) changed();
-  ImGui::SameLine();
-  ImGui::TextUnformatted(TR("Signal strength (source picture)"));
-  ImGui::AlignTextToFramePadding();
-  ImGui::TextUnformatted(TR("Scanlines"));
-  ImGui::SameLine();
-  if (ImGui::RadioButton(TR("Standard: 240 lines"), s.crtLines == 240)) {
-    s.crtLines = 240;
-    changed();
-  }
-  ImGui::SameLine();
-  if (ImGui::RadioButton(TR("Reduced-line experiment"), s.crtLines != 240)) {
-    if (s.crtLines == 240) s.crtLines = 160;
-    changed();
-  }
-  if (s.crtLines != 240) {
-    int lines = s.crtLines;
-    ImGui::SetNextItemWidth(S(360));
-    if (ImGui::SliderInt("##lines", &lines, 110, 220)) s.crtLines = lines;
-    if (ImGui::IsItemDeactivatedAfterEdit()) changed();
-    ImGui::SameLine();
-    ImGui::TextUnformatted(TR("Experiment: 110–220 lines"));
-  }
-  if (ImGui::Button(TR("Reset to nesterm Defaults"))) {
-    s.crtLines = 240;
-    s.crtBeamGrowth = s.crtPersistence = s.crtSupply = true;
-    s.crtAntenna = 65;
-    changed();
-  }
-  ImGui::EndDisabled();
-  if (s.crt && ps.crtShown)
-    ImGui::TextDisabled("%dx%d  x%.2f  GPU %.2f ms%s", ps.tubeWidth, ps.tubeHeight, ps.scale, ps.gpuMsP50,
-                        ps.buildAhead ? "  (built ahead)" : "");
 }
 
 // ------------------------------------------------------------------ export
@@ -202,7 +133,7 @@ void UI::buildExportDialog() {
   if (ImGui::BeginPopupModal("##export", nullptr,
                              ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
                                  ImGuiWindowFlags_AlwaysAutoResize)) {
-    ImGui::PushFont(nullptr, S(26));
+    ImGui::PushFont(nullptr, metrics_.title());
     ImGui::TextUnformatted(TR("Export to MP4"));
     ImGui::PopFont();
     bool appearing = ImGui::IsWindowAppearing();
@@ -331,7 +262,6 @@ void UI::buildExportDialog() {
         wrappedDisabled(TR("The export is made by re-running the recorded input from the start in a separate emulator. The "
                            "project is not changed, and you can keep playing while it exports."));
       }
-      scrollWithRightStick();
       ImGui::EndChild();
       if (!exportError_.empty()) ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s", exportError_.c_str());
       ImGui::Spacing();
@@ -360,7 +290,6 @@ void UI::buildExportDialog() {
 
 void UI::buildExportProgressPill() {
   if (exportDialog_ || !exportStarted_) return;
-  ImGuiIO& io = ImGui::GetIO();
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   std::string text;
   if (exportJob_.running()) {
@@ -378,7 +307,7 @@ void UI::buildExportProgressPill() {
   }
   float fs = S(16);
   ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fs, 10000, 0, text.c_str());
-  ImVec2 p(io.DisplaySize.x - ts.x - S(28), menuOpen_ ? S(68) : S(12));
+  ImVec2 p(pill_.right() - ts.x - S(16), pill_.bottom() + S(8));
   dl->AddRectFilled(p, ImVec2(p.x + ts.x + S(16), p.y + ts.y + S(8)), IM_COL32(30, 90, 160, 210), S(6));
   dl->AddText(nullptr, fs, ImVec2(p.x + S(8), p.y + S(4)), IM_COL32(255, 255, 255, 255), text.c_str());
 }

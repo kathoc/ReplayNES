@@ -28,6 +28,7 @@
 #include "dialogs.h"
 #include "emulation.h"
 #include "export/export_frame.h"
+#include "ui_layout.h"
 #include "export/mp4_retime.h"
 #include "l10n.h"
 #include "library.h"
@@ -583,35 +584,6 @@ TEST_CASE("library search") {
   CHECK_FALSE(librarySearchMatches("zelda", r));
 }
 
-TEST_CASE("controller conventions: B / Menu / View pages") {
-  using P = MenuPage;
-  using C = MenuCommand;
-  // In a session: B and Menu on the hub resume play; on a page they return to the hub.
-  CHECK(menuTransition(P::playback, C::back, true, P::playback).closeAndResume);
-  CHECK(menuTransition(P::playback, C::menuButton, true, P::playback).closeAndResume);
-  for (P p : {P::takes, P::bookmarks, P::practice, P::settings, P::guide}) {
-    MenuTransition t = menuTransition(p, C::back, true, P::playback);
-    CHECK(t.page == P::playback);
-    CHECK_FALSE(t.closeAndResume);
-    CHECK(menuTransition(p, C::menuButton, true, P::playback).page == P::playback);
-  }
-  // View toggles the guide and back to where it was opened.
-  CHECK(menuTransition(P::settings, C::viewButton, true, P::playback).page == P::guide);
-  CHECK(menuTransition(P::guide, C::viewButton, true, P::settings).page == P::settings);
-  CHECK(menuTransition(P::guide, C::viewButton, true, P::guide).page == P::playback);
-  // Start screen: Menu = Library <-> Settings, B = back to the Library, never "resume".
-  CHECK(menuTransition(P::library, C::menuButton, false, P::library).page == P::settings);
-  CHECK(menuTransition(P::settings, C::menuButton, false, P::library).page == P::library);
-  CHECK(menuTransition(P::settings, C::back, false, P::library).page == P::library);
-  CHECK_FALSE(menuTransition(P::library, C::back, false, P::library).closeAndResume);
-  CHECK(menuTransition(P::guide, C::viewButton, false, P::playback).page == P::library);
-  // L1 / R1 on pages without tabs.
-  CHECK(cyclePage(P::practice, 1) == P::takes);
-  CHECK(cyclePage(P::practice, -1) == P::guide);
-  CHECK(cyclePage(P::guide, 1) == P::practice);
-  CHECK(cyclePage(P::settings, 1) == P::settings);
-}
-
 TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
   CHECK_EQ(scrubStepFrames(0.0), 1);
   CHECK_EQ(scrubStepFrames(1.0), 4);
@@ -631,6 +603,70 @@ TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
   CHECK_EQ(padGlyph(RNF_FAMILY_NINTENDO, "face.south"), std::string("B"));
   CHECK_EQ(padGlyph(RNF_FAMILY_NINTENDO, "face.east"), std::string("A"));
   CHECK_EQ(padGlyph(RNF_FAMILY_STEAM_DECK, "rightShoulder"), std::string("R1"));
+  // The Menu pill's chord.
+  CHECK_EQ(menuChordGlyph(RNF_FAMILY_STEAM_DECK, true), std::string("L+R"));
+  CHECK_EQ(menuChordGlyph(RNF_FAMILY_XBOX, true), std::string("L+R"));
+  CHECK_EQ(menuChordGlyph(RNF_FAMILY_NINTENDO, true), std::string("L+R"));
+  CHECK_EQ(menuChordGlyph(RNF_FAMILY_PLAYSTATION, true), std::string("L1+R1"));
+  CHECK_EQ(menuChordGlyph(RNF_FAMILY_PLAYSTATION, false), std::string("Esc"));
+}
+
+TEST_CASE("menu layout: no screen scrolls (every page of the menu model fits)") {
+  const uint32_t features = RNF_MENU_FEATURE_EXPORT | RNF_MENU_FEATURE_CRT | RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK |
+                            RNF_MENU_FEATURE_UPDATES | RNF_MENU_FEATURE_QUIT | RNF_MENU_FEATURE_FULLSCREEN |
+                            RNF_MENU_FEATURE_UI_SCALE;
+  rnf_menu* menu = rnf_menu_new(features);
+  REQUIRE(menu);
+  struct Size {
+    float w, h;
+  };
+  int checked = 0;
+  for (Size sz : {Size{1280, 800}, Size{1920, 1080}, Size{1280, 720}, Size{2560, 1600}, Size{1024, 768}}) {
+    for (float ui : {0.75f, 1.0f, 1.25f, 1.5f}) {
+      UiMetrics m = UiMetrics::make(sz.w, sz.h, ui);
+      for (size_t p = 0; p < rnf_menu_page_count(menu); ++p) {
+        rnf_menu_page_info pi{};
+        REQUIRE(rnf_menu_page_get(menu, p, &pi));
+        size_t count = pi.kind == RNF_MENU_PAGE_LIST ? size_t(RNF_MENU_MAX_ITEMS) : pi.count;
+        bool header = (pi.group && *pi.group) || pi.kind == RNF_MENU_PAGE_LIST;
+        PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header);
+        const char* why = "";
+        bool fits = pageFits(m, g, &why);
+        if (!fits)
+          MESSAGE(std::string(pi.id) + " at " + std::to_string(int(sz.w)) + "x" + std::to_string(int(sz.h)) + " size " +
+                  std::to_string(ui) + ": " + why);
+        CHECK(fits);
+        if (pi.kind != RNF_MENU_PAGE_CUSTOM) CHECK_EQ(g.items.size(), count);
+        // Labels of 2-5 Japanese characters / 1-2 English words fit a tile.
+        if (pi.kind == RNF_MENU_PAGE_TILES)
+          for (const LRect& r : g.items) CHECK(r.w >= m.label() * 5.5f);
+        ++checked;
+      }
+      LibraryGeometry lib = layoutLibrary(m, true);
+      LRect screen{0, 0, m.W, m.H};
+      CHECK(lib.content.contains(lib.hero));
+      CHECK(lib.content.contains(lib.emptyCard));
+      for (const LRect& c : lib.cards) {
+        CHECK(lib.content.contains(c));
+        CHECK_FALSE(c.overlaps(lib.hero));
+        CHECK(c.h - libraryCardTextHeight(m) >= m.label() * 2);
+      }
+      CHECK(screen.contains(layoutLibrary(m, false).cards.back()));
+      SeekGeometry seek = layoutSeek(m);
+      CHECK(screen.contains(seek.panel));
+      CHECK(seek.panel.contains(seek.strip));
+      CHECK(seek.panel.contains(seek.hints));
+      PillGeometry pill = layoutPill(m, 220 * m.s, LRect{});
+      CHECK(screen.contains(pill.rect));
+      CHECK_FALSE(pill.overPicture);
+    }
+  }
+  CHECK(checked > 100);
+  // The pill over a FILL picture (no room beside it) is marked so (drawn faint while playing).
+  UiMetrics deck = UiMetrics::make(1280, 800, 1);
+  CHECK(layoutPill(deck, 200, LRect{0, 0, 1280, 800}).overPicture);
+  CHECK_FALSE(layoutPill(deck, 200, LRect{256, 40, 768, 720}).overPicture);  // integer 3x: room beside it
+  rnf_menu_free(menu);
 }
 
 TEST_CASE("cadence: integer lock from the core, 3:2 at 90 Hz") {

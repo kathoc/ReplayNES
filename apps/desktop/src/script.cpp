@@ -2,6 +2,7 @@
 #include "script.h"
 
 #include <cstdio>
+#include <cstdio>
 #include <cstdlib>
 #include <sstream>
 
@@ -59,11 +60,39 @@ bool Script::pushPad(const std::string& name, bool down) {
   return false;
 }
 
+void Script::pushMouse(float x, float y, bool down) {
+  SDL_WindowID w = windowId ? windowId() : 0;
+  SDL_Event e;
+  SDL_zero(e);
+  e.common.timestamp = SDL_GetTicksNS();
+  e.type = SDL_EVENT_MOUSE_MOTION;
+  e.motion.windowID = w;
+  e.motion.x = x;
+  e.motion.y = y;
+  SDL_PushEvent(&e);
+  SDL_zero(e);
+  e.common.timestamp = SDL_GetTicksNS();
+  e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+  e.button.windowID = w;
+  e.button.button = SDL_BUTTON_LEFT;
+  e.button.down = down;
+  e.button.clicks = 1;
+  e.button.x = x;
+  e.button.y = y;
+  SDL_PushEvent(&e);
+}
+
 void Script::step(double now) {
-  for (auto it = releases_.begin(); it != releases_.end();) {
+  for (auto it = pending_.begin(); it != pending_.end();) {
     if (now >= it->at) {
-      pushPad(it->button, false);
-      it = releases_.erase(it);
+      if (it->button.rfind("mouse:", 0) == 0) {
+        float x = 0, y = 0;
+        std::sscanf(it->button.c_str() + 6, "%f,%f", &x, &y);
+        pushMouse(x, y, it->down);
+      } else {
+        pushPad(it->button, it->down);
+      }
+      it = pending_.erase(it);
     } else {
       ++it;
     }
@@ -72,7 +101,7 @@ void Script::step(double now) {
     if (waitCond_) {
       bool met = waitCond_();
       if (!met && now < waitUntil_) return;
-      std::fprintf(stderr, "script: updatewait %s (%s)\n", met ? "reached" : "timed out", ui_->updatePhaseName().c_str());
+      std::fprintf(stderr, "script: wait %s\n", met ? "reached" : "timed out");
       waitCond_ = nullptr;
       waitUntil_ = 0;
     }
@@ -86,15 +115,55 @@ void Script::step(double now) {
       return;
     } else if (op == "menu") {
       ui_->setMenu(arg(1) != "off");
-    } else if (op == "tab") {
-      static const std::pair<const char*, UI::Tab> tabs[] = {
-          {"playback", UI::Tab::playback}, {"takes", UI::Tab::takes},     {"bookmarks", UI::Tab::bookmarks},
-          {"practice", UI::Tab::practice}, {"library", UI::Tab::library}, {"settings", UI::Tab::settings},
-          {"guide", UI::Tab::guide}};
-      for (auto& [n, t] : tabs)
-        if (arg(1) == n) ui_->selectTab(t);
-    } else if (op == "settings") {
-      if (onSettingsPage) onSettingsPage(std::atoi(arg(1, "0").c_str()));
+    } else if (op == "page") {
+      if (!ui_->openPage(arg(1))) std::fprintf(stderr, "script: unknown page %s\n", arg(1).c_str());
+    } else if (op == "chord") {
+      // L1, then R1 a little later (either order works; the chord detector's window is 100 ms).
+      double gap = std::atof(arg(1, "30").c_str()) / 1000.0;
+      pushPad("l1", true);
+      pending_.push_back({now + gap, "r1", true});
+      pending_.push_back({now + gap + 0.2, "l1", false});
+      pending_.push_back({now + gap + 0.2, "r1", false});
+      return;
+    } else if (op == "clickpill") {
+      LRect r = ui_->pillRect();
+      char b[64];
+      std::snprintf(b, sizeof b, "mouse:%f,%f", double(r.x + r.w / 2), double(r.y + r.h / 2));
+      pending_.push_back({now, b, true});
+      pending_.push_back({now + 0.05, b, false});
+      return;
+    } else if (op == "key") {
+      SDL_Scancode sc = SDL_GetScancodeFromName(arg(1).c_str());
+      if (sc == SDL_SCANCODE_UNKNOWN) {
+        std::fprintf(stderr, "script: unknown key %s\n", arg(1).c_str());
+        continue;
+      }
+      for (bool down : {true, false}) {
+        SDL_Event e;
+        SDL_zero(e);
+        e.common.timestamp = SDL_GetTicksNS();
+        e.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+        e.key.windowID = windowId ? windowId() : 0;
+        e.key.scancode = sc;
+        e.key.key = SDL_GetKeyFromScancode(sc, SDL_KMOD_NONE, false);
+        e.key.down = down;
+        SDL_PushEvent(&e);
+      }
+      return;
+    } else if (op == "layoutcheck") {
+      std::vector<std::pair<int, int>> sizes;
+      for (size_t i = 1; i < c.size(); ++i) {
+        int w = 0, h = 0;
+        if (std::sscanf(c[i].c_str(), "%dx%d", &w, &h) == 2 && w > 0 && h > 0) sizes.push_back({w, h});
+      }
+      ui_->startLayoutCheck(sizes);
+      waitUntil_ = now + 120;
+      waitCond_ = [this] {
+        if (ui_->layoutCheckRunning()) return false;
+        failures += ui_->layoutFailures();
+        return true;
+      };
+      return;
     } else if (op == "osktype") {
       // Types the rest of the command on the built-in keyboard: its presses, one per frame.
       std::string text;
@@ -105,7 +174,7 @@ void Script::step(double now) {
       for (const std::string& b : presses) ins.push_back({"pad", b});
       cmds_.insert(cmds_.begin() + long(next_), ins.begin(), ins.end());
     } else if (op == "pad" || op == "padhold") {
-      if (pushPad(arg(1), true)) releases_.push_back({op == "pad" ? now : now + std::atof(arg(2, "1").c_str()), arg(1)});
+      if (pushPad(arg(1), true)) pending_.push_back({op == "pad" ? now : now + std::atof(arg(2, "1").c_str()), arg(1), false});
       return;  // one press per frame (the release goes out with the next step)
     } else if (op == "pause") {
       emu_->setPaused(true);
@@ -143,10 +212,12 @@ void Script::step(double now) {
       ui_->startExport();
     } else if (op == "crt") {
       if (onCrt) onCrt(arg(1) != "off");
-    } else if (op == "panel") {
-      ui_->showPracticePanel(true);
+    } else if (op == "shotdir") {
+      shotDir_ = arg(1);
     } else if (op == "shot") {
-      renderer_->requestScreenshot(arg(1, "screenshot.png"));
+      std::string name = arg(1, "screenshot.png");
+      bool absolute = !name.empty() && (name[0] == '/' || name[0] == '\\' || (name.size() > 1 && name[1] == ':'));
+      renderer_->requestScreenshot(shotDir_.empty() || absolute ? name : shotDir_ + "/" + name);
       return;  // this frame is the one saved
     } else if (op == "update") {
       if (!ui_->scriptUpdate(arg(1))) std::fprintf(stderr, "script: update %s: not possible now\n", arg(1).c_str());

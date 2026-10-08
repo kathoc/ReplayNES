@@ -5,8 +5,11 @@
 // Also: bindings persistence (bindings.json, the engine's JSON) + the core's layout migrations,
 // paused D-pad frame stepping (routed away from the game, InputManager.swift on macOS), the live
 // "pressed" set and connected pads for the settings diagram, and "press a key to assign".
-// The right stick click (R3) and the Guide button open the ReplayNES menu (Gaming Mode has no
-// keyboard); they are reserved and never reach the game.
+// The Quick Menu (docs/design/UI_REDESIGN.md) is the action "hk.menu": pad 1's L+R combo through
+// the shared chord detector (rnf_chord: L or R alone fire on release or after 100 ms, then go
+// their usual way - pause / slow in play, previous / next page in menus) and Esc. The right stick
+// click (R3) and the Guide button open it too (reserved, never reach the game). While paused in
+// play (the seek bar), A / B resume instead of reaching the game.
 // Frame-loop thread only (SDL events are polled there); rn_input itself is internally locked.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
@@ -52,8 +55,11 @@ class InputRouter {
   void load();
 
   // Hooks.
-  std::function<void()> onMenuButton;                    // R3 / Guide / Esc / F1
+  std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / Guide / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
+  std::function<void()> onPausedConfirm;                 // A / B while paused in play: resume
+  /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).
+  std::function<void(int dir)> onUiShoulder;
   std::function<void(const std::string& name)> onDisconnect;
   std::function<void()> onPadsChanged;
 
@@ -67,6 +73,8 @@ class InputRouter {
   /// One SDL event (keyboard / gamepad). evTime: the event's time on the CLOCK_MONOTONIC clock.
   /// keyboardForUI: ImGui wants the keyboard (text field or menu).
   void handleEvent(const SDL_Event& e, double evTime, bool keyboardForUI);
+  /// Every frame after the events (the chord detector's 100 ms window). now: CLOCK_MONOTONIC s.
+  void tick(double now);
 
   uint64_t pressSequence() const { return pressSeq_.load(); }
   /// Time of the latest physical change that reached the game (latency measurement).
@@ -97,7 +105,8 @@ class InputRouter {
   void setAnalogThreshold(double t);
 
   /// "Add…": the next key / button / stick direction is handed to fn ("" = cancelled with Esc).
-  void beginCapture(std::function<void(const std::string& id)> fn);
+  /// keysOnly: only keys are taken (a controller's B cancels, other buttons are ignored).
+  void beginCapture(std::function<void(const std::string& id)> fn, bool keysOnly = false);
   void cancelCapture();
   bool capturing() const { return bool(capture_); }
 
@@ -115,6 +124,10 @@ class InputRouter {
   void padAxis(int slot, int axis, float v, double t);
   void stickDirections(int slot, const char* stick, float x, float y, double t);
   bool routePausedStep(const std::string& id, bool down);
+  bool routePausedConfirm(const std::string& id, bool down);
+  void pumpChord();
+  void routeButton(const std::string& id, bool down, double t);
+  bool captureFrom(const std::string& id, bool keyboard);
   bool applyPlan(rnf_list* unbind, rnf_list* bind);
   int slotOf(SDL_JoystickID id) const;
   void attach(SDL_JoystickID id);
@@ -134,6 +147,10 @@ class InputRouter {
   std::atomic<uint64_t> pressSeq_{0};
   std::atomic<double> lastEvent_{0};
   std::function<void(const std::string&)> capture_;
+  bool captureKeysOnly_ = false;
+  rnf_chord* chord_ = nullptr;
+  std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
+  std::set<std::string> routedConfirm_;   // A / B pressed while paused: their release is ours too
   // parsed config
   std::vector<std::pair<std::string, std::string>> bindingPairs_;
   std::vector<rnf_binding> bindingView_;

@@ -15,6 +15,7 @@
 #endif
 
 #include <algorithm>
+#include <cstring>
 
 namespace rnl {
 
@@ -30,6 +31,13 @@ ThumbImage* ThumbImage::make(const uint32_t* frame) {
   auto* t = new ThumbImage;
   t->serial = gSerial.fetch_add(1);
   rnf_thumb_downscale(frame, t->px);
+  return t;
+}
+
+ThumbImage* ThumbImage::fromThumb(const uint32_t* px) {
+  auto* t = new ThumbImage;
+  t->serial = gSerial.fetch_add(1);
+  std::memcpy(t->px, px, sizeof t->px);
   return t;
 }
 

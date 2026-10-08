@@ -82,7 +82,7 @@ std::string group(const Pairs& c, const char* g, int slot) {
 // ------------------------------------------------------------------ catalog + defaults
 
 TEST_CASE("action catalog order and labels") {
-  REQUIRE_EQ(rnf_input_action_count(), size_t(32));
+  REQUIRE_EQ(rnf_input_action_count(), size_t(33));
   rnf_action_info a;
   REQUIRE(rnf_input_action_get(0, &a));
   CHECK_EQ(std::string(a.id), "p1.up");
@@ -257,7 +257,7 @@ static Pairs layout3Triggers(Pairs c) {
 }
 
 TEST_CASE("trigger swap migration (layout 3 -> 4)") {
-  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 4);
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 5);
   Pairs old = layout3Triggers(defaultConfig());
   Plan m = plan(rnf_input_trigger_swap_migration, old);
   CHECK_EQ(m.unbind.size(), size_t(2));
@@ -286,6 +286,13 @@ TEST_CASE("full chain from 0.1.x") {
   c = applying(plan(rnf_input_controller_layout_migration, c), c);
   c = applying(plan(rnf_input_face_layout_migration, c), c);
   c = applying(plan(rnf_input_trigger_swap_migration, c), c);
+  {
+    Bindings b{c};
+    auto v = b.view();
+    rnf_list *u = nullptr, *n = nullptr;
+    rnf_input_menu_migration(v.data(), v.size(), RNF_KEYBOARD_MACOS, &u, &n);
+    c = applying(Plan{listPairs(u), listPairs(n)}, c);
+  }
   CHECK(asSet(c) == asSet(defaultConfig()));
   // From layout 3 (0.2.x): the triggers swap.
   Pairs l3 = layout3Triggers(defaultConfig());
@@ -451,8 +458,17 @@ TEST_CASE("diagram elements per family") {
   for (int p = 0; p < 4; ++p) expected.insert(rnf_face_position_element(rnf_face_position(p)));
   for (auto g : {"dpad", "lstick", "rstick"})
     for (auto d : {"up", "down", "left", "right"}) expected.insert(std::string(g) + "." + d);
-  for (auto& b : defaultBindings())
-    if (b.first.rfind("gc", 0) == 0) CHECK(expected.count(b.first.substr(b.first.find(':') + 1)));
+  for (auto& b : defaultBindings()) {
+    if (b.first.rfind("gc", 0) != 0) continue;
+    char *x = nullptr, *y = nullptr;
+    if (rnf_input_combo_split(b.first.c_str(), &x, &y)) {  // L+R: both members are on the picture
+      std::string sx = take(x), sy = take(y);
+      CHECK(expected.count(sx.substr(sx.find(':') + 1)));
+      CHECK(expected.count(sy.substr(sy.find(':') + 1)));
+      continue;
+    }
+    CHECK(expected.count(b.first.substr(b.first.find(':') + 1)));
+  }
 
   for (auto f : {RNF_FAMILY_NINTENDO, RNF_FAMILY_XBOX, RNF_FAMILY_PLAYSTATION, RNF_FAMILY_GENERIC, RNF_FAMILY_STEAM_DECK}) {
     std::vector<rnf_diagram_element> el(rnf_diagram_element_count(f));

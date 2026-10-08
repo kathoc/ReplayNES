@@ -61,6 +61,7 @@ const ActionDef kActions[] = {
     {"hk.save", RNF_L("Save"), true, RNF_GROUP_HOTKEY},
     {"hk.soft_reset", RNF_L("Soft Reset"), true, RNF_GROUP_HOTKEY},
     {"hk.power_cycle", RNF_L("Power Cycle"), true, RNF_GROUP_HOTKEY},
+    {"hk.menu", RNF_L("Quick Menu"), true, RNF_GROUP_HOTKEY},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
 
@@ -83,6 +84,7 @@ const Pair kKeyboardMac[] = {
     {"kb:48", "hk.fast_forward"},                    // Tab
     {"kb:37", "hk.slow"},                            // L
     {"kb:11", "hk.bookmark"},                        // B
+    {"kb:53", "hk.menu"},                            // Esc
 };
 // The same keys as SDL3 scancodes.
 const Pair kKeyboardSDL[] = {
@@ -98,11 +100,14 @@ const Pair kKeyboardSDL[] = {
     {"kb:43", "hk.fast_forward"},
     {"kb:15", "hk.slow"},
     {"kb:5", "hk.bookmark"},
+    {"kb:41", "hk.menu"},
 };
 // Controller slot 0 -> P1, slot 1 -> P2. Face buttons by POSITION: east = A, south = B
 // (Nintendo's own A/B; B/A on Xbox, ○/✕ on PlayStation), north = turbo A, west = turbo B.
 // In-game controls (hotkeys, never recorded): L2 hold = rewind, R2 hold = fast-forward,
-// L = slow 1/2 toggle, R = pause/play. While paused the D-pad ←/→ steps frames.
+// L = slow 1/2 toggle, R = pause/play, L+R together = Quick Menu (a two-button combo id that the
+// frontend presses through its chord detector, rnf_chord: L or R alone fire on release or after
+// RNF_CHORD_WINDOW). While paused the D-pad ←/→ steps frames.
 const Pair kController[] = {
     {"gc0:dpad.up", "p1.up"}, {"gc0:dpad.down", "p1.down"}, {"gc0:dpad.left", "p1.left"}, {"gc0:dpad.right", "p1.right"},
     {"gc0:lstick.up", "p1.up"}, {"gc0:lstick.down", "p1.down"}, {"gc0:lstick.left", "p1.left"}, {"gc0:lstick.right", "p1.right"},
@@ -110,6 +115,7 @@ const Pair kController[] = {
     {"gc0:menu", "p1.start"}, {"gc0:options", "p1.select"},
     {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
     {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
+    {"gc0:leftShoulder+gc0:rightShoulder", "hk.menu"},
     {"gc1:dpad.up", "p2.up"}, {"gc1:dpad.down", "p2.down"}, {"gc1:dpad.left", "p2.left"}, {"gc1:dpad.right", "p2.right"},
     {"gc1:lstick.up", "p2.up"}, {"gc1:lstick.down", "p2.down"}, {"gc1:lstick.left", "p2.left"}, {"gc1:lstick.right", "p2.right"},
     {"gc1:face.east", "p2.a"}, {"gc1:face.south", "p2.b"}, {"gc1:face.north", "p2.turbo_a"}, {"gc1:face.west", "p2.turbo_b"},
@@ -291,7 +297,35 @@ const NameDef kPrettyElements[] = {
     {"leftThumb", "L3", false}, {"rightThumb", "R3", false},
 };
 
+// Combo ids "<a>+<b>" (two inputs held together, e.g. "gc0:leftShoulder+gc0:rightShoulder").
+bool splitCombo(const std::string& id, std::string& a, std::string& b) {
+  size_t plus = id.find('+', 1);
+  // "kb:..+" never: keyboard codes are numbers; element names have no '+'.
+  if (plus == std::string::npos || plus + 1 >= id.size()) return false;
+  a = id.substr(0, plus);
+  b = id.substr(plus + 1);
+  return a.find(':') != std::string::npos && b.find(':') != std::string::npos;
+}
+
+std::string displayName(rnf_keyboard_scheme scheme, const std::string& id);
+
+// "Pad 1 L(L1/LB) + R(R1/RB)": the second part without the pad / key prefix when it is the same.
+std::string comboDisplayName(rnf_keyboard_scheme scheme, const std::string& a, const std::string& b) {
+  std::string na = displayName(scheme, a), nb = displayName(scheme, b);
+  size_t ca = a.find(':'), cb = b.find(':');
+  if (ca != std::string::npos && cb != std::string::npos && a.compare(0, ca, b, 0, cb) == 0 && hasPrefix(a, "gc")) {
+    std::string pre = displayName(scheme, a.substr(0, ca + 1) + "\x01");
+    size_t cut = pre.find("\x01");
+    if (cut != std::string::npos && hasPrefix(nb, pre.substr(0, cut))) nb = nb.substr(cut);
+  }
+  return na + " + " + nb;
+}
+
 std::string displayName(rnf_keyboard_scheme scheme, const std::string& id) {
+  {
+    std::string a, b;
+    if (splitCombo(id, a, b)) return comboDisplayName(scheme, a, b);
+  }
   long long code = 0;
   if (hasPrefix(id, "kb:") && parseInt(id.substr(3), code) && code >= 0 && code <= 65535 && id[3] != '-') {
     const KeyName* k = findKey(scheme, code);
@@ -570,8 +604,9 @@ void rnf_input_controller_layout_migration(const rnf_binding* bindings, size_t c
   auto has = [&](const Pair& p) {
     return std::any_of(b.begin(), b.end(), [&](auto& x) { return x.first == p.input && x.second == p.action; });
   };
+  // Hotkeys on pad 1's buttons (combos such as the Quick Menu's L+R are not buttons).
   size_t hotkeyOnGC0 = size_t(std::count_if(b.begin(), b.end(), [](auto& x) {
-    return hasPrefix(x.first, "gc0:") && hasPrefix(x.second, "hk.");
+    return hasPrefix(x.first, "gc0:") && hasPrefix(x.second, "hk.") && x.first.find('+') == std::string::npos;
   }));
   bool all = std::all_of(std::begin(kLegacyControllerHotkeys), std::end(kLegacyControllerHotkeys), has);
   constexpr size_t n = sizeof(kLegacyControllerHotkeys) / sizeof(kLegacyControllerHotkeys[0]);
@@ -647,6 +682,42 @@ int rnf_input_apply_plan(rn_input* in, const rnf_list* unbind, const rnf_list* b
   for (size_t i = 0; i < nu; ++i) (void)rn_input_unbind(in, rnf_list_a(unbind, i), rnf_list_b(unbind, i));
   for (size_t i = 0; i < nb; ++i) (void)rn_input_bind(in, rnf_list_a(bind, i), rnf_list_b(bind, i));
   return nu > 0 || nb > 0;
+}
+
+void rnf_input_menu_migration(const rnf_binding* bindings, size_t count, rnf_keyboard_scheme scheme, rnf_list** unbind,
+                              rnf_list** bind) {
+  Pairs b = rnf::toPairs(bindings, count);
+  Pairs u, nb;
+  bool hasMenu = false, padCombo = false, escBound = false;
+  const std::string esc = scheme == RNF_KEYBOARD_SDL ? "kb:41" : "kb:53";
+  for (auto& p : b) {
+    if (p.second == "hk.menu") {
+      hasMenu = true;
+      if (hasPrefix(p.first, "gc0:")) padCombo = true;
+    }
+    if (p.first == esc) escBound = true;
+  }
+  if (!padCombo) nb.emplace_back("gc0:leftShoulder+gc0:rightShoulder", "hk.menu");
+  if (!hasMenu && !escBound) nb.emplace_back(esc, "hk.menu");
+  emit(u, nb, unbind, bind);
+}
+
+char* rnf_input_combo_id(const char* a, const char* b) {
+  if (!a || !b || !*a || !*b) return nullptr;
+  return dup(std::string(a) + "+" + b);
+}
+
+int rnf_input_combo_split(const char* id, char** a, char** b) {
+  if (a) *a = nullptr;
+  if (b) *b = nullptr;
+  if (!id) return 0;
+  RNF_GUARD_BEGIN
+  std::string x, y;
+  if (!splitCombo(id, x, y)) return 0;
+  if (a) *a = dup(x);
+  if (b) *b = dup(y);
+  return 1;
+  RNF_GUARD_END(0)
 }
 
 rnf_list* rnf_input_paused_step_directions(const rnf_binding* bindings, size_t count) {

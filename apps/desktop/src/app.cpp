@@ -42,6 +42,7 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "input_router.h"
+#include "library_thumbs.h"
 #include "l10n.h"
 #include "library.h"
 #include "pad_nav.h"
@@ -95,6 +96,7 @@ class App {
   std::unique_ptr<InputRouter> input_;
   std::unique_ptr<EmulationController> emu_;
   std::unique_ptr<ThumbnailManager> thumbs_;
+  std::unique_ptr<LibraryThumbs> libraryThumbs_;
   std::unique_ptr<LibraryModel> library_;
   std::unique_ptr<UI> ui_;
   std::unique_ptr<AppModel> app_;
@@ -109,6 +111,9 @@ class App {
   bool fullscreen_ = false;
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
+  int lastWidth_ = 0;
+  std::string pendingLanguage_;  // Settings -> System -> Language: applied between frames
+  int scriptExit_ = 0;
   double pickedEvent_ = 0;
   std::vector<double> recentLatency_;
   size_t recentHead_ = 0;
@@ -217,7 +222,9 @@ int App::run(const AppOptions& opt) {
   }
   // Language: Japanese iff the first preferred language is Japanese (before any other thread
   // reads localized strings).
-  std::string lang = chooseUILanguage(preferredLanguages(), !opt.lang.empty() ? opt.lang.c_str() : std::getenv("REPLAYNES_LANG"));
+  const char* langOverride = !opt.lang.empty() ? opt.lang.c_str() : std::getenv("REPLAYNES_LANG");
+  if ((!langOverride || !*langOverride) && settings_.language != "auto") langOverride = settings_.language.c_str();
+  std::string lang = chooseUILanguage(preferredLanguages(), langOverride);
   rnf_l10n_set_language(lang.c_str());
 
   bool fullscreen = opt.fullscreen == 1 || (opt.fullscreen == -1 && gamingMode());
@@ -247,6 +254,7 @@ int App::run(const AppOptions& opt) {
   input_->load();
   emu_ = std::make_unique<EmulationController>(input_->input(), audioOK_ ? &audio_ : nullptr);
   thumbs_ = std::make_unique<ThumbnailManager>();
+  libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
 
   IMGUI_CHECKVERSION();
@@ -257,7 +265,8 @@ int App::run(const AppOptions& opt) {
   // In-app updates (Linux: Flatpak portal; its own thread). Not for measurement runs.
   if (platform_.makeUpdates) updates_ = platform_.makeUpdates();
   if (updates_ && !perfMode) updates_->start(settings_.checkForUpdates);
-  UI::Deps deps{nullptr, emu_.get(), library_.get(), input_.get(), thumbs_.get(), renderer_.get(), &settings_, window_, updates_.get()};
+  UI::Deps deps{nullptr,          emu_.get(), library_.get(), input_.get(), thumbs_.get(), renderer_.get(), &settings_, window_,
+                updates_.get(), libraryThumbs_.get()};
   // The UI is the app model's dialog host and shows its state.
   ui_ = std::make_unique<UI>(deps);
   app_ = std::make_unique<AppModel>(paths_, emu_.get(), library_.get(), ui_.get());
@@ -268,8 +277,9 @@ int App::run(const AppOptions& opt) {
   }
   int ww = 0, wh = 0;
   SDL_GetWindowSizeInPixels(window_, &ww, &wh);
-  ui_->updateScale(wh);
+  ui_->updateScale(ww, wh);
   lastHeight_ = wh;
+  lastWidth_ = ww;
   lastUIScale_ = settings_.uiScale;
   renderer_->initImGui();  // + ImGui_ImplSDL3_InitFor<API>
   ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual, nullptr, 0);
@@ -287,6 +297,9 @@ int App::run(const AppOptions& opt) {
   emu_->pressSequence = [this] { return input_->pressSequence(); };
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
+  input_->onPausedConfirm = [this] { ui_->resumeFromSeekBar(); };
+  input_->onUiShoulder = [this](int dir) { ui_->shoulder(dir); };
+  ui_->onLanguage = [this](const std::string& l) { pendingLanguage_ = l; };
   input_->onDisconnect = [this](const std::string& name) {
     if (!emu_->session()) return;
     emu_->setPaused(true);
@@ -343,11 +356,12 @@ int App::run(const AppOptions& opt) {
   std::unique_ptr<Script> script;
   if (!opt.script.empty()) {
     script = std::make_unique<Script>(opt.script, ui_.get(), emu_.get(), renderer_.get(), app_.get());
-    script->onQuit = [this] {
+    script->onQuit = [this, &script] {
+      scriptExit_ = script->failures ? 3 : 0;
       app_->quitNow();
       running_ = false;
     };
-    script->onSettingsPage = [this](int p) { ui_->setSettingsPage(p); };
+    script->windowId = [this] { return SDL_GetWindowID(window_); };
     script->padId = [this]() -> SDL_JoystickID { return input_->pad(0).pad ? input_->pad(0).id : SDL_JoystickID(0x7fff0000); };
     script->onCrt = [this](bool on) {
       settings_.crt = on;
@@ -454,6 +468,7 @@ int App::run(const AppOptions& opt) {
     for (int i = 1; i < frames; ++i) {
       SDL_Event e;
       while (SDL_PollEvent(&e)) handleEvent(e, nowSeconds());
+      input_->tick(nowSeconds());
       extraPicture = emu_->tick().newPicture || extraPicture;
     }
     // Housekeeping in the slack, then wait for the sample point.
@@ -478,6 +493,7 @@ int App::run(const AppOptions& opt) {
     rec.sample = nowSeconds();
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
+    input_->tick(nowSeconds());  // L or R held alone past the chord window fires now
     if (!running_) break;
     rec.polled = nowSeconds();
     double ev = input_->lastEventTime();
@@ -490,10 +506,19 @@ int App::run(const AppOptions& opt) {
     // 5. UI + draw + present.
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window_, &w, &h);
-    if (h != lastHeight_ || settings_.uiScale != lastUIScale_) {
+    if (!pendingLanguage_.empty()) {
+      // Settings -> System -> Language: the strings and the fonts (CJK first for Japanese) now.
+      std::string l = pendingLanguage_ == "auto" ? chooseUILanguage(preferredLanguages(), std::getenv("REPLAYNES_LANG")) : pendingLanguage_;
+      pendingLanguage_.clear();
+      rnf_l10n_set_language(l.c_str());
+      if (!ui_->loadFonts(l == "ja")) rnf_l10n_set_language("en");
+      ui_->updateScale(w, h);
+    }
+    if (h != lastHeight_ || w != lastWidth_ || settings_.uiScale != lastUIScale_) {
       lastHeight_ = h;
+      lastWidth_ = w;
       lastUIScale_ = settings_.uiScale;
-      ui_->updateScale(h);
+      ui_->updateScale(w, h);
     }
     if (script) script->step(rec.sample);
     updateNavigation();
@@ -598,6 +623,7 @@ int App::run(const AppOptions& opt) {
   renderer_.reset();
   ImGui::DestroyContext();
   thumbs_.reset();
+  libraryThumbs_.reset();
   emu_.reset();
   library_.reset();
   if (audioOK_) audio_.close();
@@ -613,7 +639,7 @@ int App::run(const AppOptions& opt) {
     if (rc >= 0) return rc;
     std::fprintf(stderr, "could not start the updated ReplayNES: start it again\n");
   }
-  return 0;
+  return scriptExit_;
 }
 
 }  // namespace
