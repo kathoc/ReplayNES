@@ -66,5 +66,17 @@ final class MenuBarCleaner {
                 bar.removeItem(item)
             }
         }
+        // File: its items moved to the Game menu; what AppKit leaves (Close, ⌘W) goes to Window.
+        if let file = bar.items.dropFirst().first(where: { ["File", String(localized: "File")].contains($0.title) }),
+           let sub = file.submenu,
+           sub.items.allSatisfy({ $0.isSeparatorItem || $0.isHidden || $0.action == #selector(NSWindow.performClose(_:)) }) {
+            let close = sub.items.first { $0.action == #selector(NSWindow.performClose(_:)) }
+            bar.removeItem(file)
+            if let close, let window = NSApp.windowsMenu, !window.items.contains(where: { $0.action == #selector(NSWindow.performClose(_:)) }) {
+                sub.removeItem(close)
+                window.insertItem(close, at: 0)
+                window.insertItem(.separator(), at: 1)
+            }
+        }
     }
 }

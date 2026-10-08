@@ -36,6 +36,7 @@ final class GameRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let pillPipeline: MTLRenderPipelineState
     private let texture: MTLTexture
     let frames: FrameBuffer
     private let latency: LatencyMeter
@@ -62,6 +63,11 @@ final class GameRenderer {
         constexpr sampler s(filter::nearest, address::clamp_to_edge);
         return float4(tex.sample(s, in.uv).rgb, 1.0);
     }
+    // Menu pill: premultiplied BGRA picture, faded by `alpha`.
+    fragment float4 fpill(VOut in [[stage_in]], texture2d<float> tex [[texture(0)]], constant float &alpha [[buffer(0)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        return tex.sample(s, in.uv) * alpha;
+    }
     """
 
     init?(frames: FrameBuffer, latency: LatencyMeter) {
@@ -78,6 +84,17 @@ final class GameRenderer {
             d.fragmentFunction = lib.makeFunction(name: "fmain")
             d.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipeline = try device.makeRenderPipelineState(descriptor: d)
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = lib.makeFunction(name: "vmain")
+            pd.fragmentFunction = lib.makeFunction(name: "fpill")
+            let ca = pd.colorAttachments[0]!
+            ca.pixelFormat = .bgra8Unorm
+            ca.isBlendingEnabled = true
+            ca.sourceRGBBlendFactor = .one
+            ca.sourceAlphaBlendFactor = .one
+            ca.destinationRGBBlendFactor = .oneMinusSourceAlpha
+            ca.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            pillPipeline = try device.makeRenderPipelineState(descriptor: pd)
         } catch {
             NSLog("ReplayNES: Metal pipeline failed: \(error)")
             return nil
@@ -265,7 +282,8 @@ final class GameRenderer {
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
         }
-        let changed = crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT
+        let pill = pillKey(size: wanted, options: options, crtOn: crtOn).key
+        let changed = crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT || pill != shownPill
         return (newMeta, changed)
     }
 
@@ -292,6 +310,8 @@ final class GameRenderer {
         shownOptions = options
         shownCRT = crtState
         let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        let pill = pillKey(size: size, options: options, crtOn: crtOn)
+        shownPill = pill.key
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = drawable.texture
         rpd.colorAttachments[0].loadAction = .clear
@@ -309,6 +329,7 @@ final class GameRenderer {
             }
             if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
+                drawPill(enc, size: size, pill)
                 enc.endEncoding()
                 crtShown = true
                 if let o = crt.outputSize {
@@ -333,6 +354,7 @@ final class GameRenderer {
             enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
             enc.setFragmentTexture(texture, index: 0)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            drawPill(enc, size: size, pill)
             enc.endEncoding()
         }
         if newMeta != nil && !crtOn {
@@ -342,6 +364,76 @@ final class GameRenderer {
                 lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: "")
             }
         }
+    }
+
+    // MARK: menu pill (MenuPill.swift)
+
+    /// What the pill looks like on a present (nil-equivalent: not visible).
+    private struct PillKey: Equatable {
+        var generation = -1
+        var alpha = 0          // twentieths
+        var rect = CGRect.zero
+    }
+    private var shownPill: PillKey?
+    private var pillTexture: MTLTexture?
+    private var pillTextureGeneration = -1
+
+    /// The picture's rectangle (pixels, origin top-left) that the pill may lie over.
+    private static func pictureRect(size: CGSize, options: DisplayOptions, crtOn: Bool) -> CGRect {
+        if crtOn { return crtViewport(drawableSize: size, options: options).0 }
+        let r = viewport(drawableSize: size, options: options).0
+        return CGRect(x: r.minX, y: size.height - r.maxY, width: r.width, height: r.height)
+    }
+
+    private func pillKey(size: CGSize, options: DisplayOptions, crtOn: Bool) -> (key: PillKey, state: MenuPillOverlay.State) {
+        let st = MenuPillOverlay.shared.state
+        guard st.visible, st.image != nil else { return (PillKey(), st) }
+        let r = MenuPillLayout.rect(areaSize: size, pillSize: st.pixelSize, scale: st.scale)
+        let over = MenuPillLayout.overPicture(r, picture: Self.pictureRect(size: size, options: options, crtOn: crtOn))
+        let a = MenuPillLayout.alpha(elapsed: CACurrentMediaTime() - st.activity, overPicture: over)
+        return (PillKey(generation: st.generation, alpha: Int((a * 20).rounded()), rect: r), st)
+    }
+
+    /// Draws the pill into the current pass (premultiplied alpha blend): a few µs of GPU.
+    private func drawPill(_ enc: MTLRenderCommandEncoder, size: CGSize, _ pill: (key: PillKey, state: MenuPillOverlay.State)) {
+        let k = pill.key
+        guard k.generation >= 0, k.alpha > 0, let tex = pillTexture(pill.state) else { return }
+        let r = k.rect
+        var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float((size.height - r.maxY) / size.height * 2 - 1),
+                                Float(r.width / size.width * 2), Float(r.height / size.height * 2))
+        var uvr = SIMD4<Float>(0, 0, 1, 1)
+        var alpha = Float(k.alpha) / 20
+        enc.setRenderPipelineState(pillPipeline)
+        enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+        enc.setFragmentTexture(tex, index: 0)
+        enc.setFragmentBytes(&alpha, length: MemoryLayout<Float>.size, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+    }
+
+    /// The pill picture as a texture (made again when MenuPillOverlay renders a new one).
+    private func pillTexture(_ st: MenuPillOverlay.State) -> MTLTexture? {
+        if pillTextureGeneration == st.generation, let t = pillTexture { return t }
+        guard let img = st.image else { return nil }
+        let w = img.width, h = img.height
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let ok = bytes.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+            else { return false }
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        td.usage = .shaderRead
+        td.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: td) else { return nil }
+        t.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: bytes, bytesPerRow: w * 4)
+        pillTexture = t
+        pillTextureGeneration = st.generation
+        return t
     }
 
     // MARK: CRT
@@ -439,6 +531,21 @@ final class GameLayerView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func makeBackingLayer() -> CALayer { metalLayer }
+
+    /// A click on the Metal-drawn menu pill (MenuPill.swift).
+    var onPillClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let st = MenuPillOverlay.shared.state
+        if st.visible, st.image != nil, let onPillClick {
+            let p = convert(event.locationInWindow, from: nil)
+            let scale = window?.backingScaleFactor ?? 2
+            let px = CGPoint(x: p.x * scale, y: (bounds.height - p.y) * scale)
+            let r = MenuPillLayout.rect(areaSize: metalLayer.drawableSize, pillSize: st.pixelSize, scale: st.scale)
+            if r.insetBy(dx: -4 * scale, dy: -4 * scale).contains(px) { onPillClick(); return }
+        }
+        super.mouseDown(with: event)
+    }
     override var isOpaque: Bool { true }
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {}  // drawn by the emulation thread
@@ -507,15 +614,18 @@ final class GameLayerView: NSView {
 struct MetalGameView: NSViewRepresentable {
     let emu: EmulationController
     var options: DisplayOptions
+    var onPillClick: (() -> Void)?
 
     func makeNSView(context: Context) -> GameLayerView {
         let v = GameLayerView(emu: emu)
         v.setOptions(options)
+        v.onPillClick = onPillClick
         return v
     }
 
     func updateNSView(_ nsView: GameLayerView, context: Context) {
         nsView.setOptions(options)
+        nsView.onPillClick = onPillClick
     }
 
     static func dismantleNSView(_ nsView: GameLayerView, coordinator: ()) {

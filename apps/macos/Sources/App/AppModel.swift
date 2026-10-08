@@ -37,8 +37,22 @@ final class AppModel: ObservableObject {
     /// (toolbar, menus, layout) is not rebuilt for every update.
     var status = EmuStatus() {
         willSet { if newValue.coarse != status.coarse { objectWillChange.send() } }
-        didSet { if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession { updateImmersive() } }
+        didSet {
+            if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession {
+                updateImmersive()
+                updateUIMode()
+            }
+        }
     }
+    /// Quick Menu (QuickMenu/QuickMenuController.swift) and the library screen's focus.
+    let quickMenu = QuickMenuController()
+    let libraryNav = LibraryNav()
+    /// The library (start screen) shown over an open game (Game › Choose Game).
+    @Published var showLibrary = false
+    /// Menu pill label after "Menu": the connected controller's chord, or Esc.
+    @Published var pillGlyph = "Esc"
+    /// Launched by a script (--snapshot, --inject-*, ...): no first-run effects are remembered.
+    var scripted = false
     /// Full-screen play with the window chrome hidden (FullScreenChrome.swift).
     @Published var immersive = false
     let chrome = FullScreenChrome()
@@ -60,17 +74,15 @@ final class AppModel: ObservableObject {
 
     // Preferences
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
-    @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs() } }
-    @AppStorage("autosaveInterval") var autosaveInterval = 2.0 { didSet { pushPrefs() } }
+    @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs(); objectWillChange.send() } }
+    @AppStorage("autosaveInterval") var autosaveInterval = 2.0 { didSet { pushPrefs(); objectWillChange.send() } }
     /// Pixel-perfect (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
-    @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume) } }
-    /// Hidden by default since 0.2.0 (new key so earlier "shown" settings do not carry over).
-    @AppStorage("sidebarVisible") var showSidebar = false { didSet { objectWillChange.send() } }
+    @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume); objectWillChange.send() } }
     /// While paused, controller D-pad ←/→ step one frame back/forward (not sent to the game).
-    @AppStorage("dpadStepWhenPaused") var dpadStepWhenPaused = true { didSet { input.setPausedStepEnabled(dpadStepWhenPaused) } }
+    @AppStorage("dpadStepWhenPaused") var dpadStepWhenPaused = true { didSet { input.setPausedStepEnabled(dpadStepWhenPaused); objectWillChange.send() } }
     /// Photosensitive flash reduction level (FlashLevel raw value). Default Standard (on): safety first.
     @AppStorage("flashReduction") var flashReduction = FlashLevel.standard.rawValue { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("showFlashIndicator") var showFlashIndicator = true { didSet { objectWillChange.send() } }
@@ -125,7 +137,12 @@ final class AppModel: ObservableObject {
         emu.onError = { [weak self] title, msg in self?.showError(title, msg) }
         emu.onNotice = { [weak self] text in self?.flash(text) }
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
-        input.onControllersChanged = { [weak self] c in self?.controllers = c }
+        input.onControllersChanged = { [weak self] c in self?.controllers = c; self?.updateUIMode() }
+        input.onNav = { [weak self] n in self?.handleNav(n) }
+        input.onPausedConfirm = { [weak self] in
+            guard let self, self.status.hasSession, self.status.paused, !self.quickMenu.isOpen, !self.showLibrary else { return }
+            self.togglePause()
+        }
         input.onDisconnect = { [weak self] name in
             guard let self else { return }
             self.emu.perform { emu in emu.paused = true }
@@ -133,6 +150,7 @@ final class AppModel: ObservableObject {
         }
         input.onPausedStep = { [weak emu] dir, down in emu?.perform { e in e.pausedStep(dir, down: down) } }
         chrome.onChange = { [weak self] in self?.updateImmersive() }
+        quickMenu.model = self
         input.keyboardEnabled = { [weak self] in
             guard let w = NSApp.keyWindow, w === self?.mainWindow else { return false }
             return !(w.firstResponder is NSText)
@@ -157,8 +175,7 @@ final class AppModel: ObservableObject {
         let st = status
         menu.set(MenuValues(hasSession: st.hasSession, paused: st.paused, recording: st.recording,
                             practicing: st.practicing, slowOn: st.slow != .normal, takeEmpty: st.takeLength == 0,
-                            undoAvailable: st.undoDepth > 0, showPracticePanel: showPracticePanel,
-                            integerScale: integerScale, showSidebar: showSidebar, flashReduction: flashReduction,
+                            undoAvailable: st.undoDepth > 0, integerScale: integerScale,
                             showLatency: showLatency, streamOn: StreamOutputModel.shared.isOn))
     }
 
@@ -174,6 +191,8 @@ final class AppModel: ObservableObject {
         emu.start()
         input.startKeyboard()
         input.startControllers()
+        MenuPillOverlay.shared.startMonitoring { [weak self] in self?.mainWindow }
+        updateUIMode()
         statsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self, self.showLatency else { return }
             self.stats = self.emu.latency.snapshot(audio: self.emu.audio)
@@ -234,10 +253,10 @@ final class AppModel: ObservableObject {
     func practiceStop() { emu.perform { e in e.stopPractice() } }
     func practiceRename(_ slot: Int, _ name: String) { emu.perform { e in e.practiceRename(slot, name) } }
     func practiceClear(_ slot: Int) { emu.perform { e in e.practiceClear(slot) } }
-    /// Practice button / menu: shows or hides the OSD; while practicing it leaves practice.
+    /// Practice… (⇧⌘P): the Quick Menu's practice page; while practicing it leaves practice.
     func togglePracticePanel() {
         if status.practicing { practiceStop(); return }
-        showPracticePanel.toggle()
+        quickMenu.open(at: .practice)
     }
 
     /// Take navigation is not available while practicing (the engine refuses it).
@@ -545,6 +564,8 @@ final class AppModel: ObservableObject {
     /// `resume`: restore that take mode / position (paused) and the practice panel; `resumeNotice`
     /// says so (false when Save As reopens the moved temporary project).
     private func install(_ s: EngineSession, recovered: Bool, resume: ResumeRecord? = nil, resumeNotice: Bool = true) {
+        if current != nil { captureThumbnail() }   // the picture of the game being replaced
+        showLibrary = false
         let dir = s.projectDir
         let isTemp = persistSessions && sessionPaths.isTempProject(dir)
         // A temporary session being replaced was confirmed (saved elsewhere, or Don’t Save / empty).
@@ -634,6 +655,8 @@ final class AppModel: ObservableObject {
 
     func closeProject() {
         guard confirmDiscardIfNeeded() else { return }
+        captureThumbnail()
+        showLibrary = false
         let wasTemp = current?.isTemp == true
         releaseSession()
         if wasTemp { removeTempProject() }
@@ -662,6 +685,7 @@ final class AppModel: ObservableObject {
     func setupSessionPersistence(root: URL?, enabled: Bool) {
         if let root { sessionPaths = SessionPaths(root: root) }
         guard enabled else { return }
+        ThumbnailStore.dir = sessionPaths.root.appendingPathComponent("Thumbnails", isDirectory: true)
         do { try sessionPaths.ensure() } catch {
             NSLog("ReplayNES: session folder unavailable (\(error)); sessions are not persisted")
             return
@@ -714,6 +738,7 @@ final class AppModel: ObservableObject {
     func prepareForQuit() -> Bool {
         guard persistSessions else { return confirmDiscardIfNeeded() }
         guard let c = current else { return true }
+        captureThumbnail()
         let isTemp = c.isTemp
         let err: String? = emu.sync(timeout: 60) { e in e.flushForResume(fullSave: isTemp) } ?? String(localized: "Saving didn’t respond")
         updateResumeRecord()
@@ -731,6 +756,7 @@ final class AppModel: ObservableObject {
     /// App sent to the background: persist without waiting for the next autosave tick.
     private func persistNow() {
         guard persistSessions, current != nil else { return }
+        captureThumbnail()
         emu.perform { e in _ = e.flushForResume(fullSave: false) }
         updateResumeRecord()
     }
@@ -872,6 +898,68 @@ final class AppModel: ObservableObject {
         library.refresh()
         flash(String(localized: "Saved"))
         return true
+    }
+
+    // MARK: menus, library screen, thumbnails (docs/design/UI_REDESIGN.md)
+
+    /// Controller / keyboard navigation (InputManager.onNav): the Quick Menu when open, else the
+    /// L+R chord / Esc open it, else the library when it is on screen.
+    func handleNav(_ n: NavInput) {
+        if quickMenu.isOpen { quickMenu.handle(n); return }
+        let libraryOn = !status.hasSession || showLibrary
+        switch n {
+        case .menu:
+            quickMenu.open()
+        case .escape:
+            if libraryOn && libraryNav.projectsOf != nil { libraryNav.projectsOf = nil }
+            else if libraryOn && status.hasSession { hideLibraryScreen() }
+            else { quickMenu.open() }
+        default:
+            if libraryOn { libraryNav.handle(n, model: self) }
+        }
+    }
+
+    /// Navigation mode, the Metal pill and its glyph follow the session / pause / menu / library.
+    func updateUIMode() {
+        let libraryOn = !status.hasSession || showLibrary
+        input.setNavMode(quickMenu.isOpen || libraryOn)
+        let infos = input.controllerMonitor.controllers
+        let glyph = MenuPillLayout.glyph(hasController: !infos.isEmpty,
+                                         playStation: infos.min(by: { $0.slot < $1.slot })?.family == .playStation)
+        if pillGlyph != glyph { pillGlyph = glyph }
+        let pill = MenuPillOverlay.shared
+        pill.update(glyph: glyph, scale: mainWindow?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+        pill.setVisible(status.hasSession && !status.paused && !quickMenu.isOpen && !showLibrary)
+    }
+
+    /// Game › Choose Game (⇧⌘L): the library over the paused game.
+    func showLibraryScreen() {
+        if quickMenu.isOpen { quickMenu.close(resume: false) }
+        if status.hasSession { setPaused(true); captureThumbnail() }
+        libraryNav.focus = status.hasSession ? -1 : 0
+        withAnimation(QMStyle.anim) { showLibrary = true }
+        library.refresh()
+        updateUIMode()
+    }
+
+    func hideLibraryScreen() {
+        guard showLibrary else { return }
+        libraryNav.projectsOf = nil
+        withAnimation(QMStyle.anim) { showLibrary = false }
+        updateUIMode()
+    }
+
+    /// Bumped when a thumbnail was written (the library redraws).
+    func captureThumbnail() {
+        guard persistSessions, let c = current, status.hasSession else { return }
+        var px: [UInt32]?
+        _ = emu.frames.readIfNewer(than: .max) { p, _ in
+            px = Array(UnsafeBufferPointer(start: p, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT)))
+        }
+        guard let px else { return }
+        ThumbnailStore.save(pixels: px, project: c.projectPath, romSHA: c.romSHA256, on: resumeQueue) { [weak self] in
+            self?.objectWillChange.send()
+        }
     }
 
     // MARK: export

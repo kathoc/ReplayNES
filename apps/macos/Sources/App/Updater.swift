@@ -92,32 +92,3 @@ struct CheckForUpdatesCommand: View {
             .disabled(!updates.canCheckForUpdates)
     }
 }
-
-/// Settings > Updates
-struct UpdatesTab: View {
-    @ObservedObject var updates = UpdaterModel.shared
-    var body: some View {
-        Form {
-            Section("Updates") {
-                Toggle("Automatically check for updates", isOn: $updates.automaticallyChecks)
-                Toggle("Automatically download and install updates", isOn: $updates.automaticallyDownloads)
-                    .disabled(!updates.automaticallyChecks)
-                HStack {
-                    Button("Check Now…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
-                    Spacer()
-                    if let d = updates.lastCheck {
-                        Text("Last checked: \(d.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Section("Privacy") {
-                Text("ReplayNES connects only to GitHub (github.com) to check for and download updates. Only ordinary HTTP requests are sent; no system information or usage data. With automatic checks off, it connects only when you check manually from the menu.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("Automatically installed updates are applied the next time you quit the app. If there are unsaved changes, you are asked to save before quitting.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}

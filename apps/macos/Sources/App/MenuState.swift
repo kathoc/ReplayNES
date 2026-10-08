@@ -13,10 +13,7 @@ struct MenuValues: Equatable {
     var slowOn = false
     var takeEmpty = true
     var undoAvailable = false
-    var showPracticePanel = false
     var integerScale = true
-    var showSidebar = false
-    var flashReduction = FlashLevel.standard.rawValue
     var showLatency = false
     var streamOn = false
 }

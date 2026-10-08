@@ -35,11 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //                       for the temporary project + resume record (scripted runs without it
         //                       keep quick play in memory and never resume)
         //   --crt               enable the CRT display for this run (not saved)
-        //   --inject-pad / --test-actions / --snapshot-at / --snapshot-windows   scripted checks (TestHooks.swift)
+        //   --inject-pad / --test-actions / --snapshot-at / --snapshot-windows / --menu-walk   scripted checks (TestHooks.swift)
         //   --stats-log <path>  append a JSON line of pacing counters every second (scripts/perf-smoke.sh)
         //   --frame-log <path>  with --stats-log: one CSV line per presented frame (latency breakdown)
         let args = ProcessInfo.processInfo.arguments
-        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows", "--stats-log"].contains { args.contains($0) }
+        let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows", "--stats-log", "--menu-walk"].contains { args.contains($0) }
+        model.scripted = scripted
         if !args.contains("--no-updater") && !scripted {
             UpdaterModel.shared.start(arguments: args)
         }
@@ -57,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let err = model.library.start() {
             DispatchQueue.main.async {
                 self.model.showError(String(localized: "Couldn’t create the library folder"),
-                                     err + "\n\n" + String(localized: "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” in the library window."))
+                                     err + "\n\n" + String(localized: "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen."))
             }
         }
         if let name = arg("--library-play") {
@@ -81,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let acts = arg("--test-actions") { model.scheduleTestActions(acts) }
         if let snaps = arg("--snapshot-at") { model.scheduleSnapshots(snaps) }
         if let snaps = arg("--snapshot-windows") { model.scheduleWindowSnapshots(snaps) }
+        if let dir = arg("--menu-walk") { model.scheduleMenuWalk(dir: URL(fileURLWithPath: dir), delay: Double(arg("--menu-walk-delay") ?? "3") ?? 3) }
         if let log = arg("--stats-log") {
             model.startStatsLog(to: URL(fileURLWithPath: log), frameLog: arg("--frame-log").map { URL(fileURLWithPath: $0) })
         }
@@ -131,6 +133,11 @@ struct ReplayNESApp: App {
 
     init() {
         UILanguage.apply()
+        // Our launch arguments (--rom <path>, --library-root <dir>, ...) are parsed by AppDelegate.
+        // AppKit would otherwise also treat the paths among them as files to open, and an app
+        // launched to open files gets no main window from SwiftUI (no window at all for scripted
+        // runs: snapshots, perf-smoke). Files from Finder arrive as open events, unaffected.
+        UserDefaults.standard.register(defaults: ["NSTreatUnknownArgumentsAsOpen": "NO"])
     }
 
     var body: some Scene {
@@ -141,109 +148,40 @@ struct ReplayNESApp: App {
         .commands {
             AppCommands(model: AppModel.shared, menu: AppModel.shared.menu, stream: StreamOutputModel.shared)
         }
-
-        Window("Library", id: "library") {
-            LibraryWindow().environmentObject(AppModel.shared)
-        }
-        .defaultSize(width: 860, height: 560)
-        .commandsRemoved()
-
-        Window("Takes", id: "takes") {
-            TakesPanel().environmentObject(AppModel.shared)
-        }
-        .defaultSize(width: 720, height: 420)
-        .commandsRemoved()
-
-        Window("Controls Guide", id: "guide") {
-            GuideView()
-        }
-        .defaultSize(width: 620, height: 640)
-        .commandsRemoved()
-
-        Settings {
-            SettingsView().environmentObject(AppModel.shared)
-        }
     }
 }
 
-/// Menu bar: ReplayNES / File / Edit (text fields only) / Playback / View / Window / Help.
-/// Default items that do nothing useful here are removed (see also AppDelegate.applicationWillFinishLaunching).
+/// Menu bar, mirroring the Quick Menu's categories (docs/design/UI_REDESIGN.md): ReplayNES / Edit
+/// (text fields only) / View / Game / Retry / Practice / Share / Window / Help. Settings… (⌘,)
+/// opens the Quick Menu at Settings. Default items that do nothing useful here are removed (see
+/// also AppDelegate.applicationWillFinishLaunching and MenuBarCleaner).
 struct AppCommands: Commands {
     // Not observed: AppModel publishes every frame, which would rebuild (and flicker) the menu bar.
     let model: AppModel
     @ObservedObject var menu: MenuState
     let stream: StreamOutputModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         // ReplayNES: About, Check for Updates…, Settings…, Quit.
         CommandGroup(after: .appInfo) {
             CheckForUpdatesCommand(updates: UpdaterModel.shared)
         }
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { model.quickMenu.open(at: .display) }.keyboardShortcut(",")
+        }
         CommandGroup(replacing: .systemServices) {}
         CommandGroup(replacing: .appVisibility) {}
 
-        // File
-        CommandGroup(replacing: .newItem) {
-            // ⌘L is the latency overlay; ⇧⌘L is free.
-            Button("Library…") { openWindow(id: "library") }.keyboardShortcut("l", modifiers: [.command, .shift])
-            Divider()
-            Button("New Project…") { model.newProject() }.keyboardShortcut("n")
-            Button("Open Project…") { model.openProjectPanel() }.keyboardShortcut("o")
-            Button("Try a ROM (No Project)…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
-        }
-        CommandGroup(replacing: .saveItem) {
-            Button("Save") { model.saveSync() }.keyboardShortcut("s").disabled(!menu.v.hasSession)
-            Button("Save As…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!menu.v.hasSession)
-            Divider()
-            Button("Export MP4…") { model.showExport = true }.keyboardShortcut("e")
-                .disabled(!menu.v.hasSession || menu.v.takeEmpty)
-            Divider()
-            Button("Reset Project…") { model.resetProjectPrompt() }.disabled(!menu.v.hasSession)
-            Button("Close Project") { model.closeProject() }.disabled(!menu.v.hasSession)
-        }
+        // File: emptied (its items live in Game); MenuBarCleaner drops the empty menu.
+        CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .saveItem) {}
         CommandGroup(replacing: .printItem) {}
         CommandGroup(replacing: .importExport) {}
 
-        // Edit: only what text fields (names) need.
+        // Edit: only what text fields (names, search) need.
         CommandGroup(replacing: .undoRedo) {}
         CommandGroup(replacing: .textEditing) {}
         CommandGroup(replacing: .textFormatting) {}
-
-        // Playback
-        CommandMenu("Playback") {
-            let st = menu.v
-            let has = st.hasSession
-            Button(st.paused ? String(localized: "Resume") : String(localized: "Pause")) { model.togglePause() }.keyboardShortcut("p").disabled(!has)
-            Button("Frame Advance") { model.frameAdvance() }.keyboardShortcut(.rightArrow, modifiers: [.command]).disabled(!has)
-            Button("Step Back One Frame") { model.stepBack() }.keyboardShortcut(.leftArrow, modifiers: [.command]).disabled(!has)
-            Button("Back 1 Second") { model.jump(seconds: -1) }.keyboardShortcut("[", modifiers: [.command]).disabled(!has)
-            Button("Forward 1 Second (Recorded Range)") { model.jump(seconds: 1) }.keyboardShortcut("]", modifiers: [.command])
-                .disabled(!has || st.practicing)
-            Button(st.practicing ? String(localized: "Back to A") : String(localized: "Go to Start")) { model.seek(to: 0) }.keyboardShortcut(.upArrow, modifiers: [.command]).disabled(!has)
-            Toggle("Slow Motion (1/2)", isOn: Binding(get: { st.slowOn }, set: { model.setSlow($0 ? .half : .normal) }))
-                .keyboardShortcut("2").disabled(!has)
-            Divider()
-            Toggle("Record Mode", isOn: Binding(get: { st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
-                .keyboardShortcut("m", modifiers: [.command, .shift]).disabled(!has || st.practicing)
-            Button(st.practicing ? String(localized: "Stop Practicing") : (st.showPracticePanel ? String(localized: "Hide Practice Panel") : String(localized: "Practice Mode (A/B Repeat)…"))) {
-                model.togglePracticePanel()
-            }
-            .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!has)
-            Button("Set A of Selected Section Here (Timeline)") { model.timelineMarkA() }
-                .keyboardShortcut("i", modifiers: [.command, .option]).disabled(!has || st.practicing)
-            Button("Set B of Selected Section Here (Timeline)") { model.timelineMarkB() }
-                .keyboardShortcut("o", modifiers: [.command, .option]).disabled(!has || st.practicing)
-            Divider()
-            Button("Add Bookmark") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
-            Button("Back to Previous Take") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
-                .disabled(!has || !st.undoAvailable || st.practicing)
-            Menu("Reset & Power") {
-                Button("Soft Reset") { model.softReset() }.keyboardShortcut("r")
-                Button("Power Cycle") { model.powerCycle() }.keyboardShortcut("r", modifiers: [.command, .shift])
-            }
-            .disabled(!has || (!st.recording && !st.practicing))
-        }
 
         // View
         CommandGroup(replacing: .toolbar) {
@@ -252,26 +190,80 @@ struct AppCommands: Commands {
             Divider()
         }
         CommandGroup(before: .sidebar) {
-            Picker("Display Size", selection: Binding(get: { menu.v.integerScale }, set: { model.integerScale = $0 })) {
-                Text("Pixel-Perfect (Integer Scale)").tag(true)
-                Text("FILL (Fit Window)").tag(false)
-            }
-            Button("Toggle Pixel-Perfect / FILL") { model.integerScale.toggle() }.keyboardShortcut("f")
-            Divider()
-            Toggle("Sidebar", isOn: Binding(get: { menu.v.showSidebar }, set: { model.showSidebar = $0 })).keyboardShortcut("s", modifiers: [.command, .option])
-            Button("Takes") { openWindow(id: "takes") }.keyboardShortcut("t", modifiers: [.command, .shift])
-            Divider()
-            Picker("Flash Reduction", selection: Binding(get: { menu.v.flashReduction }, set: { model.flashReduction = $0 })) {
-                ForEach(FlashLevel.allCases) { Text($0.label).tag($0.rawValue) }
-            }
-            Toggle("Stream Output (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
+            Button("Menu") { model.quickMenu.toggle() }
+            Toggle("FILL (Fit Window)", isOn: Binding(get: { !menu.v.integerScale }, set: { model.integerScale = !$0 }))
+                .keyboardShortcut("f")
             Toggle("Show Latency", isOn: Binding(get: { menu.v.showLatency }, set: { model.showLatency = $0 })).keyboardShortcut("l")
             Divider()
         }
 
+        CommandMenu("Game") {
+            let has = menu.v.hasSession
+            // ⌘L is the latency overlay; ⇧⌘L is free.
+            Button("Choose Game…") { model.showLibraryScreen() }.keyboardShortcut("l", modifiers: [.command, .shift])
+            Button("New Project…") { model.newProject() }.keyboardShortcut("n")
+            Button("Open Project…") { model.openProjectPanel() }.keyboardShortcut("o")
+            Button("Try a ROM (No Project)…") { model.quickPlay() }.keyboardShortcut("n", modifiers: [.command, .shift])
+            Divider()
+            Button("Save") { model.saveSync() }.keyboardShortcut("s").disabled(!has)
+            Button("Save As…") { model.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!has)
+            Divider()
+            Button("Soft Reset") { model.softReset() }.keyboardShortcut("r")
+                .disabled(!has || (!menu.v.recording && !menu.v.practicing))
+            Button("Power Cycle") { model.powerCycle() }.keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!has || (!menu.v.recording && !menu.v.practicing))
+            Button("Start Over…") { model.resetProjectPrompt() }.disabled(!has)
+            Divider()
+            Button("Close Game") { model.closeProject() }.disabled(!has)
+        }
+
+        CommandMenu("Retry") {
+            let st = menu.v
+            let has = st.hasSession
+            Button(st.paused ? String(localized: "Resume") : String(localized: "Pause")) { model.togglePause() }.keyboardShortcut("p").disabled(!has)
+            Button("Record from Here") { model.rerecordHere() }.disabled(!has)
+            Button("Previous Attempt") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
+                .disabled(!has || !st.undoAvailable || st.practicing)
+            Toggle("Watch Replay", isOn: Binding(get: { !st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
+                .keyboardShortcut("m", modifiers: [.command, .shift]).disabled(!has || st.practicing)
+            Button("Takes…") { model.quickMenu.open(at: .takes) }.keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(!has || st.practicing)
+            Divider()
+            Button("Add Bookmark") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
+            Button("Bookmarks…") { model.quickMenu.open(at: .bookmarks) }.disabled(!has || st.practicing)
+            Divider()
+            Button("Frame Advance") { model.frameAdvance() }.keyboardShortcut(.rightArrow, modifiers: [.command]).disabled(!has)
+            Button("Step Back One Frame") { model.stepBack() }.keyboardShortcut(.leftArrow, modifiers: [.command]).disabled(!has)
+            Button("Back 1 Second") { model.jump(seconds: -1) }.keyboardShortcut("[", modifiers: [.command]).disabled(!has)
+            Button("Forward 1 Second") { model.jump(seconds: 1) }.keyboardShortcut("]", modifiers: [.command])
+                .disabled(!has || st.practicing)
+            Button(st.practicing ? String(localized: "Back to A") : String(localized: "Go to Start")) { model.seek(to: 0) }
+                .keyboardShortcut(.upArrow, modifiers: [.command]).disabled(!has)
+            Toggle("Slow Motion (1/2)", isOn: Binding(get: { st.slowOn }, set: { model.setSlow($0 ? .half : .normal) }))
+                .keyboardShortcut("2").disabled(!has)
+        }
+
+        CommandMenu("Practice") {
+            let st = menu.v
+            let has = st.hasSession
+            Button(st.practicing ? String(localized: "Stop Practicing") : String(localized: "Practice…")) { model.togglePracticePanel() }
+                .keyboardShortcut("p", modifiers: [.command, .shift]).disabled(!has)
+            Divider()
+            Button("Set A Here (Timeline)") { model.timelineMarkA() }
+                .keyboardShortcut("i", modifiers: [.command, .option]).disabled(!has || st.practicing)
+            Button("Set B Here (Timeline)") { model.timelineMarkB() }
+                .keyboardShortcut("o", modifiers: [.command, .option]).disabled(!has || st.practicing)
+        }
+
+        CommandMenu("Share") {
+            Button("Export MP4…") { model.showExport = true }.keyboardShortcut("e")
+                .disabled(!menu.v.hasSession || menu.v.takeEmpty)
+            Toggle("Stream Output (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
+        }
+
         // Help
         CommandGroup(replacing: .help) {
-            Button("Controls Guide") { openWindow(id: "guide") }.keyboardShortcut("?", modifiers: [.command])
+            Button("Controls") { model.quickMenu.open(at: .controller) }.keyboardShortcut("?", modifiers: [.command])
         }
     }
 }
