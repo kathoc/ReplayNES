@@ -65,6 +65,7 @@ Rules: no screen ever scrolls; if a page needs more than 6 rows, split it into a
 ## Seek bar while paused (R)
 
 - Only the filmstrip seek bar + time + the Menu pill; L2/R2 scrub; A = resume; the A/B lane stays.
+- A (and B on Linux / Windows) resume as a **tap**: pressed while paused they still reach the game, and resume on release only if nothing else was pressed or stepped while held. So a button can be held across D-pad frame steps (hold B to run, step with →) without resuming; a quick tap still resumes. (Considered: resuming only with a focused "Resume" affordance on the seek bar — rejected, the seek bar has no focus and R already resumes; consuming A outright — rejected, it broke held-button frame advance.)
 
 ## First run
 

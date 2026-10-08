@@ -9,7 +9,7 @@ a history of inputs, so you can rewind to any moment you like and re-record from
 When you play the finished take from the beginning, the failed parts are gone and it plays as one continuous run.
 You can export it as-is to an MP4 with audio.
 
-![ReplayNES (running a homemade test ROM)](docs/images/screenshot.png)
+![The Quick Menu of ReplayNES (L+R or Esc; over a generated test ROM)](docs/images/screenshot.png)
 
 ## Features
 
@@ -17,7 +17,7 @@ You can export it as-is to an MP4 with audio.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
 - **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
 - **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
-- **Controller-only operation**: L2 rewinds, R2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
+- **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls), L2 rewinds, R2 fast-forwards, R pauses, L slows down, and while paused the D-pad steps frame by frame. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
 - **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
 - **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
 - **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
@@ -37,7 +37,7 @@ You can export it as-is to an MP4 with audio.
 1. Download `ReplayNES-<version>-macOS-arm64.zip` from [Releases](https://github.com/kathoc/ReplayNES/releases) and unzip it.
 2. Move `ReplayNES.app` to the "Applications" folder.
 3. Because it has not been notarized, launch it the first time with **right-click → "Open"**. If it still will not open, choose "Open Anyway" in "System Settings → Privacy & Security".
-4. On the second launch you will be asked "Automatically check for updates?". After that, updates can be done inside the app (0.1.2 and later; from 0.1.1 or earlier, replace the app manually). In the "Updates" tab of Settings, you can turn automatic checking and automatic installation on or off at any time.
+4. On the second launch you will be asked "Automatically check for updates?". After that, updates can be done inside the app (0.1.2 and later; from 0.1.1 or earlier, replace the app manually). In Settings › System › Updates, you can turn automatic checking and automatic installation on or off at any time.
 
 ## Steam Deck / Linux (preview)
 
@@ -52,7 +52,7 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
    | Button | In play | In menus |
    |---|---|---|
    | L+R together | Quick Menu (pauses) | close it (resume) |
-   | R alone | pause / resume: only the seek bar shows (A / B resume, ←/→ step, L2 / R2 scrub) | next page |
+   | R alone | pause / resume: only the seek bar shows (tap A / B to resume, ←/→ step, L2 / R2 scrub; hold a button while stepping to advance with it held) | next page |
    | L alone | slow 1/2 on / off | previous page |
    | L2 / R2 hold | rewind / fast-forward | rewind / fast-forward |
    | D-pad / left stick | NES D-pad | move the focus |
@@ -78,58 +78,77 @@ ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Ste
 
 ## Usage
 
-### Getting Started
-
-- **Library (start screen / ⇧⌘L)**: The easiest way to start (see "Library" below).
-- **New Project (⌘N)**: Choose a ROM and decide where to save the `.nesrec` project. Recording starts right away.
-- **Try a ROM (No Project) (⇧⌘N)**: Use this to play without creating a project (your work is stored temporarily and resumes where you left off at the next launch).
-- **Open Project (⌘O) / Save (⌘S)**: An opened project is shown paused. Resume with Space / R on the controller (or the ▶︎ button).
-
 ### The Screen
 
-- The bottom bar is a simple layout of just the "Record" button, go to start, rewind (while held), pause / resume, fast-forward (while held), slow, the timeline, "Practice", and the display size. While paused, step back / frame advance buttons appear. Bookmarks, the takes list, advance by N frames, reset, and so on are in the "…" menu and the menu bar.
-- **Display Size**: "Integer" is the largest integer scale that fits on the screen, and the pixels line up crisply. "FILL" expands to fill the window while keeping the aspect ratio (4:3, or pixel aspect 8:7). You can choose it at the right end of the bottom bar or from the "View" menu (⌘F toggles), and the setting is saved.
-- **Timeline (filmstrip)**: Like video editing software, one screenshot per 5 seconds of play is lined up at its natural size. While recording, the bar grows to the right and the playhead advances one dot at a time; the newest screenshot appears cut off and is revealed as recording continues (fully shown after 5 s, then the next one starts). When the bar reaches the right end, the scale changes to one screenshot per 10 s (then 20 s, 40 s …) and the bar becomes half as long. Dragging moves to that position (silent, paused). The playhead (red while recording, white while playing, orange while practicing), bookmarks (yellow), and A/B sections (numbered colored bands) are overlaid. Thumbnails are made apart from the game processing (in parallel, from the take's saved checkpoints), so when you reopen a project they all appear at once shortly after, even for a one-hour take.
-- The sidebar (takes, bookmarks, controllers) is hidden by default. You can show it with the button at the right end of the toolbar or with ⌥⌘S.
-- "Help → Controls Guide" (⌘?) has a list of controller and keyboard controls.
+ReplayNES has one window. While you play, only the game is on screen, plus a small **"☰ Menu L+R"** pill in the top-right corner (it shows "Esc" when no controller is connected, "L1+R1" for PlayStation controllers). Everything else is in the **Quick Menu** and in the menu bar.
 
-### Record Button (Record / Playback)
+- **Library** (start screen, Game › Choose Game… ⇧⌘L): see "Library" below.
+- **Quick Menu**: press **L and R together** (within 0.1 s, either order), press **Esc**, or click the pill. The game pauses, dimmed behind six tiles. Press L+R / Esc again (or choose Resume) to keep playing.
+- **Paused (R / Space / ⌘P)**: only the filmstrip seek bar with the time appears at the bottom; nothing else covers the game.
+- **Menu bar**: Game (library, new / open / save, reset, close), Retry, Practice, Share, View (FILL ⌘F, Full Screen ⌃⌘F, latency ⌘L), Window (Close ⌘W) and Help › Controls (⌘?). ⌘, opens the Quick Menu's settings.
 
-- A glowing red "Record" means record mode. Click it and it turns gray, switching to **playback mode**, which plays the recorded take. If you were at the end of the take, playback starts automatically from the beginning; otherwise it starts from the current position (the last place you sought to).
-- In playback mode, click the gray "Record" to return to record mode paused at that position. The next input you make continues the recording (if you are partway through, it branches into a new take, and the original continuation is kept too).
-- In playback mode, it pauses when it reaches the end. Press ▶︎ again to play from the beginning.
+### The Quick Menu
+
+| Tile | What is in it |
+|---|---|
+| **Resume** | Close the menu and keep playing (focused when the menu opens) |
+| **Retry** | Record from Here · Previous Attempt (⌥⌘Z) · Watch Replay / Back to Recording (⇧⌘M) · Takes (⇧⌘T) · Bookmarks |
+| **Practice** | The 8 A/B sections as cards (see "Practice Mode") |
+| **Share** | Export MP4 (⌘E) · Stream Output (Syphon, for OBS) |
+| **Settings** | Four pages, L / R (or Tab) switch: **Display** (Size Integer / FILL, CRT, 8:7, Reduce Flashing, Hide Edges, CRT Details), **Controls** (Controller diagram, Keyboard, Turbo Speed, D-pad While Paused, Pause After Rewind, Controls Details), **Sound** (Volume), **System** (Language, Autosave, Latency Meter, Flash Notice, Updates, About) |
+| **Game** | Choose Game · Save · Save As · Reset (Soft Reset, Power Cycle, Start Over) · Close |
+
+No page scrolls: a page shows at most six items, longer lists (takes, bookmarks, key assignments) are split into pages switched with L / R. The focused item has a red frame, one line at the bottom says what it does, and the bottom right shows the buttons of your controller (or keys). The mouse and trackpad work everywhere too.
+
+| Button | In play | In menus |
+|---|---|---|
+| L+R together / Esc | Quick Menu (pauses) | close it (resume) |
+| R alone | pause / resume (the seek bar) | next page |
+| L alone | slow 1/2 on / off | previous page |
+| L2 / R2 hold | rewind / fast-forward | — |
+| D-pad / left stick | NES D-pad | move the focus |
+| A / B | NES B / A | confirm / back (on the top level: close) |
+| Y / X | turbo A / B | what the hint bar shows (rename, clear, search, projects …) |
+
+Keyboard: Esc opens / closes the Quick Menu, Space pauses; in menus the arrows move, Return / Space confirm, Delete goes back, Tab / ⇧Tab switch pages. L or R alone acts on release (or after being held for 0.1 s), so it is at most 0.1 s later than a plain button: the price of L+R. The Quick Menu is an assignable action (Settings › Controls › Keyboard): pad 1's L+R and Esc by default.
 
 ### Library
 
-ReplayNES creates the following folders at launch (it shows an error if it cannot create them). The first time, macOS asks for permission to access the Documents folder, so choose "Allow".
+ReplayNES creates these folders at launch (the first time, macOS asks for access to the Documents folder: choose "Allow").
 
 | Folder | Contents |
 |---|---|
-| `~/Documents/ReplayNES/ROM` | Where you put your own ROMs (`.nes`). Subfolders one level down are also loaded |
-| `~/Documents/ReplayNES/Projects` | Where projects started from the Library (`<ROM name> <yyyy-MM-dd HHmm>.nesrec`) are saved |
+| `~/Documents/ReplayNES/ROM` | Your own ROMs (`.nes`). Subfolders one level down are read too |
+| `~/Documents/ReplayNES/Projects` | Projects started from the library (`<ROM name> <yyyy-MM-dd HHmm>.nesrec`) |
 
-1. Put `.nes` files in the ROM folder (you can open the folder with the "Open in Finder" button). Additions and deletions are picked up automatically (you can also refresh with "Reload").
-2. On the start screen (or the menu "File → Library…" / ⇧⌘L), choose a ROM and **double-click / press Return / click "Play"**. A new project is created without asking where to save it, and the game starts right away. Your work is autosaved.
-3. On the right, "Projects for This ROM" lists the projects made with that ROM. **"Continue"** opens where you left off. Projects are matched to ROMs by the ROM's contents (SHA-256), so the match is kept even if you rename the ROM file.
-4. If you choose a different ROM while playing, you are asked whether to save in the usual way if there are unsaved changes (for a temporarily stored session, it asks "Do you want to save?". See "Resume" below). If a ROM could not be loaded, the error is shown.
+- At the top, a large **Continue** card opens your latest project where you left off. Below it, big game cards (thumbnail of the latest project), paged with L / R instead of scrolling.
+- **A / Return / double-click** plays the focused game: a new project is created (no save dialog) and the game starts right away; your work is saved automatically.
+- **X** lists that game's projects ("New Game" starts another one); projects are matched to ROMs by their contents (SHA-256), so renaming the ROM file keeps the match. **Y** searches. With no ROMs yet, one card shows where to put them ("Open Folder"). Additions and deletions are picked up automatically.
+- Game menu: New Project… (⌘N: choose where to save), Open Project… (⌘O), Try a ROM (No Project)… (⇧⌘N: play without a project; resumes at the next launch).
+- Choosing another game while one is open asks whether to save unsaved changes (see "Resume" below).
 
-You can narrow down ROM names with the search field. As before, ⌘N (choose where to save and create a new project) and ⌘O (open a project from anywhere) are also available.
+### Recording and Watching
+
+- ReplayNES records from the moment a game starts. **Retry › Watch Replay** (⇧⌘M) plays the recorded take without recording: from the start if you were at its end, otherwise from where you are. It pauses at the end.
+- **Retry › Back to Recording** (or Record from Here) returns to record mode at that position. The next input continues the recording; partway through, it branches into a new take and the original continuation is kept.
+- **Size**: "Integer" is the largest integer scale that fits (crisp pixels); "FILL" fills the window keeping the aspect ratio (4:3, or 8:7 pixels). Settings › Display › Size or View › FILL (⌘F); saved.
+- **Seek bar (filmstrip)**: one screenshot per 5 seconds of play at its natural size (then one per 10 s, 20 s, … as the take grows). Drag to move (silent, paused). The playhead (red recording, white playing, orange practicing), bookmarks (yellow) and A/B sections (numbered colored bands) are overlaid. Thumbnails are made apart from the game (in parallel, from the take's checkpoints), so even a one-hour take shows them shortly after it opens.
 
 ### Flash Reduction (care for flashing lights)
 
-It detects scenes such as explosions and lightning where **a wide area of the screen flashes intensely** and tones down only the displayed picture (it reduces the number of flashes and keeps the darker side). It uses the WCAG 2.x general flash and red flash thresholds (no more than 3 flashes per second over about 25% or more of the screen) as a guide.
+It detects scenes such as explosions and lightning where **a wide area of the screen flashes intensely** and tones down only the displayed picture (fewer flashes, keeping the darker side). It uses the WCAG 2.x general flash and red flash thresholds (no more than 3 flashes per second over about 25% or more of the screen) as a guide.
 
-- In Settings → "Display & Audio" → "Flash Reduction" you can choose **Off / Low / Standard / High**. The default is **Standard (on)**.
+- Settings › Display › **Reduce Flashing**: **Off / Low / Standard / High**. The default is **Standard (on)**.
   - Low: exactly the WCAG threshold (up to 3 times per second)
   - Standard: detects early, up to 2 times per second (recommended)
   - High: up to 1 time per second. It also weakens small remaining flicker
-- Small flashes (such as a character blinking) and normal scrolling are shown as they are. While it is reducing, "Flash Reduction Active" is shown at the top left of the screen (you can hide it in Settings).
+- Small flashes (such as a character blinking) and normal scrolling are shown as they are. While it is reducing, "Flash Reduction Active" is shown at the top left (Settings › System › Flash Notice hides it).
 - It has no effect at all on recorded input, game progress, or reproducibility (hashes). It is display-only processing.
-- When exporting to MP4, choosing "Apply Flash Reduction" applies it to the exported video as well (the initial value follows the current setting).
+- When exporting to MP4, "Apply Flash Reduction" applies it to the exported video as well (the initial value follows the current setting).
 
 > **Note**: This feature does not reliably prevent photosensitive seizures or the like. If you are sensitive to flashing, please take sufficient care, and stop playing immediately if you feel anything unusual. See [docs/FLASH_REDUCTION.md](docs/FLASH_REDUCTION.md) for how it works and its limits.
 
-### Controller and Key Assignments (changeable in Settings)
+### Controller and Key Assignments
 
 Controller buttons are assigned by **position** (right button = Famicom A, bottom button = B). On Nintendo controllers, A = A and B = B as printed.
 
@@ -139,85 +158,78 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | A / B | Right / bottom button | A / B | B / A | ○ / ✕ | X / Z |
 | Turbo A / Turbo B | Top / left button | X / Y | Y / X | △ / □ | S / A |
 | START / SELECT | Menu / Options | + / − | ≡ / View | OPTIONS / CREATE | Return / Right Shift (or `\`) |
+| Quick Menu | **Left + Right Shoulder together** | L + R | LB + RB | L1 + R1 | Esc |
 | Rewind (while held) | **Left Trigger** | ZL | LT | L2 | Delete |
 | Fast-forward (while held) | **Right Trigger** | ZR | RT | R2 | Tab |
-| Quick Menu (Linux / Windows) | **Left + Right Shoulder together** | L + R | LB + RB | L1 + R1 | Esc |
 | Pause / Resume | **Right Shoulder** | R | RB | R1 | Space |
 | Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
-| Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | `,` / `.` |
-| Bookmark | — | B |
+| Step back / frame advance while paused | **D-pad ← / →** (hold for continuous) | | | | `,` / `.` |
+| Bookmark | — | | | | B |
 
-- Rewind, fast-forward, pause, slow, and frame advance are "hotkeys" and are never recorded as game input. The D-pad ← / → while paused is not sent to the game either (you can turn this off in Settings → Hotkeys).
-- **Fast-forward** just plays the recorded take at high speed and records nothing. When it reaches the end of what is recorded (the paused position), it stops there and pauses.
-- If you keep playing in record mode after rewinding, it automatically branches into a new take from that position and recording continues.
-- **Background input**: While a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and it does not pause automatically. Sound also keeps playing. The keyboard works only while ReplayNES is in front.
-- If the controller is disconnected, it pauses automatically.
-- If you update from 0.1.x and the controller hotkeys are still the old defaults (L1 rewind / R1 fast-forward / L2 and R2 frame advance), they are automatically switched to the new assignments above. If you had changed them yourself, they are left as they are.
-- Up to 0.2.x the triggers were the other way round (R2 rewind, L2 fast-forward). If they still have those defaults, they are switched to L2 rewind / R2 fast-forward automatically; changed assignments are kept.
-- **Button layout diagram**: In Settings → "Controllers" (or "Button Layout…" in the sidebar), a diagram of the connected controller (Nintendo / Xbox / PlayStation / other shapes) and the assignment of each button are shown. Pressing a button lights it up on the diagram, so you can check which button is which. Clicking a button in the diagram lets you choose the action to assign (Famicom button, turbo, hotkeys such as rewind, or none). "Reset Pad N to Defaults" resets only that controller to its defaults. The traditional method of assigning by pressing a key or button is in the "Game Input" and "Hotkeys" tabs.
-- Up to 0.2.0, A / B and X / Y were swapped on Nintendo controllers (Pro Controller, Joy-Con). If you were using the face button assignments at their defaults, they automatically become the correct layout after the update. If you had changed them yourself, they are carried over when you connect that controller, so the same buttons perform the same actions as before.
+- **Settings › Controls › Controller** shows a diagram of the connected controller (Nintendo / Xbox / PlayStation / other shapes) with each button's assignment; pressing a button lights it up. Choose a button to assign a Famicom button, turbo, a hotkey or nothing; Y restores that pad's defaults; L / R switch pads. **Keyboard** lists every action with its keys and buttons (A adds one by pressing it, X clears). **Controls Details**: opposite directions (←+→), stick threshold, turbo press length, Default Buttons.
+- Rewind, fast-forward, pause, slow, frame advance and the Quick Menu are "hotkeys" and are never recorded as game input.
+- **While paused**, the D-pad ← / → steps frames and is not sent to the game, and **a tap of A resumes** (Settings › Controls › D-pad While Paused turns both off). Other buttons still reach the game, so you can hold a button (say B to run) and step with → to advance frames with it held; an A held through a step does not resume.
+- **Fast-forward** just plays the recorded take at high speed and records nothing; it stops and pauses at the end of what is recorded.
+- **Background input**: while a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and the sound keeps playing. The keyboard works only while ReplayNES is in front. If the controller is disconnected, the game pauses.
+- **Updating from older versions**: saved assignments are upgraded once, and only the parts you never changed: 0.1.x controller hotkeys → the current ones; up to 0.2.x the triggers were swapped (R2 rewind); up to 0.2.0 A / B and X / Y were swapped on Nintendo controllers (customised face buttons are carried over when that controller connects); 0.5.0 adds the Quick Menu (pad 1's L+R and Esc, unless Esc was already assigned). R keeps pausing and L keeps slowing down. Older versions cannot read the assignments file once a newer one has added the Quick Menu.
 
 ### Rewind and Re-record
 
-1. If you make a mistake, **hold L2 (or Delete) to rewind**, or drag the timeline bar to go back.
-2. If you resume play from the position you went back to, recording of a new take starts from that position. The original play that came after it is kept rather than erased.
-3. If the previous take was better, you can go back with **"Back to Previous Take" (⌥⌘Z)**. All takes can be checked in "Takes" (⇧⌘T).
-4. In playback mode (the gray "Record" button), the recorded take is played. If you want to make changes, press the "Record" button to return to record mode.
+1. If you make a mistake, **hold L2 (or Delete) to rewind**, or drag the seek bar to go back.
+2. Play on from there and a new take is recorded from that position. The original continuation is kept.
+3. If the previous take was better, **Retry › Previous Attempt** (⌥⌘Z) brings it back. **Retry › Takes** (⇧⌘T) lists every take; choose one to switch to it.
+4. **Bookmarks** (B / ⌘D, or Retry › Bookmarks › Add Here) mark a moment; choose a bookmark to jump to it (Y renames, X deletes).
 
-If you add a bookmark (B / ⌘D), you can jump straight to that position.
-
-**Reset Project…** (File menu, sidebar, or the Takes window) starts the current project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay the same. "Keep A/B repeat sections" (on by default) keeps your practice sections. For a saved project, a backup copy is moved to the Trash first, so you can still recover the old recording from there.
+**Game › Reset › Start Over** (Game menu: Start Over…) starts the project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay. "Keep A/B repeat sections" (on by default) keeps your practice sections. A saved project is first backed up to the Trash, so the old recording can still be recovered from there.
 
 ### Production Aids
 
-- Pause (R / Space / ⌘P), frame advance (D-pad → while paused / `.` / ⌘→), advance a specified number of frames ("…" menu → "Advance by Frames")
+- Pause (R / Space / ⌘P), frame advance (D-pad → while paused / `.` / ⌘→), step back (D-pad ← / `,` / ⌘←), 1 second back / forward (⌘[ / ⌘]), go to start (⌘↑).
 - Slow: 1/2 ⇔ normal speed (L / ⌘2). Slow motion and pausing are not counted in the final take's duration.
-- Soft reset (⌘R) and power cycle (⇧⌘R) record which frame they were done on, and are reproduced on the same frame during playback.
+- Soft reset (⌘R) and power cycle (⇧⌘R) (Game › Reset) record which frame they were done on, and are reproduced on the same frame during playback.
 - No sound is produced while paused, rewinding, seeking, in slow motion, or fast-forwarding.
 
 ### Practice Mode (A/B Repeat)
 
 Practice only the tricky section over and over without recording.
 
-1. Press "Practice" (⇧⌘P) in the bottom bar and 8 section panels appear over the game screen.
-2. At the start of a section press "**A**", then keep playing from there and press "**B**" at the end position (you can also set them while paused). Each section shows its length (minutes:seconds.frames), and from "…" you can rename or clear it.
-3. Press ▶︎ (Practice This Section) and play starts automatically from A. **When you reach B, the screen holds still for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again automatically**.
-4. While practicing you can also use L2 rewind (up to A), R pause, L slow, and D-pad frame advance / step back while paused.
-5. "**Stop Practicing**" (in the panel / in the bottom bar / ⇧⌘P) returns you exactly to the position in the take from before you started practicing.
+1. Open **Quick Menu › Practice** (⇧⌘P): the 8 sections are cards. At the start of the section, choose **Set A Here** on an empty card.
+2. Choose the card to practice from A. Play to where the section should end, open the menu and choose **Set B** on that card (outside practice: play on from A and use Practice › Set B Here (Timeline), ⌥⌘O). Each section shows its length (minutes:seconds.frames); Y renames, X clears.
+3. Choose a finished section to **practice** it: play starts at A, and **at B the picture holds for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again**.
+4. While practicing you can also use L2 rewind (back to A), R pause, L slow, and the D-pad frame advance / step back while paused.
+5. **Stop Practicing** (on the active card, or ⇧⌘P) returns you exactly to the position in the take from before you started.
 
-- Nothing is recorded during practice. The length and contents of the take do not change.
-- Set B at a position you reached by "playing on from A". If you rewound, moved on the timeline, or switched takes after A, a message to that effect is shown (start over from A, or set A again).
-- Sections are saved in the project (they are included in autosave too). If a section's data is damaged, you can choose "Discard Damaged Sections and Open" when opening (the discarded sections are shown. Takes are not affected).
-- During practice, the player controls for play video (timeline seeking, bookmarks, take switching) are unavailable.
+- Nothing is recorded during practice. The take does not change.
+- Set B at a position you reached by playing on from A. If you rewound, moved on the seek bar or switched takes after A, a message says so (start over from A, or set A again).
+- Sections are saved in the project (autosave included). If a section's data is damaged, you can choose "Discard Damaged Sections and Open" when opening (takes are not affected).
+- During practice, seeking, bookmarks and switching takes are unavailable.
 
-#### Specifying A/B on the Timeline
+#### A/B on the seek bar
 
-For a recorded take, you can define sections on the timeline without playing again.
+For a recorded take, you can define sections without playing again. While paused, the seek bar has a band for the A/B sections and a section picker ("A/B 1") at its right.
 
-- Use "**A/B 1**" at the right of the timeline to choose which section (1 to 8, color-coded) to edit.
-- **Dragging** on the band on the timeline (the thin row above the thumbnails) makes that range the A→B of the selected section (on the thumbnails, **Shift+drag**).
-- **Dragging either end** of a section adjusts A / B. **Clicking a section** starts practicing that section.
-- "**Set A Here (Playhead)**" (⌥⌘I) / "**Set B Here (Playhead)**" (⌥⌘O) at the playhead. They are also in the "Playback" menu and the "A/B" menu. Set B Here can be used even if you have not played on from A, as long as A is on this take (the "B" in the Practice panel works the same way).
-- Only sections on the current take are shown (sections made on a different take, and an A set during practice, do not appear on the band). Sections cannot be set while practicing.
+- **Drag** on the band to make that range the A→B of the selected section (on the thumbnails, **Shift+drag**). **Drag either end** to adjust A / B; **click a section** to practice it.
+- **Practice › Set A Here (Timeline)** (⌥⌘I) / **Set B Here (Timeline)** (⌥⌘O) at the playhead. Set B works without playing on from A, as long as A is on this take.
+- Only sections on the current take are shown. Sections cannot be set while practicing.
 
 ### Pick Up the Next Day
 
-Save with `⌘S` and open it later with `⌘O` to resume from where the last-used take left off. From there you can also rewind even further into the past.
-Your work is autosaved while you work (every 2 seconds by default; it also saves immediately when you pause and when the app goes to the background). If a previous abnormal exit is found when you open a project, it is recovered up to the last autosave and a message says so.
+Save with **Game › Save** (⌘S) and open it later with **Open Project** (⌘O), the library's Continue card or the game's projects (X): you continue from where the last-used take left off, and can still rewind into the past. Your work is autosaved (every 2 seconds by default, Settings › System › Autosave; also right away when you pause and when the app goes to the background). If an abnormal exit is found when you open a project, it is recovered up to the last autosave and a message says so.
 
 ### Resume (Pick Up Where You Left Off, Even After Quitting)
 
-- **Automatic continuation**: When you quit with ⌘Q or by closing the window, you are not asked "Do you want to save?". Your work in progress is saved as it is, and at the next launch the previous project (or the session you were playing without a project) opens **paused at the previous position and mode**, and "Resumed where you left off" is shown. If you were practicing, the Practice panel opens too. After a force quit or power outage, it resumes from the position of the last autosave (within a few seconds).
-- **For projects**: On quit, it only writes to the project's autosave (journal), and what you saved with ⌘S does not change. When switching to another project or ROM, you are asked whether to save, as before (choosing "Don't Save" returns to the last saved state).
-- **Where temporary storage lives**: Work done while playing without a project ("Try a ROM (No Project)", or when you open a ROM file directly) is stored temporarily at `~/Library/Application Support/ReplayNES/Session/current.nesrec` (the resume information is `resume.json` in the same folder). Temporary storage does not appear under "Continue" in the Library. If you save it anywhere you like with ⌘S (Save), it becomes a normal project.
-- **When it is discarded**: If you try to open another ROM / project while the temporary storage holds recorded content (Library, ⌘N, ⌘O, Try a ROM, opening a file), you are asked "Do you want to save?". Choosing a destination with "Save…" keeps it as a project, and choosing "Don't Save" discards the temporary storage (the same applies to "Close Project"). Temporary storage with nothing recorded is discarded without asking.
-- **When resuming fails**: If it cannot resume because the ROM was moved or deleted, it was recorded with a different core, or the file is damaged, it shows the reason and returns to the start screen (Library). If the ROM can be specified again, you can specify it right there. The temporary storage is **kept rather than deleted**, and resuming is tried again at the next launch. When you start a different ROM, you can choose to save or discard the leftover previous temporary storage.
-- If you launch two copies of ReplayNES at the same time, the one launched later does not resume and does not touch the temporary storage.
+- **Automatic continuation**: when you quit with ⌘Q or by closing the window (⌘W), you are not asked "Do you want to save?". Your work in progress is kept, and at the next launch the previous project (or the session you were playing without a project) opens **paused at the previous position and mode**, with "Resumed where you left off". After a force quit or power outage, it resumes from the last autosave (within a few seconds).
+- **For projects**: on quit, only the project's autosave (journal) is written; what you saved with ⌘S does not change. When switching to another project or ROM, you are asked whether to save (choosing "Don't Save" returns to the last saved state).
+- **Where temporary storage lives**: work done without a project (Try a ROM, or opening a ROM file directly) is stored at `~/Library/Application Support/ReplayNES/Session/current.nesrec` (resume information: `resume.json` in the same folder). It does not appear under Continue in the library; save it anywhere with ⌘S to make it a normal project.
+- **When it is discarded**: opening another ROM / project while the temporary session holds recorded content asks "Do you want to save?". "Save…" keeps it as a project, "Don't Save" discards it (the same applies to Game › Close). A temporary session with nothing recorded is discarded without asking.
+- **When resuming fails** (the ROM was moved or deleted, a different core, a damaged file): the reason is shown and you return to the library; if the ROM can be specified again, you can do it right there. The temporary storage is **kept**, and resuming is tried again at the next launch.
+- If you launch two copies of ReplayNES at the same time, the later one does not resume and does not touch the temporary storage.
 
-If you moved the location of the ROM file, specify the ROM again when opening. It is confirmed to be the same ROM by SHA-256.
-**The ROM itself is not stored in the project.**
+If you moved the ROM file, specify it again when opening (it is confirmed to be the same ROM by SHA-256). **The ROM itself is not stored in the project.**
 
 ### Export to MP4 (⌘E)
+
+Quick Menu › Share › Export MP4, or Share › Export MP4… in the menu bar.
 
 - Format: H.264 or HEVC with AAC (48 kHz)
 - Size: integer multiples of 256×240, 1280×960, 1920×1440, and so on
@@ -229,12 +241,12 @@ If you moved the location of the ROM file, specify the ROM again when opening. I
 
 The game screen is output via [Syphon](https://syphon.github.io) and can be brought directly into streaming software such as OBS (this is not a virtual camera).
 
-1. In ReplayNES, turn on "Settings → Display & Audio → Stream Output (Syphon)" (you can also toggle it from the menu "View → Stream Output (Syphon)"). While it is on, "Syphon Live" is shown at the top left of the game screen.
+1. In ReplayNES, open **Quick Menu › Share › Stream Output** and turn it on (or Share › Stream Output (Syphon) in the menu bar). While it is on, "Syphon Live" is shown at the top left of the game screen.
 2. In OBS (macOS version), add "Source → ＋ → Syphon Client" and choose "[ReplayNES] ReplayNES" as the server.
 3. For audio, add OBS's "macOS Audio Capture" source (captures an application's audio) and choose ReplayNES. No setting is needed on the ReplayNES side.
 
-- Only the game screen is output (the UI and badges are not included). Flash reduction is already applied just as in the display, and the entire 256×240 including the overscan area is enlarged with nearest-neighbor interpolation.
-- Output size: native 256×240, 2x to 4x (default is 4x, 1024×960), 1280×960 / 1920×1440 (4:3, black bars on the left and right). The 8:7 pixel aspect ratio can also be chosen (separate from the display setting).
+- Only the game screen is output (no UI, no pill or badges). Flash reduction is already applied just as in the display, and the entire 256×240 including the overscan area is enlarged with nearest-neighbor interpolation.
+- The Stream Output page sets the size (native 256×240, 2x to 4x (default 4x, 1024×960), 1280×960 / 1920×1440 with black bars), the 8:7 pixel aspect ratio and whether the CRT picture is streamed (separate from the display settings).
 - Output runs on a separate thread from emulation, and nothing is drawn when there is no receiver. A delay of a few frames may appear on the OBS side.
 - While paused, the last picture keeps being shown.
 - The controller works even when ReplayNES is not in front, so you can keep playing while operating OBS.
@@ -254,7 +266,7 @@ ReplayNES connects to the network only when it accesses GitHub (github.com and i
 All it sends are ordinary HTTPS requests to fetch the update information (`appcast.xml`) and the update file; it sends no system information, usage data, or the contents of ROMs or projects. There is no telemetry either.
 
 - Automatic checking is enabled only if you allowed it in the prompt shown at the second launch (macOS and Windows; the Windows version fetches `appcast-windows.xml`).
-- If you turn off "Automatically check for updates" in the "Updates" tab of Settings, it does not connect except when you check manually from the menu.
+- If you turn off "Automatically check for updates" in Settings › System › Updates, it does not connect except when you check manually from the menu.
 
 What it reads and writes is limited to the ROMs and projects you specify, the Library folder (`~/Documents/ReplayNES`), settings files, and the update cache.
 

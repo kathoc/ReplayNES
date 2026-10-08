@@ -230,8 +230,8 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | L alone | slow motion 1/2 on / off | previous page |
 | L2 / R2 hold | rewind / fast-forward (recorded part only) | rewind / fast-forward the game behind |
 | D-pad / left stick | NES D-pad (paused: ←/→ step frames) | move the focus |
-| A (south) | NES B (by position, as on macOS: Nintendo's A/B); paused: resume | confirm |
-| B (east) | NES A; paused: resume | back (on the top level: resume) |
+| A (south) | NES B (by position, as on macOS: Nintendo's A/B); paused: a tap resumes | confirm |
+| B (east) | NES A; paused: a tap resumes | back (on the top level: resume) |
 | Y (north) / X (west) | turbo A / turbo B | what the hint bar shows (rename / clear / search / projects …) |
 | Menu (≡) / View (⧉) | START / SELECT | - |
 | R3 / Steam (Guide) | Quick Menu (reserved) | close the menu |
@@ -240,7 +240,12 @@ L or R alone acts when it is released (or after 0.1 s held), so a single press i
 than before - the price of L+R. The chord is the action "Quick Menu" bound to the two-button combo
 `gc0:leftShoulder+gc0:rightShoulder` (detected by the shared core, `rnf_chord`, the same on every
 platform); it stays remappable. Saved assignments from before get L+R and Esc added once (layout 5);
-R keeps pausing, it just no longer opens a menu.
+R keeps pausing, it just no longer opens a menu. Older versions cannot read an assignments file that
+has the Quick Menu in it.
+
+While paused, A / B resume only as a tap: they still reach the game, so you can hold a button (B to
+run, say) and step with D-pad → to advance frames with it held; a button held through a step, or
+while another button is pressed, does not resume on release.
 
 Keyboard: arrows, X = A, Z = B, S/A = turbo, Enter = START, right Shift or \\ = SELECT, Space pause,
 Backspace rewind, Tab fast-forward, L slow, comma/period step, B bookmark, **Esc (or F1) the Quick
