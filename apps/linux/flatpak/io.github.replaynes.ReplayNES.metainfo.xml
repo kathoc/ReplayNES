@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.5.0" date="2026-10-09">
+      <description>
+        <p>New Quick Menu (L+R) with six categories, redesigned controls (east confirms by default), seek-bar A/B markers for practice, and a game library with a built-in title database.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-07">
       <description>
         <p>Shared desktop frontend with the new native Windows app; controller glyph fixes.</p>
