@@ -273,6 +273,7 @@ struct rnf_project_list {
 struct rnf_rom_hash_cache {
   std::mutex lock;
   std::map<std::tuple<std::string, int64_t, double>, std::string> cache;
+  std::map<std::tuple<std::string, int64_t, double>, std::pair<rnf_game_match, rnf_game_info>> games;
 };
 
 extern "C" {
@@ -456,6 +457,32 @@ rn_status rnf_rom_hash_cache_sha256(rnf_rom_hash_cache* c, const char* path, int
   std::memcpy(out_hex, h.c_str(), std::min<size_t>(h.size(), 64) + 1);
   return RN_OK;
   RNF_GUARD_END(RN_ERR_INTERNAL)
+}
+
+rnf_game_match rnf_rom_hash_cache_identify(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
+                                           rnf_game_info* out) {
+  if (!c || !path) return RNF_GAME_MATCH_NONE;
+  try {
+    auto key = std::make_tuple(std::string(path), size, modified);
+    {
+      std::lock_guard<std::mutex> g(c->lock);
+      auto it = c->games.find(key);
+      if (it != c->games.end()) {
+        if (out && it->second.first != RNF_GAME_MATCH_NONE) *out = it->second.second;
+        return it->second.first;
+      }
+    }
+    rnf_game_info info{};
+    rnf_game_match m = rnf_gamedb_identify_file(path, &info);
+    {
+      std::lock_guard<std::mutex> g(c->lock);
+      c->games[key] = {m, info};
+    }
+    if (out && m != RNF_GAME_MATCH_NONE) *out = info;
+    return m;
+  } catch (...) {
+    return RNF_GAME_MATCH_NONE;
+  }
 }
 
 char* rnf_backup_path(const char* project_path, double date, rnf_exists_fn exists_fn, void* ctx) {

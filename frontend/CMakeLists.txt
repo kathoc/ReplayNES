@@ -15,8 +15,18 @@ add_custom_command(
   COMMENT "Generating the localization table from Localizable.xcstrings"
   VERBATIM)
 
+# Game database (titles / makers / years / genres; see tools/nesdb/README.md): compiled in as data.
+set(RNF_NESDB ${CMAKE_CURRENT_SOURCE_DIR}/data/nesdb.tsv)
+add_custom_command(
+  OUTPUT ${RNF_GEN_DIR}/nesdb_data.inc
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_data.py ${RNF_NESDB}
+          ${RNF_GEN_DIR}/nesdb_data.inc kNesdb
+  DEPENDS ${RNF_NESDB} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_data.py
+  COMMENT "Embedding the game database"
+  VERBATIM)
+
 file(GLOB RNF_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-add_library(replaynes_frontend STATIC ${RNF_SOURCES} ${RNF_GEN_DIR}/l10n_table.inc)
+add_library(replaynes_frontend STATIC ${RNF_SOURCES} ${RNF_GEN_DIR}/l10n_table.inc ${RNF_GEN_DIR}/nesdb_data.inc)
 target_include_directories(replaynes_frontend
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
          # frontend.h includes "replaynes.h" like the frontends' bridging headers do.
