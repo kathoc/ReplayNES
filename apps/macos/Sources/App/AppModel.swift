@@ -50,6 +50,12 @@ final class AppModel: ObservableObject {
     let markers = SeekMarkers()
     /// Quick Menu (QuickMenu/QuickMenuController.swift) and the library screen's focus.
     let quickMenu = QuickMenuController()
+    /// In-window dialogs (Dialogs.swift): own the controller / keyboard while one is up.
+    let dialogs = DialogCenter()
+    /// The game was running when a dialog appeared (resumed when the last one goes away).
+    private var dialogPausedSession: String?
+    /// Controller confirm / cancel while the export sheet is up (ExportSheet).
+    let exportNav = PassthroughSubject<NavInput, Never>()
     let libraryNav = LibraryNav()
     /// The library (start screen) shown over an open game (Game › Choose Game).
     @Published var showLibrary = false
@@ -67,8 +73,11 @@ final class AppModel: ObservableObject {
     @Published var inputConfig: InputCatalog.Config
     @Published var stats = LatencyMeter.Snapshot()
     @Published var notice: String?
-    @Published var showExport = false { didSet { markers.sync() } }
-    @Published var exportJob: ExportJob?
+    @Published var showExport = false { didSet { markers.sync(); if showExport != oldValue { updateUIMode() } } }
+    @Published var exportJob: ExportJob? { didSet { updateUIMode() } }
+    /// The export sheet takes the controller's navigation (its buttons) except while an export
+    /// runs: then the pad plays on behind it ("you can keep playing while it exports").
+    var exportTakesPad: Bool { showExport && (exportJob.map { $0.finished } ?? true) }
     @Published var capturingAction: String?
     @Published var practiceSlots: [PracticeSlotInfo] = (0..<EngineSession.practiceSlotCount).map { PracticeSlotInfo(index: $0) }
     /// Practice OSD (A/B slots) over the viewport. Always shown while practicing.
@@ -172,6 +181,8 @@ final class AppModel: ObservableObject {
         input.onPausedStep = { [weak emu] dir, down in emu?.perform { e in e.pausedStep(dir, down: down) } }
         chrome.onChange = { [weak self] in self?.updateImmersive() }
         quickMenu.model = self
+        dialogs.window = { [weak self] in self?.mainWindow }
+        dialogs.onActiveChange = { [weak self] on in self?.dialogActiveChanged(on) }
         input.keyboardEnabled = { [weak self] in
             guard let w = NSApp.keyWindow, w === self?.mainWindow else { return false }
             return !(w.firstResponder is NSText)
@@ -232,20 +243,35 @@ final class AppModel: ObservableObject {
 
     // MARK: messages
 
-    func flash(_ text: String) {
+    /// A toast: informational, never takes the input; visible for `seconds` (at least 4).
+    func flash(_ text: String, seconds: Double = 4) {
         notice = text
         noticeWork?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.notice = nil }
         noticeWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(4, seconds), execute: w)
     }
 
-    func showError(_ title: String, _ message: String) {
-        let a = NSAlert()
-        a.alertStyle = .warning
-        a.messageText = title
-        a.informativeText = message
-        a.runModal()
+    /// An error the user has to acknowledge: an in-window dialog with OK (`then` runs after it).
+    func showError(_ title: String, _ message: String, then: (() -> Void)? = nil) {
+        dialogs.present(AppDialog(kind: .warning, title: title, message: message,
+                                  onResult: { _ in then?() }))
+    }
+
+    /// A dialog appeared / the last one went away: the game waits paused behind it (and runs again
+    /// afterwards if the dialog paused it and the same session is still there); navigation mode and
+    /// the Metal pill follow.
+    private func dialogActiveChanged(_ on: Bool) {
+        if on {
+            if dialogPausedSession == nil, status.hasSession, !status.paused, !quickMenu.isOpen {
+                dialogPausedSession = current?.projectPath ?? ""
+                setPaused(true)
+            }
+        } else if let paused = dialogPausedSession {
+            dialogPausedSession = nil
+            if status.hasSession, (current?.projectPath ?? "") == paused, !quickMenu.isOpen, !showLibrary { setPaused(false) }
+        }
+        updateUIMode()
     }
 
     // MARK: transport (all forwarded to the emulation thread)
@@ -350,48 +376,63 @@ final class AppModel: ObservableObject {
     // MARK: project lifecycle
 
     /// Before another ROM / project replaces the current session (or it is closed): asks to save
-    /// unsaved work. Returns false if the user cancelled. A temporary session with recorded content
-    /// asks Save… (= Save As) / Don’t Save (its temporary project is deleted when replaced).
-    func confirmDiscardIfNeeded() -> Bool {
+    /// unsaved work (in-window dialog), then runs `then` unless the user cancelled. A temporary
+    /// session with recorded content asks Save… (= Save As) / Don’t Save (its temporary project is
+    /// deleted when replaced). Without a question `then` runs right away.
+    func confirmDiscardIfNeeded(_ then: @escaping () -> Void) {
+        guard let p = discardPrompt() else { then(); return }
+        var d = p.dialog
+        d.onResult = { a in
+            switch a.button {
+            case 0: if p.save() { then() }
+            case 1: then()
+            default: break
+            }
+        }
+        dialogs.present(d)
+    }
+
+    /// The same question as a system alert, answered synchronously: only for quitting without
+    /// session persistence (applicationShouldTerminate; the window may already be closed).
+    private func confirmDiscardSync() -> Bool {
+        guard let p = discardPrompt() else { return true }
+        switch DialogCenter.runAlert(p.dialog).button {
+        case 0: return p.save()
+        case 1: return true
+        default: return false
+        }
+    }
+
+    /// The save question for the installed session, nil when nothing would be lost. Buttons:
+    /// 0 = save (`save` returns false if that was cancelled / failed), 1 = don’t save, 2 = cancel.
+    private func discardPrompt() -> (dialog: AppDialog, save: () -> Bool)? {
         let info = emu.sync(timeout: 10) { e -> (unsaved: Bool, dir: String, takeLength: UInt64, content: Bool)? in
             guard let s = e.session else { return nil }
             return (s.hasUnsavedChanges, s.projectDir, s.takeLength, SessionResume.hasRecordedContent(s))
         } ?? nil
-        guard let info else { return true }
+        guard let info else { return nil }
         if current?.isTemp == true {
-            guard info.content else { return true }
-            let a = NSAlert()
-            a.messageText = String(localized: "Do you want to save?")
-            a.informativeText = String(localized: "This session hasn’t been saved as a project yet (it is stored temporarily). If you don’t save, the temporary data will be discarded.")
-            a.addButton(withTitle: String(localized: "Save…"))
-            a.addButton(withTitle: String(localized: "Don’t Save"))
-            a.addButton(withTitle: String(localized: "Cancel"))
-            switch a.runModal() {
-            case .alertFirstButtonReturn: return saveTempAs()
-            case .alertSecondButtonReturn: return true
-            default: return false
-            }
+            guard info.content else { return nil }
+            let d = AppDialog(kind: .question, title: String(localized: "Do you want to save?"),
+                              message: String(localized: "This session hasn’t been saved as a project yet (it is stored temporarily). If you don’t save, the temporary data will be discarded."),
+                              buttons: [String(localized: "Save…"), String(localized: "Don’t Save"), String(localized: "Cancel")],
+                              cancelIndex: 2, destructiveIndex: 1)
+            return (d, { [weak self] in self?.saveTempAs() ?? false })
         }
         let inMemory = info.dir.isEmpty
-        guard info.unsaved || (inMemory && info.takeLength > 0) else { return true }
-        let a = NSAlert()
-        a.messageText = String(localized: "The current project has unsaved changes")
-        a.informativeText = String(localized: "Do you want to save?")
-        a.addButton(withTitle: String(localized: "Save"))
-        a.addButton(withTitle: String(localized: "Don’t Save"))
-        a.addButton(withTitle: String(localized: "Cancel"))
-        switch a.runModal() {
-        case .alertFirstButtonReturn:
-            return inMemory ? saveAs() : saveSync()
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
-        }
+        guard info.unsaved || (inMemory && info.takeLength > 0) else { return nil }
+        let d = AppDialog(kind: .question, title: String(localized: "The current project has unsaved changes"),
+                          message: String(localized: "Do you want to save?"),
+                          buttons: [String(localized: "Save"), String(localized: "Don’t Save"), String(localized: "Cancel")],
+                          cancelIndex: 2, destructiveIndex: 1)
+        return (d, { [weak self] in guard let self else { return false }; return inMemory ? self.saveAs() : self.saveSync() })
     }
 
     func newProject() {
-        guard confirmDiscardIfNeeded() else { return }
+        confirmDiscardIfNeeded { [weak self] in self?.newProjectPanels() }
+    }
+
+    private func newProjectPanels() {
         let open = NSOpenPanel()
         open.title = String(localized: "Choose a ROM")
         open.message = String(localized: "Choose the NES ROM (.nes) for the new project. The ROM is not copied into the project.")
@@ -414,24 +455,30 @@ final class AppModel: ObservableObject {
 
     /// Plays a ROM without a project (in-memory; "Save As" writes it later).
     func quickPlay() {
-        guard confirmDiscardIfNeeded() else { return }
-        let open = NSOpenPanel()
-        open.title = String(localized: "Try a ROM (No Project, Stored Temporarily)")
-        open.allowedContentTypes = [.nesROM, .data]
-        guard open.runModal() == .OK, let rom = open.url else { return }
-        createSession(rom: rom, projectDir: nil)
+        confirmDiscardIfNeeded { [weak self] in
+            let open = NSOpenPanel()
+            open.title = String(localized: "Try a ROM (No Project, Stored Temporarily)")
+            open.allowedContentTypes = [.nesROM, .data]
+            guard open.runModal() == .OK, let rom = open.url else { return }
+            self?.createSession(rom: rom, projectDir: nil)
+        }
     }
 
     /// projectDir == nil: a session without a project; with session persistence it lives in the
     /// temporary project (SessionResume.swift), otherwise in memory.
     func createSession(rom: URL, projectDir requestedDir: URL?, autoplay: Bool = false) {
-        var projectDir = requestedDir
-        if projectDir == nil && persistSessions {
-            guard prepareTempSlot() else { return }
-            projectDir = sessionPaths.tempProject
+        if requestedDir == nil && persistSessions {
+            prepareTempSlot { [weak self] in
+                guard let self else { return }
+                self.startSession(rom: rom, projectDir: self.sessionPaths.tempProject, isTemp: true, autoplay: autoplay)
+            }
+            return
         }
+        startSession(rom: rom, projectDir: requestedDir, isTemp: requestedDir == nil, autoplay: autoplay)
+    }
+
+    private func startSession(rom: URL, projectDir: URL?, isTemp: Bool, autoplay: Bool) {
         let dirExisted = projectDir.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
-        let isTemp = requestedDir == nil
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let s = try EngineSession.create(rom: rom, projectDir: projectDir)
@@ -457,25 +504,31 @@ final class AppModel: ObservableObject {
     // MARK: library
 
     /// Starts a new project for a library ROM right away, auto-saved as
-    /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec (no save panel). Returns false if cancelled.
-    @discardableResult
-    func playFromLibrary(_ rom: LibraryROM) -> Bool {
-        guard confirmDiscardIfNeeded(), settlePendingTemp() else { return false }
-        guard library.ensureFolders() else {
-            showError(String(localized: "The library folder isn’t available"), library.folderError ?? "")
-            return false
+    /// Projects/<ROM name> <yyyy-MM-dd HHmm>.nesrec (no save panel), after the save questions.
+    /// `then` runs once it is started (not when cancelled).
+    func playFromLibrary(_ rom: LibraryROM, then: (() -> Void)? = nil) {
+        confirmDiscardIfNeeded { [weak self] in
+            self?.settlePendingTemp { [weak self] in
+                guard let self else { return }
+                guard self.library.ensureFolders() else {
+                    self.showError(String(localized: "The library folder isn’t available"), self.library.folderError ?? "")
+                    return
+                }
+                let dir = LibraryScanner.newProjectURL(projectsDir: self.library.paths.projects, romName: rom.name, date: Date())
+                self.createSession(rom: rom.url, projectDir: dir)
+                then?()
+            }
         }
-        let dir = LibraryScanner.newProjectURL(projectsDir: library.paths.projects, romName: rom.name, date: Date())
-        createSession(rom: rom.url, projectDir: dir)
-        return true
     }
 
-    /// "Continue": opens a library project (the usual save prompt first).
-    @discardableResult
-    func continueProject(_ url: URL) -> Bool {
-        guard confirmDiscardIfNeeded(), settlePendingTemp() else { return false }
-        openProject(url)
-        return true
+    /// "Continue": opens a library project (the usual save prompt first). `then` as above.
+    func continueProject(_ url: URL, then: (() -> Void)? = nil) {
+        confirmDiscardIfNeeded { [weak self] in
+            self?.settlePendingTemp { [weak self] in
+                self?.openProject(url)
+                then?()
+            }
+        }
     }
 
     /// The library's "Continue" (no session open): the recorded last session where it was (a
@@ -491,9 +544,9 @@ final class AppModel: ObservableObject {
 
     /// Idle on the library with a temporary session left (resumable by "Continue"): starting
     /// something else asks first whether to save it. False: cancelled.
-    private func settlePendingTemp() -> Bool {
-        guard current == nil, persistSessions, sessionPaths.tempProjectExists else { return true }
-        return prepareTempSlot()
+    private func settlePendingTemp(_ then: @escaping () -> Void) {
+        guard current == nil, persistSessions, sessionPaths.tempProjectExists else { then(); return }
+        prepareTempSlot(then)
     }
 
     // MARK: play history
@@ -515,14 +568,15 @@ final class AppModel: ObservableObject {
     }
 
     func openProjectPanel() {
-        guard confirmDiscardIfNeeded() else { return }
-        let open = NSOpenPanel()
-        open.title = String(localized: "Open Project")
-        open.allowedContentTypes = [.nesrec]
-        open.canChooseDirectories = true
-        open.treatsFilePackagesAsDirectories = false
-        guard open.runModal() == .OK, let url = open.url else { return }
-        openProject(url)
+        confirmDiscardIfNeeded { [weak self] in
+            let open = NSOpenPanel()
+            open.title = String(localized: "Open Project")
+            open.allowedContentTypes = [.nesrec]
+            open.canChooseDirectories = true
+            open.treatsFilePackagesAsDirectories = false
+            guard open.runModal() == .OK, let url = open.url else { return }
+            self?.openProject(url)
+        }
     }
 
     /// `resume`: reopening the last session at launch (position restored, paused, no recovery alert).
@@ -539,14 +593,16 @@ final class AppModel: ObservableObject {
                 }
             } catch let e as RNError {
                 DispatchQueue.main.async {
-                    let retrying = self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt,
-                                                        dropCorruptPractice: dropCorruptPractice, resume: resume)
-                    if !retrying, let resume { self.resumeFailed(resume) }
+                    self.handleOpenError(e, url: url, romOverride: romOverride, dropCorrupt: dropCorrupt,
+                                         dropCorruptPractice: dropCorruptPractice, resume: resume) { retrying in
+                        if !retrying, let resume { self.resumeFailed(resume) }
+                    }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.showError(String(localized: "Couldn’t open the project"), "\(error)")
-                    if let resume { self.resumeFailed(resume) }
+                    self.showError(String(localized: "Couldn’t open the project"), "\(error)") {
+                        if let resume { self.resumeFailed(resume) }
+                    }
                 }
             }
         }
@@ -561,72 +617,68 @@ final class AppModel: ObservableObject {
     /// RN_ERR_CORRUPT caused by an A/B practice slot ("practice slot N" in the engine message).
     static func isPracticeCorruption(_ message: String) -> Bool { message.lowercased().contains("practice") }
 
-    /// Explains an open failure and offers the fix where there is one. Returns true if the open is retried.
-    @discardableResult
+    /// Explains an open failure (in-window dialog) and offers the fix where there is one. `done`
+    /// gets true if the open is retried.
     private func handleOpenError(_ e: RNError, url: URL, romOverride: URL?, dropCorrupt: Bool, dropCorruptPractice: Bool = false,
-                                 resume: ResumeRecord? = nil) -> Bool {
+                                 resume: ResumeRecord? = nil, done: @escaping (Bool) -> Void) {
         let manifest = (try? Engine.manifestJSON(projectDir: url)) ?? [:]
         let rom = manifest["rom"] as? [String: Any] ?? [:]
         let romName = rom["name"] as? String ?? "?"
         let romPath = rom["lastPath"] as? String ?? "?"
         let romSHA = rom["sha256"] as? String ?? "?"
-        let a = NSAlert()
-        a.alertStyle = .warning
+        /// A dialog whose first button retries (`retry` returns whether it did).
+        func ask(_ title: String, _ message: String, fix: String?, retry: @escaping () -> Bool) {
+            var d = AppDialog(kind: .warning, title: title, message: message)
+            if let fix { d.buttons = [fix, String(localized: "Cancel")]; d.cancelIndex = 1 }
+            d.onResult = { a in done(fix != nil && a.button == 0 ? retry() : false) }
+            dialogs.present(d)
+        }
         switch e.status {
         case RN_ERR_ROM_NOT_FOUND, RN_ERR_ROM_MISMATCH:
+            let title: String, message: String
             if e.status == RN_ERR_ROM_NOT_FOUND {
-                a.messageText = String(localized: "ROM not found")
-                a.informativeText = String(localized: "This project’s ROM “\(romName)” is no longer at its original location.\nOriginal location: \(romPath)\n\nPlease locate the same ROM (a file with a matching SHA-256).\nSHA-256: \(romSHA)")
+                title = String(localized: "ROM not found")
+                message = String(localized: "This project’s ROM “\(romName)” is no longer at its original location.\nOriginal location: \(romPath)\n\nPlease locate the same ROM (a file with a matching SHA-256).\nSHA-256: \(romSHA)")
             } else {
-                a.messageText = String(localized: "ROM doesn’t match")
-                a.informativeText = String(localized: "The selected ROM differs from the one this project was recorded with.\nRequired ROM: \(romName)\nSHA-256: \(romSHA)\n\nDetails: \(e.message)")
+                title = String(localized: "ROM doesn’t match")
+                message = String(localized: "The selected ROM differs from the one this project was recorded with.\nRequired ROM: \(romName)\nSHA-256: \(romSHA)\n\nDetails: \(e.message)")
             }
-            a.addButton(withTitle: String(localized: "Locate ROM…"))
-            a.addButton(withTitle: String(localized: "Cancel"))
-            guard a.runModal() == .alertFirstButtonReturn else { return false }
-            let open = NSOpenPanel()
-            open.title = String(localized: "Locate “\(romName)”")
-            open.allowedContentTypes = [.nesROM, .data]
-            guard open.runModal() == .OK, let newRom = open.url else { return false }
-            openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice, resume: resume)
-            return true
-        case RN_ERR_CORE_MISMATCH:
-            let projCore = manifest["coreCompatID"] as? String ?? "?"
-            a.messageText = String(localized: "This project was recorded with a different emulation core")
-            a.informativeText = String(localized: "To keep replays exact, this version can’t open it (no automatic conversion).\nProject core: \(projCore)\nThis app’s core: \(Engine.coreCompatID)\n\nOpen it with the version of ReplayNES it was recorded with. See docs/COMPATIBILITY.md for details.")
-            a.runModal()
-            return false
-        case RN_ERR_CORRUPT where Self.isPracticeCorruption(e.message) && !dropCorruptPractice:
-            a.messageText = String(localized: "The practice section (A/B) data is damaged")
-            a.informativeText = e.message + "\n\n" + String(localized: "You can open it by discarding only the damaged practice sections (their A/B points are lost). Your takes (recordings) are not changed.")
-            a.addButton(withTitle: String(localized: "Discard Damaged Sections and Open"))
-            a.addButton(withTitle: String(localized: "Cancel"))
-            guard a.runModal() == .alertFirstButtonReturn else { return false }
-            openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true, resume: resume)
-            return true
-        case RN_ERR_CORRUPT:
-            a.messageText = String(localized: "The project files are damaged")
-            a.informativeText = e.message
-            if !dropCorrupt {
-                a.informativeText += "\n\n" + String(localized: "If only checkpoints (states kept for speed) are damaged, you can open the project by discarding them. The input history (the source of truth) is not changed.")
-                a.addButton(withTitle: String(localized: "Discard Damaged Checkpoints and Open"))
-                a.addButton(withTitle: String(localized: "Cancel"))
-                guard a.runModal() == .alertFirstButtonReturn else { return false }
-                openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice, resume: resume)
+            ask(title, message, fix: String(localized: "Locate ROM…")) { [weak self] in
+                let open = NSOpenPanel()
+                open.title = String(localized: "Locate “\(romName)”")
+                open.allowedContentTypes = [.nesROM, .data]
+                guard open.runModal() == .OK, let newRom = open.url else { return false }
+                self?.openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice, resume: resume)
                 return true
             }
-            a.runModal()
-            return false
+        case RN_ERR_CORE_MISMATCH:
+            let projCore = manifest["coreCompatID"] as? String ?? "?"
+            ask(String(localized: "This project was recorded with a different emulation core"),
+                String(localized: "To keep replays exact, this version can’t open it (no automatic conversion).\nProject core: \(projCore)\nThis app’s core: \(Engine.coreCompatID)\n\nOpen it with the version of ReplayNES it was recorded with. See docs/COMPATIBILITY.md for details."),
+                fix: nil) { false }
+        case RN_ERR_CORRUPT where Self.isPracticeCorruption(e.message) && !dropCorruptPractice:
+            ask(String(localized: "The practice section (A/B) data is damaged"),
+                e.message + "\n\n" + String(localized: "You can open it by discarding only the damaged practice sections (their A/B points are lost). Your takes (recordings) are not changed."),
+                fix: String(localized: "Discard Damaged Sections and Open")) { [weak self] in
+                self?.openProject(url, romOverride: romOverride, dropCorrupt: dropCorrupt, dropCorruptPractice: true, resume: resume)
+                return true
+            }
+        case RN_ERR_CORRUPT:
+            if !dropCorrupt {
+                ask(String(localized: "The project files are damaged"),
+                    e.message + "\n\n" + String(localized: "If only checkpoints (states kept for speed) are damaged, you can open the project by discarding them. The input history (the source of truth) is not changed."),
+                    fix: String(localized: "Discard Damaged Checkpoints and Open")) { [weak self] in
+                    self?.openProject(url, romOverride: romOverride, dropCorrupt: true, dropCorruptPractice: dropCorruptPractice, resume: resume)
+                    return true
+                }
+            } else {
+                ask(String(localized: "The project files are damaged"), e.message, fix: nil) { false }
+            }
         case RN_ERR_UNSUPPORTED_FORMAT:
-            a.messageText = String(localized: "This project was made with a newer version of ReplayNES")
-            a.informativeText = String(localized: "Please update the app.") + "\n\(e.message)"
-            a.runModal()
-            return false
+            ask(String(localized: "This project was made with a newer version of ReplayNES"),
+                String(localized: "Please update the app.") + "\n\(e.message)", fix: nil) { false }
         default:
-            a.messageText = String(localized: "Couldn’t open the project")
-            a.informativeText = "\(e.statusName): \(e.message)"
-            a.runModal()
-            return false
+            ask(String(localized: "Couldn’t open the project"), "\(e.statusName): \(e.message)", fix: nil) { false }
         }
     }
 
@@ -664,10 +716,8 @@ final class AppModel: ObservableObject {
         if resume != nil {
             if resumeNotice { flash(String(localized: "Resumed where you left off")) }
         } else if recovered {
-            let a = NSAlert()
-            a.messageText = String(localized: "Unsaved work was restored")
-            a.informativeText = String(localized: "ReplayNES didn’t quit normally last time, so the recording up to the last autosave was restored from the journal. Please review it and save.")
-            a.runModal()
+            // Informational (nothing to decide): a toast, not a dialog (docs/design/UI_REDESIGN.md).
+            flash(String(localized: "Unsaved work was restored (up to the last autosave). Please review and save."), seconds: 8)
         }
     }
 
@@ -725,7 +775,10 @@ final class AppModel: ObservableObject {
     }
 
     func closeProject() {
-        guard confirmDiscardIfNeeded() else { return }
+        confirmDiscardIfNeeded { [weak self] in self?.closeProjectNow() }
+    }
+
+    private func closeProjectNow() {
         captureThumbnail()
         showLibrary = false
         let wasTemp = current?.isTemp == true
@@ -794,8 +847,8 @@ final class AppModel: ObservableObject {
             return
         case .projectMissing(let r):
             writeResume(nil)
-            showError(String(localized: "The last project can’t be found"),
-                      String(localized: "“\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” was moved or deleted, so ReplayNES couldn’t resume where you left off.\nOriginal location: \(r.projectPath)\n\nChoose it again from the library, or use “Open Project…”."))
+            NSLog("ReplayNES: the last project is missing: %@", r.projectPath)
+            flash(String(localized: "“\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” can’t be found (moved or deleted). Choose it again from the library."), seconds: 8)
         case .resume(let r):
             pendingResume = r
             libraryNav.focus = LibraryNav.heroFocus
@@ -806,13 +859,8 @@ final class AppModel: ObservableObject {
     /// resume.json and the temporary project stay, so the next launch tries again until the user
     /// starts something else (and decides about the temporary data then).
     private func resumeFailed(_ r: ResumeRecord) {
-        let a = NSAlert()
-        a.alertStyle = .warning
-        a.messageText = String(localized: "Couldn’t resume where you left off")
-        a.informativeText = r.isTemp
-            ? String(localized: "The unsaved previous session has been kept (ReplayNES will try to resume it again at the next launch).\n\nMove the ROM back to its original location, or choose it from the library. When you start another game, you can choose to save or discard the previous session.\nTemporary location: \(sessionPaths.tempProject.path)")
-            : String(localized: "The project “\(URL(fileURLWithPath: r.projectPath).lastPathComponent)” has not been changed. You can open it again with “Continue” in the library or “Open Project…”.")
-        a.runModal()
+        NSLog("ReplayNES: couldn’t resume %@ (temporary: %d)", r.projectPath, r.isTemp ? 1 : 0)
+        flash(String(localized: "Couldn’t resume where you left off (nothing was deleted). Try again from the library."), seconds: 8)
     }
 
     /// ⌘Q / window close / Sparkle relaunch: no save prompt. Everything is persisted (temporary
@@ -820,7 +868,7 @@ final class AppModel: ObservableObject {
     /// persisting failed and the user chose not to quit.
     func prepareForQuit() -> Bool {
         flushPlay()
-        guard persistSessions else { return confirmDiscardIfNeeded() }
+        guard persistSessions else { return confirmDiscardSync() }
         guard let c = current else { return true }
         captureThumbnail()
         let isTemp = c.isTemp
@@ -828,13 +876,13 @@ final class AppModel: ObservableObject {
         updateResumeRecord()
         resumeQueue.sync {}
         guard let err else { return true }
-        let a = NSAlert()
-        a.alertStyle = .critical
-        a.messageText = String(localized: "Your work couldn’t be saved")
-        a.informativeText = String(localized: "If you quit now, anything recorded after the last autosave may be lost.") + "\n\n\(err)"
-        a.addButton(withTitle: String(localized: "Don’t Quit"))
-        a.addButton(withTitle: String(localized: "Quit Anyway"))
-        return a.runModal() == .alertSecondButtonReturn
+        // Quitting is synchronous (applicationShouldTerminate) and may follow closing the window:
+        // a system alert here (keyboard / mouse initiated; not reachable from the controller).
+        let d = AppDialog(kind: .warning, title: String(localized: "Your work couldn’t be saved"),
+                          message: String(localized: "If you quit now, anything recorded after the last autosave may be lost.") + "\n\n\(err)",
+                          buttons: [String(localized: "Don’t Quit"), String(localized: "Quit Anyway")],
+                          cancelIndex: 0, destructiveIndex: 1)
+        return DialogCenter.runAlert(d).button == 1
     }
 
     /// App sent to the background: persist without waiting for the next autosave tick.
@@ -882,47 +930,51 @@ final class AppModel: ObservableObject {
         if lastResume?.isTemp == true { writeResume(nil) }
     }
 
-    /// Makes room for a new temporary project. The installed temporary session was already
-    /// confirmed (confirmDiscardIfNeeded); one left from an earlier run that was never reopened
-    /// (resume failed or skipped) is offered for saving first. Returns false if cancelled.
-    private func prepareTempSlot() -> Bool {
+    /// Makes room for a new temporary project, then runs `then` (not when cancelled). The installed
+    /// temporary session was already confirmed (confirmDiscardIfNeeded); one left from an earlier
+    /// run that was never reopened (resume failed or skipped) is offered for saving first.
+    private func prepareTempSlot(_ then: @escaping () -> Void) {
         if current?.isTemp == true {
             releaseSession()
             removeTempProject()
-            return true
+            then()
+            return
         }
-        guard sessionPaths.tempProjectExists else { return true }
+        guard sessionPaths.tempProjectExists else { then(); return }
         let record = try? ResumeStore.read(sessionPaths.resumeFile)
         let pointsHere = record?.isTemp == true
         if let record, pointsHere, !record.hasContent {
             removeTempProject()
             writeResume(nil)
-            return true
+            then()
+            return
         }
         let manifest = (try? Engine.manifestJSON(projectDir: sessionPaths.tempProject)) ?? [:]
         let romName = (manifest["rom"] as? [String: Any])?["name"] as? String ?? "?"
-        let a = NSAlert()
-        a.messageText = String(localized: "An unsaved previous session remains")
-        a.informativeText = String(localized: "Do you want to save the previous session (ROM: \(romName))? If you don’t save, it will be discarded.")
-        a.addButton(withTitle: String(localized: "Save…"))
-        a.addButton(withTitle: String(localized: "Don’t Save"))
-        a.addButton(withTitle: String(localized: "Cancel"))
-        switch a.runModal() {
-        case .alertFirstButtonReturn:
-            let name = URL(fileURLWithPath: romName).deletingPathExtension().lastPathComponent
-            guard let dest = askProjectDestination(name: name) else { return false }
-            do { try SessionResume.moveTempProject(sessionPaths, to: dest) } catch {
-                showError(String(localized: "Couldn’t save"), "\(dest.path)\n\(error.localizedDescription)")
-                return false
+        var d = AppDialog(kind: .question, title: String(localized: "An unsaved previous session remains"),
+                          message: String(localized: "Do you want to save the previous session (ROM: \(romName))? If you don’t save, it will be discarded."),
+                          buttons: [String(localized: "Save…"), String(localized: "Don’t Save"), String(localized: "Cancel")],
+                          cancelIndex: 2, destructiveIndex: 1)
+        d.onResult = { [weak self] a in
+            guard let self else { return }
+            switch a.button {
+            case 0:
+                let name = URL(fileURLWithPath: romName).deletingPathExtension().lastPathComponent
+                guard let dest = self.askProjectDestination(name: name) else { return }
+                do { try SessionResume.moveTempProject(self.sessionPaths, to: dest) } catch {
+                    self.showError(String(localized: "Couldn’t save"), "\(dest.path)\n\(error.localizedDescription)")
+                    return
+                }
+                self.library.refresh()
+            case 1:
+                self.removeTempProject()
+            default:
+                return
             }
-            library.refresh()
-        case .alertSecondButtonReturn:
-            removeTempProject()
-        default:
-            return false
+            if pointsHere { self.writeResume(nil) }
+            then()
         }
-        if pointsHere { writeResume(nil) }
-        return true
+        dialogs.present(d)
     }
 
     /// Save panel for a .nesrec; an existing item at the destination is moved to the Trash.
@@ -987,9 +1039,12 @@ final class AppModel: ObservableObject {
 
     // MARK: menus, library screen, thumbnails (docs/design/UI_REDESIGN.md)
 
-    /// Controller / keyboard navigation (InputManager.onNav): the Quick Menu when open, else the
-    /// L+R chord / Esc open it, else the library when it is on screen.
+    /// Controller / keyboard navigation (InputManager.onNav): a dialog when one is up (the L+R
+    /// chord / Esc do not reach the menu then), the export sheet, the Quick Menu when open, else
+    /// the L+R chord / Esc open it, else the library when it is on screen.
     func handleNav(_ n: NavInput) {
+        if dialogs.isActive { dialogs.handle(n); return }
+        if exportTakesPad { exportNav.send(n); return }
         if quickMenu.isOpen { quickMenu.handle(n); return }
         let libraryOn = !status.hasSession || showLibrary
         switch n {
@@ -1007,14 +1062,14 @@ final class AppModel: ObservableObject {
     /// Navigation mode, the Metal pill and its glyph follow the session / pause / menu / library.
     func updateUIMode() {
         let libraryOn = !status.hasSession || showLibrary
-        input.setNavMode(quickMenu.isOpen || libraryOn)
+        input.setNavMode(quickMenu.isOpen || libraryOn || dialogs.isActive || exportTakesPad)
         let infos = input.controllerMonitor.controllers
         let glyph = MenuPillLayout.glyph(hasController: !infos.isEmpty,
                                          playStation: infos.min(by: { $0.slot < $1.slot })?.family == .playStation)
         if pillGlyph != glyph { pillGlyph = glyph }
         let pill = MenuPillOverlay.shared
         pill.update(glyph: glyph, scale: mainWindow?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
-        pill.setVisible(status.hasSession && !status.paused && !quickMenu.isOpen && !showLibrary)
+        pill.setVisible(status.hasSession && !status.paused && !quickMenu.isOpen && !showLibrary && !dialogs.isActive)
         markers.sync()
     }
 
@@ -1059,7 +1114,9 @@ final class AppModel: ObservableObject {
             do {
                 renderer = try s.makeRenderer(start: settings.startFrame, end: settings.endFrame)
             } catch {
-                DispatchQueue.main.async { job.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"; job.finished = true }
+                DispatchQueue.main.async {
+                    job.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"; job.finished = true; self.updateUIMode()
+                }
                 return
             }
             // The renderer is an independent snapshot: encode off the emulation thread.
@@ -1074,10 +1131,10 @@ final class AppModel: ObservableObject {
                             DispatchQueue.main.async { job.done = d; job.total = t }
                         }
                     }, isCancelled: { job.isCancelled })
-                    DispatchQueue.main.async { job.result = r; job.finished = true }
+                    DispatchQueue.main.async { job.result = r; job.finished = true; self.updateUIMode() }
                 } catch {
                     let msg = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                    DispatchQueue.main.async { job.error = msg; job.finished = true }
+                    DispatchQueue.main.async { job.error = msg; job.finished = true; self.updateUIMode() }
                 }
             }
         }

@@ -165,7 +165,8 @@ class UI : public DialogHost {
   // DialogHost
   void showDialog(Dialog d) override;
   void showChooser(ChooserRequest r) override;
-  void notice(const std::string& text) override;
+  using DialogHost::notice;
+  void notice(const std::string& text, double seconds) override;
 
   /// Script hooks (--script, tests): the visible dialog's button / the chooser's name.
   bool answerDialog(int button);
@@ -311,6 +312,7 @@ class UI : public DialogHost {
   // Notices.
   std::string notice_;
   double noticeTime_ = 0;
+  double noticeSeconds_ = 4.0;
   // Library.
   int libFocus_ = -1;  // -1: the Continue card, -3: the filter / sort / search row, else a game card index (all pages)
   int libBar_ = 0;     // focused item of that row

@@ -290,7 +290,7 @@ private struct Interactive: ViewModifier {
 
 // MARK: - tiles, rows, cards
 
-private struct FocusFrame: ViewModifier {
+struct FocusFrame: ViewModifier {
     let focused: Bool
     let enabled: Bool
     var radius: CGFloat = QMStyle.tileRadius
@@ -422,7 +422,7 @@ private struct SettingRow: View {
     }
 }
 
-private struct Switch: View {
+struct Switch: View {
     let on: Bool
     var body: some View {
         ZStack(alignment: on ? .trailing : .leading) {

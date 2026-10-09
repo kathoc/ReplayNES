@@ -37,7 +37,8 @@ final class QuickMenuController: ObservableObject {
     /// Opens the menu (pausing the game), optionally straight at `page` (its path is the stack,
     /// so Back walks up the hierarchy).
     func open(at target: QMPage? = nil) {
-        guard let m = model else { return }
+        // A dialog has the focus: the pill / L+R / Esc / menu commands wait until it is answered.
+        guard let m = model, !m.dialogs.isActive else { return }
         if !isOpen {
             resumeOnClose = m.status.hasSession && !m.status.paused
             if m.status.hasSession { m.setPaused(true) }
@@ -62,7 +63,10 @@ final class QuickMenuController: ObservableObject {
         m.updateUIMode()
     }
 
-    func toggle() { if isOpen { close() } else { open() } }
+    func toggle() {
+        guard model?.dialogs.isActive != true else { return }
+        if isOpen { close() } else { open() }
+    }
 
     // MARK: navigation
 

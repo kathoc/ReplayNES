@@ -20,6 +20,7 @@ struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var menu = AppModel.shared.quickMenu
     @ObservedObject private var monitor = AppModel.shared.input.controllerMonitor
+    @ObservedObject private var dialogs = AppModel.shared.dialogs
 
     var body: some View {
         viewport
@@ -95,13 +96,22 @@ struct ContentView: View {
                 }
                 .padding(.top, MenuPillLayout.margin).padding(.trailing, MenuPillLayout.margin)
             }
+            // In-window dialogs (Dialogs.swift): over everything but the toasts.
+            if dialogs.isActive {
+                DialogOverlay(center: dialogs, monitor: monitor)
+                    .transition(.opacity)
+            }
             if let n = model.notice {
                 VStack {
                     Spacer()
                     Text(n)
                         .font(.callout)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        .frame(maxWidth: 640)   // wraps longer toasts; short ones keep their own width
                         .padding(.bottom, st.paused && st.hasSession && !menu.isOpen ? 140 : 16)   // above the seek bar (and its hint row)
                 }
                 .frame(maxWidth: .infinity)
