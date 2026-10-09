@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.5.2" date="2026-10-09">
+      <description>
+        <p>VHS-style rewind back to A with a 3-2-1 countdown for practice, VTR noise while rewinding, Y/X shortcuts on the paused seek bar, a fix for the purple tint on still CRT pictures, and in-app controller-operable dialogs on macOS.</p>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-10-09">
       <description>
         <p>Stepping forward while paused no longer starts a new take, the HOME button can no longer be assigned, "Pause after rewind" is off by default, clickable breadcrumbs, and Retry &gt; Restart Recording.</p>
