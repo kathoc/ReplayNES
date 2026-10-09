@@ -67,6 +67,18 @@ Rules: no screen ever scrolls; if a page needs more than 6 rows, split it into a
 - Icons: macOS SF Symbols; desktop: an icon font subset (Tabler Icons MIT, or Material Symbols Apache-2.0) bundled and recorded in THIRD_PARTY_NOTICES.md.
 - Light/dark: menus are always dark (they sit over game video).
 
+## Dialogs and notices
+
+No system alerts while the user can be on the controller: every question is an **in-window dialog** in the Quick Menu's look (macOS `Dialogs.swift` + `Views/DialogOverlay.swift`, pure navigation `DialogNav` (tested); desktop `ui_dialogs.cpp` via `DialogHost`).
+
+- Layout: over everything in the window (game, menu, library), the rest dimmed; panel #141416 / radius 16; title (22) + at most a few lines of message, an optional on/off row (e.g. "Keep A/B repeat sections") or text field (rename), then one row of button tiles (left to right) with the 2 px brand-red focus ring, the destructive one in brand red; the hint bar shows confirm + the cancel button's name. Nothing scrolls; long details are clipped.
+- Input: D-pad / left stick ← → move between the buttons, ↑ ↓ to / from the on/off row; **confirm** (east by default, per 決定ボタン) presses the focused button (on the row: flips it), **cancel** (south) / Esc / Delete press the dialog's cancel button wherever the focus is; Return / Space = confirm, arrows move; the mouse hovers to focus and clicks. A text field takes the keyboard (Return = the focused button, Esc = cancel); the controller's confirm / cancel still work.
+- While a dialog is up it has the focus: the Menu pill (both the SwiftUI and the Metal one), the L+R chord, Esc-to-menu and the menu commands do nothing; the game is paused behind it (resumed afterwards only if the dialog paused it and the same session is still there). Dialogs queue; flows continue in callbacks (nothing blocks the main thread).
+- Default focus is the safe choice: Save in save questions, **Cancel** in the Reset Project confirmation.
+- **Toast instead of a dialog** when there is nothing to decide (visible ≥ 4 s, 8 s for the longer ones below, never takes input): "Unsaved work was restored (up to the last autosave)" after a crash / force quit, "the last project can't be found" at launch, "couldn't resume where you left off" (after the open error's own dialog), "Saved" / "Project reset", and (desktop) the result of an export left running in the background.
+- Converted (macOS): save / don't save when switching or closing a game (temporary session and project), the unsaved previous temporary session, Reset Project (with Keep A/B), open errors (ROM not found / mismatch → Locate ROM…, damaged checkpoints / A/B sections → discard and open, other core, newer format), any other error (OK), rename (bookmark / A/B section). The export sheet takes the controller's confirm / cancel (Export… / Cancel, Close when done or failed; while it runs the pad keeps playing the game) and shows a settings problem inline.
+- Still system UI (keyboard / mouse paths only): file panels (Open / Save As / Locate ROM / export destination), Sparkle's own update windows, and the one quit-time question (persisting failed, or quitting without session persistence: `applicationShouldTerminate` is synchronous and the window may already be closed). The desktop frontends draw their own file chooser.
+
 ## Library (start screen)
 
 - The app always starts here (no automatic resume). Top: a large "続きから / Continue" hero card (last session's thumbnail + game name + time) — A resumes the session of the resume record (a temporary session or a project, journal recovered after a crash / force quit), else opens the latest project. Starting another game while a temporary session waits there asks first (save / don't save / cancel).

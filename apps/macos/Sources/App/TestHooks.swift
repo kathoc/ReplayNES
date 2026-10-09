@@ -23,6 +23,9 @@
 //                                                libraryClose, windowSize:<w>x<h> (content size, points),
 //                                                seek:<frame>, bookmark, undoTake,
 //                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
+//                                                libraryPlay:<ROM name> (A on that game in the library: save
+//                                                question first), closeGame, dumpDialog (logs the in-window
+//                                                dialog: "ReplayNES dialog: <title> | focus <n> | toggle <0|1>"),
 //                                                screen:<n> (moves the main window to NSScreen.screens[n]),
 //                                                dumpLayers (logs the app's windows and the main window's layer tree),
 //                                                dumpMenus (logs the menu bar: "menu: <Menu> | <item> | <⌘ key>"),
@@ -142,6 +145,18 @@ extension AppModel {
                     let saved = self.current.map { !$0.isTemp && !$0.projectPath.isEmpty } ?? false
                     self.performProjectReset(keepPracticeSlots: n != 0, backup: saved)
                 case "resetPrompt": self.resetProjectPrompt()
+                case "libraryPlay" where parts.count > 2:
+                    let name = parts[2...].joined(separator: ":")
+                    if let rom = self.library.roms.first(where: { $0.name == name || $0.relativePath == name }) {
+                        LibraryHome.play(rom, model: self)
+                    } else { NSLog("ReplayNES: libraryPlay: ROM \(name) not found") }
+                case "closeGame": self.closeProject()
+                case "dumpDialog":
+                    if let d = self.dialogs.current {
+                        NSLog("ReplayNES dialog: %@ | focus %d | toggle %d", d.title, self.dialogs.nav.focus, self.dialogs.nav.toggleOn ? 1 : 0)
+                    } else {
+                        NSLog("ReplayNES dialog: none")
+                    }
                 case "windowWidth":
                     if let w = self.mainWindow { var f = w.frame; f.size.width = CGFloat(n); w.setFrame(f, display: true) }
                 case "dumpLayers": Self.dumpWindowLayers()

@@ -108,11 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func open(_ urls: [URL]) {
         guard let url = urls.first else { return }
         openedAtLaunch = true
-        guard model.confirmDiscardIfNeeded() else { return }
-        if url.pathExtension.lowercased() == "nesrec" {
-            model.openProject(url)
-        } else {
-            model.createSession(rom: url, projectDir: nil)
+        model.confirmDiscardIfNeeded { [model] in
+            if url.pathExtension.lowercased() == "nesrec" {
+                model.openProject(url)
+            } else {
+                model.createSession(rom: url, projectDir: nil)
+            }
         }
     }
 

@@ -49,7 +49,7 @@ void UI::buildDialogs() {
     ImGui::Spacing();
     for (size_t i = 0; i < d.buttons.size(); ++i) {
       if (i) ImGui::SameLine();
-      if (i == 0 && ImGui::IsWindowAppearing()) {
+      if (int(i) == std::clamp(d.defaultIndex, 0, int(d.buttons.size()) - 1) && ImGui::IsWindowAppearing()) {
         ImGui::SetKeyboardFocusHere();
         ImGui::SetNavCursorVisible(true);
       }

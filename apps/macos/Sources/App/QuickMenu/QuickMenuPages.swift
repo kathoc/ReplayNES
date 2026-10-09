@@ -170,7 +170,7 @@ enum QuickMenuPages {
                               confirm: { m.gotoBookmark(b.id); menu.close(resume: false) },
                               x: QMAction(label: String(localized: "Delete")) { m.removeBookmark(b.id) },
                               y: QMAction(label: String(localized: "Rename")) {
-                                  if let n = promptName(String(localized: "Bookmark Name"), b.name) { m.renameBookmark(b.id, n) }
+                                  promptName(m, String(localized: "Bookmark Name"), b.name) { m.renameBookmark(b.id, $0) }
                               },
                               verb: String(localized: "Jump")))
         }
@@ -201,7 +201,7 @@ enum QuickMenuPages {
                               accent: color, badge: active ? String(localized: "Practicing") : nil,
                               x: QMAction(label: String(localized: "Clear")) { m.practiceClear(n) },
                               y: QMAction(label: String(localized: "Rename")) {
-                                  if let name = promptName(String(localized: "Section Name"), slot.name) { m.practiceRename(n, name) }
+                                  promptName(m, String(localized: "Section Name"), slot.name) { m.practiceRename(n, $0) }
                               })
             if active && !slot.hasB {
                 item.detail = String(localized: "Make the current position the end (B) of this section")
@@ -608,17 +608,11 @@ enum QuickMenuPages {
         FilmstripModel.shared.cache.image(before: frame + 1, within: 600)
     }
 
-    /// Small modal text prompt (rename).
-    static func promptName(_ title: String, _ current: String) -> String? {
-        let a = NSAlert()
-        a.messageText = title
-        let field = NSTextField(string: current)
-        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-        a.accessoryView = field
-        a.addButton(withTitle: String(localized: "Rename"))
-        a.addButton(withTitle: String(localized: "Cancel"))
-        a.window.initialFirstResponder = field
-        guard a.runModal() == .alertFirstButtonReturn else { return nil }
-        return field.stringValue
+    /// Rename: an in-window dialog with a text field (the keyboard types; Return / the controller's
+    /// confirm renames, Esc / cancel keeps the name).
+    static func promptName(_ m: AppModel, _ title: String, _ current: String, apply: @escaping (String) -> Void) {
+        m.dialogs.present(AppDialog(kind: .question, title: title,
+                                    buttons: [String(localized: "Rename"), String(localized: "Cancel")], cancelIndex: 1,
+                                    text: current, onResult: { a in if a.button == 0 { apply(a.text) } }))
     }
 }

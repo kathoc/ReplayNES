@@ -1289,6 +1289,16 @@
         }
       }
     },
+    "Couldn’t resume where you left off (nothing was deleted). Try again from the library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の続きから再開できませんでした（何も削除されていません）。ライブラリからもう一度試してください"
+          }
+        }
+      }
+    },
     "CRT": {
       "localizations": {
         "ja": {
@@ -1675,16 +1685,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロジェクトをリセットできませんでした"
-          }
-        }
-      }
-    },
-    "Couldn’t resume where you left off": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前回の続きから再開できませんでした"
           }
         }
       }
@@ -5369,16 +5369,6 @@
         }
       }
     },
-    "ReplayNES didn’t quit normally last time, so the recording up to the last autosave was restored from the journal. Please review it and save.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前回は正常に終了しなかったため、ジャーナルから最後の自動保存までの記録を復元しました。内容を確認して保存してください。"
-          }
-        }
-      }
-    },
     "Reset": {
       "localizations": {
         "ja": {
@@ -6739,16 +6729,6 @@
         }
       }
     },
-    "The last project can’t be found": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前回のプロジェクトが見つかりません"
-          }
-        }
-      }
-    },
     "The library folder isn’t available": {
       "localizations": {
         "ja": {
@@ -6799,16 +6779,6 @@
         }
       }
     },
-    "The project “%@” has not been changed. You can open it again with “Continue” in the library or “Open Project…”.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクト「%@」は変更されていません。ライブラリの「続きから」や「プロジェクトを開く…」からもう一度開けます。"
-          }
-        }
-      }
-    },
     "The recording starts over from power-on: every take, bookmark and the take history are deleted. The ROM and the project location stay the same.": {
       "localizations": {
         "ja": {
@@ -6845,16 +6815,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "今のテイク"
-          }
-        }
-      }
-    },
-    "The unsaved previous session has been kept (ReplayNES will try to resume it again at the next launch).\n\nMove the ROM back to its original location, or choose it from the library. When you start another game, you can choose to save or discard the previous session.\nTemporary location: %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存されていない前回のセッションは削除せずに残してあります（次回の起動時にもう一度再開を試みます）。\n\nROMを元の場所に戻すか、ライブラリから選んでください。別のゲームを始めるときに、前回のセッションを保存するか破棄するかを選べます。\n一時保存の場所: %@"
           }
         }
       }
@@ -7219,12 +7179,12 @@
         }
       }
     },
-    "Unsaved work was restored": {
+    "Unsaved work was restored (up to the last autosave). Please review and save.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未保存の作業を復元しました"
+            "value": "未保存の作業を復元しました（最後の自動保存まで）。確認して保存してください"
           }
         }
       }
@@ -7539,12 +7499,12 @@
         }
       }
     },
-    "“%@” was moved or deleted, so ReplayNES couldn’t resume where you left off.\nOriginal location: %@\n\nChoose it again from the library, or use “Open Project…”.": {
+    "“%@” can’t be found (moved or deleted). Choose it again from the library.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "「%1$@」は移動または削除されたため、前回の続きから再開できませんでした。\n元の場所: %2$@\n\nライブラリから選び直すか、「プロジェクトを開く…」で開いてください。"
+            "value": "「%@」が見つかりません（移動または削除されました）。ライブラリから選び直してください"
           }
         }
       }

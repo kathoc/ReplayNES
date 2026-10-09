@@ -116,7 +116,13 @@ struct FakeHost : DialogHost {
     choices.pop_front();
     if (r.onChosen) r.onChosen(c);
   }
-  void notice(const std::string& t) override { notices.push_back(t); }
+  using DialogHost::notice;
+  void notice(const std::string& t, double) override { notices.push_back(t); }
+  bool sawNotice(const std::string& t) const {
+    for (const std::string& n : notices)
+      if (n == t) return true;
+    return false;
+  }
   bool sawTitle(const std::string& t) const {
     for (const Dialog& d : dialogs)
       if (d.title == t) return true;
@@ -1335,7 +1341,7 @@ TEST_CASE("session: a missing ROM offers Locate ROM; cancelling keeps the resume
   w.app->continueLast();
   CHECK(w.emu->session() == nullptr);
   CHECK(w.host.sawTitle(TR("ROM not found")));
-  CHECK(w.host.sawTitle(TR("Couldn’t resume where you left off")));
+  CHECK(w.host.sawNotice(TR("Couldn’t resume where you left off (nothing was deleted). Try again from the library.")));
   CHECK(fs::exists(w.paths.tempProject()));  // kept for the next launch
 }
 

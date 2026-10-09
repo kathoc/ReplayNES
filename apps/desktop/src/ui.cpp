@@ -285,8 +285,9 @@ void UI::resumeFromSeekBar() {
   if (hasSession() && !menuOpen_ && d_.emu->paused() && !interactive()) d_.emu->togglePause();
 }
 
-void UI::notice(const std::string& text) {
+void UI::notice(const std::string& text, double seconds) {
   notice_ = text;
+  noticeSeconds_ = std::max(4.0, seconds);
   noticeTime_ = -1;  // stamped on the next build (time of that frame)
 }
 
@@ -445,7 +446,7 @@ void UI::buildOverlays(double now) {
 }
 
 void UI::buildNotice(double now) {
-  if (notice_.empty() || now - noticeTime_ >= 4.0) return;
+  if (notice_.empty() || now - noticeTime_ >= noticeSeconds_) return;
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
   float fs = m.label(), wrap = io.DisplaySize.x * 0.7f;
@@ -455,7 +456,7 @@ void UI::buildNotice(double now) {
   ImVec2 pad(S(20), S(12));
   ImVec2 p0((io.DisplaySize.x - ts.x) * 0.5f - pad.x, bottom - ts.y - pad.y * 2);
   ImDrawList* dl = ImGui::GetForegroundDrawList();
-  float a = float(std::min({1.0, (4.0 - (now - noticeTime_)) / 0.3, (now - noticeTime_) / kAnim}));
+  float a = float(std::min({1.0, (noticeSeconds_ - (now - noticeTime_)) / 0.3, (now - noticeTime_) / kAnim}));
   dl->AddRectFilled(p0, ImVec2(p0.x + ts.x + pad.x * 2, p0.y + ts.y + pad.y * 2), alpha(IM_COL32(28, 28, 32, 240), a), m.tileRadius());
   dl->AddText(ImGui::GetFont(), fs, ImVec2(p0.x + pad.x, p0.y + pad.y), alpha(kText, a), notice_.c_str(), nullptr, wrap);
 }

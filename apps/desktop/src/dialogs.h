@@ -13,7 +13,8 @@ namespace rnl {
 struct Dialog {
   std::string title;
   std::string message;
-  std::vector<std::string> buttons;  // first = default; an empty list = one "OK"
+  std::vector<std::string> buttons;  // left to right; an empty list = one "OK"
+  int defaultIndex = 0;              // focused when it appears
   int cancelIndex = -1;              // B / Esc picks this one (-1: the last button)
   int destructiveIndex = -1;         // drawn in red
   std::string checkbox;              // "" = none
@@ -39,7 +40,9 @@ class DialogHost {
   virtual ~DialogHost() = default;
   virtual void showDialog(Dialog d) = 0;
   virtual void showChooser(ChooserRequest r) = 0;
-  virtual void notice(const std::string& text) = 0;
+  /// A toast: informational, never takes the input, visible for `seconds` (at least 4).
+  virtual void notice(const std::string& text, double seconds) = 0;
+  void notice(const std::string& text) { notice(text, 4.0); }
 };
 
 /// Save-name rules of the chooser: trims, drops path separators and control characters, appends

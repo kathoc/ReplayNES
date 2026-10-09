@@ -639,12 +639,8 @@ void AppModel::install(rn_session* s, bool recovered, const std::optional<Resume
   if (resume) {
     if (resumeNotice) host_->notice(TR("Resumed where you left off"));
   } else if (recovered) {
-    Dialog d;
-    d.title = TR("Unsaved work was restored");
-    d.message = TR("ReplayNES didn’t quit normally last time, so the recording up to the last autosave was restored from "
-                   "the journal. Please review it and save.");
-    d.buttons = {TR("OK")};
-    host_->showDialog(std::move(d));
+    // Informational (nothing to decide): a toast, not a dialog (docs/design/UI_REDESIGN.md).
+    host_->notice(TR("Unsaved work was restored (up to the last autosave). Please review and save."), 8.0);
   }
 }
 
@@ -736,6 +732,7 @@ void AppModel::resetProjectPrompt() {
   d.buttons = {TR("Reset"), TR("Cancel")};
   d.destructiveIndex = 0;
   d.cancelIndex = 1;
+  d.defaultIndex = 1;  // Cancel is focused: a stray confirm press never wipes the recording
   d.onResult = [this, saved](int b, bool keep) {
     if (b == 0) performProjectReset(keep, saved);
   };
@@ -805,24 +802,16 @@ void AppModel::loadPendingResume() {
     case RNF_RESUME_NONE: return;
     case RNF_RESUME_PROJECT_MISSING:
       writeResume(std::nullopt);
-      error(TR("The last project can’t be found"),
-            TRF("“%@” was moved or deleted, so ReplayNES couldn’t resume where you left off.\nOriginal location: "
-                "%@\n\nChoose it again from the library, or use “Open Project…”.",
-                {fileName(rec.projectPath), rec.projectPath}));
+      host_->notice(TRF("“%@” can’t be found (moved or deleted). Choose it again from the library.", {fileName(rec.projectPath)}),
+                    8.0);
       return;
     case RNF_RESUME_RESUME: pendingResume_ = rec; return;  // the library's "Continue" card
   }
 }
 
-void AppModel::resumeFailed(const ResumeRec& r) {
-  error(TR("Couldn’t resume where you left off"),
-        r.isTemp ? TRF("The unsaved previous session has been kept (ReplayNES will try to resume it again at the next "
-                       "launch).\n\nMove the ROM back to its original location, or choose it from the library. When you "
-                       "start another game, you can choose to save or discard the previous session.\nTemporary location: %@",
-                       {paths_.tempProject()})
-                 : TRF("The project “%@” has not been changed. You can open it again with “Continue” in the library or "
-                       "“Open Project…”.",
-                       {fileName(r.projectPath)}));
+void AppModel::resumeFailed(const ResumeRec&) {
+  // After the open error's dialog: a toast (the temporary session / the project is kept as it was).
+  host_->notice(TR("Couldn’t resume where you left off (nothing was deleted). Try again from the library."), 8.0);
 }
 
 void AppModel::updateResumeRecord() {

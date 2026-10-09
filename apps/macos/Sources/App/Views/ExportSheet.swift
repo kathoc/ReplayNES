@@ -1,5 +1,7 @@
 // MP4 export sheet. Rendering runs offline on a fresh core (rn_renderer) on a background
-// thread; the project is never modified and play can continue meanwhile.
+// thread; the project is never modified and play can continue meanwhile. The controller's
+// confirm / cancel work its buttons (AppModel.exportNav): Export… / Cancel, then Close when it is
+// done or failed (while it runs the pad stays the game's; Cancel is the mouse / Esc). Problems with the settings are shown inline (no alert).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 import UniformTypeIdentifiers
@@ -15,6 +17,7 @@ struct ExportSheet: View {
     @State private var endFrame = 0
     @State private var applyFlash = true
     @State private var applyCRT = false
+    @State private var formError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -27,6 +30,7 @@ struct ExportSheet: View {
         }
         .padding(20)
         .frame(width: 520)
+        .onReceive(model.exportNav) { navInput($0) }
         .onAppear {
             endFrame = Int(model.status.takeLength)
             applyFlash = model.flashLevel != .off
@@ -90,11 +94,27 @@ struct ExportSheet: View {
         }
         Text("The export is made by re-running the recorded input from the start in a separate emulator. The project is not changed, and you can keep playing while it exports.")
             .font(.caption).foregroundStyle(.secondary)
+        if let formError {
+            Label(formError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+        }
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
             Button("Export…") { chooseAndStart() }.keyboardShortcut(.defaultAction)
                 .disabled(model.status.takeLength == 0)
+        }
+    }
+
+    /// Controller confirm / cancel (the sheet's window has the keyboard itself).
+    private func navInput(_ n: NavInput) {
+        let ok = n == .confirm, cancel = n == .back || n == .escape
+        guard ok || cancel else { return }
+        if let job = model.exportJob {
+            if job.finished { model.exportJob = nil; dismiss() } else if cancel { job.cancel() }
+        } else if cancel {
+            dismiss()
+        } else if model.status.takeLength > 0 {
+            chooseAndStart()
         }
     }
 
@@ -116,8 +136,10 @@ struct ExportSheet: View {
             s.endFrame = UInt64(max(0, min(endFrame, Int(model.status.takeLength))))
         }
         do { try s.validate() } catch {
-            model.showError(String(localized: "Can’t export"), error.localizedDescription); return
+            formError = String(localized: "Can’t export") + ": " + error.localizedDescription
+            return
         }
+        formError = nil
         let panel = NSSavePanel()
         panel.title = String(localized: "Where to Save the MP4")
         panel.allowedContentTypes = [.mpeg4Movie]

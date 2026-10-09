@@ -458,9 +458,9 @@ struct LibraryHome: View {
     /// A on a game: continue its newest project, or start one.
     static func play(_ rom: LibraryROM, model m: AppModel) {
         if let p = m.library.projects(for: rom).first {
-            if m.continueProject(p.url) { m.hideLibraryScreen() }
-        } else if m.playFromLibrary(rom) {
-            m.hideLibraryScreen()
+            m.continueProject(p.url) { m.hideLibraryScreen() }
+        } else {
+            m.playFromLibrary(rom) { m.hideLibraryScreen() }
         }
     }
 
@@ -470,10 +470,10 @@ struct LibraryHome: View {
 
     static func projectRows(_ rom: LibraryROM, model m: AppModel) -> [ProjectRow] {
         var rows = [ProjectRow(title: String(localized: "New Game"), subtitle: String(localized: "Start a new project from power-on"),
-                               icon: "plus", run: { if m.playFromLibrary(rom) { m.hideLibraryScreen() } })]
+                               icon: "plus", run: { m.playFromLibrary(rom) { m.hideLibraryScreen() } })]
         for p in m.library.projects(for: rom).prefix(5) {
             rows.append(ProjectRow(title: p.name, subtitle: p.modified.formatted(date: .abbreviated, time: .shortened), icon: "film.stack",
-                                   run: { if m.continueProject(p.url) { m.hideLibraryScreen() } }))
+                                   run: { m.continueProject(p.url) { m.hideLibraryScreen() } }))
         }
         return rows
     }

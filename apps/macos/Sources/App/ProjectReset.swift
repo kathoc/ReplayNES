@@ -45,24 +45,20 @@ extension AppModel {
         guard status.hasSession, let c = current else { return }
         let dir = status.projectPath
         let saved = !dir.isEmpty && !c.isTemp
-        let a = NSAlert()
-        a.alertStyle = .warning
-        a.messageText = String(localized: "Reset this project?")
         var info = String(localized: "The recording starts over from power-on: every take, bookmark and the take history are deleted. The ROM and the project location stay the same.")
         if saved {
             info += "\n\n" + String(localized: "A backup copy of the project is moved to the Trash first, so you can still recover it from there.")
         } else {
             info += "\n\n" + String(localized: "This session isn’t saved as a project, so no backup is made.")
         }
-        a.informativeText = info
-        let keep = NSButton(checkboxWithTitle: String(localized: "Keep A/B repeat sections"), target: nil, action: nil)
-        keep.state = .on
-        a.accessoryView = keep
-        let ok = a.addButton(withTitle: String(localized: "Reset"))
-        ok.hasDestructiveAction = true
-        a.addButton(withTitle: String(localized: "Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        performProjectReset(keepPracticeSlots: keep.state == .on, backup: saved)
+        // Cancel is focused: a stray confirm press never wipes the recording.
+        dialogs.present(AppDialog(kind: .warning, title: String(localized: "Reset this project?"), message: info,
+                                  buttons: [String(localized: "Reset"), String(localized: "Cancel")],
+                                  defaultIndex: 1, cancelIndex: 1, destructiveIndex: 0,
+                                  toggle: String(localized: "Keep A/B repeat sections"), toggleOn: true,
+                                  onResult: { [weak self] a in
+                                      if a.button == 0 { self?.performProjectReset(keepPracticeSlots: a.toggleOn, backup: saved) }
+                                  }))
     }
 
     /// Without the dialog (also the `resetProject` test action).
