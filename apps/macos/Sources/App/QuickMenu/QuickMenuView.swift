@@ -242,6 +242,7 @@ struct QuickMenuOverlay: View {
         let x = focused?.x ?? content.x, y = focused?.y ?? content.y
         if let y { hints.append((g.y, y.label, { menu.handle(.y) })) }
         if let x { hints.append((g.x, x.label, { menu.handle(.x) })) }
+        if let o = content.options { hints.append((g.options, o.label, { menu.handle(.options) })) }
         if hints.count < 3 {
             hints.append((g.back == "⌫" && p == .top ? "esc" : g.back, p == .top ? String(localized: "Close") : String(localized: "Back"), { menu.handle(.back) }))
         }
@@ -256,7 +257,7 @@ struct QuickMenuOverlay: View {
                 .transition(.opacity)
             Spacer(minLength: 8)
             HStack(spacing: 14) {
-                ForEach(Array(hints.prefix(3).enumerated()), id: \.offset) { _, h in
+                ForEach(Array(hints.prefix(4).enumerated()), id: \.offset) { _, h in
                     HStack(spacing: 5) {
                         KeyCap(h.0)
                         Text(h.1).font(QMStyle.hint).foregroundStyle(.white.opacity(0.8)).fixedSize()
@@ -529,6 +530,7 @@ private struct ControllerPage: View {
 /// Confirm Button swaps them: rnf_ui_confirm_element).
 struct HintGlyphs {
     let confirm: String, back: String, x: String, y: String, l: String, r: String
+    var options = "S"
     var controller = true
 
     static var southConfirm: Bool { UserDefaults.standard.bool(forKey: "southConfirm") }
@@ -541,7 +543,7 @@ struct HintGlyphs {
         }
         let ps = c.family == .playStation
         return HintGlyphs(confirm: c.label(confirmElement), back: c.label(cancelElement), x: c.label("face.west"), y: c.label("face.north"),
-                          l: ps ? "L1" : "L", r: ps ? "R1" : "R")
+                          l: ps ? "L1" : "L", r: ps ? "R1" : "R", options: c.label("options"))
     }
 }
 

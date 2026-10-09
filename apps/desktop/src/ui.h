@@ -197,8 +197,9 @@ class UI : public DialogHost {
   struct Prompt {
     std::vector<std::string> elements;
     std::string text;
+    std::function<void()> onClick;  // set: the hint is also a button (mouse / touch)
   };
-  void prompt(std::initializer_list<const char*> elements, const std::string& text);
+  void prompt(std::initializer_list<const char*> elements, const std::string& text, std::function<void()> onClick = {});
   void buildHintBar(const LRect& bar);
   void inlinePrompts(const char* backText);
   rnf_controller_family promptFamily() const;
@@ -261,6 +262,8 @@ class UI : public DialogHost {
   void updateMarkers(double now);  // sync with the selected slot, D-pad repeat, L / R hold
   void applyMarkers(const rnf_markers_result& r);
   void buildPracticePill();
+  void buildCountdown();
+  void toggleCountdown();
   void buildBadges();
   bool thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1);
 

@@ -39,7 +39,7 @@ struct SeekBarOverlay: View {
     }
 
     /// The buttons of the state: the bar (cancel Resume · L R Step · confirm Marker · ↑ Markers ·
-    /// Y A/B n), a marker (←→ Select · confirm Move · X Delete · cancel Back) or editing one
+    /// Y Practice · X A/B n), a marker (←→ Select · confirm Move · X Delete · cancel Back) or editing one
     /// (←→ ±1 · L R Move · confirm Done · cancel Undo). Keyboard only: Space resumes.
     private var hints: some View {
         let g = HintGlyphs.current(monitor.controllers)
@@ -56,7 +56,8 @@ struct SeekBarOverlay: View {
                 items = [([.key(g.back)], String(localized: "Resume")), ([.key(g.l), .key(g.r)], String(localized: "Step"))]
                 if on && markers.frames.count < 2 { items.append(([.key(g.confirm)], String(localized: "Marker"))) }
                 if on && !markers.frames.isEmpty { items.append(([.dpadUp], String(localized: "Markers"))) }
-                if on { items.append(([.key(g.y)], "A/B \(min(7, max(0, strip.selectedSlot)) + 1)")) }
+                if on && !markers.frames.isEmpty { items.append(([.key(g.y)], String(localized: "Practice"))) }
+                if on { items.append(([.key(g.x)], "A/B \(min(7, max(0, strip.selectedSlot)) + 1)")) }
             }
         } else {
             items = [([.key(String(localized: "Space"))], String(localized: "Resume"))]

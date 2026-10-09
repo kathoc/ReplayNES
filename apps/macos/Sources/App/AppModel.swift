@@ -95,6 +95,10 @@ final class AppModel: ObservableObject {
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
+    /// The VTR tape look while rewinding / returning to A (display only; Settings › Display).
+    @AppStorage("vtrEffect") var vtrEffect = true { didSet { pushPrefs(); objectWillChange.send() } }
+    /// 3, 2, 1 after a practice run arrives at A (the Practice page, Options button).
+    @AppStorage("practiceCountdown") var practiceCountdown = true { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume); objectWillChange.send() } }
     /// Menus confirm with the south face button (default false: east confirms, south goes back).
     @AppStorage("southConfirm") var southConfirm = false { didSet { input.setSouthConfirm(southConfirm); objectWillChange.send() } }
@@ -165,6 +169,7 @@ final class AppModel: ObservableObject {
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
         input.onControllersChanged = { [weak self] c in self?.controllers = c; self?.updateUIMode() }
         input.onNav = { [weak self] n in self?.handleNav(n) }
+        input.onCountdownCancel = { [weak self] in self?.emu.perform { e in e.abortCountdown() } }
         input.onPausedResume = { [weak self] in
             guard let self, self.status.hasSession, self.status.paused, !self.quickMenu.isOpen, !self.showLibrary else { return }
             self.togglePause()
@@ -237,8 +242,11 @@ final class AppModel: ObservableObject {
     }
 
     private func pushPrefs() {
-        let par = pauseAfterRewind, auto = autosaveInterval, flash = flashLevel
-        emu.perform { e in e.pauseAfterRewind = par; e.autosaveInterval = auto; e.setFlashLevel(flash) }
+        let par = pauseAfterRewind, auto = autosaveInterval, flash = flashLevel, vtr = vtrEffect, count = practiceCountdown
+        emu.perform { e in
+            e.pauseAfterRewind = par; e.autosaveInterval = auto; e.setFlashLevel(flash)
+            e.setVTREffect(vtr); e.setPracticeCountdown(count)
+        }
     }
 
     // MARK: messages
@@ -1062,7 +1070,9 @@ final class AppModel: ObservableObject {
     /// Navigation mode, the Metal pill and its glyph follow the session / pause / menu / library.
     func updateUIMode() {
         let libraryOn = !status.hasSession || showLibrary
-        input.setNavMode(quickMenu.isOpen || libraryOn || dialogs.isActive || exportTakesPad)
+        let modal = quickMenu.isOpen || libraryOn || dialogs.isActive || exportTakesPad
+        input.setNavMode(modal)
+        emu.perform { e in e.modalHold = modal }   // a practice run waits behind a dialog
         let infos = input.controllerMonitor.controllers
         let glyph = MenuPillLayout.glyph(hasController: !infos.isEmpty,
                                          playStation: infos.min(by: { $0.slot < $1.slot })?.family == .playStation)

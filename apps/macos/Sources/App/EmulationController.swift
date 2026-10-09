@@ -94,6 +94,7 @@ struct EmuStatus: Equatable {
     var practiceLength: UInt64 = 0   // slot length A->B (0 = no B: no loop)
     var practiceLooping = false      // hold / rewind animation in progress
     var practiceLoops = 0            // completed A->B loops since entering
+    var countdown = 0                // the countdown after returning to A: 3, 2, 1 (0 = none)
 }
 
 /// Bookmarks, takes and practice slots (published when they change).
@@ -171,8 +172,21 @@ final class EmulationController {
     private var practiceLoop = PracticeLoop()
     private var practiceSeq: UInt64 = 1 << 40 // input sampling clock while practicing (turbo phase)
     private var modeBeforePractice = RN_MODE_RECORD
-    private let history = FrameHistory(capacity: 60)
+    private let reel = PracticeReel()   // pictures of the run for the 1 s sweep back to A
     private var practiceRewindStarted = false
+    private var countdown = 0 {
+        didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0) } }
+    }
+    private var countdownFraction = 0.0
+    /// A modal UI (menu, dialog) is up: a practice run waits (hold, sweep, countdown too).
+    var modalHold = false
+    // VTR effect (display only): while active, the shown picture is vtrBase through the effect.
+    private let vtr = VTREffect()
+    private var vtrEnabled = true
+    private var vtrOn = false
+    private var vtrBase = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var vtrOut = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var vtrBaseMeta = FrameMeta()
     // Photosensitive flash reduction (display only: filters the copy that is shown).
     private let flashFilter = FlashFilter(level: .standard)
     private var displayFrame = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
@@ -295,7 +309,10 @@ final class EmulationController {
         practiceSlot = nil
         practiceLength = 0
         practiceLoop.reset()
-        history.release()
+        reel.release()
+        countdown = 0
+        vtr.reset()
+        vtrOn = false
         thumbnails.reset(take: s?.activeTake ?? 0)
         if let s, s.mode == RN_MODE_PRACTICE { try? s.setMode(RN_MODE_RECORD) } // never persisted; defensive
         if let s, let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
@@ -316,9 +333,17 @@ final class EmulationController {
 
     // MARK: flash reduction (emulation thread)
 
+    func setVTREffect(_ on: Bool) {
+        vtrEnabled = on
+        vtr.configure(enabled: on, level: flashFilter.level)
+    }
+
+    func setPracticeCountdown(_ on: Bool) { practiceLoop.countdownEnabled = on }
+
     func setFlashLevel(_ l: FlashLevel) {
         guard l != flashFilter.level else { return }
         flashFilter.setLevel(l)
+        vtr.configure(enabled: vtrEnabled, level: l)
         flashAltered = false
         if l == .off { publishVideo() } // show the unfiltered picture right away
     }
@@ -334,10 +359,14 @@ final class EmulationController {
         // Raw PPU codes of the same picture for the CRT signal path (display only).
         var meta = meta
         meta.tickStart = tickStart
-        let signal = session?.videoIndices
+        meta.countdown = countdown
+        meta.countdownFraction = countdownFraction
+        // Only the session's own frame has PPU codes (not a reel picture of the sweep).
+        let signal = v == session?.video ? session?.videoIndices : nil
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
         if flashFilter.level == .off {
             frames.publish(v, meta: meta, codes: signal?.codes)
+            if vtrOn { keepVTRBase(v, meta) }
             return
         }
         let altered = displayFrame.withUnsafeMutableBufferPointer { flashFilter.process(v, into: $0.baseAddress!) }
@@ -345,6 +374,7 @@ final class EmulationController {
         if altered { lastFlashTick = tickCount }
         meta.flashAltered = altered
         displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta, codes: signal?.codes) }
+        if vtrOn { displayFrame.withUnsafeBufferPointer { keepVTRBase($0.baseAddress!, meta) } }
     }
 
     /// Seek helper used by commands: pauses, mutes, refreshes the picture.
@@ -590,6 +620,12 @@ final class EmulationController {
     /// The frame-critical part of a tick: hotkeys, input sample, emulation, publish. Returns the
     /// session when the housekeeping (autosave) may run afterwards.
     private func tickFrame() -> (EngineSession?, autosave: Bool) {
+        let r = tickFrameCore()
+        if session != nil { tickVTR() }
+        return r
+    }
+
+    private func tickFrameCore() -> (EngineSession?, autosave: Bool) {
         tickCount &+= 1
         guard let s = session else { return (nil, false) }
 
@@ -610,8 +646,24 @@ final class EmulationController {
         }
 
         let practicing = s.mode == RN_MODE_PRACTICE
-        let wantRewind = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
-        let wantFF = !wantRewind && !practicing && (uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0)
+        let rewindHeld = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
+        let ffHeld = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
+        var wantRewind = rewindHeld
+        if practicing {
+            // L2 + R2 together: back to A at once (the return of B). Only while playing: paused (the
+            // seek bar, the menu, a dialog) the chord latches but does nothing. L2 does not rewind
+            // the run while the chord is held or during the return.
+            let sh = practiceLoop.shoulders(now: HostClock.seconds(HostClock.now()), hasA: practiceSlot != nil && !paused && !modalHold,
+                                            rewindHeld: rewindHeld, ffHeld: ffHeld)
+            if sh.fired {
+                if rewinding { rewinding = false; rewindTicks = 0 }
+                practiceRewindStarted = false
+                if slow == .normal { AudioFade.tail(from: s.audio()).withUnsafeBufferPointer { audio.push($0) } }
+                statusDirty = true
+            }
+            wantRewind = sh.rewind
+        }
+        let wantFF = !wantRewind && !practicing && ffHeld
         if wantRewind != rewinding || wantFF != fastForward { statusDirty = true }
         if wantFF && !fastForward { beginFastForward(s) }
         if !wantFF && fastForward { endFastForward(s) }
@@ -629,6 +681,7 @@ final class EmulationController {
                 do {
                     try s.rewind(n)
                     endOfTake = false
+                    if practicing { reel.truncate(after: s.practiceFrame) }
                     publishVideo(continuous: true)
                 } catch { reportError(String(localized: "Rewind failed"), error); uiRewindHeld = false }
             }
@@ -653,6 +706,8 @@ final class EmulationController {
 
         if fastForward {
             tickFastForward(s)
+        } else if practicing && !paused && modalHold {
+            audio.setMuted(true)   // waits for the dialog (the loop does not count the time)
         } else if practicing && !paused {
             tickPractice(s)
         } else {
@@ -746,12 +801,13 @@ final class EmulationController {
 
     var isPracticing: Bool { session?.mode == RN_MODE_PRACTICE }
 
-    /// Practice loop: play A->B, hold the last frame 0.5 s (audio dies away), show the recent
-    /// frames backwards for 0.5 s, then goto A and play again.
+    /// Practice loop: play A->B, hold the last frame 0.5 s (audio dies away), sweep back to A over
+    /// the reel in 1 s (VTR effect), A's picture with the countdown 3, 2, 1, play again.
     private func tickPractice(_ s: EngineSession) {
         let now = HostClock.seconds(HostClock.now())
         let action = practiceLoop.tick(now: now, counter: s.practiceFrame,
                                        length: practiceSlot != nil && practiceLength > 0 ? practiceLength : nil)
+        if case .countdown = action {} else if countdown != 0 { countdown = 0; statusDirty = true }
         switch action {
         case .step:
             practiceRewindStarted = false
@@ -763,9 +819,10 @@ final class EmulationController {
             // Picture stays; a short decaying tail lets the sound end naturally (no click, no black).
             let tail = AudioFade.tail(from: s.audio())
             tail.withUnsafeBufferPointer { audio.push($0) }
+            dropInput()
             statusDirty = true
         case .hold:
-            break
+            dropInput()
         case .rewindFrame(let back):
             if !practiceRewindStarted {
                 practiceRewindStarted = true
@@ -773,25 +830,94 @@ final class EmulationController {
                 resetFlashFilter()
                 statusDirty = true
             }
-            let idx = PracticeLoop.historyIndex(back: back, count: history.count)
-            _ = history.withFrame(back: idx) { show($0, meta: FrameMeta(frame: s.frame, emulatedTime: HostClock.now())) }
+            _ = reel.withSweepFrame(back: back) { show($0, meta: FrameMeta(frame: s.frame)) }
+            dropInput()
         case .restart:
             practiceRewindStarted = false
+            dropInput()
             guard let slot = practiceSlot else { return }
             do {
                 try s.practiceGotoA(slot)
-                history.clear()
-                // No publish here: rn_video still holds the last practice frame; the next step
-                // (this tick's successor) shows the frame after A, continuing the rewind motion.
-                resetFlashFilter()
+                arriveAtA(s)
                 statusDirty = true
             } catch {
                 practiceSlot = nil
                 practiceLength = 0
+                practiceLoop.interrupt()
                 structureDirty = true
                 notice(String(localized: "Point A of section \(slot + 1) can’t be found, so repeating stopped"))
             }
+        case .countdown(let count, let fraction):
+            // A's picture stays (shown again every tick: the viewport draws the countdown over it).
+            if count != countdown { statusDirty = true }
+            countdown = count
+            countdownFraction = fraction
+            audio.setMuted(true)
+            dropInput()
+            if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }   // display only: no latency sample
         }
+    }
+
+    /// The run arrived at A (start, loop, L2 + R2): A's own picture (the frame after A, emulated and
+    /// taken back: the run does not move).
+    private func arriveAtA(_ s: EngineSession) {
+        reel.clear()
+        _ = rnf_practice_preview_a(s.handle)
+        resetFlashFilter()
+        publishVideo(continuous: true)
+    }
+
+    /// The game input of a tick that emulates nothing (hold, sweep, countdown): sampled and dropped,
+    /// so a tap there is not latched into the first frame afterwards.
+    private func dropInput() {
+        var p1: UInt8 = 0, p2: UInt8 = 0
+        rn_input_sample_game(input.handle, practiceSeq, &p1, &p2)
+        practiceSeq &+= 1
+    }
+
+    /// The UI's cancel tapped during the countdown: practice ends (back to the take, paused).
+    func abortCountdown() {
+        guard isPracticing, practiceLoop.inCountdown else { return }
+        stopPractice()
+    }
+
+    // MARK: VTR effect (emulation thread)
+
+    /// The tape look over the picture: the return sweep, L2 rewind, R2 fast-forward (lighter). Runs
+    /// only while it is active (fading in / out); otherwise nothing is touched (zero cost).
+    private func tickVTR() {
+        var want = RNF_VTR_NONE
+        if isPracticing && practiceLoop.inRewind { want = RNF_VTR_RETURN }
+        else if rewinding { want = RNF_VTR_REWIND }
+        else if fastForward && ff.active && !ffBlocked { want = RNF_VTR_FAST_FORWARD }
+        if want == RNF_VTR_NONE && !vtrOn && !vtr.active { return }
+        let p = vtr.tick(now: HostClock.seconds(HostClock.now()), want: want)
+        if p.strength > 0 {
+            if !vtrOn {
+                vtrBaseMeta = vtrBase.withUnsafeMutableBufferPointer { frames.copyLatest(into: $0.baseAddress!) }
+                vtrOn = true
+            }
+            vtrBase.withUnsafeBufferPointer { src in
+                vtrOut.withUnsafeMutableBufferPointer { vtr.apply(src.baseAddress!, into: $0.baseAddress!, p) }
+            }
+            var m = vtrBaseMeta
+            m.countdown = countdown
+            m.countdownFraction = countdownFraction
+            vtrBaseMeta.emulatedTime = 0   // shown again next tick: not a newly emulated frame
+            vtrOut.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: nil) }
+        } else if vtrOn {
+            vtrOn = false
+            var m = vtrBaseMeta
+            m.countdown = countdown
+            m.countdownFraction = countdownFraction
+            vtrBase.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: nil) }
+        }
+    }
+
+    /// show() while the effect runs: the clean picture is its source from now on.
+    private func keepVTRBase(_ v: UnsafePointer<UInt32>, _ meta: FrameMeta) {
+        vtrBase.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: v, count: $0.count) }
+        vtrBaseMeta = meta
     }
 
     /// "Practice This Section": enters practice at the slot's A and autoplays (never records).
@@ -813,13 +939,13 @@ final class EmulationController {
         practiceLength = info.hasB ? info.length : 0
         practiceLoop.reset()
         practiceRewindStarted = false
-        history.clear()
         stepRepeater.reset()
         advanceRemaining = 0
         endOfTake = false
         paused = false
-        resetFlashFilter()
-        publishVideo()
+        audio.setMuted(true)
+        arriveAtA(s)
+        practiceLoop.arrive(now: HostClock.seconds(HostClock.now()))   // the countdown first, when it is on
         structureDirty = true
         notice(info.hasB ? String(localized: "Practice: \(info.displayName) (returns to A at B and repeats; nothing is recorded)")
                          : String(localized: "Practice: \(info.displayName) (B isn’t set, so it doesn’t repeat; nothing is recorded)"))
@@ -833,7 +959,8 @@ final class EmulationController {
         practiceLength = 0
         practiceLoop.reset()
         practiceRewindStarted = false
-        history.release()
+        reel.release()
+        countdown = 0
         paused = true
         advanceRemaining = 0
         audio.setMuted(true)
@@ -853,7 +980,7 @@ final class EmulationController {
         guard let s = session else { return }
         do {
             try s.practiceSetA(slot)
-            if s.mode == RN_MODE_PRACTICE { practiceSlot = slot; practiceLoop.interrupt() }
+            if s.mode == RN_MODE_PRACTICE { practiceSlot = slot; practiceLoop.interrupt(); reel.clear() }
             refreshPracticeLength(s, slot)
             structureDirty = true
             notice(String(localized: "Set A of section \(slot + 1). Keep playing and set B where it should end"))
@@ -925,6 +1052,7 @@ final class EmulationController {
             practiceLoop.interrupt()
             do {
                 try s.rewind(n)
+                reel.truncate(after: s.practiceFrame)
                 audio.setMuted(true)
                 publishVideo()
             } catch { reportError(String(localized: "Couldn’t go back"), error) }
@@ -987,7 +1115,7 @@ final class EmulationController {
         }
         let tEmu = HostClock.now()
         if let v = s.video {
-            if mode == RN_MODE_PRACTICE { history.append(v) }
+            if mode == RN_MODE_PRACTICE { reel.offer(position: s.practiceFrame, v) }
             if publish {
                 show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
             }
@@ -1196,6 +1324,7 @@ final class EmulationController {
                 st.practiceLength = practiceSlot != nil ? practiceLength : 0
                 st.practiceLooping = practiceLoop.isLooping
                 st.practiceLoops = practiceLoop.loops
+                st.countdown = countdown
             }
         }
         statusDirty = false

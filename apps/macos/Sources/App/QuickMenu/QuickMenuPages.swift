@@ -52,6 +52,8 @@ struct QMContent {
     /// Page-level contextual actions (no item focused / for the whole page).
     var x: QMAction?
     var y: QMAction?
+    /// The Options (⧉ / View) button: a page setting (Practice: the countdown).
+    var options: QMAction?
 }
 
 enum QuickMenuPages {
@@ -61,10 +63,16 @@ enum QuickMenuPages {
         case .retry: return QMContent(items: retry(m, menu))
         case .takes: return takes(m, menu)
         case .bookmarks: return bookmarks(m, menu)
-        case .practice: return QMContent(items: practice(m, menu))
+        case .practice:
+            // The countdown after returning to A (3, 2, 1): toggled on this page (Options / ⧉).
+            return QMContent(items: practice(m, menu),
+                             options: QMAction(label: m.practiceCountdown ? String(localized: "Countdown: On") : String(localized: "Countdown: Off")) {
+                                 m.practiceCountdown.toggle()
+                             })
         case .share: return QMContent(items: share(m, menu))
         case .stream: return QMContent(items: stream())
         case .display: return QMContent(items: display(m))
+        case .displayShape: return QMContent(items: displayShape(m))
         case .crtDetail:
             return QMContent(items: crtDetail(), y: QMAction(label: String(localized: "Defaults")) { CRTSettingsModel.shared.resetToNestermDefaults() })
         case .controls: return QMContent(items: controls(m))
@@ -267,12 +275,21 @@ enum QuickMenuPages {
                    String(localized: "Integer: sharp pixels · FILL: fill the window"),
                    [String(localized: "Integer"), "FILL"], m.integerScale ? 0 : 1) { m.integerScale = $0 == 0 },
             toggle("crt", "tv", String(localized: "CRT"), String(localized: "Look like a CRT TV (display only)"), crt.enabled) { crt.enabled = $0 },
-            toggle("par", "rectangle.arrowtriangle.2.outward", "8:7", String(localized: "Pixel aspect ratio of a CRT TV"), m.displayPAR87) { m.displayPAR87 = $0 },
             choice("flash", "bolt.trianglebadge.exclamationmark", String(localized: "Reduce Flashing"),
                    String(localized: "Tone down full-screen flashes (photosensitivity)"),
                    levels.map(\.label), levels.firstIndex(of: m.flashLevel) ?? 2) { m.flashReduction = levels[$0].rawValue },
-            toggle("overscan", "crop", String(localized: "Hide Edges"), String(localized: "Hide 8 pixels at each edge (overscan)"), m.hideOverscan) { m.hideOverscan = $0 },
+            toggle("vtr", "backward.fill", String(localized: "VTR Effect"),
+                   String(localized: "Videotape-style noise while rewinding (display only)"), m.vtrEffect) { m.vtrEffect = $0 },
+            link("shape", "aspectratio", String(localized: "Picture Shape"), String(localized: "8:7 pixels, hide the edges"), .displayShape),
             link("crtDetail", "slider.horizontal.3", String(localized: "CRT Details"), String(localized: "Scanlines, afterglow and signal of the CRT"), .crtDetail),
+        ]
+    }
+
+    /// Settings › Display › Picture Shape (moved here so Display keeps six rows with VTR Effect).
+    private static func displayShape(_ m: AppModel) -> [QMItem] {
+        [
+            toggle("par", "rectangle.arrowtriangle.2.outward", "8:7", String(localized: "Pixel aspect ratio of a CRT TV"), m.displayPAR87) { m.displayPAR87 = $0 },
+            toggle("overscan", "crop", String(localized: "Hide Edges"), String(localized: "Hide 8 pixels at each edge (overscan)"), m.hideOverscan) { m.hideOverscan = $0 },
         ]
     }
 

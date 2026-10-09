@@ -105,11 +105,12 @@ final class PlaybackLogicTests: XCTestCase {
         var stepsSinceA = 1
         var firstFrames: [UInt64] = []
         var loop = PracticeLoop()
+        loop.countdownEnabled = false   // the countdown: testPracticeReturnWrappers
         var now = 0.0
         var restarts = 0
         var videoAtB: [UInt64] = []
-        let history = FrameHistory(capacity: 60)
-        var shownBack = 0
+        let reel = PracticeReel()
+        var swept = 0
         while restarts < 3 {
             now += 1.0 / 60
             switch loop.tick(now: now, counter: s.practiceFrame, length: s.practiceSlot(0).length) {
@@ -117,18 +118,18 @@ final class PlaybackLogicTests: XCTestCase {
                 try s.step(p1: UInt8(RN_BTN_RIGHT), p2: 0, events: 0) // practice input is live but never recorded
                 stepsSinceA += 1
                 if stepsSinceA == 1 { firstFrames.append(s.videoHash) }
-                if let v = s.video { history.append(v) }
+                if let v = s.video { reel.offer(position: s.practiceFrame, v) }
             case .beginHold:
                 videoAtB.append(s.videoHash)
                 XCTAssertEqual(s.practiceFrame, 60)
             case .hold: break
             case .rewindFrame(let back):
-                let idx = PracticeLoop.historyIndex(back: back, count: history.count)
-                XCTAssertNotNil(history.withFrame(back: idx) { _ in true })
-                shownBack = max(shownBack, idx)
+                XCTAssertNotNil(reel.withSweepFrame(back: back) { _ in true })
+                swept += 1
+            case .countdown: XCTFail("the countdown is off")
             case .restart:
                 try s.practiceGotoA(0)
-                history.clear()
+                reel.clear()
                 restarts += 1
                 stepsSinceA = 0
                 XCTAssertEqual(s.practiceFrame, 0)
@@ -140,7 +141,7 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertEqual(firstFrames.count, 2)
         XCTAssertTrue(firstFrames.allSatisfy { $0 == videoAfterA }, "each loop restarts from the same A")
         XCTAssertEqual(Set(videoAtB).count, 1, "every loop replays the same A->B section")
-        XCTAssertGreaterThan(shownBack, 20, "the rewind animation walks back through recent frames")
+        XCTAssertGreaterThan(swept, 150, "each return sweeps back to A over the reel for 1 s")
 
         // R2 in practice rewinds the practice run only and stops at A.
         for _ in 0..<10 { try s.step(p1: 0, p2: 0, events: 0) }
@@ -225,5 +226,34 @@ final class PlaybackLogicTests: XCTestCase {
         let played = try s.step(p1: UInt8(RN_BTN_B), p2: 0, events: 0)
         XCTAssertEqual(played.branched, 1, "resuming play mid-take still branches")
         XCTAssertEqual(s.takes().count, takes + 1)
+    }
+
+    func testPracticeReturnWrappers() {
+        var loop = PracticeLoop()
+        XCTAssertTrue(loop.countdownEnabled)
+        XCTAssertEqual(PracticeLoop.rewindSeconds, 1.0)
+        XCTAssertEqual(PracticeLoop.countdownSeconds, 3.0)
+        // L2 + R2: back to A at once, latched until released; L2 does not rewind meanwhile.
+        XCTAssertEqual(loop.shoulders(now: 0, hasA: true, rewindHeld: true, ffHeld: false).rewind, true)
+        let sh = loop.shoulders(now: 0.02, hasA: true, rewindHeld: true, ffHeld: true)
+        XCTAssertTrue(sh.fired)
+        XCTAssertFalse(sh.rewind)
+        XCTAssertTrue(loop.inRewind)
+        var now = 0.02
+        var action = PracticeLoop.Action.step
+        repeat { now += 1.0 / 60; action = loop.tick(now: now, counter: 30, length: 300) } while action != .restart
+        now += 1.0 / 60
+        guard case .countdown(let count, _) = loop.tick(now: now, counter: 0, length: 300) else { return XCTFail("countdown") }
+        XCTAssertEqual(count, 3)
+        XCTAssertTrue(loop.inCountdown)
+        let v = PracticeLoop.countdownVisual(count: 2, fraction: 0.5)
+        XCTAssertEqual(v.number, 2)
+        XCTAssertEqual(v.alpha, 1)
+        // The VTR effect: off when disabled, fades in otherwise.
+        let vtr = VTREffect()
+        vtr.configure(enabled: false, level: .off)
+        XCTAssertEqual(vtr.tick(now: 0, want: RNF_VTR_RETURN).strength, 0)
+        vtr.configure(enabled: true, level: .high)
+        XCTAssertGreaterThan(vtr.tick(now: 0.05, want: RNF_VTR_RETURN).strength, 0)
     }
 }

@@ -141,13 +141,21 @@ final class SeekMarkers: ObservableObject {
         case .down: if down { apply(rnf_markers_move(handle, 0, 1, head)) }
         case .ok: if down { apply(rnf_markers_confirm(handle, head)) }
         case .cancel: if down { apply(rnf_markers_cancel(handle)) }
-        case .x: if down { apply(rnf_markers_delete(handle)) }
-        case .y:   // the next A/B slot (the markers show that one)
-            if down && !editing {
+        case .x, .y:
+            // X: delete the focused marker, or (on the bar) the next A/B slot; Y: practice the
+            // selected slot's section from its A (rnf_markers_face).
+            guard down else { return }
+            switch rnf_markers_face(handle, input == .y ? 1 : 0) {
+            case RNF_SEEK_FACE_DELETE_MARKER: apply(rnf_markers_delete(handle))
+            case RNF_SEEK_FACE_NEXT_SLOT:
                 FilmstripModel.shared.selectedSlot = (slot + 1) % 8
                 _ = rnf_markers_leave(handle)
                 writeSent = nil
                 sync()
+            case RNF_SEEK_FACE_PRACTICE:
+                _ = rnf_markers_leave(handle)
+                m.practiceStart(slot)   // plays from A (after the countdown)
+            default: break
             }
         }
     }

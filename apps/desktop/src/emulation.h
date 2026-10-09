@@ -168,6 +168,9 @@ class EmulationController {
   void jumpSeconds(double seconds);
   void setRewindHeld(bool h) { uiRewindHeld_ = h; }
   void setFastForwardHeld(bool h) { uiFastForwardHeld_ = h; }
+  /// A modal UI (menu, dialog, text entry) has the input: a practice run waits (its hold, sweep and
+  /// countdown too), so it never goes on behind a dialog.
+  void setModalHold(bool h) { modalHold_ = h; }
   void requestEvent(uint8_t ev);
   void addBookmark(const std::string& name = "");
   void gotoBookmark(uint64_t id);
@@ -262,6 +265,7 @@ class EmulationController {
   int slow_ = 1;
   int advanceRemaining_ = 0;
   bool uiRewindHeld_ = false, uiFastForwardHeld_ = false;
+  bool modalHold_ = false;
   uint8_t pendingEvents_ = 0;
   bool rewinding_ = false, fastForward_ = false;
   int rewindTicks_ = 0, ffTicks_ = 0;  // ticks of the hold (rnf_hold_speed)

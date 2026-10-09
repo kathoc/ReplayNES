@@ -127,14 +127,23 @@ void UI::seekInput(int input, bool down) {
     case SI::cancel:
       if (down) applyMarkers(rnf_markers_cancel(markers_));
       break;
-    case SI::x:
-      if (down) applyMarkers(rnf_markers_delete(markers_));
-      break;
-    case SI::y:  // the next A/B slot (the markers show that one)
-      if (down && !editing) {
-        d_.settings->timelineSlot = (std::clamp(d_.settings->timelineSlot, 0, 7) + 1) % 8;
-        rnf_markers_leave(markers_);
-        changed();
+    case SI::x:  // a focused marker: delete it; on the bar: the next A/B slot (the markers show that one)
+    case SI::y:  // practice the selected slot's section from its A
+      if (!down) break;
+      switch (rnf_markers_face(markers_, SI(input) == SI::y ? 1 : 0)) {
+        case RNF_SEEK_FACE_DELETE_MARKER: applyMarkers(rnf_markers_delete(markers_)); break;
+        case RNF_SEEK_FACE_NEXT_SLOT:
+          d_.settings->timelineSlot = (std::clamp(d_.settings->timelineSlot, 0, 7) + 1) % 8;
+          rnf_markers_leave(markers_);
+          changed();
+          break;
+        case RNF_SEEK_FACE_PRACTICE: {
+          int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
+          rnf_markers_leave(markers_);
+          d_.emu->startPractice(slot);  // plays (after the countdown) from A
+          break;
+        }
+        case RNF_SEEK_FACE_NONE: break;
       }
       break;
   }
@@ -216,9 +225,10 @@ void UI::buildSeekBar(double now) {
       hint({"leftShoulder", "rightShoulder"}, TR("Step"));
       if (markers && count < 2) hint({"ui.confirm"}, TR("Marker"));
       if (markers && count > 0) hint({"dpad.up"}, TR("Markers"));
+      if (markers && count > 0) hint({"face.north"}, TR("Practice"));
       if (markers) {
         std::string ab = "A/B " + std::to_string(std::clamp(d_.settings->timelineSlot, 0, 7) + 1);
-        hint({"face.north"}, ab.c_str());
+        hint({"face.west"}, ab.c_str());
       }
     }
     if (markers && now < markerHintUntil_ && !markerHint_.empty()) {
@@ -507,6 +517,35 @@ void UI::buildPracticePill() {
   ImVec2 p(m.margin(), metrics_.H - m.margin() - ts.y - S(16));
   dl->AddRectFilled(p, ImVec2(p.x + ts.x + S(28), p.y + ts.y + S(16)), IM_COL32(20, 20, 22, 200), (ts.y + S(16)) / 2);
   dl->AddText(ImGui::GetFont(), fs, ImVec2(p.x + S(14), p.y + S(8)), IM_COL32(255, 170, 60, 255), text.c_str());
+}
+
+// The practice countdown (3, 2, 1) over the paused picture at A: a large numeral on a soft dark
+// disc with a thin ring running down the second; the look (fade / scale) is the core's
+// (rnf_practice_countdown_visual), the same on macOS.
+void UI::buildCountdown() {
+  const EmuStatus& st = d_.emu->status();
+  rnf_countdown_visual v = rnf_practice_countdown_visual(st.countdown, st.countdownFraction);
+  if (v.number <= 0 || v.alpha <= 0.01f) return;
+  ImGuiIO& io = ImGui::GetIO();
+  GameRect g = gameRect(int(io.DisplaySize.x), int(io.DisplaySize.y));
+  if (!g.visible || g.w <= 0 || g.h <= 0) g = GameRect{true, 0, 0, io.DisplaySize.x, io.DisplaySize.y};
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  ImVec2 c(g.x + g.w / 2, g.y + g.h / 2);
+  float r = std::min(g.w, g.h) * 0.17f;
+  float a = v.alpha;
+  dl->AddCircleFilled(c, r, alpha(IM_COL32(20, 20, 22, 255), 0.62f * a), 96);
+  // Ring: a faint full circle and the bright part of the second still left (from 12 o'clock).
+  float ringW = std::max(2.0f, r * 0.045f), rr = r - ringW * 1.6f;
+  dl->AddCircle(c, rr, alpha(IM_COL32(255, 255, 255, 255), 0.14f * a), 96, ringW);
+  if (v.ring > 0.002f) {
+    const float top = -3.14159265f / 2;
+    dl->PathArcTo(c, rr, top, top + 2 * 3.14159265f * v.ring, 96);
+    dl->PathStroke(alpha(IM_COL32(255, 255, 255, 255), 0.85f * a), 0, ringW);
+  }
+  std::string n = std::to_string(v.number);
+  float fs = r * 1.25f * v.scale;
+  ImVec2 ts = measure(fs, n.c_str());
+  dl->AddText(ImGui::GetFont(), fs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), alpha(IM_COL32(255, 255, 255, 255), a), n.c_str());
 }
 
 // ------------------------------------------------------------------ badges

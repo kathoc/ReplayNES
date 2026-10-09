@@ -301,6 +301,16 @@
         }
       }
     },
+    "8:7 pixels, hide the edges": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "8:7・端を隠す"
+          }
+        }
+      }
+    },
     "A (legacy)": {
       "localizations": {
         "ja": {
@@ -1805,6 +1815,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "テイクを切り替えられませんでした"
+          }
+        }
+      }
+    },
+    "Countdown: Off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン：オフ"
+          }
+        }
+      }
+    },
+    "Countdown: On": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン：オン"
           }
         }
       }
@@ -4376,6 +4406,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "前回の続きから"
+          }
+        }
+      }
+    },
+    "Picture Shape": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の形"
           }
         }
       }
@@ -7309,12 +7349,32 @@
         }
       }
     },
+    "Videotape-style noise while rewinding (display only)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "巻き戻し中にビデオテープ風のノイズ（表示のみ）"
+          }
+        }
+      }
+    },
     "Volume": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "音量"
+          }
+        }
+      }
+    },
+    "VTR Effect": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビデオ演出"
           }
         }
       }

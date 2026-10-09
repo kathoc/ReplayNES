@@ -186,6 +186,7 @@ void UI::handleMenuInput(double now) {
   bool back = pressed(cancelKey(), false) || pressed(ImGuiKey_Backspace, false);
   bool keyX = pressed(kPadX, false) || pressed(ImGuiKey_Delete, false);
   bool keyY = pressed(kPadY, false) || pressed(ImGuiKey_F2, false);
+  bool keyView = pressed(ImGuiKey_GamepadBack, false) || pressed(ImGuiKey_Tab, false);
   if (pressed(ImGuiKey_PageUp, false)) shoulder(-1);
   if (pressed(ImGuiKey_PageDown, false)) shoulder(1);
   if (!menuOpen_) return;
@@ -232,6 +233,7 @@ void UI::handleMenuInput(double now) {
   else if (back) menuEvent(rnf_menu_back(menu_), 0);
   else if (keyX) rowAction(pi.id, rnf_menu_focus(menu_), 'x');
   else if (keyY) rowAction(pi.id, rnf_menu_focus(menu_), 'y');
+  else if (keyView && std::string(pi.id) == "practice") toggleCountdown();
   (void)now;
 }
 
@@ -662,7 +664,15 @@ void UI::buildCardsPage(const PageGeometry& g, double now) {
   if (hasA) prompt({"face.north"}, TR("Rename"));
   if (active) prompt({"face.west"}, TR("Stop"));
   else if (hasA) prompt({"face.west"}, TR("Clear"));
+  // The countdown after returning to A (3, 2, 1): a setting of practice, toggled here (View / Tab, or
+  // a click on the hint).
+  prompt({"options"}, d_.settings->practiceCountdown ? TR("Countdown: On") : TR("Countdown: Off"), [this] { toggleCountdown(); });
   prompt({"ui.cancel"}, TR("Back"));
+}
+
+void UI::toggleCountdown() {
+  d_.settings->practiceCountdown = !d_.settings->practiceCountdown;
+  changed();
 }
 
 // Rows of user data, six per sheet: takes, bookmarks, key bindings, a game's projects.

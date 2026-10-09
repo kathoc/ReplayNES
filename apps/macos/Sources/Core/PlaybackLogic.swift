@@ -57,23 +57,28 @@ struct StepRepeater {
 
 /// Practice loop state machine (wall-clock only decides presentation; the engine decides content).
 ///   playing --(counter >= length)--> holding 0.5 s (last frame kept, audio fades out)
-///           --> rewinding 0.5 s (recent frames shown backwards) --> restart (goto A) --> playing
+///           --> rewinding 1 s (the VTR sweep back to A over the reel, whatever the length)
+///           --> restart (goto A) --> countdown 3, 2, 1 (optional) --> playing
+/// L2 + R2 (`shoulders`) starts the rewind at once (docs/design/UI_REDESIGN.md, "Practice: return to A").
 struct PracticeLoop: Equatable {
     static let holdSeconds = RNF_PRACTICE_HOLD_SECONDS
     static let rewindSeconds = RNF_PRACTICE_REWIND_SECONDS
+    static let countdownSeconds = RNF_PRACTICE_COUNTDOWN_SECONDS
 
     enum Phase: Equatable {
         case playing
         case holding(since: Double)
         case rewinding(since: Double)
+        case countdown(since: Double)
     }
 
     enum Action: Equatable {
         case step                       // emulate one practice frame (normal pacing)
         case beginHold                  // reached B: keep the picture, fade the audio out
         case hold                       // keep showing the last frame
-        case rewindFrame(back: Double)  // 0...1: how far back into the recent frames to show
-        case restart                    // goto A and autoplay again
+        case rewindFrame(back: Double)  // 0...1: how far back towards A (the reel's sweep index)
+        case restart                    // goto A (its picture; the countdown follows when on)
+        case countdown(count: Int, fraction: Double)  // 3, 2, 1: nothing is emulated
     }
 
     private var box = RNFHandle(rnf_practice_loop_new(), free: { rnf_practice_loop_free($0) },
@@ -84,12 +89,23 @@ struct PracticeLoop: Equatable {
         switch rnf_practice_loop_phase(box.ptr, &since) {
         case RNF_PHASE_HOLDING: return .holding(since: since)
         case RNF_PHASE_REWINDING: return .rewinding(since: since)
+        case RNF_PHASE_COUNTDOWN: return .countdown(since: since)
         default: return .playing
         }
     }
     var loops: Int { Int(rnf_practice_loop_loops(box.ptr)) }
 
     var isLooping: Bool { phase != .playing }
+    var isReturning: Bool {
+        switch phase { case .rewinding, .countdown: return true; default: return false }
+    }
+    var inCountdown: Bool { if case .countdown = phase { return true } else { return false } }
+    var inRewind: Bool { if case .rewinding = phase { return true } else { return false } }
+
+    var countdownEnabled: Bool {
+        get { rnf_practice_loop_countdown(box.ptr) != 0 }
+        set { rnf_practice_loop_set_countdown(RNFHandle.unique(&box), newValue ? 1 : 0) }
+    }
 
     static func == (a: PracticeLoop, b: PracticeLoop) -> Bool { a.phase == b.phase && a.loops == b.loops }
 
@@ -101,9 +117,21 @@ struct PracticeLoop: Equatable {
         case RNF_PRACTICE_HOLD: return .hold
         case RNF_PRACTICE_REWIND_FRAME: return .rewindFrame(back: a.back)
         case RNF_PRACTICE_RESTART: return .restart
+        case RNF_PRACTICE_COUNTDOWN: return .countdown(count: Int(a.count), fraction: a.fraction)
         default: return .step
         }
     }
+
+    /// L2 / R2 held (every practice tick). Returns true when the L2 + R2 chord just started the
+    /// return to A; `rewind` = whether L2 may rewind the run now.
+    mutating func shoulders(now: Double, hasA: Bool, rewindHeld: Bool, ffHeld: Bool) -> (fired: Bool, rewind: Bool) {
+        var rw: Int32 = 0
+        let f = rnf_practice_loop_shoulders(RNFHandle.unique(&box), now, hasA ? 1 : 0, rewindHeld ? 1 : 0, ffHeld ? 1 : 0, &rw)
+        return (f != 0, rw != 0)
+    }
+
+    /// The run starts at A: the countdown first when it is on.
+    mutating func arrive(now: Double) { rnf_practice_loop_arrive(RNFHandle.unique(&box), now) }
 
     /// The user took over (rewind, step, goto A): drop any hold/rewind animation in progress.
     mutating func interrupt() { rnf_practice_loop_interrupt(RNFHandle.unique(&box)) }
@@ -114,35 +142,54 @@ struct PracticeLoop: Equatable {
     static func historyIndex(back: Double, count: Int) -> Int {
         Int(rnf_practice_history_index(back, Int32(clamping: count)))
     }
+
+    /// The countdown's look (shared with the desktop frontends).
+    static func countdownVisual(count: Int, fraction: Double) -> rnf_countdown_visual {
+        rnf_practice_countdown_visual(Int32(clamping: count), fraction)
+    }
 }
 
-// MARK: - recent frames for the practice rewind animation
+// MARK: - the practice run's reel (pictures for the sweep back to A)
 
-/// Fixed-size ring of the most recent emulated frames (256x240 BGRA). Allocated lazily.
-final class FrameHistory {
+/// Display-only pictures of the practice run, evenly spread from A (rnf_reel: at most
+/// RNF_REEL_CAPACITY, decimated when full). Allocated lazily.
+final class PracticeReel {
     private let handle: OpaquePointer
-    let capacity: Int
 
-    init(capacity: Int) {
-        handle = rnf_frame_history_new(Int32(clamping: capacity))!
-        self.capacity = Int(rnf_frame_history_capacity(handle))
-    }
-    deinit { rnf_frame_history_free(handle) }
+    init(capacity: Int = Int(RNF_REEL_CAPACITY)) { handle = rnf_reel_new(Int32(clamping: capacity))! }
+    deinit { rnf_reel_free(handle) }
 
-    var count: Int { Int(rnf_frame_history_count(handle)) }
+    var count: Int { Int(rnf_reel_count(handle)) }
+    func offer(position: UInt64, _ src: UnsafePointer<UInt32>) { rnf_reel_offer(handle, position, src) }
+    func truncate(after position: UInt64) { rnf_reel_truncate(handle, position) }
+    func clear() { rnf_reel_clear(handle) }
+    func release() { rnf_reel_release(handle) }
 
-    func append(_ src: UnsafePointer<UInt32>) { rnf_frame_history_append(handle, src) }
-
-    /// back = 0 is the newest frame.
-    func withFrame<R>(back: Int, _ body: (UnsafePointer<UInt32>) -> R) -> R? {
-        guard back >= 0, back <= Int(Int32.max), let p = rnf_frame_history_frame(handle, Int32(back)) else { return nil }
+    /// The picture for sweep progress `back` (0 = the newest ... 1 = the oldest, next to A).
+    func withSweepFrame<R>(back: Double, _ body: (UnsafePointer<UInt32>) -> R) -> R? {
+        let i = rnf_reel_sweep_index(handle, back)
+        guard i >= 0, let p = rnf_reel_frame(handle, i) else { return nil }
         return body(p)
     }
+}
 
-    func clear() { rnf_frame_history_clear(handle) }
+// MARK: - VTR effect (display only)
 
-    /// Releases the memory (leaving practice).
-    func release() { rnf_frame_history_release(handle) }
+/// The tape-rewind look over the picture (rnf_vtr): fades in / out; zero cost while inactive.
+final class VTREffect {
+    private let handle: OpaquePointer
+
+    init() { handle = rnf_vtr_new()! }
+    deinit { rnf_vtr_free(handle) }
+
+    func configure(enabled: Bool, level: FlashLevel) { rnf_vtr_configure(handle, enabled ? 1 : 0, level.cValue) }
+    var active: Bool { rnf_vtr_active(handle) != 0 }
+    func tick(now: Double, want: rnf_vtr_kind) -> rnf_vtr_params { rnf_vtr_tick(handle, now, want) }
+    func reset() { rnf_vtr_reset(handle) }
+    func apply(_ src: UnsafePointer<UInt32>, into dst: UnsafeMutablePointer<UInt32>, _ p: rnf_vtr_params) {
+        var q = p
+        rnf_vtr_apply(src, dst, &q)
+    }
 }
 
 // MARK: - practice: natural audio ending

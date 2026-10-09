@@ -279,6 +279,7 @@ final class GameRenderer {
         seenSeq = frames.readFrameIfNewer(than: refetch ? .max : seenSeq) { px, codes, meta in
             texture.replace(region: MTLRegionMake2D(0, 0, w, Int(RN_VIDEO_HEIGHT)), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
             newMeta = meta
+            countdownShown = (meta.countdown, meta.countdownFraction)
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
         }
@@ -329,6 +330,7 @@ final class GameRenderer {
             }
             if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
+                drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: true))
                 drawPill(enc, size: size, pill)
                 enc.endEncoding()
                 crtShown = true
@@ -354,6 +356,7 @@ final class GameRenderer {
             enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
             enc.setFragmentTexture(texture, index: 0)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: false))
             drawPill(enc, size: size, pill)
             enc.endEncoding()
         }
@@ -364,6 +367,41 @@ final class GameRenderer {
                 lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: "")
             }
         }
+    }
+
+    // MARK: practice countdown (CountdownOverlay.swift)
+
+    /// The countdown of the latest picture (FrameMeta.countdown; 0 = none).
+    private var countdownShown: (Int, Double) = (0, 0)
+    private var countdownTexture: MTLTexture?
+
+    /// Draws the countdown numeral centred on the picture, inside the game's own pass (so full
+    /// screen stays direct-to-display): a texture drawn by CoreGraphics, premultiplied alpha.
+    private func drawCountdown(_ enc: MTLRenderCommandEncoder, size: CGSize, picture: CGRect) {
+        let (count, fraction) = countdownShown
+        guard count > 0 else { return }
+        let v = PracticeLoop.countdownVisual(count: count, fraction: fraction)
+        guard v.number > 0, v.alpha > 0.01 else { return }
+        let side = max(16, Int((min(picture.width, picture.height) * 0.34).rounded()))
+        if countdownTexture?.width != side {
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            td.usage = .shaderRead
+            td.storageMode = .shared
+            countdownTexture = device.makeTexture(descriptor: td)
+        }
+        guard let tex = countdownTexture, let px = CountdownOverlay.render(v, side: side) else { return }
+        tex.replace(region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: px, bytesPerRow: side * 4)
+        let r = CGRect(x: picture.midX - CGFloat(side) / 2, y: picture.midY - CGFloat(side) / 2, width: CGFloat(side), height: CGFloat(side))
+        var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float((size.height - r.maxY) / size.height * 2 - 1),
+                                Float(r.width / size.width * 2), Float(r.height / size.height * 2))
+        var uvr = SIMD4<Float>(0, 0, 1, 1)
+        var alpha: Float = 1
+        enc.setRenderPipelineState(pillPipeline)
+        enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+        enc.setFragmentTexture(tex, index: 0)
+        enc.setFragmentBytes(&alpha, length: MemoryLayout<Float>.size, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
     }
 
     // MARK: menu pill (MenuPill.swift)

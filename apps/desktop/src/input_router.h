@@ -63,6 +63,7 @@ class InputRouter {
   std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
   std::function<void()> onPausedResume;                  // cancel tapped while paused in play: resume
+  std::function<void()> onCountdownCancel;               // cancel tapped during the practice countdown
   /// The paused seek bar's controller input (docs/design/UI_REDESIGN.md): taps on the bar (ok, up,
   /// y: press only), everything while a marker is focused / edited (press and release).
   enum class SeekInput { ok, cancel, up, down, left, right, x, y };
@@ -84,6 +85,9 @@ class InputRouter {
   void setPausedStepMode(bool paused);
   /// The seek bar's focus while paused: 0 = the bar, 1 = a marker, 2 = a marker being edited.
   void setSeekFocus(int focus);
+  /// The practice countdown is shown (nothing is emulated): the UI's cancel tapped then ends practice
+  /// (onCountdownCancel). A press from before the countdown, or with another button, is no tap.
+  void setCountdown(bool on);
 
   /// One SDL event (keyboard / gamepad). evTime: the event's time on the CLOCK_MONOTONIC clock.
   /// keyboardForUI: ImGui wants the keyboard (text field or menu).
@@ -141,6 +145,7 @@ class InputRouter {
   bool routePausedStep(const std::string& id, bool down);
   bool routePausedTap(const std::string& id, bool down);
   bool routeSeek(const std::string& id, bool down);
+  void routeCountdownTap(const std::string& id, bool down);
   void updateRepeat();
   bool isGameMember(const std::string& id) const;
   void pumpChord();
@@ -170,6 +175,8 @@ class InputRouter {
   std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
   ConfirmTap confirmTap_;                 // confirm / cancel / up / Y pressed while paused: taps
   int seekFocus_ = 0;
+  bool countdown_ = false;
+  std::set<std::string> countdownTaps_;
   std::set<std::string> gameMembers_;     // chord members bound to game input (held, not tapped)
   std::set<std::string> forwardedMembers_;  // ... pressed for the game now
   std::map<std::string, int> holdMembers_;  // members moving an edited marker now -> -1 / +1

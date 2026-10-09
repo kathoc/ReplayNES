@@ -324,16 +324,23 @@ EmulationController::Tick EmulationController::tick() {
   if (practicing) {
     // L2 + R2 together: back to A at once (the same return as at B). While that chord is held and
     // during the return, L2 does not rewind the run.
+    // Only while playing: paused (the seek bar, the menu, a dialog) the chord latches but does nothing.
     int rw = 0;
-    if (rnf_practice_loop_shoulders(practiceLoop_, nowSeconds(), practiceSlot_ >= 0 ? 1 : 0, rewindHeld ? 1 : 0,
-                                    ffHeld ? 1 : 0, &rw)) {
+    if (rnf_practice_loop_shoulders(practiceLoop_, nowSeconds(), practiceSlot_ >= 0 && !paused_ ? 1 : 0,
+                                    rewindHeld ? 1 : 0, ffHeld ? 1 : 0, &rw)) {
       if (rewinding_) {
         rewinding_ = false;
         rewindTicks_ = 0;
       }
       practiceRewindStarted_ = false;
-      advanceRemaining_ = 0;
-      setPaused(false);
+      // The sound stops with a short fade, as at B.
+      size_t n = 0;
+      const int16_t* pcm = rn_audio(s, &n);
+      if (n && audio_ && slow_ == 1) {
+        std::vector<int16_t> tail(rnf_audio_fade_tail(pcm, n, 4, nullptr, 0));
+        rnf_audio_fade_tail(pcm, n, 4, tail.data(), tail.size());
+        audio_->push(tail.data(), tail.size());
+      }
     }
     wantRewind = rw != 0;
   }
@@ -381,6 +388,8 @@ EmulationController::Tick EmulationController::tick() {
     }
     if (fastForward_) {
       tickFastForward();
+    } else if (practicing && !paused_ && modalHold_) {
+      setMuted(true);  // waits for the dialog (the loop does not count the time)
     } else if (practicing && !paused_) {
       uint64_t before = emulatedFrames_;
       tickPractice();

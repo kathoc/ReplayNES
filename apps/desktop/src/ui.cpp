@@ -395,6 +395,7 @@ void UI::build(double now) {
   // Hold buttons (rewind / fast-forward) set these again while they are held.
   d_.emu->setRewindHeld(false);
   d_.emu->setFastForwardHeld(false);
+  d_.emu->setModalHold(hasSession() && interactive());
   if (hasSession() && !hadSession_) {
     // A game was started from the library: to the game.
     menuOpen_ = false;
@@ -439,6 +440,7 @@ void UI::buildOverlays(double now) {
   if (session && !menuOpen_) {
     buildBadges();
     if (d_.emu->status().practicing && !d_.emu->status().paused) buildPracticePill();
+    if (d_.emu->status().countdown > 0) buildCountdown();
   }
   buildNotice(now);
   buildMenuPill(now);
@@ -590,10 +592,11 @@ rnf_controller_family UI::promptFamily() const {
   return RNF_FAMILY_STEAM_DECK;
 }
 
-void UI::prompt(std::initializer_list<const char*> elements, const std::string& text) {
+void UI::prompt(std::initializer_list<const char*> elements, const std::string& text, std::function<void()> onClick) {
   Prompt p;
   for (const char* e : elements) p.elements.push_back(e);
   p.text = text;
+  p.onClick = std::move(onClick);
   prompts_.push_back(std::move(p));
 }
 
@@ -680,10 +683,19 @@ void UI::buildHintBar(const LRect& bar) {
   float cy = bar.y + bar.h / 2;
   for (size_t i = 0; i < prompts_.size(); ++i) {
     const Prompt& p = prompts_[i];
+    float x0 = x;
     for (const std::string& e : p.elements) x += glyph(dl, ImVec2(x, cy - gh / 2), e, f, gh) + S(4);
     x += S(4);
     ImVec2 ts = measure(fs, p.text.c_str());
-    dl->AddText(ImGui::GetFont(), fs, ImVec2(x, cy - ts.y / 2), kTextDim, p.text.c_str());
+    bool hov = false;
+    if (p.onClick) {
+      ImGui::SetCursorScreenPos(ImVec2(x0 - S(6), cy - gh / 2 - S(4)));
+      ImGui::PushID(int(i));
+      if (ImGui::InvisibleButton("##hint", ImVec2(x + ts.x - x0 + S(12), gh + S(8)))) p.onClick();
+      hov = ImGui::IsItemHovered();
+      ImGui::PopID();
+    }
+    dl->AddText(ImGui::GetFont(), fs, ImVec2(x, cy - ts.y / 2), hov ? kText : kTextDim, p.text.c_str());
     x += ts.x + S(20);
   }
   if (!description_.empty()) {

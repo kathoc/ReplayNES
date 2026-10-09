@@ -11,7 +11,7 @@ enum QMPage: String, CaseIterable, Hashable {
     case retry, takes, bookmarks
     case practice
     case share, stream
-    case display, crtDetail
+    case display, displayShape, crtDetail
     case controls, controller, assign, bindings, controlsDetail
     case sound
     case system, updates, about
@@ -40,6 +40,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .share: return "share"
         case .display: return "settings.display"
         case .crtDetail: return "display.crt"
+        case .displayShape: return "display.shape"
         case .controls: return "settings.controls"
         case .controller: return "controls.controller"
         case .assign: return "controls.assign"
@@ -61,7 +62,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .display, .controls, .sound, .system: return .top
         case .takes, .bookmarks: return .retry
         case .stream: return .share
-        case .crtDetail: return .display
+        case .crtDetail, .displayShape: return .display
         case .controller, .bindings, .controlsDetail: return .controls
         case .assign: return .controller   // the action picker of a button on the diagram
         case .updates, .about: return .system
@@ -131,7 +132,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .retry, .takes, .bookmarks: return "clock.arrow.circlepath"
         case .practice: return "target"
         case .share, .stream: return "square.and.arrow.up"
-        case .display, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .updates, .about:
+        case .display, .displayShape, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .updates, .about:
             return "gearshape"
         case .game, .reset: return "gamecontroller"
         }
@@ -148,6 +149,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .stream: return String(localized: "Stream Output")
         case .display: return String(localized: "Display")
         case .crtDetail: return String(localized: "CRT Details")
+        case .displayShape: return String(localized: "Picture Shape")
         case .controls: return String(localized: "Controls")
         case .controller: return String(localized: "Controller")
         case .assign: return String(localized: "Button Action")

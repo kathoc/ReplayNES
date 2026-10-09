@@ -288,7 +288,7 @@ bool InputRouter::routePausedStep(const std::string& id, bool down) {
 }
 
 // Paused in play (the seek bar): taps (rnl::ConfirmTap) of the UI's cancel (resume), confirm (a
-// marker), up (to the markers) and Y (the next A/B slot). They still reach the game, so a button can
+// marker), up (to the markers), Y (practice the slot's section) and X (the next A/B slot). They still reach the game, so a button can
 // be held for a frame advance; holding one and stepping never counts as a tap.
 bool InputRouter::routePausedTap(const std::string& id, bool down) {
   size_t colon = id.find(':');
@@ -297,7 +297,8 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
   bool south = settings_ && settings_->southConfirm;
   if (down) {
     if (ui_ || !pausedStepMode_) return false;
-    if (el == rnf_ui_cancel_element(south) || el == rnf_ui_confirm_element(south) || el == "dpad.up" || el == "face.north")
+    if (el == rnf_ui_cancel_element(south) || el == rnf_ui_confirm_element(south) || el == "dpad.up" || el == "face.north" ||
+        el == "face.west")
       confirmTap_.press(id);
     return false;
   }
@@ -305,9 +306,34 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
   if (el == rnf_ui_cancel_element(south)) {
     if (onPausedResume) onPausedResume();
   } else if (onSeekInput) {
-    onSeekInput(el == "dpad.up" ? SeekInput::up : el == "face.north" ? SeekInput::y : SeekInput::ok, true);
+    onSeekInput(el == "dpad.up"      ? SeekInput::up
+                : el == "face.north" ? SeekInput::y
+                : el == "face.west"  ? SeekInput::x
+                                     : SeekInput::ok,
+                true);
   }
   return true;
+}
+
+void InputRouter::setCountdown(bool on) {
+  if (countdown_ == on) return;
+  countdown_ = on;
+  countdownTaps_.clear();
+}
+
+// The practice countdown: the UI's cancel tapped (pressed and released within it, nothing else
+// pressed meanwhile) ends practice. The game gets the presses as usual; it is not emulated then.
+void InputRouter::routeCountdownTap(const std::string& id, bool down) {
+  if (!countdown_ || ui_) return;
+  size_t colon = id.find(':');
+  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return;
+  bool south = settings_ && settings_->southConfirm;
+  if (down) {
+    countdownTaps_.clear();
+    if (id.substr(colon + 1) == rnf_ui_cancel_element(south)) countdownTaps_.insert(id);
+    return;
+  }
+  if (countdownTaps_.erase(id) && onCountdownCancel) onCountdownCancel();
 }
 
 // A marker focused / edited: the pad is the seek bar's (D-pad / left stick, confirm, cancel, X).
@@ -399,6 +425,7 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
   }
   setPressed(id, down, t, true);
   routePausedTap(id, down);
+  routeCountdownTap(id, down);
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
