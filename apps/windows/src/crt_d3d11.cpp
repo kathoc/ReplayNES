@@ -14,6 +14,7 @@
 #include <dxgi.h>
 
 #include <algorithm>
+#include <utility>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -59,7 +60,7 @@ struct AGCParams { float lineSeconds, attack, release, minGain, maxGain; int32_t
 struct RasterParams { int32_t lines, decode, rgbSource, pad; };
 struct SupplyParams {
   int32_t width, rows;
-  float decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, pad;
+  float decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, prime;  // prime: supply_state only
   float share[4];
 };
 struct SpotParams { int32_t width, rows, radius; float k1; };
@@ -613,6 +614,7 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
     upload(supplyState_[1], st);
     supplyCurrent_ = 0;
     resetSupplyPending_ = false;
+    primeSupply_ = true;
   }
   if (ringClearPending) {
     const UINT zero[4] = {0, 0, 0, 0};
@@ -699,6 +701,15 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
     const Buffer* now = &supplyState_[supplyCurrent_];
     const Buffer* next = &supplyState_[1 - supplyCurrent_];
     dispatch("supply_mean", {drive, &supplyMeans_}, &sp, sizeof sp, groups(rows, 64));
+    if (primeSupply_) {
+      // Start of history: this frame's steady state into `next`, which then is the state in force.
+      SupplyParams pp = sp;
+      pp.prime = 1;
+      dispatch("supply_state", {&supplyMeans_, now, next}, &pp, sizeof pp, 1);
+      std::swap(now, next);
+      supplyCurrent_ = 1 - supplyCurrent_;
+      primeSupply_ = false;
+    }
     dispatch("supply_row", {&supplyMeans_, now, &supplyRow_}, &sp, sizeof sp, groups(rows, 64));
     dispatch("supply_state", {&supplyMeans_, now, next}, &sp, sizeof sp, 1);
     dispatch("supply_resample", {drive, &supplyRow_, &supplyOut_}, &sp, sizeof sp, groups(512, 32), groups(rows, 8));
@@ -790,7 +801,8 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
 }
 
 /// tube-webgl.mjs persistenceWeights(): slot i (newest first) also stands for missing ordinals up
-/// to the next newer slot (M4B-GAP). Float32 accumulation like the JS Float32Array.
+/// to the next newer slot (M4B-GAP), the oldest one for all older ordinals. Float32 accumulation
+/// like the JS Float32Array.
 std::vector<float> CrtRendererD3D11::persistenceWeights() const {
   const int depth = crt::phosphor::depth();
   std::vector<float> w(size_t(depth) * 4, 0.0f);
@@ -800,7 +812,10 @@ std::vector<float> CrtRendererD3D11::persistenceWeights() const {
   for (size_t i = 0; i < slots_.size(); ++i) {
     const Slot& slot = slots_[i];
     int64_t newest = i == 0 ? 0 : k - slots_[i - 1].ordinal + 1, oldest = k - slot.ordinal;
-    int64_t hi = std::min<int64_t>(oldest, depth - 1);
+    // ReplayNES: the oldest slot also stands for the ordinals before it (history start after a
+    // seek / rewind / load, or the first frame): the picture is taken as held, so a still shows
+    // every phosphor's full steady-state light, not just the first frame's share (purple tint).
+    int64_t hi = i + 1 == slots_.size() ? int64_t(depth - 1) : std::min<int64_t>(oldest, depth - 1);
     if (newest > hi) continue;
     for (int64_t m = newest; m <= hi; ++m)
       for (int c = 0; c < 3; ++c) {

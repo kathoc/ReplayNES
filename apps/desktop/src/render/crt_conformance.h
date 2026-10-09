@@ -266,6 +266,7 @@ class Conformance {
     s.supply = true;
     auto r = renderer(s);
     if (!r) return Diff{INFINITY};
+    run(*r, drive(black_), 0);  // nesterm's idle start (see black_)
     for (int f = 0; f < 3; ++f) {
       auto d = testDrive(f == 1 ? 1 : 0);
       run(*r, drive(d), uint64_t(f + 1));
@@ -286,11 +287,49 @@ class Conformance {
     s.persistence = true;
     auto r = renderer(s);
     if (!r) return Diff{INFINITY};
+    run(*r, drive(black_), 9);  // nesterm's empty history (see black_)
     for (int f = 0; f < 3; ++f) {
       auto d = testDrive(f == 0 ? 2 : f == 1 ? 3 : 0);
       run(*r, drive(d), uint64_t(10 + f));
     }
     return compare("persistence", read(*r, CrtStage::output), 256);
+  }
+  /// A still after a discontinuity (seek / rewind / load: a non-increasing ordinal) vs the same
+  /// picture shown in continuous play, all effects on, noise off; `phases` = burst phase per
+  /// sequence frame (the still uses the last). Worst of the re-encoded still and a fresh
+  /// renderer's first frame: max abs diff and worst per-channel mean difference (the tint).
+  struct StillDiff { double maxAbs = INFINITY, meanAbs = INFINITY; };
+  StillDiff stillAfterSeek(const std::vector<uint32_t>& phases) {
+    auto diff = [](const std::vector<float>& a, const std::vector<float>& b) {
+      StillDiff d;
+      if (a.empty() || a.size() != b.size()) return d;
+      double m = 0, sa[3] = {0, 0, 0}, sb[3] = {0, 0, 0};
+      for (size_t i = 0; i + 3 < a.size(); i += 4)
+        for (int c = 0; c < 3; ++c) {
+          double e = std::fabs(double(a[i + size_t(c)]) - double(b[i + size_t(c)]));
+          m = std::max(m, std::isnan(e) ? INFINITY : e);
+          sa[c] += a[i + size_t(c)];
+          sb[c] += b[i + size_t(c)];
+        }
+      double n = double(a.size() / 4), worst = 0;
+      for (int c = 0; c < 3; ++c) worst = std::max(worst, std::fabs(sa[c] - sb[c]) / n);
+      d.maxAbs = m;
+      d.meanAbs = worst;
+      return d;
+    };
+    const uint64_t last = phases.size();
+    auto r = renderer(CrtSettings());
+    auto fresh = renderer(CrtSettings());
+    if (!r || !fresh || phases.empty()) return StillDiff{};
+    r->noiseEnabled = false;
+    fresh->noiseEnabled = false;
+    for (size_t i = 0; i < phases.size(); ++i) run(*r, codes(phases[i]), uint64_t(i + 1));
+    auto played = read(*r, CrtStage::output);
+    run(*r, codes(phases.back()), last);  // seek back to the same frame
+    StillDiff a = diff(played, read(*r, CrtStage::output));
+    run(*fresh, codes(phases.back()), last);
+    StillDiff b = diff(played, read(*fresh, CrtStage::output));
+    return StillDiff{std::max(a.maxAbs, b.maxAbs), std::max(a.meanAbs, b.meanAbs)};
   }
   double lastFastPathMaxAbs = 0;
   bool fastPathsMatchDirectPort(int ow = 256, int oh = 192) {
@@ -341,6 +380,14 @@ class Conformance {
   Backend& backend_;
   std::map<std::string, Case> cases_;
   std::vector<uint16_t> codes_ = testCodes();
+  // ReplayNES starts the temporal state from the first picture held (supply steady state,
+  // persistence history filled with it); nesterm's reference starts from an idle tube and an empty
+  // history, which is exactly a black frame held before the sequence.
+  std::vector<float> black_ = [] {
+    std::vector<float> d(512 * 240 * 4, 0.0f);
+    for (size_t i = 3; i < d.size(); i += 4) d[i] = 1;
+    return d;
+  }();
 };
 
 struct Checker {
@@ -422,6 +469,19 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
   d = c.spotH();          checker.check(d.maxAbs < 1e-5, "horizontal spot " + d.str());
   d = c.persistence();    checker.check(d.maxAbs < 2e-3, "persistence (half-float ring) " + d.str());
   checker.check(c.deterministic(), "same frame sequence is bit-identical");
+  {
+    // Regression: after a seek / rewind / load a still showed only the first frame's share of each
+    // phosphor's light (green/blue ~10% darker: a purple tint) and an idle supply.
+    auto st = c.stillAfterSeek(std::vector<uint32_t>(12, 1));
+    char b[128];
+    std::snprintf(b, sizeof b, "still after a seek == same picture in continuous play (max %.3g, mean %.3g)", st.maxAbs, st.meanAbs);
+    checker.check(st.maxAbs < 3e-3, b);
+    std::vector<uint32_t> alt;
+    for (int i = 0; i < 12; ++i) alt.push_back(i % 2 == 0 ? 2u : 0u);
+    st = c.stillAfterSeek(alt);
+    std::snprintf(b, sizeof b, "still after a seek: same colour as alternating-phase play (mean %.3g)", st.meanAbs);
+    checker.check(st.meanAbs < 2e-3, b);
+  }
   auto fastPaths = [&](int ow, int oh, const std::string& what) {
     bool same = c.fastPathsMatchDirectPort(ow, oh);
     if (same || !deviceFusesMultiplyAdd) return checker.check(same, what);

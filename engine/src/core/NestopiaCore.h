@@ -18,6 +18,17 @@ class NestopiaCore final : public ICore {
   static constexpr int kAdapterVersion = 1;
   static std::string staticCompatId();
 
+  // Colour-burst phase b (0..2) of the picture just emulated, from the CPU's monotonic master-clock
+  // counter at the frame boundary (Cpu::ticks: the sum of all frame lengths since power-on / reset,
+  // saved and restored by states in the CPU 'CLK' chunk). The visible rows of a frame start at a
+  // fixed distance before its end (the odd-frame dot skip happens in the pre-render line, before
+  // row 0), so row 0's subcarrier phase is 8 * dots mod 12 = 4b with b = 2 * dots mod 3
+  // (dots = master clocks / 4). In uninterrupted play from power-on this is exactly Nestopia's
+  // Ppu::GetBurstPhase() (same values, same origin), but that counter is not in states and
+  // Ppu::LoadState resets it to 0, so a frame reached by a seek / rewind / take switch / state
+  // load used to report another phase than in straight play.
+  static uint32_t burstPhaseAtFrameEnd(uint64_t masterClocks) { return uint32_t((masterClocks / 4) * 2 % 3); }
+
   NestopiaCore();
   ~NestopiaCore() override;
   Status loadROM(const uint8_t* data, size_t size) override;

@@ -30,6 +30,11 @@ controllers: standard pads on ports 1/2, simultaneous opposite directions allowe
 upstream and recorded); soft reset = `Machine::Reset(false)`, power cycle = `Machine::Reset(true)`;
 each ROM load uses a new `Emulator` instance.
 
+Display-only side channel (not part of the compat ID, states or hashes): `rn_video_indices` copies the PPU output and derives
+the colour-burst phase from the CPU's master-clock counter, which states already carry (CPU `CLK` chunk), so the phase of a frame
+is the same after a seek or state load as in straight play. Nestopia's own `Ppu` burst counter is not saved and is not used;
+no core patch and no state migration were needed for this (2026-10).
+
 ### Build-time core patches (patch level 2)
 
 See `cmake/NestopiaPatches.cmake` (rationale per patch) and ARCHITECTURE_DECISION.md §5:

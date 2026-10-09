@@ -47,9 +47,10 @@ class ICore {
   virtual const int16_t* audio(size_t* count) const = 0;  // samples of the last stepFrame
   // Display-only side channel for the CRT signal model: the raw PPU output codes of the frame in
   // video() (kVideoWidth*kVideoHeight, bits 0-5 = palette index after greyscale, bits 6-8 =
-  // $2001 emphasis bits 5-7), the core's colour-burst phase for that frame (0..2) and the
-  // frameIndex() that produced it. Captured together with video(), so they always describe the
-  // same picture. Never part of state or hashes. nullptr = not supported by this core.
+  // $2001 emphasis bits 5-7), the colour-burst phase of that frame (0..2, a function of the
+  // machine state only: the same whether the frame was reached by straight play, a seek or a
+  // state load) and the frameIndex() that produced it. Captured together with video(), so they
+  // always describe the same picture. Never part of state or hashes. nullptr = not supported.
   virtual const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const {
     (void)burstPhase; (void)frame;
     return nullptr;

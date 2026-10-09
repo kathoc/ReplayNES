@@ -180,7 +180,9 @@ const uint32_t* rn_video(const rn_session* s); /* 256x240 BGRA8 (B,G,R,A bytes),
 typedef struct rn_video_indices_info {
   const uint16_t* codes;  /* 256x240 9-bit codes: bits 0-5 palette index (after greyscale),
                              bits 6-8 = $2001 colour-emphasis bits 5-7; valid like rn_video */
-  uint32_t burst_phase;   /* core colour-burst phase of that frame (0..2; Nestopia's NTSC phase) */
+  uint32_t burst_phase;   /* core colour-burst phase of that frame (0..2; Nestopia's NTSC phase).
+                             A function of the machine state: the same whether the frame was
+                             reached by straight play, seek, rewind or a loaded state */
   uint64_t frame;         /* machine frame ordinal that produced it (core frame index) */
 } rn_video_indices_info;
 /* RN_ERR_UNSUPPORTED_FORMAT when the core has no raw PPU output (mock core). */

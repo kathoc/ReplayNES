@@ -7,7 +7,7 @@ layout(local_size_x = 1) in;
 layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 means[]; };
 layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 state[]; };
 layout(std430, set = 0, binding = 2) buffer B2 { vec4 next[]; };
-layout(push_constant) uniform SupplyParams { int width; int rows; float decay; float v0; float reff; float imax; float n; float relax; float reqScale; float ablFraction; float ilim; float pad; vec4 share; } P;
+layout(push_constant) uniform SupplyParams { int width; int rows; float decay; float v0; float reff; float imax; float n; float relax; float reqScale; float ablFraction; float ilim; float prime; vec4 share; } P;
 // Shared recurrence over rows 0..last with the gain in force (state.b).
 float supplyLoop(vec4 state, int last, out float req) {
   precise float v = state.x; float gain = state.z; precise float rq = 0.0;
@@ -23,6 +23,20 @@ float supplyLoop(vec4 state, int last, out float req) {
 }
 void main() {
   if (gl_GlobalInvocationID.x != 0u) return;
+  if (P.prime != 0.0) {
+    // ReplayNES, start of history (first frame, or after a seek / rewind / load): the steady state
+    // of this picture held on screen - the requested current settled to this frame's (req does not
+    // depend on v or the gain) and the anode voltage iterated to its fixed point (contracts by
+    // relax * decay^rows per pass) - so a still is shown as in continuous play.
+    float req0;
+    supplyLoop(vec4(P.v0, 0.0, 1.0, 1.0), P.rows - 1, req0);
+    precise float requested = req0 * P.reqScale;
+    float gain = requested > P.ilim ? P.ilim / requested : 1.0;
+    precise float v = P.v0;
+    for (int i = 0; i < 3; i++) { float r2; v = supplyLoop(vec4(v, requested, gain, 1.0), P.rows - 1, r2); v = P.v0 + (v - P.v0) * P.relax; }
+    next[0] = vec4(v, requested, gain, 1.0);
+    return;
+  }
   vec4 st = state[0]; float req;
   precise float v = supplyLoop(st, P.rows - 1, req);
   v = P.v0 + (v - P.v0) * P.relax;

@@ -171,10 +171,10 @@ Status NestopiaCore::stepFrame(uint8_t p1, uint8_t p2, bool renderVideo) {
     for (auto& px : video_) px |= 0xFF000000u;
     // Display-only copy of the PPU output the RGB picture was converted from (read, never
     // written: emulation and every hash are unaffected).
-    Nes::Core::Ppu& ppu = static_cast<Nes::Core::Machine&>(im.emu).ppu;
-    const Nes::Core::Video::Screen::Pixel* src = ppu.GetScreen().pixels;
+    Nes::Core::Machine& machine = static_cast<Nes::Core::Machine&>(im.emu);
+    const Nes::Core::Video::Screen::Pixel* src = machine.ppu.GetScreen().pixels;
     for (size_t i = 0; i < codes_.size(); ++i) codes_[i] = uint16_t(src[i] & 0x1FF);
-    codesBurstPhase_ = ppu.GetBurstPhase();
+    codesBurstPhase_ = burstPhaseAtFrameEnd(machine.cpu.GetMonotonicCycles() - machine.cpu.GetCycles());
     codesFrame_ = frame_;
   }
   ++frame_;

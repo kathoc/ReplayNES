@@ -186,6 +186,9 @@ class CrtRenderer {
   int supplyCurrent_ = 0;
   int stageLines_ = 0;
   bool resetReceiverPending_ = true, resetSupplyPending_ = true;
+  // Start of history (first frame, or a discontinuity): the next supply pass starts from the
+  // steady state of its picture (supply_state prime mode) instead of the idle tube.
+  bool primeSupply_ = true;
   // Tube.
   std::unique_ptr<Tube> tube_;
   std::mutex lock_;

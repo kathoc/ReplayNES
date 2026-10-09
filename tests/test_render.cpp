@@ -244,6 +244,82 @@ TEST_CASE("video indices: raw PPU codes describe the same picture as rn_video; d
   CHECK(m->videoCodes(nullptr, nullptr) == nullptr);
 }
 
+TEST_CASE("video indices: burst phase of a frame is the same by straight play, seek, rewind and state load") {
+  // Regression: Nestopia's Ppu::GetBurstPhase() is not in states and LoadState resets it to 0, so
+  // a frame reached by a seek / rewind / take switch / load reported another phase than in
+  // straight play (the CRT then modulated the same picture with another subcarrier phase).
+  CheckpointPolicy pol;
+  pol.denseInterval = 31;  // odd spacing: checkpoints at both frame parities and every phase
+  pol.sparseInterval = 589;
+  auto s = newSession(CoreKind::Nestopia, pol);
+  auto script = DeterminismHarness::randomScript(1300, 91, 500, 4);  // includes soft/hard resets
+  REQUIRE(recordScript(*s, script).ok());
+  auto log = s->timeline().flattenActive();
+  // Straight play on a fresh core: (phase, codes hash) of every frame.
+  auto core = createCore(CoreKind::Nestopia);
+  std::vector<uint8_t> rom = buildTestRom();
+  REQUIRE(core->loadROM(rom.data(), rom.size()).ok());
+  std::vector<uint32_t> phase;
+  std::vector<uint64_t> codesHash;
+  std::vector<std::vector<uint8_t>> states(log.size());
+  for (size_t i = 0; i < log.size(); ++i) {
+    if (i % 97 == 13) REQUIRE(core->saveState(states[i]).ok());  // state BEFORE frame i
+    REQUIRE(core->stepRecord(log[i].p1, log[i].p2, log[i].events, true).ok());
+    uint32_t p = 99;
+    uint64_t f = 0;
+    const uint16_t* c = core->videoCodes(&p, &f);
+    REQUIRE(c != nullptr);
+    CHECK_EQ(f, uint64_t(i));
+    phase.push_back(p);
+    codesHash.push_back(Hasher64::of(c, 256 * 240 * 2));
+  }
+  // Physical phase: every frame advances it by 1 (89342 dots) or 2 (89341, odd-frame dot skip),
+  // never 0; with rendering on, short and long frames alternate (two-frame pattern).
+  size_t same = 0, twoFramePeriod = 0;
+  for (size_t i = 400; i + 2 < phase.size(); ++i) {
+    if (log[i + 1].events || log[i + 2].events) continue;  // a reset restarts the clock count
+    same += phase[i] == phase[i + 1];
+    twoFramePeriod += phase[i] == phase[i + 2];
+  }
+  CHECK_EQ(same, 0u);
+  CHECK(twoFramePeriod > (phase.size() - 402) * 9 / 10);
+
+  // Seek (checkpoint load + replay) to frames of both parities, around checkpoint boundaries.
+  for (uint64_t t : {1u, 2u, 31u, 32u, 33u, 63u, 64u, 95u, 96u, 334u, 335u, 499u, 500u, 501u, 502u, 777u, 778u, 1299u, 1300u}) {
+    REQUIRE(s->seek(t).ok());
+    uint32_t p = 99;
+    uint64_t f = 0;
+    const uint16_t* c = s->videoCodes(&p, &f);
+    REQUIRE(c != nullptr);
+    CHECK_EQ(f, t - 1);
+    CHECK_EQ(p, phase[t - 1]);
+    CHECK_EQ(Hasher64::of(c, 256 * 240 * 2), codesHash[t - 1]);
+  }
+  // Rewind by one and by many frames.
+  REQUIRE(s->seek(900).ok());
+  for (uint64_t n : {1u, 1u, 7u, 60u, 301u}) {
+    REQUIRE(s->rewind(n).ok());
+    uint32_t p = 99;
+    uint64_t f = 0;
+    REQUIRE(s->videoCodes(&p, &f) != nullptr);
+    REQUIRE(s->frame() >= 1);
+    CHECK_EQ(p, phase[s->frame() - 1]);
+  }
+  // Raw state load into a new core, then several frames of play (odd and even).
+  for (size_t i = 0; i < states.size(); ++i) {
+    if (states[i].empty()) continue;
+    auto c2 = createCore(CoreKind::Nestopia);
+    REQUIRE(c2->loadROM(rom.data(), rom.size()).ok());
+    REQUIRE(c2->loadState(states[i].data(), states[i].size()).ok());
+    for (size_t k = i; k < std::min(log.size(), i + 5); ++k) {
+      REQUIRE(c2->stepRecord(log[k].p1, log[k].p2, log[k].events, true).ok());
+      uint32_t p = 99;
+      REQUIRE(c2->videoCodes(&p, nullptr) != nullptr);
+      CHECK_EQ(p, phase[k]);
+    }
+  }
+}
+
 TEST_CASE("render: single frames seeded from checkpoints equal a straight replay (thumbnails)") {
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1300, 71, 600, 4)).ok());

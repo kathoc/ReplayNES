@@ -76,6 +76,11 @@ struct CRTConformance {
         return d
     }
 
+    /// Black drive. ReplayNES starts the temporal state from the first picture held (supply steady
+    /// state, persistence history filled with it); nesterm's reference starts from an idle tube and
+    /// an empty history, which is exactly a black frame held before the sequence.
+    static let black = [SIMD4<Float>](repeating: SIMD4(0, 0, 0, 1), count: 512 * 240)
+
     // MARK: running the port
 
     func renderer(_ s: CRTRenderer.Settings, ow: Int = 256, oh: Int = 192) throws -> CRTRenderer {
@@ -136,6 +141,7 @@ struct CRTConformance {
         var s = Self.off
         s.supply = true
         let r = try renderer(s)
+        Self.black.withUnsafeBufferPointer { run(r, .drive($0.baseAddress!), ordinal: 0) }  // nesterm's idle start
         for f in 0..<3 { Self.drive(variant: f == 1 ? 1 : 0).withUnsafeBufferPointer { run(r, .drive($0.baseAddress!), ordinal: UInt64(f + 1)) } }
         return compare("supply", r.read(.tubeInput), width: 512)
     }
@@ -152,10 +158,42 @@ struct CRTConformance {
         var s = Self.off
         s.persistence = true
         let r = try renderer(s)
+        Self.black.withUnsafeBufferPointer { run(r, .drive($0.baseAddress!), ordinal: 9) }  // nesterm's empty history
         for f in 0..<3 {
             Self.drive(variant: f == 0 ? 2 : f == 1 ? 3 : 0).withUnsafeBufferPointer { run(r, .drive($0.baseAddress!), ordinal: UInt64(10 + f)) }
         }
         return compare("persistence", r.read(.output), width: 256)
+    }
+
+    /// A still after a discontinuity (seek / rewind / load: a non-increasing ordinal) vs the same
+    /// picture shown in continuous play, all effects on, noise off. `phases`: burst phase per
+    /// sequence frame (the still uses the last one). Returns (max abs diff, worst per-channel mean
+    /// difference) of the tube output; a fresh renderer's first frame is checked the same way.
+    func stillAfterSeek(phases: [UInt32]) throws -> (maxAbs: Double, meanAbs: Double) {
+        func mean(_ a: [SIMD4<Float>]) -> SIMD3<Double> {
+            var m = SIMD3<Double>(0, 0, 0)
+            for v in a { m += SIMD3(Double(v.x), Double(v.y), Double(v.z)) }
+            return m / Double(max(1, a.count))
+        }
+        func diff(_ a: [SIMD4<Float>], _ b: [SIMD4<Float>]) -> (Double, Double) {
+            guard a.count == b.count, !a.isEmpty else { return (.infinity, .infinity) }
+            var m = 0.0
+            for i in 0..<a.count { for c in 0..<3 { let e = Double(abs(a[i][c] - b[i][c])); m = max(m, e.isNaN ? .infinity : e) } }
+            let ma = mean(a), mb = mean(b), d = SIMD3<Double>(Swift.abs(ma.x - mb.x), Swift.abs(ma.y - mb.y), Swift.abs(ma.z - mb.z))
+            return (m, max(d.x, d.y, d.z))
+        }
+        let last = UInt64(phases.count)
+        let r = try renderer(CRTRenderer.Settings())
+        r.noiseEnabled = false
+        for (i, b) in phases.enumerated() { Self.codes.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: b), ordinal: UInt64(i + 1)) } }
+        let played = r.read(.output)
+        Self.codes.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: phases.last!), ordinal: last) }  // seek back
+        let afterSeek = r.read(.output)
+        let fresh = try renderer(CRTRenderer.Settings())
+        fresh.noiseEnabled = false
+        Self.codes.withUnsafeBufferPointer { run(fresh, .codes($0.baseAddress!, burstPhase: phases.last!), ordinal: last) }
+        let (m1, a1) = diff(played, afterSeek), (m2, a2) = diff(played, fresh.read(.output))
+        return (max(m1, m2), max(a1, a2))
     }
 
     /// The restructured kernels (threadgroup FFT, register-window scatter) produce the same bits as

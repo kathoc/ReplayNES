@@ -63,6 +63,9 @@ final class CRTRenderer {
     private var supplyState: [MTLBuffer] = []
     private var driveIn: MTLBuffer!   // .drive test input
     private var supplyCurrent = 0
+    /// Start of history (first frame, or a discontinuity): the next supply pass starts from the
+    /// steady state of its picture (supply_state prime mode) instead of the idle tube.
+    private var primeSupply = true
     private var stageLines = 0
     // Tube (per output size / growth / ambient / lines).
     private struct Tube {
@@ -255,6 +258,7 @@ final class CRTRenderer {
             p[0] = SIMD4(Float(CRTSupply.v0), 0, 1, 1)
         }
         supplyCurrent = 0
+        primeSupply = true
     }
 
     // MARK: per-frame encoding
@@ -275,7 +279,11 @@ final class CRTRenderer {
 
     /// Encodes one emulated frame. `ordinal` is the machine frame ordinal (persistence history
     /// and per-frame RF noise key, like nesterm's packet.timing.frameOrdinal); a non-increasing
-    /// ordinal is a discontinuity and resets the receiver/supply/persistence state.
+    /// ordinal is a discontinuity (seek, rewind, take switch, load, a re-encoded still) and
+    /// restarts the temporal state: AGC at its initial gain (it settles within the frame), the
+    /// supply at the steady state of this picture, persistence with this picture held. The first
+    /// frame after creation or `reset()` is a history start too. So a frame after a
+    /// discontinuity looks like the same picture shown in continuous play.
     /// Returns false when no tube plan is ready yet (nothing encoded).
     @discardableResult
     func encode(_ input: Input, ordinal: UInt64, into cb: MTLCommandBuffer) -> Bool {
@@ -423,11 +431,23 @@ final class CRTRenderer {
                                   imax: Float(f.imax), n: Float(f.n), relax: Float(exp(-(f.totalLines - f.visibleLines) * f.lineS / f.tauS)),
                                   reqScale: Float(f.visibleLines / f.totalLines / Double(rows)), ablFraction: Float(-expm1(-f.frameS / f.tauAblS)),
                                   ilim: Float(f.ilim), pad: 0, share: SIMD4(Float(f.share[0]), Float(f.share[1]), Float(f.share[2]), 0))
-            let now = supplyState[supplyCurrent], next = supplyState[1 - supplyCurrent]
+            var now = supplyState[supplyCurrent], next = supplyState[1 - supplyCurrent]
             let src = drive
             dispatch("supply_mean", rows) {
                 $0.setBuffer(src, offset: 0, index: 0); $0.setBuffer(supplyMeans, offset: 0, index: 1)
                 $0.setBytes(&sp, length: MemoryLayout<SupplyParams>.stride, index: 2)
+            }
+            if primeSupply {
+                // Start of history: this frame's steady state into `next`, which then is the state in force.
+                var pp = sp
+                pp.pad = 1
+                dispatch("supply_state", 1) {
+                    $0.setBuffer(supplyMeans, offset: 0, index: 0); $0.setBuffer(now, offset: 0, index: 1)
+                    $0.setBuffer(next, offset: 0, index: 2); $0.setBytes(&pp, length: MemoryLayout<SupplyParams>.stride, index: 3)
+                }
+                swap(&now, &next)
+                supplyCurrent = 1 - supplyCurrent
+                primeSupply = false
             }
             dispatch("supply_row", rows) {
                 $0.setBuffer(supplyMeans, offset: 0, index: 0); $0.setBuffer(now, offset: 0, index: 1)
@@ -539,14 +559,19 @@ final class CRTRenderer {
     }
 
     /// tube-webgl.mjs persistenceWeights(): slot i (newest first) also stands for missing ordinals
-    /// up to the next newer slot (M4B-GAP). Float32 accumulation like the JS Float32Array.
+    /// up to the next newer slot (M4B-GAP), the oldest one for all older ordinals. Float32
+    /// accumulation like the JS Float32Array.
     private func persistenceWeights() -> [SIMD4<Float>] {
         let depth = CRTPhosphor.depth
         var w = [SIMD4<Float>](repeating: .zero, count: depth)
         guard let k = slots.first?.ordinal else { return w }
         for (i, slot) in slots.enumerated() {
             let newest = i == 0 ? 0 : k - slots[i - 1].ordinal + 1, oldest = k - slot.ordinal
-            let hi = min(oldest, Int64(depth - 1))
+            // ReplayNES: the oldest slot also stands for the ordinals before it (history start
+            // after a seek / rewind / load, or the first frame): the picture is taken as held, so
+            // a still shows every phosphor's full steady-state light, not just the first frame's
+            // share (which tinted it: green/blue emit ~10% of their energy in later frames).
+            let hi = i == slots.count - 1 ? Int64(depth - 1) : min(oldest, Int64(depth - 1))
             if newest > hi { continue }
             for m in newest...hi { for c in 0..<3 { w[slot.ring][c] = Float(Double(w[slot.ring][c]) + CRTPhosphor.fractions[c][Int(m)]) } }
         }

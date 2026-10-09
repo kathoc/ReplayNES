@@ -272,10 +272,22 @@ kernel void supply_row(device const float4* means [[buffer(0)]], device const fl
     perRow[g] = float4(m, st.z * pow(v / P.v0, P.n) / m, 0.0f, 1.0f);
 }
 // Next frame's state: relax over blanking, smooth the requested current, new ABL gain.
+// P.pad != 0 (ReplayNES, start of history: first frame, or after a seek / rewind / load): the
+// steady state of this picture held on screen instead - the requested current settled to this
+// frame's (req does not depend on v or the gain) and the anode voltage iterated to its fixed point
+// (contracts by relax * decay^rows per pass, ~1e-5) - so a still is shown as in continuous play.
 kernel void supply_state(device const float4* means [[buffer(0)]], device const float4* state [[buffer(1)]],
                          device float4* next [[buffer(2)]], constant SupplyParams& P [[buffer(3)]],
                          uint g [[thread_position_in_grid]]) {
     if (g != 0u) return;
+    if (P.pad != 0.0f) {
+        float req;
+        supplyLoop(means, float4(P.v0, 0.0f, 1.0f, 1.0f), P, P.rows - 1, req);
+        float requested = req * P.reqScale, gain = requested > P.ilim ? P.ilim / requested : 1.0f, v = P.v0;
+        for (int i = 0; i < 3; i++) { float r2; v = supplyLoop(means, float4(v, requested, gain, 1.0f), P, P.rows - 1, r2); v = P.v0 + (v - P.v0) * P.relax; }
+        next[0] = float4(v, requested, gain, 1.0f);
+        return;
+    }
     float4 st = state[0]; float req;
     float v = supplyLoop(means, st, P, P.rows - 1, req);
     v = P.v0 + (v - P.v0) * P.relax;

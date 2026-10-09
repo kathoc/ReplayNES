@@ -60,6 +60,17 @@ final class CRTTests: XCTestCase {
         XCTAssertLessThan(d.maxAbs, 2e-3, "\(d)")   // half-float ring, as in tube-webgl.mjs
     }
 
+    // Regression: after a seek / rewind / load the persistence history was empty, so a still showed
+    // only the first frame's share of each phosphor's light (green/blue ~10% darker: purple tint).
+    func testStillAfterSeekMatchesContinuousPlay() throws {
+        let still = try c.stillAfterSeek(phases: [UInt32](repeating: 1, count: 12))
+        XCTAssertLessThan(still.maxAbs, 3e-3, "same picture held: \(still)")
+        // Real play alternates the burst phase every frame (two-frame artifact pattern): the
+        // picture differs per pixel there, but its colour must not.
+        let alternating = try c.stillAfterSeek(phases: (0..<12).map { UInt32($0 % 2 == 0 ? 2 : 0) })
+        XCTAssertLessThan(alternating.meanAbs, 2e-3, "\(alternating)")
+    }
+
     func testSameFrameSequenceIsBitIdentical() throws {
         XCTAssertTrue(try c.deterministic())
     }

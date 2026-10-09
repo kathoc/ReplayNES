@@ -3,6 +3,7 @@
 #include "render/crt_renderer.h"
 
 #include <algorithm>
+#include <utility>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -139,7 +140,7 @@ struct AGCParams { float lineSeconds, attack, release, minGain, maxGain; int32_t
 struct RasterParams { int32_t lines, decode, rgbSource, pad; };
 struct SupplyParams {
   int32_t width, rows;
-  float decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, pad;
+  float decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, prime;  // prime: supply_state only
   float share[4];
 };
 struct SpotParams { int32_t width, rows, radius; float k1; };
@@ -732,6 +733,7 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     vkCmdUpdateBuffer(cmd, supplyState_[1].buffer, 0, sizeof(st), st);
     supplyCurrent_ = 0;
     resetSupplyPending_ = false;
+    primeSupply_ = true;
   }
   if (ringClearPending) {
     vkCmdFillBuffer(cmd, t.ring.buffer, 0, VK_WHOLE_SIZE, 0);
@@ -820,6 +822,15 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     const Buffer* now = &supplyState_[supplyCurrent_];
     const Buffer* next = &supplyState_[1 - supplyCurrent_];
     dispatch(cmd, "supply_mean", {drive, &supplyMeans_}, &sp, sizeof sp, groups(rows, 64));
+    if (primeSupply_) {
+      // Start of history: this frame's steady state into `next`, which then is the state in force.
+      SupplyParams pp = sp;
+      pp.prime = 1;
+      dispatch(cmd, "supply_state", {&supplyMeans_, now, next}, &pp, sizeof pp, 1);
+      std::swap(now, next);
+      supplyCurrent_ = 1 - supplyCurrent_;
+      primeSupply_ = false;
+    }
     dispatch(cmd, "supply_row", {&supplyMeans_, now, &supplyRow_}, &sp, sizeof sp, groups(rows, 64));
     dispatch(cmd, "supply_state", {&supplyMeans_, now, next}, &sp, sizeof sp, 1);
     dispatch(cmd, "supply_resample", {drive, &supplyRow_, &supplyOut_}, &sp, sizeof sp, groups(512, 32), groups(rows, 8));
@@ -919,7 +930,8 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
 }
 
 /// tube-webgl.mjs persistenceWeights(): slot i (newest first) also stands for missing ordinals up
-/// to the next newer slot (M4B-GAP). Float32 accumulation like the JS Float32Array.
+/// to the next newer slot (M4B-GAP), the oldest one for all older ordinals. Float32 accumulation
+/// like the JS Float32Array.
 std::vector<float> CrtRenderer::persistenceWeights() const {
   const int depth = crt::phosphor::depth();
   std::vector<float> w(size_t(depth) * 4, 0.0f);
@@ -929,7 +941,10 @@ std::vector<float> CrtRenderer::persistenceWeights() const {
   for (size_t i = 0; i < slots_.size(); ++i) {
     const Slot& slot = slots_[i];
     int64_t newest = i == 0 ? 0 : k - slots_[i - 1].ordinal + 1, oldest = k - slot.ordinal;
-    int64_t hi = std::min<int64_t>(oldest, depth - 1);
+    // ReplayNES: the oldest slot also stands for the ordinals before it (history start after a
+    // seek / rewind / load, or the first frame): the picture is taken as held, so a still shows
+    // every phosphor's full steady-state light, not just the first frame's share (purple tint).
+    int64_t hi = i + 1 == slots_.size() ? int64_t(depth - 1) : std::min<int64_t>(oldest, depth - 1);
     if (newest > hi) continue;
     for (int64_t m = newest; m <= hi; ++m)
       for (int c = 0; c < 3; ++c) {

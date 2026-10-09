@@ -57,11 +57,16 @@ CRT Display itself is off by default (the conventional crisp display).
 - nesterm uses the PPU bitmap of @nesjs/core (6-bit color + 3-bit emphasis) and line-start sample positions obtained by counting PPU clocks.
   ReplayNES exposes Nestopia's `Video::Screen` (the same 9-bit format: `(color & greyscale) | emphasis<<6`) through
   `rn_video_indices` (an additional display-only API; it is not part of the state or hash, and is verified in `tests/test_render.cpp`).
-- Carrier phase: the nesjs tap uses `8 x PPU dot count mod 12`. Nestopia's colour-burst phase `b` advances by +1 in a frame of 89342 dots and
-  by +2 in a frame with the odd-frame dot skipped (89341), so `b = -dot count (mod 3)`,
-  that is, `8 x dot count mod 12 = 4b` (the difference in origin falls within the scope of nesterm's `phaseOrigin: 'assumed-relative'`).
-- The frame number (the key for persistence history and RF noise) is the core's frame number. When the number does not increase, as with a rewind or seek,
-  the receiver, supply, and persistence states are reset (the same treatment as nesterm's `reset`).
+- Carrier phase: the nesjs tap uses `8 x PPU dot count mod 12`. ReplayNES derives the colour-burst phase `b` from the CPU's
+  monotonic master-clock counter at the frame boundary (`NestopiaCore::burstPhaseAtFrameEnd`: `b = 2 x dots mod 3`, dots = master clocks / 4).
+  A frame advances it by +1 (89342 dots) or +2 (89341, odd-frame dot skip), i.e. `8 x dot count mod 12 = 4b`
+  (the difference in origin falls within the scope of nesterm's `phaseOrigin: 'assumed-relative'`). In uninterrupted play this is exactly
+  Nestopia's `Ppu::GetBurstPhase()`, but that counter is not saved in states (`Ppu::LoadState` resets it to 0), whereas the master-clock
+  counter is (CPU `CLK` chunk): the phase of a frame is the same whether it was reached by play, seek, rewind, take switch or a loaded state.
+  Display only: emulation, states, hashes and the core compatibility ID are unchanged.
+- The frame number (the key for persistence history and RF noise) is the core's frame number. When the number does not increase, as with a rewind or seek
+  (or a re-encoded still), the receiver, supply, and persistence states restart (nesterm's `reset`), and so does the first frame of a renderer.
+  ReplayNES restarts them from **the current picture held** rather than from an idle tube with empty history (intentional difference 6).
 - If flash reduction has modified the frame, then for safety the reduced RGB image is sent to the tube face as nesterm's "composite RGB" input
   (`COMPOSE-ASCII-RGB`: 512x240, sRGB-decoded, no RF). Normal frames take the PPU code -> RF path.
 - MP4 export and Syphon use the same `CRTRenderer`. The same frame sequence yields the same image
@@ -84,7 +89,15 @@ CRT Display itself is off by default (the conventional crisp display).
 5. **Internal resolution cap of 1600x1200**: the same as nesterm's OUTPUT-RESOLUTION-SPEC (256x192 to 1600x1200, the work cap for the detector).
    For larger destinations such as full screen, the display pass enlarges it with bilinear interpolation in linear light
    (in nesterm the browser enlarges the canvas).
-6. **Not ported**: nesterm's "TV (legacy model)" (`web/tv-raster.mjs` / `tv-signal.mjs`) and the ASCII display are out of scope.
+6. **History starts from the picture held**: after a discontinuity (seek, rewind, take switch, load, the first frame), nesterm starts the
+   persistence history empty and the supply idle. A still shown that way (ReplayNES pauses on such frames) got only the first frame's share of
+   each phosphor's light — green and blue emit about 10% of a frame's energy in later frames, red almost none — so it was tinted purple, and
+   its ABL / anode load differed from continuous play. Here the oldest persistence slot also stands for the ordinals before it (M4B-GAP
+   extended to the start of history) and the supply starts from the steady state of the first picture (`supply_state` prime mode). The AGC
+   still starts from its initial gain (it settles within the frame; < 1e-3). The conformance harness reproduces nesterm's start by showing a
+   black frame first (black held = empty history and an idle supply), and checks that a still after a seek equals the same picture shown
+   in continuous play (`stillAfterSeek`).
+7. **Not ported**: nesterm's "TV (legacy model)" (`web/tv-raster.mjs` / `tv-signal.mjs`) and the ASCII display are out of scope.
    Numerical precision is single precision, as in WebGL (the persistence ring is half float, as in nesterm).
 
 ## Verification
@@ -97,7 +110,8 @@ CRT Display itself is off by default (the conventional crisp display).
 - A frame from a real ROM (Super Mario Bros.) was drawn at 512x384 with nesterm's CPU reference chain (receiver -> supply -> horizontal spot -> tube-face growth)
   and compared with the Metal version in 8-bit: maximum difference 1/255 (mean 0.13).
 - `tests/test_render.cpp` "video indices": the code-to-RGB correspondence, an unchanged state hash, agreement between session and export, and
-  the mock core returning "unsupported".
+  the mock core returning "unsupported"; the burst phase of a frame is identical by straight play, seek, rewind and a raw state load
+  (both frame parities, around checkpoints) and advances by 1 or 2 every frame.
 
 ## Vulkan port (Linux / Steam Deck)
 

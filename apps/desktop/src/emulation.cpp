@@ -618,15 +618,12 @@ void EmulationController::tickPractice() {
 void EmulationController::arriveAtA() {
   rn_session* s = session_;
   rnf_reel_clear(reel_);
-  // A's own picture (the frame after A, emulated and taken back: the run does not move). Shown as a
-  // copy, without the PPU codes: after the step is taken back their burst phase no longer matches
-  // (the CRT would tint it), so the CRT takes the RGB picture like during the sweep.
+  // A's own picture (the frame after A, emulated and taken back: the run does not move), with its
+  // PPU codes: the CRT shows it like any frame (the burst phase is part of the machine state, and a
+  // still after a discontinuity is drawn as held).
   rnf_practice_preview_a(s);
   resetFlashFilter();
-  if (const uint32_t* v = rn_video(s)) {
-    previewA_.assign(v, v + size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT);
-    show(previewA_.data());
-  }
+  publishVideo(true);
 }
 
 void EmulationController::dropInput() {

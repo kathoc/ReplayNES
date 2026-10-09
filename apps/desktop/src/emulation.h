@@ -290,7 +290,6 @@ class EmulationController {
   bool practiceRewindStarted_ = false;
   int countdown_ = 0;
   double countdownFraction_ = 0;
-  std::vector<uint32_t> previewA_;  // A's picture for the countdown
   // VTR effect: display_ shows vtrBase_ (the clean picture) through rnf_vtr_apply while active.
   rnf_vtr* vtr_ = nullptr;
   bool vtrEnabled_ = true;
