@@ -82,6 +82,7 @@ TEST_CASE("record toggle state machine") {
 
 TEST_CASE("practice loop state machine on a fake clock") {
   rnf_practice_loop* loop = rnf_practice_loop_new();
+  rnf_practice_loop_set_countdown(loop, 0);  // the countdown: test_frontend_practice_return
   double now = 0;
   uint64_t counter = 0;
   const uint64_t length = 10;
@@ -154,6 +155,7 @@ TEST_CASE("practice loop on the engine never records") {
   int stepsSinceA = 1, restarts = 0;
   std::vector<uint64_t> firstFrames, videoAtB;
   rnf_practice_loop* loop = rnf_practice_loop_new();
+  rnf_practice_loop_set_countdown(loop, 0);
   rnf_frame_history* history = rnf_frame_history_new(60);
   double now = 0;
   int shownBack = 0;
@@ -177,6 +179,7 @@ TEST_CASE("practice loop on the engine never records") {
         shownBack = std::max(shownBack, idx);
         break;
       }
+      case RNF_PRACTICE_COUNTDOWN: break;
       case RNF_PRACTICE_RESTART:
         rn_practice_goto_a(s, 0);
         rnf_frame_history_clear(history);

@@ -396,8 +396,9 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
                                  "retry.restart"}));
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.export"}));
   CHECK((itemIds(m, "game") == std::vector<std::string>{"game.library", "game.save", "game.save_as", "game.open", "game.reset"}));
-  CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt", "display.par87", "display.flash",
-                                                                   "display.overscan", "display.crt_detail"}));
+  CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt", "display.flash", "display.vtr",
+                                                                   "display.shape", "display.crt_detail"}));
+  CHECK((itemIds(m, "display.shape") == std::vector<std::string>{"display.par87", "display.overscan"}));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume"}));
   rnf_menu_free(m);
   // Features: no CRT -> no CRT row / details page; no export and no stream -> no Share tile.
@@ -405,7 +406,7 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK((itemIds(m, "quick") == std::vector<std::string>{"resume", "retry", "practice", "settings", "game"}));
   CHECK(rnf_menu_page_find(m, "display.crt") < 0);
   CHECK((itemIds(m, "settings.display") ==
-        std::vector<std::string>{"display.size", "display.par87", "display.flash", "display.overscan"}));
+        std::vector<std::string>{"display.size", "display.flash", "display.vtr", "display.shape"}));
   CHECK((itemIds(m, "settings.system") == std::vector<std::string>{"system.language", "system.about", "system.detail"}));
   rnf_menu_free(m);
   m = rnf_menu_new(RNF_MENU_FEATURE_STREAM | RNF_MENU_FEATURE_SLOW_AUDIO | RNF_MENU_FEATURE_LOW_LATENCY);

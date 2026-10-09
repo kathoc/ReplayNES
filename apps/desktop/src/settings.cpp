@@ -47,6 +47,8 @@ Settings Settings::parse(const std::string& text) {
     if (k == "integerScale") s.integerScale = parseBool(v, s.integerScale);
     else if (k == "par87") s.par87 = parseBool(v, s.par87);
     else if (k == "hideOverscan") s.hideOverscan = parseBool(v, s.hideOverscan);
+    else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
+    else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "showStats") s.showStats = parseBool(v, s.showStats);
     else if (k == "flash" && num && d >= 0 && d <= 3 && d == std::floor(d)) s.flash = int(d);
     else if (k == "showFlashIndicator") s.showFlashIndicator = parseBool(v, s.showFlashIndicator);
@@ -80,6 +82,8 @@ std::string Settings::serialize() const {
   o << "integerScale=" << int(integerScale) << "\n";
   o << "par87=" << int(par87) << "\n";
   o << "hideOverscan=" << int(hideOverscan) << "\n";
+  o << "vtrEffect=" << int(vtrEffect) << "\n";
+  o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "showStats=" << int(showStats) << "\n";
   o << "flash=" << flash << "\n";
   o << "showFlashIndicator=" << int(showFlashIndicator) << "\n";

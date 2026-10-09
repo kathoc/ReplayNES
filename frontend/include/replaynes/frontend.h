@@ -803,6 +803,14 @@ rnf_markers_result rnf_markers_nudge(rnf_markers* m, int64_t frames);
 rnf_markers_result rnf_markers_delete(rnf_markers* m);
 /* Leaving the paused seek bar (resume, the menu): an edit is reverted, the focus goes back to the bar. */
 rnf_markers_result rnf_markers_leave(rnf_markers* m);
+/* The paused seek bar's Y (north) and X (west) taps:
+ *   Y: practice the selected slot from its A (RNF_SEEK_FACE_PRACTICE) when it has a section on this
+ *      take (one or two markers: A only = practice without a loop) and no marker is being edited;
+ *   X: delete the focused marker (rnf_markers_delete), or - focus on the bar - the next A/B slot. */
+typedef enum rnf_seek_face_action {
+  RNF_SEEK_FACE_NONE = 0, RNF_SEEK_FACE_NEXT_SLOT = 1, RNF_SEEK_FACE_DELETE_MARKER = 2, RNF_SEEK_FACE_PRACTICE = 3
+} rnf_seek_face_action;
+rnf_seek_face_action rnf_markers_face(const rnf_markers* m, int north);
 
 /* ------------------------------------------------------------------ filmstrip grid
  * One tile = F frames at its natural width, F = 300 * 2^e (5 s, coarser grids are subsets). */
@@ -1094,29 +1102,72 @@ int rnf_step_repeater_tick(rnf_step_repeater* r);
 void rnf_step_repeater_reset(rnf_step_repeater* r);
 int rnf_step_repeater_direction(const rnf_step_repeater* r);
 
-/* Practice A/B loop: playing -> (counter >= length) holding 0.5 s -> rewinding 0.5 s -> restart. */
+/* Practice A/B loop (docs/design/UI_REDESIGN.md, "Practice: return to A"):
+ *   playing -> (counter >= length) holding 0.5 s -> rewinding 1 s (the VTR sweep back to A: always
+ *   RNF_PRACTICE_REWIND_SECONDS, however long the section; the frontend shows rnf_reel frames) ->
+ *   restart (the frontend goes to A and shows its picture) -> countdown 3 s ("3", "2", "1"; optional,
+ *   on by default) -> playing.
+ * L2 + R2 (rnf_practice_loop_shoulders / rnf_practice_loop_return) starts the rewind at once from
+ * playing or holding. Nothing is emulated outside playing (the game input is not used: the frontend
+ * samples and drops it, so a tap during the countdown is not latched into the first frame). A gap
+ * between ticks (paused, the menu open) does not count: the phase resumes where it was. */
 #define RNF_PRACTICE_HOLD_SECONDS 0.5
-#define RNF_PRACTICE_REWIND_SECONDS 0.5
-typedef enum rnf_practice_phase { RNF_PHASE_PLAYING = 0, RNF_PHASE_HOLDING = 1, RNF_PHASE_REWINDING = 2 } rnf_practice_phase;
+#define RNF_PRACTICE_REWIND_SECONDS 1.0
+#define RNF_PRACTICE_COUNTDOWN_SECONDS 3.0
+typedef enum rnf_practice_phase {
+  RNF_PHASE_PLAYING = 0, RNF_PHASE_HOLDING = 1, RNF_PHASE_REWINDING = 2, RNF_PHASE_COUNTDOWN = 3
+} rnf_practice_phase;
 typedef enum rnf_practice_action_kind {
   RNF_PRACTICE_STEP = 0, RNF_PRACTICE_BEGIN_HOLD = 1, RNF_PRACTICE_HOLD = 2, RNF_PRACTICE_REWIND_FRAME = 3,
-  RNF_PRACTICE_RESTART = 4
+  RNF_PRACTICE_RESTART = 4, RNF_PRACTICE_COUNTDOWN = 5
 } rnf_practice_action_kind;
 typedef struct rnf_practice_action {
   rnf_practice_action_kind kind;
-  double back; /* REWIND_FRAME: 0...1, how far back into the recent frames */
+  double back;     /* REWIND_FRAME: 0...1, how far back towards A (rnf_reel_sweep_index) */
+  int count;       /* COUNTDOWN: the number shown (3, 2, 1) */
+  double fraction; /* COUNTDOWN: 0...1 within that number's second (rnf_practice_countdown_visual) */
 } rnf_practice_action;
 typedef struct rnf_practice_loop rnf_practice_loop;
 rnf_practice_loop* rnf_practice_loop_new(void);
 rnf_practice_loop* rnf_practice_loop_clone(const rnf_practice_loop* l);
 void rnf_practice_loop_free(rnf_practice_loop* l);
-/* One unpaused tick. has_length = 0: no B (free practice, never loops). */
+/* One unpaused tick. has_length = 0: no B (free practice, never loops by itself). */
 rnf_practice_action rnf_practice_loop_tick(rnf_practice_loop* l, double now, uint64_t counter, int has_length,
                                            uint64_t length);
+/* The countdown after arriving at A (default on). Off: restart -> playing at once. */
+void rnf_practice_loop_set_countdown(rnf_practice_loop* l, int on);
+int rnf_practice_loop_countdown(const rnf_practice_loop* l);
+/* Return to A now (L2 + R2): playing / holding -> rewinding (no hold). 1 = started; 0 while already
+ * returning (rewinding / countdown). */
+int rnf_practice_loop_return(rnf_practice_loop* l, double now);
+/* The run starts at A (practice started from the menu / the seek bar): the countdown when it is on
+ * (returns 1), else playing (0). */
+int rnf_practice_loop_arrive(rnf_practice_loop* l, double now);
+/* Every unpaused practice tick, before rnf_practice_loop_tick: L2 (rewind) / R2 (fast-forward) held.
+ * has_a: the run has an A to return to. Returns 1 when both have just become held (the chord):
+ * rnf_practice_loop_return was started. *rewind (may be NULL) = whether the frontend may rewind the
+ * practice run now: 0 while the chord is latched (until both are released again) and during the
+ * return (rewinding / countdown), else rewind_held. */
+int rnf_practice_loop_shoulders(rnf_practice_loop* l, double now, int has_a, int rewind_held, int ff_held,
+                                int* rewind);
 void rnf_practice_loop_interrupt(rnf_practice_loop* l);
 void rnf_practice_loop_reset(rnf_practice_loop* l);
 rnf_practice_phase rnf_practice_loop_phase(const rnf_practice_loop* l, double* since);
 int rnf_practice_loop_loops(const rnf_practice_loop* l);
+/* After rn_practice_goto_a: makes rn_video show the picture at A (the frame after A, emulated with no
+ * input) without moving - one rn_step then rn_rewind(1): the machine state, the practice counter (0)
+ * and A's continuity are exactly as before. Display only (the countdown's picture). RN_ERR_WRONG_MODE
+ * outside practice. */
+rn_status rnf_practice_preview_a(rn_session* s);
+/* The countdown's look at `fraction` (0...1) of number `count` (shared by every frontend): a subtle
+ * scale-in / fade-in, hold, fade-out; ring = the part of the second left (1 -> 0). */
+typedef struct rnf_countdown_visual {
+  int number;  /* 0: nothing to draw */
+  float alpha; /* 0...1 */
+  float scale; /* around 1 */
+  float ring;  /* 1 ... 0 */
+} rnf_countdown_visual;
+rnf_countdown_visual rnf_practice_countdown_visual(int count, double fraction);
 /* Index (0 = newest) into a history of count frames for animation progress back. */
 int rnf_practice_history_index(double back, int count);
 
@@ -1130,6 +1181,62 @@ int rnf_frame_history_count(const rnf_frame_history* h);
 int rnf_frame_history_capacity(const rnf_frame_history* h);
 void rnf_frame_history_clear(rnf_frame_history* h);
 void rnf_frame_history_release(rnf_frame_history* h); /* clear + free the memory */
+
+/* The practice run's reel: display-only pictures for the 1 s sweep back to A (never emulation /
+ * determinism). Offer every picture with its position (practice counter, >= 1 = frames since A); it
+ * keeps at most `capacity` 256x240 BGRA frames evenly spread from A: with stride k only positions
+ * with (position - 1) % k == 0 are kept (the first frame after A always is); when full, every other
+ * one is dropped and the stride doubles. Memory is allocated on the first kept frame; dropping
+ * frames never moves pixels (slot indirection), so a capture costs one 240 KB copy at most. */
+#define RNF_REEL_CAPACITY 120
+typedef struct rnf_reel rnf_reel;
+rnf_reel* rnf_reel_new(int capacity);
+void rnf_reel_free(rnf_reel* r);
+int rnf_reel_offer(rnf_reel* r, uint64_t position, const uint32_t* frame); /* 1 = kept */
+void rnf_reel_truncate(rnf_reel* r, uint64_t position); /* drops frames after position (practice rewind) */
+void rnf_reel_clear(rnf_reel* r);                       /* empty, stride 1 (keeps the memory) */
+void rnf_reel_release(rnf_reel* r);                     /* clear + free the memory */
+int rnf_reel_count(const rnf_reel* r);
+int rnf_reel_capacity(const rnf_reel* r);
+uint64_t rnf_reel_stride(const rnf_reel* r);
+uint64_t rnf_reel_position(const rnf_reel* r, int i);       /* 0 = oldest (nearest A) */
+const uint32_t* rnf_reel_frame(const rnf_reel* r, int i);   /* 0 = oldest; NULL out of range */
+/* Frame index for sweep progress back (0 = the newest ... 1 = the oldest, evenly in position); -1 if empty. */
+int rnf_reel_sweep_index(const rnf_reel* r, double back);
+
+/* ------------------------------------------------------------------ VTR effect (display only)
+ * Tape-rewind look over the picture while it runs backwards (docs/design/UI_REDESIGN.md, "VTR
+ * effect"): two soft tracking-noise bands drifting smoothly, slight line jitter and head-switching
+ * skew at the bottom, mild chroma bleed, desaturation. A CPU pass on the 256x240 picture (identical on
+ * every platform, before the CRT / scaling), run only while active: zero cost otherwise.
+ * Photosensitivity: low contrast, no full-screen brightness change (the mean luminance moves < 5 %),
+ * the noise changes at 30 Hz inside the bands only, the bands move smoothly; Reduce Flashing
+ * Standard / High tone it down further; the "VTR Effect" setting turns it off.
+ * Kinds: REWIND (L2 hold, subtle), FAST_FORWARD (R2: a lighter variant - thin bands only, no colour
+ * change), RETURN (practice sweep back to A, full). */
+typedef enum rnf_vtr_kind {
+  RNF_VTR_NONE = 0, RNF_VTR_REWIND = 1, RNF_VTR_FAST_FORWARD = 2, RNF_VTR_RETURN = 3
+} rnf_vtr_kind;
+#define RNF_VTR_FADE_IN_SECONDS 0.12
+#define RNF_VTR_FADE_OUT_SECONDS 0.25
+typedef struct rnf_vtr_params {
+  float strength;    /* 0: off (do not call rnf_vtr_apply) ... 1 */
+  double time;       /* seconds since the effect started (animation clock) */
+  rnf_vtr_kind kind; /* the variant (kept while fading out) */
+} rnf_vtr_params;
+typedef struct rnf_vtr rnf_vtr;
+rnf_vtr* rnf_vtr_new(void);
+void rnf_vtr_free(rnf_vtr* v);
+/* enabled = the VTR Effect setting; level = Reduce Flashing (Standard / High: weaker). */
+void rnf_vtr_configure(rnf_vtr* v, int enabled, rn_flash_level level);
+/* Once per display tick with what is wanted now (NONE: fades out). */
+rnf_vtr_params rnf_vtr_tick(rnf_vtr* v, double now, rnf_vtr_kind want);
+int rnf_vtr_active(const rnf_vtr* v); /* the last tick's strength > 0 */
+void rnf_vtr_reset(rnf_vtr* v);       /* off at once */
+/* Peak strength of a kind under the current configuration (0 when disabled). */
+float rnf_vtr_peak(const rnf_vtr* v, rnf_vtr_kind kind);
+/* in -> out (256x240 BGRA, may not alias). */
+void rnf_vtr_apply(const uint32_t* in, uint32_t* out, const rnf_vtr_params* p);
 
 /* Decaying audio tail built from the last frame's samples (practice reaching B). Returns
  * n * repeats (0 when n or repeats is 0). */

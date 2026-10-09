@@ -3,7 +3,7 @@
 // loop, record <-> replay), the flash filter on the shown picture, autosave and the status the UI
 // shows. Port of the macOS EmulationController (apps/macos/Sources/App/EmulationController.swift)
 // on the shared frontend core's state machines (rnf_record_toggle, rnf_step_repeater,
-// rnf_fast_forward, rnf_practice_loop, rnf_frame_history, rnf_audio_fade_tail).
+// rnf_fast_forward, rnf_practice_loop, rnf_reel, rnf_vtr, rnf_audio_fade_tail).
 // The display loop decides only WHEN tick() runs; what is emulated is fully determined by the
 // recorded input / event stream. No SDL here (unit-tested headless with the engine's test ROM).
 // Not thread-safe: the frame loop thread only (rn_input itself is internally locked).
@@ -47,6 +47,9 @@ struct EmuStatus {
   uint64_t practiceLength = 0;
   bool practiceLooping = false;
   int practiceLoops = 0;
+  // The countdown after returning to A: 3, 2, 1 (0 = none) and how far into that number (0...1).
+  int countdown = 0;
+  double countdownFraction = 0;
 };
 
 struct BookmarkInfo {
@@ -110,6 +113,10 @@ class EmulationController {
   bool tempSession = false;
   void setFlashLevel(rn_flash_level level);
   rn_flash_level flashLevel() const { return flashLevel_; }
+  /// The VTR tape look while rewinding / returning to A (display only).
+  void setVtrEffect(bool on);
+  /// 3, 2, 1 after the practice run arrives at A.
+  void setPracticeCountdown(bool on);
 
   /// Takes ownership. A fresh recording (empty take at frame 0) runs at once, an opened project
   /// stays paused at its cursor. nullptr closes the current one (without saving).
@@ -131,7 +138,7 @@ class EmulationController {
   const uint32_t* picture() const { return display_.data(); }
   /// CRT side channel of picture() (display only): rn_video_indices of the same frame + whether
   /// the flash filter changed it. codes == nullptr when there are none (mock core, a picture from
-  /// the practice rewind animation).
+  /// the practice rewind animation, a picture with the VTR effect).
   struct Signal {
     const uint16_t* codes = nullptr;
     uint32_t burstPhase = 0;
@@ -179,6 +186,8 @@ class EmulationController {
   // Practice (A/B repeat).
   void startPractice(int slot);
   void stopPractice();
+  /// The UI's cancel tapped during the countdown: practice ends (back to the take, paused).
+  void abortCountdown();
   void practiceSetA(int slot);
   void practiceSetB(int slot);
   void practiceRename(int slot, const std::string& name);
@@ -220,6 +229,12 @@ class EmulationController {
   void endFastForward();
   void tickFastForward();
   void tickPractice();
+  /// The run arrived at A (start, loop, L2 + R2): A's picture, the countdown.
+  void arriveAtA();
+  /// The game input of a tick that emulates nothing (hold, rewind sweep, countdown): sampled and
+  /// dropped, so a tap there is not latched into the first frame afterwards.
+  void dropInput();
+  void tickVtr();
   void refreshPracticeLength(int slot);
   bool practiceSetBFromTake(int slot);
   bool timelineRange(int slot, rnf_timeline_range* out);
@@ -267,8 +282,16 @@ class EmulationController {
   rnf_practice_loop* practiceLoop_ = nullptr;
   uint64_t practiceSeq_ = uint64_t(1) << 40;  // input sampling clock while practicing (turbo phase)
   rn_mode modeBeforePractice_ = RN_MODE_RECORD;
-  rnf_frame_history* history_ = nullptr;
+  rnf_reel* reel_ = nullptr;
   bool practiceRewindStarted_ = false;
+  int countdown_ = 0;
+  double countdownFraction_ = 0;
+  // VTR effect: display_ shows vtrBase_ (the clean picture) through rnf_vtr_apply while active.
+  rnf_vtr* vtr_ = nullptr;
+  bool vtrEnabled_ = true;
+  bool vtrOn_ = false;
+  std::vector<uint32_t> vtrBase_;
+  Signal vtrBaseSignal_;
   // thumbnails
   bool pendingThumb_ = false;
   uint64_t pendingThumbFrame_ = 0;

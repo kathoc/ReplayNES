@@ -20,6 +20,9 @@ struct rnf_practice_loop {
   rnf_practice_phase phase = RNF_PHASE_PLAYING;
   double since = 0;
   int loops = 0;
+  bool countdown = true;
+  bool chordLatched = false;  // L2 + R2 fired; until both are released
+  double lastTick = -1;       // a gap since (paused, menu) does not count
 };
 
 struct rnf_frame_history {
@@ -119,43 +122,127 @@ rnf_practice_loop* rnf_practice_loop_new(void) {
 rnf_practice_loop* rnf_practice_loop_clone(const rnf_practice_loop* l) { return cloneOf(l); }
 void rnf_practice_loop_free(rnf_practice_loop* l) { delete l; }
 
+namespace {
+constexpr double kTickGap = 0.1;  // longer between two ticks = not running (paused, the menu)
+
+rnf_practice_action act(rnf_practice_action_kind k, double back = 0) {
+  rnf_practice_action a{};
+  a.kind = k;
+  a.back = back;
+  return a;
+}
+
+rnf_practice_action countdownAction(double elapsed) {
+  rnf_practice_action a = act(RNF_PRACTICE_COUNTDOWN);
+  double e = std::max(0.0, elapsed);
+  int whole = int(std::floor(e));
+  a.count = std::max(1, int(RNF_PRACTICE_COUNTDOWN_SECONDS) - whole);
+  a.fraction = std::min(1.0, std::max(0.0, e - double(whole)));
+  return a;
+}
+}  // namespace
+
 rnf_practice_action rnf_practice_loop_tick(rnf_practice_loop* l, double now, uint64_t counter, int has_length,
                                            uint64_t length) {
-  if (!l) return {RNF_PRACTICE_STEP, 0};
+  if (!l) return act(RNF_PRACTICE_STEP);
+  // Time spent not ticking (paused, the menu open) is not part of a hold / rewind / countdown.
+  if (l->phase != RNF_PHASE_PLAYING && l->lastTick >= 0 && now - l->lastTick > kTickGap)
+    l->since += (now - l->lastTick) - 1.0 / 60;
+  l->lastTick = now;
   switch (l->phase) {
     case RNF_PHASE_PLAYING:
       if (has_length && length > 0 && counter >= length) {
         l->phase = RNF_PHASE_HOLDING;
         l->since = now;
-        return {RNF_PRACTICE_BEGIN_HOLD, 0};
+        return act(RNF_PRACTICE_BEGIN_HOLD);
       }
-      return {RNF_PRACTICE_STEP, 0};
+      return act(RNF_PRACTICE_STEP);
     case RNF_PHASE_HOLDING:
       if (now - l->since >= RNF_PRACTICE_HOLD_SECONDS) {
         l->phase = RNF_PHASE_REWINDING;
         l->since = now;
-        return {RNF_PRACTICE_REWIND_FRAME, 0};
+        return act(RNF_PRACTICE_REWIND_FRAME, 0);
       }
-      return {RNF_PRACTICE_HOLD, 0};
+      return act(RNF_PRACTICE_HOLD);
     case RNF_PHASE_REWINDING: {
       double p = (now - l->since) / RNF_PRACTICE_REWIND_SECONDS;
       if (p >= 1) {
+        l->loops += 1;
+        if (l->countdown) {
+          l->phase = RNF_PHASE_COUNTDOWN;
+          l->since = now;
+        } else {
+          l->phase = RNF_PHASE_PLAYING;
+          l->since = 0;
+        }
+        return act(RNF_PRACTICE_RESTART);
+      }
+      return act(RNF_PRACTICE_REWIND_FRAME, std::max(0.0, p));
+    }
+    case RNF_PHASE_COUNTDOWN: {
+      double e = now - l->since;
+      if (e >= RNF_PRACTICE_COUNTDOWN_SECONDS) {
         l->phase = RNF_PHASE_PLAYING;
         l->since = 0;
-        l->loops += 1;
-        return {RNF_PRACTICE_RESTART, 0};
+        // Play on in this same tick: the countdown's "1" is followed by the first frame at once.
+        if (has_length && length > 0 && counter >= length) {
+          l->phase = RNF_PHASE_HOLDING;
+          l->since = now;
+          return act(RNF_PRACTICE_BEGIN_HOLD);
+        }
+        return act(RNF_PRACTICE_STEP);
       }
-      return {RNF_PRACTICE_REWIND_FRAME, std::max(0.0, p)};
+      return countdownAction(e);
     }
   }
-  return {RNF_PRACTICE_STEP, 0};
+  return act(RNF_PRACTICE_STEP);
+}
+
+void rnf_practice_loop_set_countdown(rnf_practice_loop* l, int on) {
+  if (!l) return;
+  l->countdown = on != 0;
+  if (!l->countdown && l->phase == RNF_PHASE_COUNTDOWN) { l->phase = RNF_PHASE_PLAYING; l->since = 0; }
+}
+int rnf_practice_loop_countdown(const rnf_practice_loop* l) { return l && l->countdown ? 1 : 0; }
+
+int rnf_practice_loop_return(rnf_practice_loop* l, double now) {
+  if (!l || l->phase == RNF_PHASE_REWINDING || l->phase == RNF_PHASE_COUNTDOWN) return 0;
+  l->phase = RNF_PHASE_REWINDING;
+  l->since = now;
+  l->lastTick = now;
+  return 1;
+}
+
+int rnf_practice_loop_arrive(rnf_practice_loop* l, double now) {
+  if (!l) return 0;
+  l->since = l->countdown ? now : 0;
+  l->phase = l->countdown ? RNF_PHASE_COUNTDOWN : RNF_PHASE_PLAYING;
+  l->lastTick = now;
+  return l->countdown ? 1 : 0;
+}
+
+int rnf_practice_loop_shoulders(rnf_practice_loop* l, double now, int has_a, int rewind_held, int ff_held,
+                                int* rewind) {
+  int fired = 0;
+  if (l) {
+    if (l->chordLatched && !rewind_held && !ff_held) l->chordLatched = false;
+    if (!l->chordLatched && rewind_held && ff_held) {
+      l->chordLatched = true;
+      if (has_a) fired = rnf_practice_loop_return(l, now);
+    }
+  }
+  if (rewind) {
+    bool returning = l && (l->phase == RNF_PHASE_REWINDING || l->phase == RNF_PHASE_COUNTDOWN);
+    *rewind = rewind_held && !(l && l->chordLatched) && !returning ? 1 : 0;
+  }
+  return fired;
 }
 
 void rnf_practice_loop_interrupt(rnf_practice_loop* l) {
   if (l) { l->phase = RNF_PHASE_PLAYING; l->since = 0; }
 }
 void rnf_practice_loop_reset(rnf_practice_loop* l) {
-  if (l) { l->phase = RNF_PHASE_PLAYING; l->since = 0; l->loops = 0; }
+  if (l) { l->phase = RNF_PHASE_PLAYING; l->since = 0; l->loops = 0; l->chordLatched = false; l->lastTick = -1; }
 }
 rnf_practice_phase rnf_practice_loop_phase(const rnf_practice_loop* l, double* since) {
   if (!l) return RNF_PHASE_PLAYING;
@@ -163,6 +250,38 @@ rnf_practice_phase rnf_practice_loop_phase(const rnf_practice_loop* l, double* s
   return l->phase;
 }
 int rnf_practice_loop_loops(const rnf_practice_loop* l) { return l ? l->loops : 0; }
+
+rn_status rnf_practice_preview_a(rn_session* s) {
+  if (!s) return fail(RN_ERR_INVALID_ARG, "null argument");
+  if (rn_get_mode(s) != RN_MODE_PRACTICE) return fail(RN_ERR_WRONG_MODE, "not practicing");
+  rn_status st = rn_step(s, 0, 0, 0, nullptr);
+  if (st != RN_OK) return st;
+  return rn_rewind(s, 1);
+}
+
+rnf_countdown_visual rnf_practice_countdown_visual(int count, double fraction) {
+  rnf_countdown_visual v{};
+  if (count <= 0) return v;
+  double f = std::min(1.0, std::max(0.0, fraction));
+  auto easeOut = [](double x) { return 1 - (1 - x) * (1 - x) * (1 - x); };
+  const double in = 0.16, out = 0.78;
+  v.number = count;
+  if (f < in) {
+    double e = easeOut(f / in);
+    v.alpha = float(e);
+    v.scale = float(1.14 - 0.14 * e);
+  } else if (f > out) {
+    double e = (f - out) / (1 - out);
+    e = e * e;
+    v.alpha = float(1 - e);
+    v.scale = float(1 - 0.08 * e);
+  } else {
+    v.alpha = 1;
+    v.scale = 1;
+  }
+  v.ring = float(1 - f);
+  return v;
+}
 
 int rnf_practice_history_index(double back, int count) {
   if (count <= 0) return 0;

@@ -17,6 +17,7 @@ struct Settings {
   bool showStats = false;
   int flash = 2;  // rn_flash_level: 0 off, 1 low, 2 standard (default: safety first), 3 high
   bool showFlashIndicator = true;
+  bool vtrEffect = true;  // the VTR tape look while rewinding / returning to A (rnf_vtr; display only)
   float uiScale = 1.0f;  // multiplies the automatic scale (window height / 800)
   // CRT display (nesterm physical model; display only). Defaults are nesterm's.
   bool crt = false;
@@ -35,6 +36,7 @@ struct Settings {
   bool pauseAfterRewind = false;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
+  bool practiceCountdown = true;  // 3, 2, 1 after the practice run returned to A (Practice page, View)
   // UI confirm / cancel (rnf_ui_confirm_element): false = east confirms, south goes back (default).
   bool southConfirm = false;
   // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),

@@ -34,7 +34,9 @@ EmulationController::EmulationController(rn_input* input, AudioSink* audio) : in
   ff_ = rnf_fast_forward_new();
   stepRepeater_ = rnf_step_repeater_new();
   practiceLoop_ = rnf_practice_loop_new();
-  history_ = rnf_frame_history_new(60);
+  reel_ = rnf_reel_new(RNF_REEL_CAPACITY);
+  vtr_ = rnf_vtr_new();
+  rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, flashLevel_);
   display_.assign(size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT, 0xFF000000u);
 }
 
@@ -44,7 +46,8 @@ EmulationController::~EmulationController() {
   rnf_fast_forward_free(ff_);
   rnf_step_repeater_free(stepRepeater_);
   rnf_practice_loop_free(practiceLoop_);
-  rnf_frame_history_free(history_);
+  rnf_reel_free(reel_);
+  rnf_vtr_free(vtr_);
 }
 
 void EmulationController::notice(const std::string& s) {
@@ -105,7 +108,10 @@ void EmulationController::install(rn_session* s) {
   practiceSlot_ = -1;
   practiceLength_ = 0;
   rnf_practice_loop_reset(practiceLoop_);
-  rnf_frame_history_release(history_);
+  rnf_reel_release(reel_);
+  countdown_ = 0;
+  rnf_vtr_reset(vtr_);
+  vtrOn_ = false;
   pendingThumb_ = false;
   if (s && rn_get_mode(s) == RN_MODE_PRACTICE) rn_set_mode(s, RN_MODE_RECORD);  // never persisted; defensive
   if (observer) observer->sessionInstalled(s);
@@ -132,9 +138,17 @@ void EmulationController::closeSession() {
 
 // ------------------------------------------------------------------ picture / flash filter
 
+void EmulationController::setVtrEffect(bool on) {
+  vtrEnabled_ = on;
+  rnf_vtr_configure(vtr_, on ? 1 : 0, flashLevel_);
+}
+
+void EmulationController::setPracticeCountdown(bool on) { rnf_practice_loop_set_countdown(practiceLoop_, on ? 1 : 0); }
+
 void EmulationController::setFlashLevel(rn_flash_level l) {
   if (l == flashLevel_) return;
   flashLevel_ = l;
+  rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, l);
   rn_flash_filter_set_level(flash_, l);
   flashAltered_ = false;
   if (l == RN_FLASH_OFF) publishVideo();  // the unfiltered picture right away
@@ -235,6 +249,7 @@ void EmulationController::stepBack(uint64_t n) {
   if (rn_get_mode(session_) == RN_MODE_PRACTICE) {
     rnf_practice_loop_interrupt(practiceLoop_);
     if (rn_rewind(session_, n) == RN_OK) {
+      rnf_reel_truncate(reel_, rn_practice_frame(session_));
       setMuted(true);
       publishVideo();
     } else {
@@ -303,8 +318,26 @@ EmulationController::Tick EmulationController::tick() {
   }
 
   bool practicing = rn_get_mode(s) == RN_MODE_PRACTICE;
-  bool wantRewind = uiRewindHeld_ || (held & RN_HK_REWIND) != 0;
-  bool wantFF = !wantRewind && !practicing && (uiFastForwardHeld_ || (held & RN_HK_FAST_FORWARD) != 0);
+  bool rewindHeld = uiRewindHeld_ || (held & RN_HK_REWIND) != 0;
+  bool ffHeld = uiFastForwardHeld_ || (held & RN_HK_FAST_FORWARD) != 0;
+  bool wantRewind = rewindHeld;
+  if (practicing) {
+    // L2 + R2 together: back to A at once (the same return as at B). While that chord is held and
+    // during the return, L2 does not rewind the run.
+    int rw = 0;
+    if (rnf_practice_loop_shoulders(practiceLoop_, nowSeconds(), practiceSlot_ >= 0 ? 1 : 0, rewindHeld ? 1 : 0,
+                                    ffHeld ? 1 : 0, &rw)) {
+      if (rewinding_) {
+        rewinding_ = false;
+        rewindTicks_ = 0;
+      }
+      practiceRewindStarted_ = false;
+      advanceRemaining_ = 0;
+      setPaused(false);
+    }
+    wantRewind = rw != 0;
+  }
+  bool wantFF = !wantRewind && !practicing && ffHeld;
   if (wantFF && !fastForward_) beginFastForward();
   if (!wantFF && fastForward_) endFastForward();
   fastForward_ = wantFF;
@@ -329,6 +362,7 @@ EmulationController::Tick EmulationController::tick() {
     if (can) {
       if (rn_rewind(s, n) == RN_OK) {
         endOfTake_ = false;
+        if (practicing) rnf_reel_truncate(reel_, rn_practice_frame(s));
         publishVideo(true);
       } else {
         reportError(TR("Rewind failed"));
@@ -378,6 +412,7 @@ EmulationController::Tick EmulationController::tick() {
       if (stepped == 0 && flashAltered_ && !rewinding_) publishVideo(true);
     }
   }
+  tickVtr();
   bool active = flashLevel_ != RN_FLASH_OFF && lastFlashTick_ != 0 && tickCount_ - lastFlashTick_ < 45;
   flashActiveShown_ = active;
   updateStatus();
@@ -421,7 +456,7 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
     notice(TR("Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it"));
   }
   if (const uint32_t* v = rn_video(s)) {
-    if (mode == RN_MODE_PRACTICE) rnf_frame_history_append(history_, v);
+    if (mode == RN_MODE_PRACTICE) rnf_reel_offer(reel_, rn_practice_frame(s), v);
     show(v);
   }
   if (audible && audio_) {
@@ -508,6 +543,7 @@ void EmulationController::tickPractice() {
   bool hasLen = practiceSlot_ >= 0 && practiceLength_ > 0;
   rnf_practice_action a = rnf_practice_loop_tick(practiceLoop_, nowSeconds(), rn_practice_frame(s), hasLen ? 1 : 0,
                                                  hasLen ? practiceLength_ : 0);
+  if (a.kind != RNF_PRACTICE_COUNTDOWN) countdown_ = 0;
   switch (a.kind) {
     case RNF_PRACTICE_STEP: {
       practiceRewindStarted_ = false;
@@ -526,35 +562,99 @@ void EmulationController::tickPractice() {
         rnf_audio_fade_tail(pcm, n, 4, tail.data(), tail.size());
         audio_->push(tail.data(), tail.size());
       }
+      dropInput();
       break;
     }
-    case RNF_PRACTICE_HOLD: break;
+    case RNF_PRACTICE_HOLD: dropInput(); break;
     case RNF_PRACTICE_REWIND_FRAME: {
+      // The 1 s sweep back to A over the reel (from B or wherever L2 + R2 was pressed).
       if (!practiceRewindStarted_) {
         practiceRewindStarted_ = true;
         setMuted(true);
         resetFlashFilter();
       }
-      int idx = rnf_practice_history_index(a.back, rnf_frame_history_count(history_));
-      if (const uint32_t* f = rnf_frame_history_frame(history_, idx)) show(f);
+      int idx = rnf_reel_sweep_index(reel_, a.back);
+      if (const uint32_t* f = idx >= 0 ? rnf_reel_frame(reel_, idx) : nullptr) show(f);
+      dropInput();
       break;
     }
     case RNF_PRACTICE_RESTART: {
       practiceRewindStarted_ = false;
+      dropInput();
       if (practiceSlot_ < 0) return;
       if (rn_practice_goto_a(s, uint32_t(practiceSlot_)) == RN_OK) {
-        rnf_frame_history_clear(history_);
-        // No publish here: rn_video still holds the last practice frame; the next step shows the
-        // frame after A, continuing the rewind motion.
-        resetFlashFilter();
+        arriveAtA();
       } else {
         int slot = practiceSlot_;
         practiceSlot_ = -1;
         practiceLength_ = 0;
+        rnf_practice_loop_interrupt(practiceLoop_);
         markStructureDirty();
         notice(TRF("Point A of section %lld can’t be found, so repeating stopped", {slot + 1}));
       }
       break;
+    }
+    case RNF_PRACTICE_COUNTDOWN:
+      // The picture at A stays; nothing reaches the game.
+      countdown_ = a.count;
+      countdownFraction_ = a.fraction;
+      setMuted(true);
+      dropInput();
+      break;
+  }
+}
+
+void EmulationController::arriveAtA() {
+  rn_session* s = session_;
+  rnf_reel_clear(reel_);
+  // A's own picture (the frame after A, emulated and taken back: the run does not move).
+  rnf_practice_preview_a(s);
+  resetFlashFilter();
+  publishVideo(true);
+}
+
+void EmulationController::dropInput() {
+  uint8_t p1 = 0, p2 = 0;
+  rn_input_sample_game(input_, practiceSeq_++, &p1, &p2);
+}
+
+void EmulationController::abortCountdown() {
+  if (!session_ || rn_get_mode(session_) != RN_MODE_PRACTICE) return;
+  if (rnf_practice_loop_phase(practiceLoop_, nullptr) != RNF_PHASE_COUNTDOWN) return;
+  stopPractice();
+}
+
+// The VTR effect over the picture: the return sweep, L2 rewind, R2 fast-forward (lighter). Runs only
+// while it is active (fading in / out); otherwise display_ is untouched (zero cost).
+void EmulationController::tickVtr() {
+  rnf_vtr_kind want = RNF_VTR_NONE;
+  if (session_) {
+    double since = 0;
+    bool practicing = rn_get_mode(session_) == RN_MODE_PRACTICE;
+    if (practicing && rnf_practice_loop_phase(practiceLoop_, &since) == RNF_PHASE_REWINDING) want = RNF_VTR_RETURN;
+    else if (rewinding_) want = RNF_VTR_REWIND;
+    else if (fastForward_ && rnf_fast_forward_active(ff_) && !ffBlocked_) want = RNF_VTR_FAST_FORWARD;
+  }
+  if (want == RNF_VTR_NONE && !vtrOn_ && !rnf_vtr_active(vtr_)) return;
+  rnf_vtr_params p = rnf_vtr_tick(vtr_, nowSeconds(), want);
+  if (p.strength > 0) {
+    if (!vtrOn_ || pictureDirty_) {
+      // A new clean picture this tick (or the first): it is the effect's source from now on.
+      vtrBase_.assign(display_.begin(), display_.end());
+      vtrBaseSignal_ = signal_;
+      vtrOn_ = true;
+    }
+    rnf_vtr_apply(vtrBase_.data(), display_.data(), &p);
+    signal_ = vtrBaseSignal_;
+    signal_.codes = nullptr;  // the CRT takes the altered picture (RGB), not the PPU codes
+    signal_.ordinal = ++pictureOrdinal_;
+    pictureDirty_ = true;
+  } else if (vtrOn_) {
+    vtrOn_ = false;
+    if (!pictureDirty_) {
+      display_.assign(vtrBase_.begin(), vtrBase_.end());
+      signal_ = vtrBaseSignal_;
+      pictureDirty_ = true;
     }
   }
 }
@@ -585,13 +685,13 @@ void EmulationController::startPractice(int slot) {
   practiceLength_ = si.has_b ? si.length_frames : 0;
   rnf_practice_loop_reset(practiceLoop_);
   practiceRewindStarted_ = false;
-  rnf_frame_history_clear(history_);
   rnf_step_repeater_reset(stepRepeater_);
   advanceRemaining_ = 0;
   endOfTake_ = false;
   setPaused(false);
-  resetFlashFilter();
-  publishVideo();
+  setMuted(true);
+  arriveAtA();
+  rnf_practice_loop_arrive(practiceLoop_, nowSeconds());  // the countdown first, when it is on
   markStructureDirty();
   notice(si.has_b ? TRF("Practice: %@ (returns to A at B and repeats; nothing is recorded)", {info.displayName()})
                   : TRF("Practice: %@ (B isn’t set, so it doesn’t repeat; nothing is recorded)", {info.displayName()}));
@@ -608,7 +708,8 @@ void EmulationController::stopPractice() {
   practiceLength_ = 0;
   rnf_practice_loop_reset(practiceLoop_);
   practiceRewindStarted_ = false;
-  rnf_frame_history_release(history_);
+  rnf_reel_release(reel_);
+  countdown_ = 0;
   setPaused(true);
   advanceRemaining_ = 0;
   setMuted(true);
@@ -635,6 +736,7 @@ void EmulationController::practiceSetA(int slot) {
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
     practiceSlot_ = slot;
     rnf_practice_loop_interrupt(practiceLoop_);
+    rnf_reel_clear(reel_);  // the counter starts again at the new A
   }
   refreshPracticeLength(slot);
   markStructureDirty();
@@ -1097,7 +1199,11 @@ void EmulationController::updateStatus() {
     double since = 0;
     st.practiceLooping = rnf_practice_loop_phase(practiceLoop_, &since) != RNF_PHASE_PLAYING;
     st.practiceLoops = rnf_practice_loop_loops(practiceLoop_);
+    st.countdown = countdown_;
+    st.countdownFraction = countdownFraction_;
   } else {
+    st.countdown = 0;
+    st.countdownFraction = 0;
     st.practiceSlot = -1;
     st.practiceFrame = st.practiceLength = 0;
     st.practiceLooping = false;

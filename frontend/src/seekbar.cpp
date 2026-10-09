@@ -191,4 +191,10 @@ rnf_markers_result rnf_markers_leave(rnf_markers* m) {
   return r;
 }
 
+rnf_seek_face_action rnf_markers_face(const rnf_markers* m, int north) {
+  if (!m || m->editing) return RNF_SEEK_FACE_NONE;
+  if (north) return m->frames.empty() ? RNF_SEEK_FACE_NONE : RNF_SEEK_FACE_PRACTICE;
+  return m->focus >= 0 ? RNF_SEEK_FACE_DELETE_MARKER : RNF_SEEK_FACE_NEXT_SLOT;
+}
+
 }  // extern "C"

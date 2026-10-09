@@ -128,6 +128,8 @@ void App::applySettings() {
   emu_->pauseAfterRewind = settings_.pauseAfterRewind;
   emu_->autosaveInterval = settings_.autosaveInterval;
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
+  emu_->setVtrEffect(settings_.vtrEffect);
+  emu_->setPracticeCountdown(settings_.practiceCountdown);
   audio_.setVolume(settings_.volume);
   DisplayPostProcess pp = renderer_->postProcess();
   pp.crt = opt_.crt >= 0 ? opt_.crt == 1 : settings_.crt;
