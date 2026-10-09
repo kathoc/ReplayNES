@@ -7,7 +7,7 @@
 //                           chord detector, hotkeys, game, menu; PadNavFeed: the UI). Buttons: a b x y
 //                           (by position: a = south, b = east, x = west, y = north), ok / cancel (the UI's
 //                           confirm / cancel: east / south by default), up down left right,
-//                           l1 r1 l2 r2, menu (= start, ≡), view (= back, ⧉), l3 r3
+//                           l1 r1 l2 r2, menu (= start, ≡), view (= back, ⧉), l3 r3, home (guide)
 //   padhold <button> <s>    the same, held for <s> seconds (the script goes on meanwhile)
 //   chord [<ms>]            L1, then R1 <ms> later (default 30), both held 0.2 s: the Quick Menu chord
 //   clickpill               a mouse click on the Menu pill (SDL mouse events at its center)

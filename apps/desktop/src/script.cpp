@@ -39,6 +39,7 @@ bool Script::pushPad(const std::string& logical, bool down) {
       {"menu", SDL_GAMEPAD_BUTTON_START},       {"start", SDL_GAMEPAD_BUTTON_START},
       {"view", SDL_GAMEPAD_BUTTON_BACK},        {"back", SDL_GAMEPAD_BUTTON_BACK},
       {"l3", SDL_GAMEPAD_BUTTON_LEFT_STICK},    {"r3", SDL_GAMEPAD_BUTTON_RIGHT_STICK},
+      {"home", SDL_GAMEPAD_BUTTON_GUIDE},
   };
   SDL_JoystickID id = padId ? padId() : 0;
   SDL_Event e;
