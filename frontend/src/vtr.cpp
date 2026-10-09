@@ -232,14 +232,14 @@ void rnf_vtr_apply(const uint32_t* in, uint32_t* out, const rnf_vtr_params* p) {
   const float jitterAmp = (ff ? 0.25f : 0.45f) * s;
   const float bandShift = (ff ? 2.0f : 4.0f) * s;
   const float bandLift = (ff ? 0.04f : 0.06f) * s;
-  const float streakMix = (ff ? 0.22f : 0.4f) * s;
+  const float streakMix = (ff ? 0.22f : sweep ? 0.48f : 0.4f) * s;
   const float skewAmp = (ff ? 4.0f : 10.0f) * s;
 
   // Two soft tracking-noise bands drifting smoothly (up while rewinding, down for fast-forward).
   struct Band { double height, speed, phase; };
   const Band bands[2] = {
-      {ff ? 5.0 : 13.0, ff ? 95.0 : (sweep ? -100.0 : -70.0), 40.0},
-      {ff ? 4.0 : 9.0, ff ? 140.0 : (sweep ? -140.0 : -95.0), 170.0},
+      {ff ? 5.0 : (sweep ? 17.0 : 13.0), ff ? 95.0 : (sweep ? -100.0 : -70.0), 40.0},
+      {ff ? 4.0 : (sweep ? 11.0 : 9.0), ff ? 140.0 : (sweep ? -140.0 : -95.0), 170.0},
   };
   float bandAt[kH];
   for (int y = 0; y < kH; ++y) bandAt[y] = 0;

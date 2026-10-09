@@ -173,6 +173,7 @@ final class EmulationController {
     private var practiceSeq: UInt64 = 1 << 40 // input sampling clock while practicing (turbo phase)
     private var modeBeforePractice = RN_MODE_RECORD
     private let reel = PracticeReel()   // pictures of the run for the 1 s sweep back to A
+    private var previewA = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))  // A's picture
     private var practiceRewindStarted = false
     private var countdown = 0 {
         didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0) } }
@@ -621,6 +622,12 @@ final class EmulationController {
     /// session when the housekeeping (autosave) may run afterwards.
     private func tickFrame() -> (EngineSession?, autosave: Bool) {
         let r = tickFrameCore()
+        if paused && countdown != 0, let s = session, isPracticing {
+            // Paused in the countdown (the seek bar, the menu): the numeral goes; it comes back on resume.
+            countdown = 0
+            previewA.withUnsafeBufferPointer { show($0.baseAddress!, meta: FrameMeta(frame: s.frame)) }
+            statusDirty = true
+        }
         if session != nil { tickVTR() }
         return r
     }
@@ -854,7 +861,7 @@ final class EmulationController {
             countdownFraction = fraction
             audio.setMuted(true)
             dropInput()
-            if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }   // display only: no latency sample
+            previewA.withUnsafeBufferPointer { show($0.baseAddress!, meta: FrameMeta(frame: s.frame)) }   // display only
         }
     }
 
@@ -864,7 +871,10 @@ final class EmulationController {
         reel.clear()
         _ = rnf_practice_preview_a(s.handle)
         resetFlashFilter()
-        publishVideo(continuous: true)
+        // A copy, without the PPU codes: after the step is taken back their burst phase no longer
+        // matches (the CRT would tint it), so the CRT takes the RGB picture like during the sweep.
+        if let v = s.video { previewA.withUnsafeMutableBufferPointer { $0.baseAddress!.update(from: v, count: $0.count) } }
+        previewA.withUnsafeBufferPointer { show($0.baseAddress!, meta: FrameMeta(frame: s.frame)) }
     }
 
     /// The game input of a tick that emulates nothing (hold, sweep, countdown): sampled and dropped,

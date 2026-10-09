@@ -10,10 +10,10 @@ Applies to macOS (SwiftUI), Linux/Steam Deck and Windows (shared ImGui frontend 
 | **L+R together** (both pressed within 100 ms; either order) | open Quick Menu (pauses) | open Quick Menu | close Quick Menu (resume) |
 | R alone (fires on **release**) | pause — shows only the seek bar (no menu) | step forward 1 frame (held ≥ 400 ms: repeats) | next page (L1/R1 page switching) |
 | L alone (fires on **release**) | slow ½ toggle | step back 1 frame (held ≥ 400 ms: repeats) | previous page |
-| L2 / R2 hold | rewind / fast-forward | rewind / fast-forward | rewind / fast-forward |
+| L2 / R2 hold | rewind / fast-forward (VTR look, see below); practicing: **L2 + R2 together = back to A now** | rewind / fast-forward | rewind / fast-forward |
 | D-pad / stick | game | ← → step 1 frame; ↑ to the markers | move focus |
 | Confirm (**east** by default) / cancel (**south**) | game | confirm tapped = drop a marker; **cancel tapped = resume** | confirm / back (back on the top level = resume) |
-| Y / X | game | Y tapped = next A/B slot; X = delete the focused marker | contextual (rename / clear …), shown in the hint bar |
+| Y / X | game | Y tapped = practice the selected slot's section; X tapped = next A/B slot (a focused marker: X deletes it) | contextual (rename / clear …), shown in the hint bar |
 | Keyboard | Space = pause | Space = resume | Esc = open/close menu, Enter = confirm, Backspace = back, arrows = move |
 
 - Chord detection lives in the shared core (`frontend/`, C API `rnf_chord_*`) so all platforms behave identically. **ALONE_UP is the trigger**: L or R alone act only on their release, so a single press never interferes with the L+R chord (ALONE_DOWN only means "held alone": a member bound to a game button is held from there, a held marker moves). While paused the core's repeat mode (`rnf_chord_set_repeat`) fires ALONE_REPEAT at press + 400 ms and every 50 ms after (frame steps); the release then reports the repeats and does not step again. A chorded member never repeats.
@@ -42,7 +42,7 @@ Applies to macOS (SwiftUI), Linux/Steam Deck and Windows (shared ImGui frontend 
 
 ### Settings pages (≤ 6 rows each, 2 columns; deeper detail one level further)
 
-- **画面 / Display:** サイズ (等倍 | FILL) · ブラウン管 (on/off) · 8:7 (on/off) · 点滅を抑える (切 弱 中 強) · 端を隠す (on/off) · ブラウン管の詳細 ›
+- **画面 / Display:** サイズ (等倍 | FILL) · ブラウン管 (on/off) · 点滅を抑える (切 弱 中 強) · ビデオ演出 / VTR Effect (on/off, default on) · 画面の形 / Picture Shape › (8:7 · 端を隠す) · ブラウン管の詳細 ›. (2026-10-09: VTR Effect joined this page; 8:7 and Hide Edges - set once, both about the picture's shape - moved one level down so the page keeps six rows and the depth stays 3.)
 - **操作 / Controls:** コントローラー › (diagram page) · キーボード › · 決定ボタン (east | south, as glyph pairs) · 一時停止中の十字キー (on/off) · 画面キーボード (自動 | 内蔵 | Steam; Linux only) · 詳細 › (巻き戻し後に一時停止 (off by default since 0.5.1) · 連射の速さ · 連射の押す長さ · 逆方向の同時押し · スティックのしきい値 · 初期設定に戻す)
 - **音 / Sound:** 音量 (slider) · スロー中の音 (on/off if supported) · 低遅延 (on/off where applicable)
 - **システム / System:** 言語 (自動 | 日本語 | English) · アップデート › · Steamに追加 (Linux) · バージョン情報 ›
@@ -90,19 +90,39 @@ No system alerts while the user can be on the controller: every question is an *
 ## Seek bar while paused (R)
 
 - Only the filmstrip seek bar + time + the Menu pill; L / R (released) and D-pad ← → step one frame, L2/R2 rewind / fast-forward; the A/B lane stays.
-- The cancel button resumes as a **tap** (default south): pressed while paused it still reaches the game, and resumes on release only if nothing else was pressed or stepped while held. So a button can be held across frame steps (hold B to run, step with →) without resuming; a quick tap still resumes. Confirm (drop a marker), ↑ (to the markers) and Y (next A/B slot) are taps the same way. Space and the pill / menu resume too; the hint bar shows it.
+- The cancel button resumes as a **tap** (default south): pressed while paused it still reaches the game, and resumes on release only if nothing else was pressed or stepped while held. So a button can be held across frame steps (hold B to run, step with →) without resuming; a quick tap still resumes. Confirm (drop a marker), ↑ (to the markers), Y (practice) and X (next A/B slot) are taps the same way. Space and the pill / menu resume too; the hint bar shows it.
 - Tap rather than a dedicated button: (considered: resuming only with a focused "Resume" affordance — rejected, the bar has no focus by default; consuming the buttons outright — rejected, it broke held-button frame advance.)
 
 ### A/B markers (controller)
 
-The markers are the controller's view of the **selected A/B slot** ("A/B n" in the hint bar; Y tapped picks the next slot; also the slot last used on the Practice page) on the active take. State machine: `rnf_markers_*` in the shared core (pure, tested); both frontends only apply its results.
+The markers are the controller's view of the **selected A/B slot** ("A/B n" in the hint bar; X tapped on the bar picks the next slot; also the slot last used on the Practice page) on the active take. State machine: `rnf_markers_*` in the shared core (pure, tested); both frontends only apply its results.
 
 - Focus on the bar: confirm drops a marker at the playhead — none → the slot becomes "A only" there; one → the two markers become the range (left = A, right = B: `rn_practice_set_range`); two → nothing but a subtle hint ("X deletes one"); a marker already at the playhead → hint.
 - ↑ (when ≥ 1 marker) focuses the marker nearest the playhead; ← → pick the other; ↓ or cancel back to the bar. While a marker has the focus, the pad belongs to the seek bar (nothing reaches the game).
 - Confirm on a marker = edit: the picture follows it (seek preview); ← → ±1 frame (repeats while held); L / R held move it continuously with `rnf_hold_speed` (the rewind / fast-forward curve). It never sits on the other marker (it skips over it; the two swap roles A ⇄ B automatically) and stays within 0 … take length. Confirm commits (writes the range / "A only"), focus back to the bar, the playhead stays at the marker. Cancel reverts the marker and the playhead. Opening the menu / resuming while editing reverts too.
 - X on a focused marker deletes it: one of two → the slot becomes "A only" at the other marker (its section length is cleared, the least surprising: the remaining flag stays where it is); the last one → the slot is cleared.
-- Visuals: small flags on the lane above the filmstrip with a pole through it, in the slot's color (A's flag left of its pole, B's right; letters only once both exist); focus ring on the focused flag, brand red + thicker ring while editing. The hint bar lists the buttons of the state: bar (cancel Resume · L R Step · confirm Marker · ↑ Markers · Y A/B n), marker (←→ A ⇄ B · confirm Move · X Delete · cancel Back), editing (←→ ±1 · L R Move · confirm Done · cancel Undo).
+- Visuals: small flags on the lane above the filmstrip with a pole through it, in the slot's color (A's flag left of its pole, B's right; letters only once both exist); focus ring on the focused flag, brand red + thicker ring while editing. The hint bar lists the buttons of the state: bar (cancel Resume · L R Step · confirm Marker · ↑ Markers · Y Practice (when the slot has a section) · X A/B n), marker (←→ A ⇄ B · confirm Move · X Delete · cancel Back), editing (←→ ±1 · L R Move · confirm Done · cancel Undo).
 - Practicing: no markers (the bar shows the practice run). The mouse / touch timeline (drag a range, handles) is unchanged.
+- **Y = practice** (2026-10-09): Y tapped on the bar (or with a marker focused, not while editing) starts practice of the selected slot from its A when the slot has a section on this take - A and B, or A only (then it plays without a loop, like the Practice page). The decision (`rnf_markers_face`: Y practice / X next slot / X delete) is the shared core's. Slot cycling moved from Y to X: X on the bar = next slot, X on a focused marker = delete it (unchanged).
+
+## Practice: return to A (2026-10-09)
+
+One sequence for every arrival at A - reaching B, **L2 + R2** pressed together while practicing (from anywhere in the section), starting practice (menu, seek bar Y): brief hold (at B only, 0.5 s) → **1 s VTR rewind** → A's picture → **3, 2, 1** → play. State machine `rnf_practice_loop` (shared core, tested on a fake clock); the frontends only apply its actions.
+
+- **Rewind sweep:** always exactly `RNF_PRACTICE_REWIND_SECONDS` = 1 s, whatever the section length: the pictures run backwards from B (or where L2 + R2 was pressed) to A evenly over that second. They come from the run's **reel** (`rnf_reel`): during the run every picture is offered with its position; it keeps ≤ 120 full frames evenly spread from A (stride k keeps positions with (p − 1) mod k = 0, so the frame after A is always there; when full every other one is dropped and the stride doubles; dropping only reorders slot indices, no pixels move). Display only: never touches emulation or determinism; a practice rewind (L2) truncates it; freed when practice ends.
+- **A's picture:** after going to A the run emulates the frame after A with no input and takes it back (`rnf_practice_preview_a`: one step + `rn_rewind(1)`; the state, counter and A's continuity are exactly as before), so the countdown shows A, not a stale picture.
+- **Countdown:** a large centered numeral (3, 2, 1; one per second) on a soft dark disc with a thin ring running down the second; subtle scale-in (1.14 → 1) / fade-in, hold, fade-out (`rnf_practice_countdown_visual`, the same curves everywhere). Drawn inside the game's own pass (Metal texture on macOS, ImGui's draw list in the same Vulkan / D3D11 pass), so full screen stays direct-to-display. Setting: **Countdown on/off** (default on) on the **Practice page** - the Options button (⧉ / View / −; keyboard Tab, macOS S) toggles it, the hint bar shows "Countdown: On / Off" (clickable). (Controls › More is full at six rows; the Practice page is where practice is set up.) Off: play resumes right after the sweep.
+- **Input during hold / sweep / countdown:** nothing is emulated; the game input is sampled and dropped every tick, so a tap there is not latched into the first frame afterwards; a button held through the countdown counts from the first frame (hold → to run off at once). L2 does not rewind the run during the return (or while the L2 + R2 chord is still held); the chord during a return is ignored. The L+R menu works as always; the **cancel button tapped** during the countdown (pressed and released within it, nothing else pressed) ends practice (back to the take, paused) - a press held from before the countdown never counts.
+- **Pauses and dialogs:** time that does not tick (paused, the menu, a dialog) is not counted - the countdown resumes where it was. A modal UI holds the practice run (`modalHold`): it never plays on behind a dialog. The L2 + R2 chord only acts while playing (paused it latches and does nothing).
+- **Audio:** stays muted through the sweep and the countdown (a short fade tail when the chord interrupts play, as at B). No tape whir.
+
+## VTR effect (2026-10-09)
+
+The tape-rewind look (`rnf_vtr`, shared core): two soft horizontal tracking-noise bands drifting smoothly (upwards while rewinding, downwards for fast-forward), low-contrast light / dark noise streaks inside them (changing at 30 Hz), a slight line wobble and the head-switching skew of the last lines, mild chroma bleed (the colour smears ~2 px right), desaturation and slightly lifted blacks.
+
+- **Where:** the practice return sweep (full), in-game **L2 rewind** (subtle: 60 %), **R2 fast-forward: a lighter "FF" variant** - thin bands moving down, slight wobble, no colour change (50 % of that) - so both directions read as "tape is moving" while the picture stays readable for finding a spot. Fades in over 0.12 s, out over 0.25 s.
+- **How:** a CPU pass on the 256×240 picture (≈ 0.3 ms on an M-series Mac), after the flash filter and before the renderer: the same look on Metal, Vulkan and D3D11, through the CRT (which then takes the RGB picture instead of the PPU codes, like flash-filtered frames) and in stream output. It runs only while active (rewinding, returning, fading); otherwise nothing is touched - zero cost in normal play.
+- **Photosensitivity:** never a large-area flash: luminance-neutral parts dominate (desaturation, chroma, wobble); brightness changes are small (mean luminance moves < 5 %, < 1 % between frames); the noise flickers only inside the bands (< 8 % of the picture changes by > 10 % between frames, WCAG's flash area is 25 %); the bands move smoothly (no random jumps). Reduce Flashing tones it down further (Low 85 %, Standard 60 %, High 40 %). Unit-tested on black, white, grey, SMB-like and checkerboard pictures. **Settings › Display › VTR Effect** (default on) turns it off everywhere.
 
 ## First run
 

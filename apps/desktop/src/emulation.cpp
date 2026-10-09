@@ -421,6 +421,8 @@ EmulationController::Tick EmulationController::tick() {
       if (stepped == 0 && flashAltered_ && !rewinding_) publishVideo(true);
     }
   }
+  // Paused in the countdown (the seek bar, the menu): the numeral goes; it comes back on resume.
+  if (paused_ && countdown_ != 0) countdown_ = 0;
   tickVtr();
   bool active = flashLevel_ != RN_FLASH_OFF && lastFlashTick_ != 0 && tickCount_ - lastFlashTick_ < 45;
   flashActiveShown_ = active;
@@ -616,10 +618,15 @@ void EmulationController::tickPractice() {
 void EmulationController::arriveAtA() {
   rn_session* s = session_;
   rnf_reel_clear(reel_);
-  // A's own picture (the frame after A, emulated and taken back: the run does not move).
+  // A's own picture (the frame after A, emulated and taken back: the run does not move). Shown as a
+  // copy, without the PPU codes: after the step is taken back their burst phase no longer matches
+  // (the CRT would tint it), so the CRT takes the RGB picture like during the sweep.
   rnf_practice_preview_a(s);
   resetFlashFilter();
-  publishVideo(true);
+  if (const uint32_t* v = rn_video(s)) {
+    previewA_.assign(v, v + size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT);
+    show(previewA_.data());
+  }
 }
 
 void EmulationController::dropInput() {
