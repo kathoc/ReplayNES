@@ -668,7 +668,8 @@ final class EmulationController {
             audio.setMuted(!audible)
             var stepped = 0
             for _ in 0..<steps {
-                if !stepOnce(s, audible: audible) { break }
+                // Paused steps are navigation: inside the take they replay it (never a new take).
+                if !stepOnce(s, audible: audible, frameStep: paused) { break }
                 stepped += 1
             }
             // A frame held back by the flash filter while nothing new is emulated (pause, slow
@@ -943,8 +944,10 @@ final class EmulationController {
     }
 
     /// Emulates exactly one frame. Returns false if nothing was emulated (end of take / error).
+    /// frameStep: a paused frame advance (rnf_transport_step: replays inside the take, records only
+    /// at its end); otherwise live play (records in record mode, branching mid-take).
     @discardableResult
-    func stepOnce(_ s: EngineSession, audible: Bool, publish: Bool = true) -> Bool {
+    func stepOnce(_ s: EngineSession, audible: Bool, publish: Bool = true, frameStep: Bool = false) -> Bool {
         let mode = s.mode
         let live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE
         let tSample = HostClock.now()
@@ -962,7 +965,7 @@ final class EmulationController {
         let before = s.frame
         let info: rn_step_info
         do {
-            info = try s.step(p1: p1, p2: p2, events: ev)
+            info = try frameStep ? s.transportStep(p1: p1, p2: p2, events: ev) : s.step(p1: p1, p2: p2, events: ev)
         } catch {
             paused = true
             advanceRemaining = 0
@@ -980,7 +983,7 @@ final class EmulationController {
         endOfTake = false
         if info.branched != 0 {
             structureDirty = true
-            notice(String(localized: "Started a new take. Use “Back to Previous Take” to return to the old continuation"))
+            notice(String(localized: "Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it"))
         }
         let tEmu = HostClock.now()
         if let v = s.video {

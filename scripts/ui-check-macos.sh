@@ -12,7 +12,7 @@
 # (scripts/macos-vm/reset.sh && scripts/macos-vm/start.sh); stop it afterwards (stop.sh).
 #   scripts/ui-check-macos.sh [app]          (default build/ReplayNES.app; generated test ROM)
 #   EMPTY=1 ...                              also the empty library (no game open)
-#   ONLY="input flows" ...                   a subset: input, flows (pad flows), walk
+#   ONLY="input flows" ...                   a subset: input, step (paused frame step), flows (pad flows), walk
 #   LOCAL=1 ...                              run the app on this Mac instead (needs a GUI login session;
 #                                            no flows by default: they change the bindings / settings)
 set -euo pipefail
@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:-$ROOT/build/ReplayNES.app}"
 CLI="$ROOT/build/tools/replaynes-cli/replaynes-cli"
 OUT="${OUT:-$ROOT/build/ui-check}"
-if [ "${LOCAL:-0}" = 1 ]; then ONLY="${ONLY:-input walk}"; else ONLY="${ONLY:-input flows walk}"; fi
+if [ "${LOCAL:-0}" = 1 ]; then ONLY="${ONLY:-input step walk}"; else ONLY="${ONLY:-input step flows walk}"; fi
 [ -d "$APP" ] || { echo "app not found: $APP"; exit 1; }
 [ -x "$CLI" ] || { echo "replaynes-cli not found: $CLI (cmake --build build)"; exit 1; }
 rm -rf "$OUT" && mkdir -p "$OUT"
@@ -127,6 +127,41 @@ sys.exit(1 if bad else 0)
 PY
 }
 
+# Paused frame step inside the take (v0.5.0 bug: R while paused before the take end recorded a
+# frame with live input and started a new take): record ~4 s, R pauses, L2 held rewinds, then R
+# (released) x4 and D-pad → x2 step 6 frames along the SAME take (length / take count unchanged,
+# still paused, still record mode); a tap of south then resumes there = a new take (count + 1).
+step_check() {
+  local name="step" d="$G/step"
+  local pad="5:rightShoulder:d,5.05:rightShoulder:u,6:leftTrigger:d,6.6:leftTrigger:u"
+  pad="$pad,8:rightShoulder:d,8.05:rightShoulder:u,8.5:rightShoulder:d,8.55:rightShoulder:u"
+  pad="$pad,9:rightShoulder:d,9.05:rightShoulder:u,9.5:rightShoulder:d,9.55:rightShoulder:u"
+  pad="$pad,10:dpad.right:d,10.05:dpad.right:u,10.5:dpad.right:d,10.55:dpad.right:u"
+  pad="$pad,12:face.south:d,12.05:face.south:u"
+  app "$name" --rom "$ROM" --autoplay --library-root "$d/library" --session-root "$d/session" "${COMMON[@]}" \
+    --inject-pad "$pad" --snapshot-at "7.5:$d/a.png,11.5:$d/b.png,14:$d/c.png" \
+    --test-actions "0.5:screen:0,15:quit" -AppleLanguages "(en)"
+  fetch "$name"
+  python3 - "$OUT/$name" <<'PY' || fail=1
+import json, sys
+d = sys.argv[1]
+a, b, c = (json.load(open(f"{d}/{k}.json")) for k in "abc")
+bad = []
+def check(cond, msg):
+    if not cond: bad.append(msg)
+check(a["paused"] and a["recording"], f"a: paused {a['paused']} recording {a['recording']}")
+check(0 < a["statusFrame"] < a["takeLength"] - 6, f"a: not rewound inside the take ({a['statusFrame']} / {a['takeLength']})")
+check(b["statusFrame"] == a["statusFrame"] + 6, f"steps: frame {a['statusFrame']} -> {b['statusFrame']}, want +6")
+check((b["takeLength"], b["takeCount"], b["activeTake"]) == (a["takeLength"], a["takeCount"], a["activeTake"]),
+      f"steps changed the take: {(a['takeLength'], a['takeCount'], a['activeTake'])} -> {(b['takeLength'], b['takeCount'], b['activeTake'])}")
+check(b["paused"] and b["recording"], f"b: paused {b['paused']} recording {b['recording']}")
+check(not c["paused"] and c["takeCount"] == a["takeCount"] + 1, f"resume: paused {c['paused']} takes {a['takeCount']} -> {c['takeCount']}")
+print(f"{d}: paused frame step " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
+      + f" (frame {a['statusFrame']} -> {b['statusFrame']} of {a['takeLength']}, takes {a['takeCount']} -> {c['takeCount']})")
+sys.exit(1 if bad else 0)
+PY
+}
+
 # Controller-only flows (--inject-pad, a listed test pad: --fake-controller):
 #  controller: Settings › Controls › Controller, the D-pad moves the focus between the buttons on
 #   the picture, east opens the action picker (focus on the current action), R = next sheet, east
@@ -211,6 +246,7 @@ PY
 }
 
 want input && input_check
+want step && step_check
 want flows && flows
 if want walk; then
   for lang in en ja; do

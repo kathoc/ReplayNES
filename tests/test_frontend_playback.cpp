@@ -231,6 +231,128 @@ TEST_CASE("fast-forward stops at the take end without recording") {
   rn_session_close(s);
 }
 
+// Bug (v0.5.0, Steam Deck): paused in record mode before the take end, R (frame advance)
+// recorded a frame with live input -> "Started a new take", the rest of the take hidden. A paused
+// step is navigation: it replays the take and only records at the take end.
+TEST_CASE("paused frame step replays inside the take and never branches") {
+  std::string tmp;
+  rn_session* s = newSession(tmp);
+  record(s, 120);
+  const uint64_t take = rn_active_take(s);
+  std::vector<uint64_t> ref(121);
+  for (uint64_t f = 40; f <= 120; ++f) {
+    REQUIRE_EQ(rn_seek(s, f), RN_OK);
+    ref[f] = rn_state_hash(s);
+  }
+
+  // The old path (rn_step with live input mid-take) is what branched.
+  REQUIRE_EQ(rn_seek(s, 50), RN_OK);
+  {
+    rn_step_info info{};
+    REQUIRE_EQ(rn_step(s, RN_BTN_B, 0, 0, &info), RN_OK);
+    CHECK(info.branched);
+    REQUIRE_EQ(rn_undo_take_switch(s), RN_OK);
+    CHECK_EQ(rn_active_take(s), take);
+    CHECK_EQ(rn_take_length(s), uint64_t(120));
+  }
+  const size_t takes = rn_take_count(s);  // the contrast branch is kept as a take
+
+  REQUIRE_EQ(rn_seek(s, 50), RN_OK);
+  for (uint64_t k = 1; k <= 8; ++k) {
+    rn_step_info info{};
+    REQUIRE_EQ(rnf_transport_step(s, RN_BTN_B, RN_BTN_A, 0, &info), RN_OK);  // live input differs
+    CHECK_FALSE(info.branched);
+    CHECK_FALSE(info.end_of_take);
+    CHECK_EQ(info.mode, RN_MODE_RECORD);
+    CHECK_EQ(info.frame, 50 + k);
+    CHECK_EQ(rn_frame(s), 50 + k);
+    CHECK_EQ(rn_get_mode(s), RN_MODE_RECORD);
+    CHECK_EQ(rn_active_take(s), take);
+    CHECK_EQ(rn_take_count(s), takes);
+    CHECK_EQ(rn_take_length(s), uint64_t(120));
+    CHECK_EQ(rn_state_hash(s), ref[50 + k]);  // the recorded frame was emulated
+  }
+  // Step back then forward again (hold-to-repeat in both directions).
+  REQUIRE_EQ(rn_seek(s, rn_frame(s) - 3), RN_OK);
+  for (int k = 0; k < 3; ++k) REQUIRE_EQ(rnf_transport_step(s, RN_BTN_START, 0, 0, nullptr), RN_OK);
+  CHECK_EQ(rn_frame(s), uint64_t(58));
+  CHECK_EQ(rn_state_hash(s), ref[58]);
+  CHECK_EQ(rn_take_count(s), takes);
+  CHECK_EQ(rn_undo_depth(s), size_t(0));
+  // Step all the way to the end: still the same take, same content.
+  while (rn_frame(s) < 120) REQUIRE_EQ(rnf_transport_step(s, RN_BTN_B, 0, 0, nullptr), RN_OK);
+  CHECK_EQ(rn_state_hash(s), ref[120]);
+  CHECK_EQ(rn_take_count(s), takes);
+  CHECK_EQ(rn_take_length(s), uint64_t(120));
+
+  // At the take end a step extends the recording by one frame (TAS frame advance).
+  {
+    rn_step_info info{};
+    REQUIRE_EQ(rnf_transport_step(s, RN_BTN_A, 0, 0, &info), RN_OK);
+    CHECK_FALSE(info.branched);
+    CHECK_EQ(info.p1, uint8_t(RN_BTN_A));
+    CHECK_EQ(rn_frame(s), uint64_t(121));
+    CHECK_EQ(rn_take_length(s), uint64_t(121));
+    CHECK_EQ(rn_active_take(s), take);
+    CHECK_EQ(rn_take_count(s), takes);
+  }
+
+  // Resuming play (live rn_step) from an earlier frame still branches ("record again from here").
+  REQUIRE_EQ(rn_seek(s, 60), RN_OK);
+  REQUIRE_EQ(rnf_transport_step(s, 0, 0, 0, nullptr), RN_OK);
+  {
+    rn_step_info info{};
+    REQUIRE_EQ(rn_step(s, RN_BTN_B, 0, 0, &info), RN_OK);
+    CHECK(info.branched);
+    CHECK_EQ(rn_take_count(s), takes + 1);
+    CHECK_EQ(rn_take_length(s), uint64_t(62));
+    REQUIRE_EQ(rn_undo_take_switch(s), RN_OK);  // "Back to Previous Take" restores the old future
+    CHECK_EQ(rn_active_take(s), take);
+    CHECK_EQ(rn_take_length(s), uint64_t(121));
+    REQUIRE_EQ(rn_seek(s, 120), RN_OK);
+    CHECK_EQ(rn_state_hash(s), ref[120]);
+  }
+  rn_session_close(s);
+}
+
+TEST_CASE("paused frame step: events record, replay and practice step like rn_step") {
+  std::string tmp;
+  rn_session* s = newSession(tmp);
+  record(s, 90);
+  const size_t takes = rn_take_count(s);
+  // A reset requested while paused mid-take is an explicit edit: recorded, so it branches.
+  REQUIRE_EQ(rn_seek(s, 30), RN_OK);
+  rn_step_info info{};
+  REQUIRE_EQ(rnf_transport_step(s, 0, 0, RN_EV_SOFT_RESET, &info), RN_OK);
+  CHECK(info.branched);
+  CHECK_EQ(info.events, uint8_t(RN_EV_SOFT_RESET));
+  CHECK_EQ(rn_take_count(s), takes + 1);
+  REQUIRE_EQ(rn_undo_take_switch(s), RN_OK);
+  CHECK_EQ(rn_take_length(s), uint64_t(90));
+
+  // Replay mode: the recorded frame; at the end nothing is emulated.
+  REQUIRE_EQ(rn_set_mode(s, RN_MODE_REPLAY), RN_OK);
+  REQUIRE_EQ(rn_seek(s, 89), RN_OK);
+  REQUIRE_EQ(rnf_transport_step(s, RN_BTN_B, 0, 0, &info), RN_OK);
+  CHECK_EQ(rn_frame(s), uint64_t(90));
+  REQUIRE_EQ(rnf_transport_step(s, RN_BTN_B, 0, 0, &info), RN_OK);
+  CHECK(info.end_of_take);
+  CHECK_EQ(info.frame, uint64_t(90));
+  CHECK_EQ(rn_take_length(s), uint64_t(90));
+
+  // Practice: emulates with live input and records nothing.
+  REQUIRE_EQ(rn_set_mode(s, RN_MODE_RECORD), RN_OK);
+  REQUIRE_EQ(rn_seek(s, 20), RN_OK);
+  REQUIRE_EQ(rn_set_mode(s, RN_MODE_PRACTICE), RN_OK);
+  for (int k = 0; k < 5; ++k) REQUIRE_EQ(rnf_transport_step(s, RN_BTN_RIGHT, 0, 0, &info), RN_OK);
+  CHECK_EQ(rn_practice_frame(s), uint64_t(5));
+  CHECK_EQ(rn_frame(s), uint64_t(20));
+  CHECK_EQ(rn_take_length(s), uint64_t(90));
+  CHECK_EQ(rn_take_count(s), takes + 1);
+  CHECK_EQ(rnf_transport_step(nullptr, 0, 0, 0, nullptr), RN_ERR_INVALID_ARG);
+  rn_session_close(s);
+}
+
 TEST_CASE("audio fade tail") {
   std::vector<int16_t> src(800, 12000), tail(3200);
   REQUIRE_EQ(rnf_audio_fade_tail(src.data(), src.size(), 4, tail.data(), tail.size()), size_t(3200));

@@ -154,6 +154,15 @@ final class EngineSession {
         return info
     }
 
+    /// Paused frame step forward (rnf_transport_step): replays the recorded frame inside the take
+    /// (never branches), records one frame only at the take end; replay / practice = step.
+    @discardableResult
+    func transportStep(p1: UInt8, p2: UInt8, events: UInt8) throws -> rn_step_info {
+        var info = rn_step_info()
+        try rnCheck(rnf_transport_step(handle, p1, p2, events, &info))
+        return info
+    }
+
     var video: UnsafePointer<UInt32>? { rn_video(handle) }
     /// Display-only raw PPU output of the picture in `video` (CRT signal path); nil if unsupported.
     var videoIndices: rn_video_indices_info? {

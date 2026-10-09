@@ -196,4 +196,34 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertEqual(s.activeTake, take)
         XCTAssertEqual(s.takes().count, takes, "no branch was created")
     }
+
+    // MARK: paused frame step (v0.5.0 bug: R while paused mid-take created a new take)
+
+    func testPausedFrameStepReplaysInsideTakeAndRecordsOnlyAtEnd() throws {
+        let s = try newSession()
+        try record(s, 100)
+        try s.seek(45)
+        let expected = s.stateHash()
+        try s.seek(40)
+        let take = s.activeTake, takes = s.takes().count
+        for k in 1...5 {
+            let info = try s.transportStep(p1: UInt8(RN_BTN_B), p2: 0, events: 0)
+            XCTAssertEqual(info.branched, 0, "a paused step is navigation")
+            XCTAssertEqual(s.frame, UInt64(40 + k))
+        }
+        XCTAssertEqual(s.mode, RN_MODE_RECORD)
+        XCTAssertEqual(s.stateHash(), expected, "the recorded frames were replayed")
+        XCTAssertEqual(s.activeTake, take)
+        XCTAssertEqual(s.takes().count, takes)
+        XCTAssertEqual(s.takeLength, 100)
+        try s.seek(100)
+        let info = try s.transportStep(p1: UInt8(RN_BTN_A), p2: 0, events: 0)
+        XCTAssertEqual(info.branched, 0)
+        XCTAssertEqual(s.takeLength, 101, "at the take end a step records one frame")
+        XCTAssertEqual(s.activeTake, take)
+        try s.seek(50)
+        let played = try s.step(p1: UInt8(RN_BTN_B), p2: 0, events: 0)
+        XCTAssertEqual(played.branched, 1, "resuming play mid-take still branches")
+        XCTAssertEqual(s.takes().count, takes + 1)
+    }
 }

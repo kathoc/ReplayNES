@@ -1055,6 +1055,20 @@ typedef struct rnf_record_toggle_plan {
 rnf_record_toggle_plan rnf_record_toggle(int recording, uint64_t frame, uint64_t take_length);
 int rnf_record_toggle_restarts_on_play(int recording, int practicing, uint64_t frame, uint64_t take_length);
 
+/* One paused frame step forward ("frame advance": R / D-pad right / hotkey / menu, also the
+ * hold-to-repeat steps). Stepping is NAVIGATION on the take, like scrubbing or fast-forward:
+ *   RECORD, cursor < take length, events == 0: emulates the RECORDED input of that frame (live
+ *     p1/p2 are ignored); never branches, the take (takes, lengths, inputs) is unchanged.
+ *   RECORD at the take end: records one frame with (p1, p2) = TAS-style frame advance (extends
+ *     the take, no branch).
+ *   events != 0 (a reset / power cycle requested while paused) is an explicit edit: recorded with
+ *     the live input like rn_step, so mid-take it branches (the old continuation stays a take).
+ *   REPLAY / PRACTICE: exactly rn_step.
+ * Branching on purpose = resuming play (rn_step) from an earlier frame in RECORD. Stepping back is
+ * rn_seek (take) / rn_rewind (practice). info (may be NULL) reports the session mode afterwards
+ * (RECORD stays RECORD); branched is 0 for a replayed step. */
+rn_status rnf_transport_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info);
+
 /* Paused D-pad stepping with key repeat: press steps at once, tick yields the repeats. */
 #define RNF_STEP_REPEAT_INITIAL_DELAY 18
 #define RNF_STEP_REPEAT_INTERVAL 3

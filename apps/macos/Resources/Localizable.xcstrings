@@ -5269,6 +5269,16 @@
         }
       }
     },
+    "Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここから新しいテイクで録画しています。元の続きは消えずに残っています（「前の試行へ戻す」で戻せます）"
+          }
+        }
+      }
+    },
     "Recording a power cycle": {
       "localizations": {
         "ja": {
@@ -6413,16 +6423,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "最初からやり直す…"
-          }
-        }
-      }
-    },
-    "Started a new take. Use “Back to Previous Take” to return to the old continuation": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいテイクを作成しました。以前の続きは「前の試行へ戻す」で戻せます"
           }
         }
       }

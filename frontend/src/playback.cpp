@@ -1,4 +1,5 @@
-// UI-free transport logic: record/replay toggle, slow toggle, paused D-pad stepping, practice A/B
+// UI-free transport logic: record/replay toggle, slow toggle, paused frame step (replays inside
+// the take, records only at its end), paused D-pad stepping, practice A/B
 // loop, rewind-animation frame history, the practice audio fade-out tail and fast-forward over
 // the recorded take.
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -60,6 +61,27 @@ rnf_record_toggle_plan rnf_record_toggle(int recording, uint64_t frame, uint64_t
 
 int rnf_record_toggle_restarts_on_play(int recording, int practicing, uint64_t frame, uint64_t take_length) {
   return !recording && !practicing && take_length > 0 && frame >= take_length;
+}
+
+// ------------------------------------------------------------------ paused frame step
+rn_status rnf_transport_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info) {
+  if (!s) return fail(RN_ERR_INVALID_ARG, "null argument");
+  if (rn_get_mode(s) != RN_MODE_RECORD || events != 0 || rn_frame(s) >= rn_take_length(s))
+    return rn_step(s, p1, p2, events, info);
+  // Inside the take: replay the recorded frame (record mode is suspended for this one step, the
+  // same way fast-forward does it), so a step never re-records over the existing continuation.
+  rn_status st = rn_set_mode(s, RN_MODE_REPLAY);
+  if (st != RN_OK) return st;
+  rn_step_info si{};
+  st = rn_step(s, 0, 0, 0, &si);
+  rn_status back = rn_set_mode(s, RN_MODE_RECORD);
+  if (st == RN_OK) st = back;
+  if (st != RN_OK) return st;
+  si.mode = RN_MODE_RECORD;
+  si.branched = 0;
+  si.end_of_take = 0;  // in record mode the take end is where the next step records
+  if (info) *info = si;
+  return RN_OK;
 }
 
 // ------------------------------------------------------------------ step repeater

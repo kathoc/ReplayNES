@@ -211,7 +211,9 @@ class EmulationController {
   void show(const uint32_t* v);
   void resetFlashFilter();
   void seekCommand(uint64_t f);
-  bool stepOnce(bool audible);
+  /// frameStep: a paused frame advance (rnf_transport_step: replays inside the take, records
+  /// only at its end); otherwise live play (records in record mode, branching mid-take).
+  bool stepOnce(bool audible, bool frameStep = false);
   void stepFrame(int dir);
   void handleHotkeys(uint32_t edges);
   void beginFastForward();

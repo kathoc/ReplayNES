@@ -368,7 +368,8 @@ EmulationController::Tick EmulationController::tick() {
       setMuted(!audible);
       int stepped = 0;
       for (int i = 0; i < steps; ++i) {
-        if (!stepOnce(audible)) break;
+        // Paused steps are navigation: inside the take they replay it (never a new take).
+        if (!stepOnce(audible, paused_)) break;
         stepped += 1;
       }
       emulatedLive = stepped > 0 && rn_get_mode(s) != RN_MODE_REPLAY;
@@ -386,7 +387,7 @@ EmulationController::Tick EmulationController::tick() {
   return t;
 }
 
-bool EmulationController::stepOnce(bool audible) {
+bool EmulationController::stepOnce(bool audible, bool frameStep) {
   rn_session* s = session_;
   rn_mode mode = rn_get_mode(s);
   bool live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE;
@@ -400,7 +401,8 @@ bool EmulationController::stepOnce(bool audible) {
   pendingEvents_ = 0;
   uint64_t before = rn_frame(s);
   rn_step_info info{};
-  if (rn_step(s, p1, p2, ev, &info) != RN_OK) {
+  rn_status st = frameStep ? rnf_transport_step(s, p1, p2, ev, &info) : rn_step(s, p1, p2, ev, &info);
+  if (st != RN_OK) {
     setPaused(true);
     advanceRemaining_ = 0;
     reportError(TR("Couldn’t advance the frame"));
@@ -416,7 +418,7 @@ bool EmulationController::stepOnce(bool audible) {
   endOfTake_ = false;
   if (info.branched) {
     markStructureDirty();
-    notice(TR("Started a new take. Use “Back to Previous Take” to return to the old continuation"));
+    notice(TR("Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it"));
   }
   if (const uint32_t* v = rn_video(s)) {
     if (mode == RN_MODE_PRACTICE) rnf_frame_history_append(history_, v);

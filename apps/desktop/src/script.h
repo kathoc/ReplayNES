@@ -15,6 +15,7 @@
 //   osktype <text>          types <text> on the built-in on-screen keyboard
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | shot <file.png> (shotdir <dir>: relative to it) | quit
+//   status                  logs "script: status frame= length= take= takes= undo= recording= paused="
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)
 //   exportdialog | exportstart | crt [off]       (MP4 export dialog / its Export button, CRT setting)
 //   setting <key> <value>   diagramFamily auto|0..4, southConfirm 0|1, timelineSlot 0..7

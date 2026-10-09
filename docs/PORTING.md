@@ -109,6 +109,9 @@ Rules:
   They never change recorded data; final replay runs at normal speed.
 * Recording at a frame before the take end creates a new take automatically (`info.branched`);
   the old future stays available (`rn_take_*`, `rn_undo_take_switch`).
+* A paused frame step (frame advance) is navigation: use `rnf_transport_step` (frontend.h), which
+  replays the recorded frame inside the take and records only at the take end. Only resuming
+  play (`rn_step` with live input) from an earlier frame branches.
 * `rn_audio` returns 0 samples after seek/rewind/take switches; mute during scrub/rewind/slow.
 * Never feed wall-clock corrections back into emulation (no "catch-up" steps that depend on
   audio drift). Pace frames from the display (one frame per refresh, or per 2 refreshes at
