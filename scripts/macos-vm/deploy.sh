@@ -2,7 +2,7 @@
 # Copy a built ReplayNES.app (or a release zip) into the running VM's /Applications, plus any extra
 # files (ROMs, projects) into ~/ReplayNES-test/ in the guest. Nothing is built here.
 #   scripts/macos-vm/deploy.sh                                   build/ReplayNES.app
-#   scripts/macos-vm/deploy.sh dist/ReplayNES-0.5.0-macOS-arm64.zip
+#   scripts/macos-vm/deploy.sh dist/ReplayNES-0.5.1-macOS-arm64.zip
 #   scripts/macos-vm/deploy.sh build/ReplayNES.app /path/test.nes
 #   QUARANTINE=1 scripts/macos-vm/deploy.sh dist/...zip     mark it as downloaded by Safari, so the
 #                                                           first launch goes through Gatekeeper
