@@ -918,7 +918,12 @@ final class EmulationController {
             var m = vtrBaseMeta
             m.countdown = countdown
             m.countdownFraction = countdownFraction
-            vtrBase.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: nil) }
+            // The clean picture again, with its PPU codes while they still describe it (a still after
+            // a rewind then takes the CRT's RF path like every other frame, not the RGB input).
+            let signal = m.hasCodes ? session?.videoIndices : nil
+            let codes = signal.flatMap { $0.frame == m.signalFrame ? $0.codes : nil }
+            if codes == nil { m.hasCodes = false }
+            vtrBase.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: codes) }
         }
     }
 
