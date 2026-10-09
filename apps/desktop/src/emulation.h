@@ -104,7 +104,7 @@ class EmulationController {
   FrameObserver* observer = nullptr;
 
   // Preferences.
-  bool pauseAfterRewind = true;
+  bool pauseAfterRewind = false;
   double autosaveInterval = 2.0;
   /// The session is the temporary project: while paused it is also fully saved now and then.
   bool tempSession = false;

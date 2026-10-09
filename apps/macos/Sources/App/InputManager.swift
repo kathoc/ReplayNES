@@ -157,6 +157,7 @@ final class InputManager {
     /// controllers). Customised face buttons are translated when their controller attaches.
     /// layout 4: untouched trigger hotkeys swap to L2 rewind / R2 fast-forward.
     /// layout 5: the Quick Menu ("hk.menu"): pad 1's L+R and Esc (unless Esc is taken).
+    /// layout 6: bindings to HOME / guide (never assignable) are dropped.
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
         let from = d.integer(forKey: "controllerLayoutVersion")
@@ -167,6 +168,7 @@ final class InputManager {
         if from < 3 { changed = apply(InputCatalog.faceLayoutMigration(config)) || changed }
         if from < 4 { changed = apply(InputCatalog.triggerSwapMigration(config)) || changed }
         if from < 5 { changed = apply(InputCatalog.menuMigration(config)) || changed }
+        if from < 6 { changed = apply(InputCatalog.homeMigration(config)) || changed }
         guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
@@ -898,7 +900,7 @@ final class InputManager {
         set(p, "rightTrigger", g.rightTrigger.isPressed)
         set(p, "menu", g.buttonMenu.isPressed)
         if let o = g.buttonOptions { set(p, "options", o.isPressed) }
-        if let h = g.buttonHome { set(p, "home", h.isPressed) }
+        // No buttonHome: HOME / guide belongs to the system (rnf_input_element_ignored), never an input.
         if let l3 = g.leftThumbstickButton { set(p, "leftThumb", l3.isPressed) }
         if let r3 = g.rightThumbstickButton { set(p, "rightThumb", r3.isPressed) }
         stick(p, "lstick", g.leftThumbstick.xAxis.value, g.leftThumbstick.yAxis.value)

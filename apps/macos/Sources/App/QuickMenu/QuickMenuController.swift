@@ -85,6 +85,12 @@ final class QuickMenuController: ObservableObject {
         withAnimation(.easeOut(duration: 0.12)) { stack = Array(stack.prefix(i + 1)) }
     }
 
+    /// A breadcrumb segment clicked / tapped: back to that level; a settings tab that is not on the
+    /// stack (the "Settings" segment = the first tab) switches to it.
+    func crumbSelected(_ p: QMPage) {
+        if stack.contains(p) { popTo(p) } else { switchTab(to: p) }
+    }
+
     /// Settings tab strip (L / R, or a click).
     func switchTab(to p: QMPage) {
         guard QMPage.settingsTabs.contains(p), let cur = stack.first(where: { QMPage.settingsTabs.contains($0) }) else { return }

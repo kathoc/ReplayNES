@@ -28,7 +28,11 @@ struct Settings {
   // Audio
   float volume = 0.8f;
   // Controls
-  bool pauseAfterRewind = true;
+  // Off by default since 0.5.1. Saved as "pauseAfterRewind2": up to 0.5.0 every settings file
+  // stored the old default (on) under "pauseAfterRewind" whether or not it was chosen, so that
+  // key is ignored = everyone starts from the new default once (a stored "off" was the only
+  // value that was surely chosen, and it stays off).
+  bool pauseAfterRewind = false;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
   // UI confirm / cancel (rnf_ui_confirm_element): false = east confirms, south goes back (default).

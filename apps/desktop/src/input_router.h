@@ -60,7 +60,7 @@ class InputRouter {
   void load();
 
   // Hooks.
-  std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / Guide / F1
+  std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
   std::function<void()> onPausedResume;                  // cancel tapped while paused in play: resume
   /// The paused seek bar's controller input (docs/design/UI_REDESIGN.md): taps on the bar (ok, up,
@@ -126,7 +126,7 @@ class InputRouter {
   bool capturing() const { return bool(capture_); }
 
   /// Reserved for the menu (not assignable in the diagram).
-  static bool isReserved(const std::string& element) { return element == "rightThumb" || element == "home"; }
+  static bool isReserved(const std::string& element) { return element == "rightThumb"; }
 
   /// Pad thread: SDL_UpdateJoysticks at ~1 kHz (SDL_HINT_AUTO_UPDATE_JOYSTICKS = 0).
   void closeAll();

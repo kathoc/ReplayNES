@@ -116,6 +116,8 @@ class UI : public DialogHost {
   void toggleMenu();
   void setMenu(bool open);
   bool menuOpen() const { return menuOpen_; }
+  /// Id of the menu page shown ("" when the menu is closed); script / test hooks.
+  std::string shownMenuPage() const { return menuOpen_ ? menuPageId() : std::string(); }
   /// L / R in the UI (InputRouter::onUiShoulder): previous / next page.
   void shoulder(int dir);
   /// The cancel button tapped on the seek bar (InputRouter::onPausedResume): resume.
@@ -145,6 +147,8 @@ class UI : public DialogHost {
   bool openPage(const std::string& pageId);
   /// The Menu pill's rectangle this frame (scripts click it).
   LRect pillRect() const { return pill_; }
+  /// Hit rectangle of breadcrumb segment i (ancestors only; w == 0 when there is none).
+  LRect crumbRect(size_t i) const { return i < crumbRects_.size() ? crumbRects_[i] : LRect{}; }
   /// Walks every page of the menu model + the library + the seek bar, one per frame, at the window
   /// size and at extra sizes (e.g. 1920x1080 as a layout override), and checks that nothing
   /// overflows (no screen scrolls). Logs "layoutcheck:" lines; done() + failures() when finished.
@@ -302,6 +306,7 @@ class UI : public DialogHost {
   std::string description_;
   // Pill.
   LRect pill_;
+  std::vector<LRect> crumbRects_;  // the breadcrumb's clickable segments (last frame)
   double lastPointer_ = -10, lastActivity_ = 0, pulseStart_ = -1;
   // Notices.
   std::string notice_;

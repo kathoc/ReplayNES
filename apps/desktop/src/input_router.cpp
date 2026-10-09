@@ -82,6 +82,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 6) {  // HOME / guide is never assignable: drop bindings to it
+      rnf_input_home_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -472,7 +477,7 @@ void InputRouter::detach(SDL_JoystickID id) {
 
 void InputRouter::padButton(int slot, int button, bool down, double t) {
   const char* el = rnf_sdl_button_element(button);
-  if (!el) return;
+  if (!el || rnf_input_element_ignored(el)) return;  // HOME / guide: the system's (Steam, Game Bar)
   std::string id = slotPrefix(slot) + el;
   if (down) lastSlot_ = slot;
   if (isReserved(el)) {

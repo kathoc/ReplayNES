@@ -57,12 +57,21 @@ final class FrontendBridgeTests: XCTestCase {
         XCTAssertEqual(InputCatalog.hotkeyActions.first?.id, "hk.rewind")
         XCTAssertEqual(InputCatalog.gameActions.first?.label, "↑ Up")
         XCTAssertEqual(InputAction.Group.hotkey.title, "Hotkeys")
-        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 5)
+        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 6)
         let c = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
         XCTAssertEqual(c.turboPeriod, 4)
         XCTAssertEqual(c.socd, "neutral")
         XCTAssertEqual(c.bindings.count, InputCatalog.defaultBindings.count)
         XCTAssertNil(InputCatalog.parse("[]"))
+        // HOME / guide is the system's: ignored, never on the diagram, its bindings dropped (layout 6).
+        XCTAssertTrue(InputCatalog.isIgnoredElement("home"))
+        XCTAssertFalse(InputCatalog.isIgnoredElement("menu"))
+        var withHome = c
+        withHome.bindings.append((input: "gc0:home", action: "hk.undo_take"))
+        let home = InputCatalog.homeMigration(withHome)
+        XCTAssertEqual(home.unbind.map { $0.0 }, ["gc0:home"])
+        XCTAssertTrue(home.bind.isEmpty)
+        XCTAssertTrue(InputCatalog.homeMigration(c).unbind.isEmpty)
         XCTAssertEqual(InputCatalog.pausedStepDirections(c)["gc0:dpad.left"], -1)
         XCTAssertTrue(InputCatalog.faceLayoutMigration(c).bind.isEmpty)
         let reset = InputCatalog.controllerResetPlan(c, slot: 1)

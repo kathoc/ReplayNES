@@ -135,6 +135,17 @@ void Script::step(double now) {
       pending_.push_back({now, b, true});
       pending_.push_back({now + 0.05, b, false});
       return;
+    } else if (op == "clickcrumb") {  // a mouse click on breadcrumb segment <i> (0 = leftmost)
+      LRect r = ui_->crumbRect(size_t(std::atoi(arg(1, "0").c_str())));
+      if (r.w <= 0) {
+        std::fprintf(stderr, "script: clickcrumb: no such segment\n");
+        continue;
+      }
+      char b[64];
+      std::snprintf(b, sizeof b, "mouse:%f,%f", double(r.x + r.w / 2), double(r.y + r.h / 2));
+      pending_.push_back({now, b, true});
+      pending_.push_back({now + 0.05, b, false});
+      return;
     } else if (op == "key") {
       SDL_Scancode sc = SDL_GetScancodeFromName(arg(1).c_str());
       if (sc == SDL_SCANCODE_UNKNOWN) {
@@ -203,9 +214,9 @@ void Script::step(double now) {
       emu_->frameAdvance(std::atoi(arg(1, "1").c_str()));
     } else if (op == "status") {
       const EmuStatus st = emu_->status();
-      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d\n",
+      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s\n",
                    (unsigned long long)st.frame, (unsigned long long)st.takeLength, (unsigned long long)st.activeTake,
-                   st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0);
+                   st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0, ui_->shownMenuPage().c_str());
     } else if (op == "dialog") {
       ui_->answerDialog(std::atoi(arg(1, "0").c_str()));
     } else if (op == "resetprompt") {

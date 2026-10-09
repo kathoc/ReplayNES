@@ -78,7 +78,9 @@ final class AppModel: ObservableObject {
 
     // Preferences
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
-    @AppStorage("pauseAfterRewind") var pauseAfterRewind = true { didSet { pushPrefs(); objectWillChange.send() } }
+    /// Off by default since 0.5.1. @AppStorage only stores a value the user set, so an untouched
+    /// install picks up the new default and an explicit choice (either way) is kept.
+    @AppStorage("pauseAfterRewind") var pauseAfterRewind = false { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("autosaveInterval") var autosaveInterval = 2.0 { didSet { pushPrefs(); objectWillChange.send() } }
     /// Pixel-perfect (largest integer scale that fits, pixel-perfect) vs FILL (fill the window, aspect kept).
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }

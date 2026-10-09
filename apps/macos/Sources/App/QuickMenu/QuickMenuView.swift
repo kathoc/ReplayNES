@@ -113,8 +113,10 @@ struct QuickMenuOverlay: View {
     private func header(_ p: QMPage, _ content: QMContent) -> some View {
         HStack(spacing: 8) {
             // "⚙ Settings › Display › CRT Details": the settings tabs read "Settings › <tab>".
+            // Every segment but the last is a link back to its level; "Settings" = the Settings top
+            // page (the first tab, what its tile opens), like rnf_menu_crumb_select on the desktop.
             let crumbs: [(String, QMPage)] = p.path.dropFirst().flatMap { c -> [(String, QMPage)] in
-                QMPage.settingsTabs.contains(c) ? [(String(localized: "Settings"), c), (c.title, c)] : [(c.title, c)]
+                QMPage.settingsTabs.contains(c) ? [(String(localized: "Settings"), QMPage.settingsTabs[0]), (c.title, c)] : [(c.title, c)]
             }
             Image(systemName: p.path.dropFirst().first?.icon ?? p.icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(QMStyle.brand)
             ForEach(Array(crumbs.enumerated()), id: \.offset) { i, crumb in
@@ -124,7 +126,8 @@ struct QuickMenuOverlay: View {
                     .font(last ? QMStyle.title : .system(size: 22, weight: .regular))
                     .foregroundStyle(last ? Color.white : Color.white.opacity(0.55))
                     .lineLimit(1)
-                    .onTapGesture { if !last { menu.popTo(crumb.1) } }
+                    .contentShape(Rectangle())
+                    .onTapGesture { if !last { menu.crumbSelected(crumb.1) } }
             }
             if let c = content.caption {
                 Text(c).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)

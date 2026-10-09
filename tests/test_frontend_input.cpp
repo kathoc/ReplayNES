@@ -257,7 +257,7 @@ static Pairs layout3Triggers(Pairs c) {
 }
 
 TEST_CASE("trigger swap migration (layout 3 -> 4)") {
-  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 5);
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 6);
   Pairs old = layout3Triggers(defaultConfig());
   Plan m = plan(rnf_input_trigger_swap_migration, old);
   CHECK_EQ(m.unbind.size(), size_t(2));
@@ -293,11 +293,35 @@ TEST_CASE("full chain from 0.1.x") {
     rnf_input_menu_migration(v.data(), v.size(), RNF_KEYBOARD_MACOS, &u, &n);
     c = applying(Plan{listPairs(u), listPairs(n)}, c);
   }
+  c = applying(plan(rnf_input_home_migration, c), c);
   CHECK(asSet(c) == asSet(defaultConfig()));
   // From layout 3 (0.2.x): the triggers swap.
   Pairs l3 = layout3Triggers(defaultConfig());
   l3 = applying(plan(rnf_input_trigger_swap_migration, l3), l3);
   CHECK(asSet(l3) == asSet(defaultConfig()));
+}
+
+TEST_CASE("HOME / guide is ignored and its bindings are dropped (layout 6)") {
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 6);
+  CHECK(rnf_input_element_ignored("home"));
+  CHECK(rnf_input_element_ignored("gc1:home"));
+  CHECK_FALSE(rnf_input_element_ignored("menu"));
+  CHECK_FALSE(rnf_input_element_ignored("rightThumb"));
+  CHECK_FALSE(rnf_input_element_ignored(nullptr));
+  CHECK(plan(rnf_input_home_migration, defaultConfig()).unbind.empty());  // defaults never use it
+  Pairs c = defaultConfig();
+  c.emplace_back("gc0:home", "hk.undo_take");
+  c.emplace_back("gc1:home", "p2.start");
+  c.emplace_back("gc0:home+gc0:leftShoulder", "hk.save");
+  c.emplace_back("kb:4", "hk.save");  // not a pad: kept
+  Plan m = plan(rnf_input_home_migration, c);
+  CHECK(m.bind.empty());
+  CHECK_EQ(m.unbind.size(), size_t(3));
+  Pairs after = applying(m, c);
+  for (auto& p : after) CHECK(p.first.find("home") == std::string::npos);
+  CHECK(contains(after, "kb:4", "hk.save"));
+  CHECK_EQ(after.size(), defaultConfig().size() + 1);
+  CHECK(plan(rnf_input_home_migration, after).unbind.empty());  // idempotent
 }
 
 // A bindings.json written by 0.4.0 (macOS defaults, layout 4: no "hk.menu"), byte for byte as the
@@ -540,7 +564,7 @@ TEST_CASE("display names") {
 
 TEST_CASE("diagram elements per family") {
   std::set<std::string> expected = {"leftShoulder", "rightShoulder", "leftTrigger", "rightTrigger", "menu", "options",
-                                    "home", "leftThumb", "rightThumb"};
+                                    "leftThumb", "rightThumb"};  // no HOME / guide: never assignable
   for (int p = 0; p < 4; ++p) expected.insert(rnf_face_position_element(rnf_face_position(p)));
   for (auto g : {"dpad", "lstick", "rstick"})
     for (auto d : {"up", "down", "left", "right"}) expected.insert(std::string(g) + "." + d);

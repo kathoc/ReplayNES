@@ -128,19 +128,16 @@ Layout build(rnf_controller_family family) {
     e.push_back(make(st.click, RNF_DIAGRAM_STICK_CLICK, st.x, st.y, 22, 22,
                      std::string(st.name) == "lstick" ? RNF_SIDE_LEFT : RNF_SIDE_RIGHT));
   }
-  // Small center buttons.
-  if (deck) {  // View / Menu at the top corners, the Steam button below the D-pad
+  // Small center buttons. No HOME / guide button: it belongs to the system (rnf_input_element_ignored).
+  if (deck) {  // View / Menu at the top corners
     e.push_back(make("options", RNF_DIAGRAM_SMALL, 34, 80, 26, 12, RNF_SIDE_BELOW));
     e.push_back(make("menu", RNF_DIAGRAM_SMALL, 526, 80, 26, 12, RNF_SIDE_BELOW));
-    e.push_back(make("home", RNF_DIAGRAM_HOME, 58, 214, 30, 30, RNF_SIDE_ABOVE));
   } else if (sym) {
     e.push_back(make("options", RNF_DIAGRAM_SMALL, 222, 90, 30, 14, RNF_SIDE_ABOVE));
     e.push_back(make("menu", RNF_DIAGRAM_SMALL, 338, 90, 30, 14, RNF_SIDE_ABOVE));
-    e.push_back(make("home", RNF_DIAGRAM_HOME, 280, 150, 22, 22, RNF_SIDE_BELOW));
   } else {
     e.push_back(make("options", RNF_DIAGRAM_SMALL, 245, 104, 30, 14, RNF_SIDE_ABOVE));
     e.push_back(make("menu", RNF_DIAGRAM_SMALL, 315, 104, 30, 14, RNF_SIDE_ABOVE));
-    e.push_back(make("home", RNF_DIAGRAM_HOME, 280, 134, 22, 22, RNF_SIDE_BELOW));
   }
   // Grouped badges ("Move") go below the group.
   i.dpad_anchor_x = dx; i.dpad_anchor_y = dy + a * 1.5 + 4;

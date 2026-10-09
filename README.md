@@ -93,7 +93,7 @@ ReplayNES has one window. While you play, only the game is on screen, plus a sma
 | Tile | What is in it |
 |---|---|
 | **Resume** | Close the menu and keep playing (focused when the menu opens) |
-| **Retry** | Record from Here · Previous Attempt (⌥⌘Z) · Watch Replay / Back to Recording (⇧⌘M) · Takes (⇧⌘T) · Bookmarks |
+| **Retry** | Record from Here · Previous Attempt (⌥⌘Z) · Watch Replay / Back to Recording (⇧⌘M) · Takes (⇧⌘T) · Bookmarks · Restart Recording (the Reset Project confirmation) |
 | **Practice** | The 8 A/B sections as cards (see "Practice Mode") |
 | **Share** | Export MP4 (⌘E) · Stream Output (Syphon, for OBS) |
 | **Settings** | Four pages, L / R (or Tab) switch: **Display** (Size Integer / FILL, CRT, 8:7, Reduce Flashing, Hide Edges, CRT Details), **Controls** (Controller diagram, Keyboard, Confirm Button, D-pad While Paused, Pause After Rewind, Controls Details), **Sound** (Volume), **System** (Language, Autosave, Latency Meter, Flash Notice, Updates, About) |
@@ -184,7 +184,7 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 3. If the previous take was better, **Retry › Previous Attempt** (⌥⌘Z) brings it back. **Retry › Takes** (⇧⌘T) lists every take; choose one to switch to it.
 4. **Bookmarks** (B / ⌘D, or Retry › Bookmarks › Add Here) mark a moment; choose a bookmark to jump to it (Y renames, X deletes).
 
-**Game › Reset › Start Over** (Game menu: Start Over…) starts the project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay. "Keep A/B repeat sections" (on by default) keeps your practice sections. A saved project is first backed up to the Trash, so the old recording can still be recovered from there.
+**Game › Reset › Start Over** (also **Retry › Restart Recording**, and the Game menu: Start Over…) starts the project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay. "Keep A/B repeat sections" (on by default) keeps your practice sections. A saved project is first backed up to the Trash, so the old recording can still be recovered from there.
 
 ### Production Aids
 

@@ -11,11 +11,12 @@
 //   padhold <button> <s>    the same, held for <s> seconds (the script goes on meanwhile)
 //   chord [<ms>]            L1, then R1 <ms> later (default 30), both held 0.2 s: the Quick Menu chord
 //   clickpill               a mouse click on the Menu pill (SDL mouse events at its center)
+//   clickcrumb <i>          a mouse click on breadcrumb segment <i> (an ancestor; 0 = leftmost)
 //   key <scancode name>     a key press (SDL_GetScancodeFromName: "Escape", "Return", "Space", ...)
 //   osktype <text>          types <text> on the built-in on-screen keyboard
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | shot <file.png> (shotdir <dir>: relative to it) | quit
-//   status                  logs "script: status frame= length= take= takes= undo= recording= paused="
+//   status                  logs "script: status frame= length= take= takes= undo= recording= paused= page="
 //   save | saveas | closeproject | resetprompt   (project actions; dialogs / chooser stay open)
 //   exportdialog | exportstart | crt [off]       (MP4 export dialog / its Export button, CRT setting)
 //   setting <key> <value>   diagramFamily auto|0..4, southConfirm 0|1, timelineSlot 0..7

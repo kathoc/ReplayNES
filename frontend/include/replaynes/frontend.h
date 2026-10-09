@@ -287,7 +287,7 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 5
+#define RNF_CONTROLLER_LAYOUT_VERSION 6
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
@@ -337,6 +337,12 @@ int rnf_input_apply_plan(rn_input* in, const rnf_list* unbind, const rnf_list* b
  * the menu no longer opens on a pause. */
 void rnf_input_menu_migration(const rnf_binding* bindings, size_t count, rnf_keyboard_scheme scheme, rnf_list** unbind,
                               rnf_list** bind);
+/* The HOME / guide button (Steam, Xbox, PS, Nintendo HOME: element "home") belongs to the system
+ * (Steam overlay, Game Bar, ...): never assignable, never captured, never routed to bindings.
+ * rnf_input_element_ignored: 1 for such an element ("home"; also accepts "gc<n>:home"). */
+int rnf_input_element_ignored(const char* element);
+/* Layout 5 -> 6: drops every binding whose input is (or a combo containing) an ignored element. */
+void rnf_input_home_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Two-input combo ids "<a>+<b>" (both held: e.g. the Quick Menu's L+R). rnf_input_combo_id: NULL for an empty
  * part. rnf_input_combo_split: 1 and the parts (free with rnf_string_free) when id is a combo. */
 char* rnf_input_combo_id(const char* a, const char* b);
@@ -632,6 +638,12 @@ rnf_menu_event rnf_menu_switch(rnf_menu* m, int dir); /* L (-1) / R (+1) */
 rnf_menu_event rnf_menu_push(rnf_menu* m, const char* page_id);
 /* Breadcrumb of the open stack (the root page left out; a group's title before its first page). */
 size_t rnf_menu_breadcrumb(const rnf_menu* m, rnf_menu_crumb* out, size_t cap);
+/* A click / tap on breadcrumb segment `crumb` (index as rnf_menu_breadcrumb returns them): back to
+ * that level (its focus restored, like rnf_menu_back repeated). A group's title ("Settings") goes to
+ * the group's first page (what its Quick Menu tile opens), focus on its first item. POPPED / SWITCHED;
+ * NONE for the current page (the last segment) or an index out of range. Pointer only: controllers
+ * go back with the back button. */
+rnf_menu_event rnf_menu_crumb_select(rnf_menu* m, size_t crumb);
 /* The UI string of a key: rnf_l10n_lookup, or the literal after a leading "=". */
 const char* rnf_menu_text(const char* key);
 

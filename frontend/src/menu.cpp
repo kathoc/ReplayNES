@@ -104,6 +104,9 @@ const std::vector<ItemDef>& items() {
       {"retry", "retry.bookmarks", RNF_L("Bookmarks"), RNF_L("Jump to a moment you marked"), "bookmark", PAGE, "bookmarks", 0, {}},
       {"retry", "retry.playback", RNF_L("Watch"), RNF_L("Playback mode: plays the recording without changing it"), "eye",
        TOGGLE, "", 0, {}},
+      // The Reset Project confirmation (same as Game > Reset > Reset Project...): keep A/B, backup.
+      {"retry", "retry.restart", RNF_L("Restart Recording"), RNF_L("Delete every take and record again from power-on"),
+       "player-skip-back", ACTION, "", 0, {}},
       // Share.
       {"share", "share.export", RNF_L("Export MP4"), RNF_L("Save the take as one continuous video"), "movie", ACTION, "",
        F_EXPORT, {}},
@@ -277,6 +280,30 @@ rnf_menu_event pushPage(rnf_menu* m, int p) {
   return RNF_MENU_EVENT_PUSHED;
 }
 
+}  // namespace
+
+namespace {
+struct Crumb {
+  rnf_menu_crumb c;
+  size_t level;       // stack level it stands for
+  const char* group;  // a group's title: the group id, else nullptr
+};
+std::vector<Crumb> crumbsOf(const rnf_menu* m) {
+  std::vector<Crumb> v;
+  // The Quick Menu itself is the root nobody needs to see; another root (the library's Settings)
+  // is shown.
+  size_t from = 0;
+  if (!m->stack.empty() && std::strcmp(m->pages[m->stack[0].page].def->id, "quick") == 0) from = 1;
+  const char* lastGroup = "";
+  for (size_t i = from; i < m->stack.size(); ++i) {
+    const PageDef* d = m->pages[m->stack[i].page].def;
+    if (const GroupDef* g = groupOf(d->group); g && std::strcmp(lastGroup, d->group) != 0)
+      v.push_back({{g->title, g->icon}, i, d->group});
+    lastGroup = d->group;
+    v.push_back({{d->title, d->icon}, i, nullptr});
+  }
+  return v;
+}
 }  // namespace
 
 extern "C" {
@@ -498,22 +525,32 @@ rnf_menu_event rnf_menu_push(rnf_menu* m, const char* id) {
   return pushPage(m, p);
 }
 
+
 size_t rnf_menu_breadcrumb(const rnf_menu* m, rnf_menu_crumb* out, size_t cap) {
   if (!m) return 0;
-  std::vector<rnf_menu_crumb> v;
-  // The Quick Menu itself is the root nobody needs to see; another root (the library's Settings)
-  // is shown.
-  size_t from = 0;
-  if (!m->stack.empty() && std::strcmp(m->pages[m->stack[0].page].def->id, "quick") == 0) from = 1;
-  const char* lastGroup = "";
-  for (size_t i = from; i < m->stack.size(); ++i) {
-    const PageDef* d = m->pages[m->stack[i].page].def;
-    if (const GroupDef* g = groupOf(d->group); g && std::strcmp(lastGroup, d->group) != 0) v.push_back({g->title, g->icon});
-    lastGroup = d->group;
-    v.push_back({d->title, d->icon});
-  }
-  for (size_t i = 0; out && i < v.size() && i < cap; ++i) out[i] = v[i];
+  std::vector<Crumb> v = crumbsOf(m);
+  for (size_t i = 0; out && i < v.size() && i < cap; ++i) out[i] = v[i].c;
   return v.size();
+}
+
+rnf_menu_event rnf_menu_crumb_select(rnf_menu* m, size_t crumb) {
+  if (!m || m->stack.empty()) return RNF_MENU_EVENT_NONE;
+  std::vector<Crumb> v = crumbsOf(m);
+  if (crumb + 1 >= v.size()) return RNF_MENU_EVENT_NONE;  // out of range, or the current page
+  const Crumb& c = v[crumb];
+  bool popped = c.level + 1 < m->stack.size();
+  m->stack.resize(c.level + 1);
+  if (c.group) {
+    for (size_t i = 0; i < m->pages.size(); ++i) {
+      if (std::strcmp(m->pages[i].def->group, c.group) != 0) continue;
+      Level& l = m->stack.back();
+      if (l.page == i) break;  // already the group's first page
+      l.page = i;
+      l.focus = 0;
+      return popped ? RNF_MENU_EVENT_POPPED : RNF_MENU_EVENT_SWITCHED;
+    }
+  }
+  return popped ? RNF_MENU_EVENT_POPPED : RNF_MENU_EVENT_NONE;
 }
 
 const char* rnf_menu_text(const char* key) {

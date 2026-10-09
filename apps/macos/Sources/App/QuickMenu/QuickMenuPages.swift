@@ -127,6 +127,10 @@ enum QuickMenuPages {
             QMItem(id: "bookmarks", icon: "bookmark", title: String(localized: "Bookmarks"),
                    detail: String(localized: "Jump to a marked point, or mark this one"),
                    enabled: !st.practicing, subtitle: "\(m.bookmarks.count)", page: .bookmarks),
+            // The Reset Project confirmation (as Game › Reset › Start Over): keep A/B, backup.
+            QMItem(id: "restart", icon: "backward.end", title: String(localized: "Restart Recording"),
+                   detail: String(localized: "Delete every take and record again from power-on"),
+                   confirm: { m.resetProjectPrompt() }),
         ]
     }
 

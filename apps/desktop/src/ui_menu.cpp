@@ -324,24 +324,46 @@ void UI::buildMenu(double now) {
 void UI::buildBreadcrumb(const LRect& bar) {
   rnf_menu_crumb c[8];
   size_t n = std::min<size_t>(8, rnf_menu_breadcrumb(menu_, c, 8));
+  crumbRects_.clear();
   if (n == 0) return;
   ImDrawList* dl = ImGui::GetWindowDrawList();
   const UiMetrics& m = metrics_;
   float fs = m.title(), x = bar.x, cy = bar.y + bar.h / 2;
   float maxX = pill_.w > 0 ? pill_.x - S(16) : bar.right();
   icon(dl, c[0].icon, ImVec2(x + fs * 0.55f, cy), fs, kText);
+  float segX = x;  // the first segment includes the icon
   x += fs * 1.3f;
+  int select = -1;
   for (size_t i = 0; i < n; ++i) {
     std::string t = txt(c[i].label);
     bool last = i + 1 == n;
     float w = measure(fs, t.c_str()).x;
-    textFit(dl, fs, ImVec2(x, cy - fs / 2), std::max(0.0f, maxX - x), last ? kText : kTextDim, t);
+    bool hovered = false;
+    if (!last && x < maxX) {
+      // An ancestor segment: a click / tap goes back to that level (rnf_menu_crumb_select).
+      float hw = std::min(x + w, maxX) - segX;
+      crumbRects_.push_back(LRect{segX, bar.y, std::max(1.0f, hw), std::max(1.0f, bar.h)});
+      ImGui::SetCursorScreenPos(ImVec2(segX, bar.y));
+      ImGui::PushID("crumb");
+      ImGui::PushID(int(i));
+      if (ImGui::InvisibleButton("##crumb", ImVec2(std::max(1.0f, hw), std::max(1.0f, bar.h)))) select = int(i);
+      hovered = ImGui::IsItemHovered();
+      ImGui::PopID();
+      ImGui::PopID();
+      if (hovered) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        dl->AddLine(ImVec2(x, cy + fs * 0.62f), ImVec2(std::min(x + w, maxX), cy + fs * 0.62f), kTextDim, std::max(1.0f, S(1.5f)));
+      }
+    }
+    textFit(dl, fs, ImVec2(x, cy - fs / 2), std::max(0.0f, maxX - x), last || hovered ? kText : kTextDim, t);
     x += w;
     if (!last) {
       icon(dl, "chevron-right", ImVec2(x + fs * 0.6f, cy), fs * 0.8f, kTextFaint);
       x += fs * 1.2f;
+      segX = x;
     }
   }
+  if (select >= 0) menuEvent(rnf_menu_crumb_select(menu_, size_t(select)), 0);
 }
 
 // One row of large tiles: the Quick Menu, Retry, Share, Game.

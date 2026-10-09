@@ -32,21 +32,24 @@ Applies to macOS (SwiftUI), Linux/Steam Deck and Windows (shared ImGui frontend 
 | Tile | Icon (Tabler/SF Symbol) | Contents (next level, ≤ 6 items each) |
 |---|---|---|
 | 再開 / Resume | play | (closes menu) — default focus |
-| やり直す / Retry | history | ここから録り直す · 前の試行へ · テイク一覧 · ブックマーク |
+| やり直す / Retry | history | ここから録り直す · 前の試行へ · テイク一覧 · ブックマーク · 再生で見る · 記録を最初からやり直す (6 = the limit) |
 | 練習 / Practice | target | 8 A/B slots as 4×2 cards (thumbnail of A, name, length); A = practice, Y = rename, X = clear; empty slot = "＋" (set A here) |
 | 共有 / Share | share | MP4に書き出す · 配信出力 (Syphon/Spout) |
 | 設定 / Settings | settings | 画面 · 操作 · 音 · システム (L1/R1 switch between these four) |
-| ゲーム / Game | device-gamepad | ゲーム選択 · 保存 · 別名で保存 · リセット |
+| ゲーム / Game | device-gamepad | ゲーム選択 · 保存 · 別名で保存 · プロジェクトを開く · リセット |
+
+**記録を最初からやり直す / Restart Recording** (Retry, 6th item) opens the same Reset Project confirmation as ゲーム › リセット › プロジェクトをリセット… (keep the A/B sections or not; a saved project is backed up to the Trash first). It is where a player looks for "start the run over"; the Game page keeps its リセット (soft reset / power cycle / reset project) because it still fits (5 items) and soft reset / power cycle belong there. Retry is now full: anything new for it goes one level down.
 
 ### Settings pages (≤ 6 rows each, 2 columns; deeper detail one level further)
 
 - **画面 / Display:** サイズ (等倍 | FILL) · ブラウン管 (on/off) · 8:7 (on/off) · 点滅を抑える (切 弱 中 強) · 端を隠す (on/off) · ブラウン管の詳細 ›
-- **操作 / Controls:** コントローラー › (diagram page) · キーボード › · 決定ボタン (east | south, as glyph pairs) · 一時停止中の十字キー (on/off) · 画面キーボード (自動 | 内蔵 | Steam; Linux only) · 詳細 › (巻き戻し後に一時停止 · 連射の速さ · 連射の押す長さ · 逆方向の同時押し · スティックのしきい値 · 初期設定に戻す)
+- **操作 / Controls:** コントローラー › (diagram page) · キーボード › · 決定ボタン (east | south, as glyph pairs) · 一時停止中の十字キー (on/off) · 画面キーボード (自動 | 内蔵 | Steam; Linux only) · 詳細 › (巻き戻し後に一時停止 (off by default since 0.5.1) · 連射の速さ · 連射の押す長さ · 逆方向の同時押し · スティックのしきい値 · 初期設定に戻す)
 - **音 / Sound:** 音量 (slider) · スロー中の音 (on/off if supported) · 低遅延 (on/off where applicable)
 - **システム / System:** 言語 (自動 | 日本語 | English) · アップデート › · Steamに追加 (Linux) · バージョン情報 ›
 
 ### Remapping with the controller alone
 
+- The HOME / guide button (Steam, Xbox, PS, HOME) is the system's (Steam overlay, Game Bar): not on the diagram, never captured or assignable, ignored by the input routing (`rnf_input_element_ignored`); layout 6 drops old bindings to it.
 - **コントローラー:** the diagram of the pad (core geometry `rnf_diagram_*`; outline `rnf_diagram_decor_*`: a rounded pill body without grips for Xbox / PlayStation / Nintendo / generic, a wide rounded rectangle with the screen hinted and the trackpads for the Steam Deck). Every element is focusable with the D-pad / left stick (focus ring, nearest element in that direction). Confirm opens the action picker; X = next pad, Y = defaults, cancel = back.
 - **Action picker** (`controls.assign`, a LIST page of the menu model): "None" + the pad's own player's actions, the other player's, the hotkeys (`rnf_input_assign_choices`), 6 rows per sheet, L / R switch sheets, no scrolling; the current action is checked and focused when it opens. Confirm assigns (the button does exactly that action from now on) and returns to the diagram; cancel returns without a change.
 - **キーボード:** rows of actions (6 per sheet, L / R); confirm = "press the new key" (keys only), the controller's cancel / Esc cancels; X clears.
@@ -60,7 +63,7 @@ Rules: no screen ever scrolls; if a page needs more than 6 rows, split it into a
 - Focus: 2 px brand-red (#FF3B3B) ring + slightly raised tile tint; 120 ms ease-out on focus move / open / close.
 - Typography: one family, three sizes (title 22, label 15, hint 12). Labels 2–5 characters (ja) / 1–2 words (en). Never paragraphs: the only explanatory text is a single line at the bottom describing the focused item.
 - Hint bar bottom-right: button glyphs for the connected controller family + ≤ 3 verbs.
-- Breadcrumb top-left on sub-levels (icon + names), e.g. ⚙ 設定 › 画面.
+- Breadcrumb top-left on sub-levels (icon + names), e.g. ⚙ 設定 › 画面. Every segment but the last is a link for the mouse / touch (`rnf_menu_crumb_select`): back to that level with its focus; 設定 goes to the Settings top page (画面, what the tile opens). Controllers never focus it (back already goes up).
 - Icons: macOS SF Symbols; desktop: an icon font subset (Tabler Icons MIT, or Material Symbols Apache-2.0) bundled and recorded in THIRD_PARTY_NOTICES.md.
 - Light/dark: menus are always dark (they sit over game video).
 

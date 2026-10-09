@@ -239,13 +239,15 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | A (south) | NES B | tap: **resume** | **back** (on the top level: resume) |
 | Y (north) / X (west) | turbo A / turbo B | Y tap: next A/B slot · X: delete the focused marker | what the hint bar shows (rename / clear / search / projects …) |
 | Menu (≡) / View (⧉) | START / SELECT | START / SELECT | - |
-| R3 / Steam (Guide) | Quick Menu (reserved) | Quick Menu | close the menu |
+| R3 | Quick Menu (reserved) | Quick Menu | close the menu |
+| Steam / Guide (HOME) | the system's (Steam overlay); ReplayNES ignores it and it cannot be assigned | - | - |
 
 L or R alone acts when it is **released** (the shared core's chord detector, `rnf_chord`: ALONE_UP is
 the trigger), so a single press never gets in the way of L+R. The chord is the action "Quick Menu"
 bound to the two-button combo `gc0:leftShoulder+gc0:rightShoulder` (the same on every platform); it
 stays remappable. Saved assignments from before get L+R and Esc added once (layout 5); R keeps
-pausing. Older versions cannot read an assignments file that has the Quick Menu in it.
+pausing. Older versions cannot read an assignments file that has the Quick Menu in it. Layout 6
+drops any binding to HOME / guide once (it was assignable on macOS before).
 
 Confirm / back: B (east) / A (south) by default on every controller (Nintendo style); Settings ›
 Controls › Confirm Button swaps them (hint bars, dialogs, the on-screen keyboard and the seek bar

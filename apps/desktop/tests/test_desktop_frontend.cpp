@@ -209,6 +209,17 @@ TEST_CASE("settings round trip and tolerant parsing") {
     CHECK_EQ(Settings::parse(k.serialize()).onScreenKeyboard, std::string(m));
   }
   CHECK_EQ(Settings::parse("onScreenKeyboard=qwerty\n").onScreenKeyboard, std::string("auto"));
+  // Pause after rewind: off by default; the <= 0.5.0 key (always written, default on) is ignored
+  // once, the new key round-trips both ways.
+  CHECK_FALSE(d.pauseAfterRewind);
+  CHECK_FALSE(Settings::parse("pauseAfterRewind=1\n").pauseAfterRewind);
+  CHECK_FALSE(Settings::parse("pauseAfterRewind=0\n").pauseAfterRewind);
+  for (bool on : {true, false}) {
+    Settings p;
+    p.pauseAfterRewind = on;
+    CHECK_EQ(Settings::parse(p.serialize()).pauseAfterRewind, on);
+  }
+  CHECK(Settings::parse("pauseAfterRewind=0\npauseAfterRewind2=1\n").pauseAfterRewind);
 }
 
 // ------------------------------------------------------------------ on-screen keyboard

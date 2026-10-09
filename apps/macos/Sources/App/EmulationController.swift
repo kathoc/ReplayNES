@@ -137,7 +137,7 @@ final class EmulationController {
     var uiFastForwardHeld = false
     var pendingEvents: UInt8 = 0
     var scrubTarget: UInt64?
-    var pauseAfterRewind = true
+    var pauseAfterRewind = false
     var autosaveInterval: Double = 5
     /// The session is the temporary project (SessionResume.swift): when paused it is also folded
     /// into a full save now and then, so a resume after a force quit starts from recent checkpoints.

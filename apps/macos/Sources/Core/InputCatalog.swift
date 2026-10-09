@@ -93,6 +93,12 @@ enum InputCatalog {
         plan(c) { rnf_input_menu_migration($0, $1, keyboardScheme, $2, $3) }
     }
 
+    /// Layout 5 -> 6: HOME / guide (the system's button) is never assignable: its bindings are dropped.
+    static func homeMigration(_ c: Config) -> Plan { plan(c) { rnf_input_home_migration($0, $1, $2, $3) } }
+
+    /// HOME / guide ("home"): never assignable, captured or routed.
+    static func isIgnoredElement(_ element: String) -> Bool { rnf_input_element_ignored(element) != 0 }
+
     /// A two-input combo id ("gc0:leftShoulder+gc0:rightShoulder": both held).
     static func isCombo(_ input: String) -> Bool { rnf_input_combo_split(input, nil, nil) != 0 }
 

@@ -58,7 +58,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "crtPersistence") s.crtPersistence = parseBool(v, s.crtPersistence);
     else if (k == "crtSupply") s.crtSupply = parseBool(v, s.crtSupply);
     else if (k == "crtAntenna" && num && d >= 20 && d <= 90) s.crtAntenna = d;
-    else if (k == "pauseAfterRewind") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);
+    else if (k == "pauseAfterRewind2") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);  // "pauseAfterRewind" (<= 0.5.0): ignored, settings.h
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
     else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
@@ -95,7 +95,7 @@ std::string Settings::serialize() const {
   o << "crtSupply=" << int(crtSupply) << "\n";
   std::snprintf(buf, sizeof buf, "%g", crtAntenna);
   o << "crtAntenna=" << buf << "\n";
-  o << "pauseAfterRewind=" << int(pauseAfterRewind) << "\n";
+  o << "pauseAfterRewind2=" << int(pauseAfterRewind) << "\n";
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";

@@ -4946,12 +4946,12 @@
         }
       }
     },
-    "R3 / Guide: ReplayNES menu (reserved)": {
+    "R3: ReplayNES menu (reserved)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "R3 / ガイド: ReplayNES のメニュー（予約済み）"
+            "value": "R3: ReplayNES のメニュー（予約済み）"
           }
         }
       }
@@ -5128,6 +5128,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "再起動"
+          }
+        }
+      }
+    },
+    "Restart Recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を最初からやり直す"
           }
         }
       }

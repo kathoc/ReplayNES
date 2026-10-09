@@ -121,7 +121,7 @@ final class MenuMigrationTests: XCTestCase {
         XCTAssertTrue(plan.unbind.isEmpty)
         XCTAssertEqual(Set(plan.bind.map { "\($0.0)=\($0.1)" }),
                        ["gc0:leftShoulder+gc0:rightShoulder=hk.menu", "kb:53=hk.menu"])
-        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 5)
+        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 6)
         XCTAssertTrue(InputCatalog.isCombo("gc0:leftShoulder+gc0:rightShoulder"))
         XCTAssertFalse(InputCatalog.isCombo("kb:53"))
         // Esc already bound to something else: kept, only the pad chord is added.

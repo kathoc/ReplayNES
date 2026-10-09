@@ -712,6 +712,26 @@ void rnf_input_menu_migration(const rnf_binding* bindings, size_t count, rnf_key
   emit(u, nb, unbind, bind);
 }
 
+int rnf_input_element_ignored(const char* element) {
+  if (!element) return 0;
+  std::string e = element;
+  size_t colon = e.find(':');
+  if (colon != std::string::npos) e = e.substr(colon + 1);
+  return e == "home" ? 1 : 0;
+}
+
+void rnf_input_home_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {
+  Pairs b = rnf::toPairs(bindings, count);
+  Pairs u, nb;
+  for (auto& p : b) {
+    std::string x, y;
+    bool drop = splitCombo(p.first, x, y) ? rnf_input_element_ignored(x.c_str()) || rnf_input_element_ignored(y.c_str())
+                                          : hasPrefix(p.first, "gc") && rnf_input_element_ignored(p.first.c_str());
+    if (drop) u.push_back(p);
+  }
+  emit(u, nb, unbind, bind);
+}
+
 char* rnf_input_combo_id(const char* a, const char* b) {
   if (!a || !b || !*a || !*b) return nullptr;
   return dup(std::string(a) + "+" + b);

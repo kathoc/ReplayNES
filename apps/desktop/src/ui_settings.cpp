@@ -155,7 +155,7 @@ bool UI::itemEnabled(const std::string& id) const {
   bool crt = d_.renderer->postProcessStatus().crtAvailable;
   if (id == "retry.undo") return st.undoDepth > 0 && !st.practicing;
   if (id == "retry.playback") return !st.practicing && st.takeLength > 0;
-  if (id == "retry.takes" || id == "retry.bookmarks") return hasSession();
+  if (id == "retry.takes" || id == "retry.bookmarks" || id == "retry.restart") return hasSession();
   if (id == "share.export") return RNL_HAVE_MP4_EXPORT && st.takeLength > 0;
   if (id == "display.crt" || id.rfind("crt.", 0) == 0 || id == "display.crt_detail") return crt;
   if (id == "updates.check")
@@ -314,6 +314,8 @@ void UI::activateItem(const std::string& id) {
     d_.app->openProjectChooser();
   } else if (id == "game.reset") {
     showResetChoices();
+  } else if (id == "retry.restart") {
+    d_.app->resetProjectPrompt();
   }
 }
 
@@ -453,7 +455,7 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     bool reserved = InputRouter::isReserved(el);
     if (clicked) {
       diagramFocus_ = index;
-      if (reserved) notice(TR("R3 / Guide: ReplayNES menu (reserved)"));
+      if (reserved) notice(TR("R3: ReplayNES menu (reserved)"));
       else openAssign(id);
     }
     rnf_list* acts = rnf_input_element_actions(b.data(), b.size(), el.c_str(), slot);
@@ -554,7 +556,7 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
 void UI::openAssign(const std::string& physicalId) {
   std::string el = physicalId.substr(physicalId.find(':') + 1);
   if (InputRouter::isReserved(el)) {
-    notice(TR("R3 / Guide: ReplayNES menu (reserved)"));
+    notice(TR("R3: ReplayNES menu (reserved)"));
     return;
   }
   assignElement_ = physicalId;

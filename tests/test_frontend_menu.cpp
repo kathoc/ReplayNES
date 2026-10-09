@@ -392,7 +392,8 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   rnf_menu* m = rnf_menu_new(kDesktopLinux);
   CHECK((itemIds(m, "quick") == std::vector<std::string>{"resume", "retry", "practice", "share", "settings", "game"}));
   CHECK((itemIds(m, "retry") ==
-        std::vector<std::string>{"retry.rerecord", "retry.undo", "retry.takes", "retry.bookmarks", "retry.playback"}));
+        std::vector<std::string>{"retry.rerecord", "retry.undo", "retry.takes", "retry.bookmarks", "retry.playback",
+                                 "retry.restart"}));
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.export"}));
   CHECK((itemIds(m, "game") == std::vector<std::string>{"game.library", "game.save", "game.save_as", "game.open", "game.reset"}));
   CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt", "display.par87", "display.flash",
@@ -410,6 +411,39 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   m = rnf_menu_new(RNF_MENU_FEATURE_STREAM | RNF_MENU_FEATURE_SLOW_AUDIO | RNF_MENU_FEATURE_LOW_LATENCY);
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.stream"}));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume", "sound.slow", "sound.low_latency"}));
+  rnf_menu_free(m);
+}
+
+TEST_CASE("menu: breadcrumb segments navigate back (pointer)") {
+  rnf_menu* m = rnf_menu_new(kDesktopLinux);
+  REQUIRE(rnf_menu_open(m, nullptr));
+  CHECK_EQ(rnf_menu_crumb_select(m, 0), RNF_MENU_EVENT_NONE);  // no crumbs on the Quick Menu
+  REQUIRE_EQ(rnf_menu_push(m, "settings.controls"), RNF_MENU_EVENT_PUSHED);
+  rnf_menu_set_focus(m, 2);
+  REQUIRE_EQ(rnf_menu_push(m, "controls.detail"), RNF_MENU_EVENT_PUSHED);
+  CHECK_EQ(crumbs(m), "Settings > Controls > More Controls");
+  CHECK_EQ(rnf_menu_crumb_select(m, 2), RNF_MENU_EVENT_NONE);  // the current page
+  CHECK_EQ(rnf_menu_crumb_select(m, 9), RNF_MENU_EVENT_NONE);
+  CHECK_EQ(rnf_menu_depth(m), size_t(3));
+  // "Controls": back one level, its focus restored.
+  CHECK_EQ(rnf_menu_crumb_select(m, 1), RNF_MENU_EVENT_POPPED);
+  CHECK_EQ(pageId(m), "settings.controls");
+  CHECK_EQ(rnf_menu_focus(m), size_t(2));
+  // "Settings" (the group's title): the Settings top page (Display, as its tile opens it).
+  CHECK_EQ(rnf_menu_crumb_select(m, 0), RNF_MENU_EVENT_SWITCHED);
+  CHECK_EQ(pageId(m), "settings.display");
+  CHECK_EQ(rnf_menu_focus(m), size_t(0));
+  CHECK_EQ(crumbs(m), "Settings > Display");
+  CHECK_EQ(rnf_menu_crumb_select(m, 0), RNF_MENU_EVENT_NONE);  // already there
+  // From two levels down straight to the group's top page.
+  REQUIRE_EQ(rnf_menu_switch(m, 1), RNF_MENU_EVENT_SWITCHED);
+  REQUIRE_EQ(rnf_menu_push(m, "controls.detail"), RNF_MENU_EVENT_PUSHED);
+  CHECK_EQ(rnf_menu_crumb_select(m, 0), RNF_MENU_EVENT_POPPED);
+  CHECK_EQ(pageId(m), "settings.display");
+  CHECK_EQ(rnf_menu_depth(m), size_t(2));
+  CHECK_EQ(rnf_menu_back(m), RNF_MENU_EVENT_POPPED);
+  CHECK_EQ(pageId(m), "quick");
+  CHECK_EQ(rnf_menu_crumb_select(nullptr, 0), RNF_MENU_EVENT_NONE);
   rnf_menu_free(m);
 }
 

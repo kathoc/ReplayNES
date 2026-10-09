@@ -19,7 +19,7 @@ final class ControllerLayoutTests: XCTestCase {
         custom.bindings += [(input: "gc0:dpad.up", action: "hk.bookmark"), (input: "gc0:dpad.left", action: "hk.step_back"),
                             (input: "gc0:dpad.right", action: "hk.frame_advance"), (input: "gc0:dpad.down", action: "p1.select"),
                             (input: "gc0:leftThumb", action: "hk.save"), (input: "gc0:rightThumb", action: "hk.toggle_mode"),
-                            (input: "gc0:rstick.up", action: "p2.up"), (input: "gc0:home", action: "hk.undo_take")]
+                            (input: "gc0:rstick.up", action: "p2.up")]
         let cases: [(String, ControllerFamily, InputCatalog.Config, Set<String>)] = [
             ("nintendo", .nintendo, defaults, ["gc0:face.east", "gc0:lstick.left"]),
             ("xbox", .xbox, defaults, []),
