@@ -163,6 +163,7 @@ struct ExportProgressView: View {
                     Text("\(r.frames) frames · \(String(format: "%.2f", r.duration)) s · \(r.audioSamples) audio samples")
                         .font(.caption)
                     Text(String(format: String(localized: "Replay hash %016llx"), r.rendererHash)).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    Text(verbatim: r.encoder).font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([r.url]) }
                         Spacer()

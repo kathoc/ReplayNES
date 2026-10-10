@@ -135,8 +135,10 @@ RunOut runExport(rn_session* s, const ExportOptions& opt, const std::string& out
   }
   uint64_t lastShown = 0, doneNow = 0;
   const double t0 = now();
+  ExportOptions eo = opt;
+  if (eo.encoder.empty() && !eo.retryRenderer) eo.retryRenderer = rnl::makeRetryRenderer(s, opt.settings.start_frame, opt.settings.end_frame);
   o.ok = rnl::exportProject(
-      r, opt, out,
+      r, eo, out,
       [&](uint64_t done, uint64_t total) {
         doneNow = done;
         if (showProgress && (done - lastShown >= 60 || done == total)) {
@@ -156,9 +158,9 @@ std::string resultJson(const RunOut& o, const std::string& out) {
     char b[512];
     std::snprintf(b, sizeof b,
                   ",\"frames\":%" PRIu64 ",\"audio_samples\":%" PRIu64 ",\"renderer_hash\":\"%s\",\"duration\":%.6f,"
-                  "\"encoder\":%s,\"seconds\":%.3f,\"fps\":%.1f",
+                  "\"encoder\":%s,\"hardware\":%s,\"seconds\":%.3f,\"fps\":%.1f",
                   o.res.frames, o.res.audioSamples, hex(o.res.rendererHash).c_str(), o.res.duration,
-                  jsonStr(o.res.encoder).c_str(), o.seconds, o.seconds > 0 ? double(o.res.frames) / o.seconds : 0.0);
+                  jsonStr(o.res.encoder).c_str(), o.res.hardware ? "true" : "false", o.seconds, o.seconds > 0 ? double(o.res.frames) / o.seconds : 0.0);
     j += b;
   } else {
     j += ",\"error\":" + jsonStr(o.error);
@@ -467,6 +469,25 @@ int selfTest(const Args& a) {
   RunOut can = runExport(s, base, cancelOut, false, 50);
   expectTrue(!can.ok && can.error == "cancelled" && !fs::exists(fs::u8path(cancelOut)) && !fs::exists(fs::u8path(cancelOut + ".part")),
              "cancel: error \"cancelled\", partial file removed");
+
+  // 5b) automatic encoder: a "hardware" failure half-way -> one retry with the software encoder
+  //     on the retry renderer; the same picture (renderer hash), a checked file, no .part left.
+  {
+    ExportOptions hw = base;
+    hw.simulateHardwareFailureAfter = 100;
+    const std::string hwOut = (dir / "hw-fallback.mp4").u8string();
+    RunOut hr = runExport(s, hw, hwOut, false);
+    std::printf("  fallback:  %s\n", resultJson(hr, hwOut).c_str());
+    if (base.encoder.empty()) {
+      expectTrue(hr.ok && hr.res.rendererHash == full.res.rendererHash && hr.res.frames == take && !hr.res.hardware &&
+                     hr.res.encoder.find("hardware encoder failed") != std::string::npos && !fs::exists(fs::u8path(hwOut + ".part")),
+                 "hardware failure: software retry, same renderer hash");
+      if (hr.ok) failures += checkFile("fallback", hwOut, hr.res, rn_audio_samples_before(take), 1280, 960);
+    } else {
+      expectTrue(!hr.ok && !fs::exists(fs::u8path(hwOut)) && !fs::exists(fs::u8path(hwOut + ".part")),
+                 "hardware failure, encoder chosen: error, no file");
+    }
+  }
 
   // 6) invalid settings + empty range
   ExportOptions badCrop = base;

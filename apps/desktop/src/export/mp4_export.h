@@ -58,10 +58,19 @@ struct ExportOptions {
   rn_flash_level flash = RN_FLASH_OFF;
   int audioBitrate = 192000;
   double videoBitsPerPixel = 0.25;  // per frame; pixel art needs more than camera footage
-  /// "" = auto. Linux: libx264, then h264_vaapi, then libopenh264 (first one that opens), or that
-  /// FFmpeg encoder only. Windows: a hardware H.264 MFT when there is one, else Microsoft's
-  /// software encoder; "mf_hardware" / "mf_software" force one.
+  /// "" = auto: a hardware encoder when there is one that works, else software. Linux: h264_vaapi,
+  /// then libx264, then libopenh264 (first one that opens), or that FFmpeg encoder only. Windows: a
+  /// hardware H.264 MFT when there is one, else Microsoft's software encoder; "mf_hardware" /
+  /// "mf_software" force one.
   std::string encoder;
+  /// Auto mode only: a second renderer over the same range (rn_renderer_new on the session's thread,
+  /// like the first; makeRetryRenderer). A hardware encoder that fails while encoding / finishing or
+  /// whose file fails the self-check is then retried once with the software encoder on it (the
+  /// result's encoder says so). Without it such a failure is reported as the error.
+  std::shared_ptr<rn_renderer> retryRenderer;
+  /// Self-test hook: > 0 makes the first pass of an automatic export fail like a hardware encoder
+  /// after that many frames (exercises the software retry on machines without a hardware encoder).
+  uint64_t simulateHardwareFailureAfter = 0;
   /// Empty = plain nearest scaling (black borders). Called once on the export thread.
   std::function<std::unique_ptr<ExportVideoProcessor>(std::string* error)> makeProcessor;
 };
@@ -70,7 +79,12 @@ struct ExportResult {
   uint64_t frames = 0, audioSamples = 0, rendererHash = 0;
   double duration = 0;  // frames * 655171 / 39375000 s
   std::string encoder;  // encoder that was used ("libx264", "h264_vaapi", "H264 Encoder MFT", ...)
+  bool hardware = false;  // a hardware (GPU) encoder made the file
 };
+
+/// The retry renderer for ExportOptions::retryRenderer (null when it can't be created). Call on
+/// the session's thread.
+std::shared_ptr<rn_renderer> makeRetryRenderer(rn_session* session, uint64_t startFrame, uint64_t endFrame);
 
 /// The encoders the Export dialog offers besides "automatic" (id for ExportOptions::encoder, label).
 struct ExportEncoderChoice {

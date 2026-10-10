@@ -167,11 +167,22 @@ failed / cancelled export removes its file.
   = the frame count), decodes the first frame and the last 3 s up to the final frame, and reads
   the last 3 s of audio. Any failure is the export's error message; the file is removed.
 
-* `IMFSinkWriter` -> MPEG-4: H.264 High (hardware MFT when the system has one -
-  `MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS` - else Microsoft's software encoder; "mf_hardware" /
-  "mf_software" in Export -> Advanced force one), VBR at the shared bit rate, GOP 120, **no
-  B-frames** (no reordering delay against the audio); AAC-LC 48 kHz mono from the engine's 16-bit
-  PCM. BT.709 colour tags.
+* `IMFSinkWriter` -> MPEG-4: H.264 High, VBR at the shared bit rate, GOP 120, **no B-frames** (no
+  reordering delay against the audio); AAC-LC 48 kHz mono from the engine's 16-bit PCM. BT.709
+  colour tags.
+* **Encoder: hardware first.** Automatic mode tries a hardware H.264 MFT
+  (`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS`) with a Direct3D 11 device manager
+  (`MF_SINK_WRITER_D3D_MANAGER`; Media Foundation uploads the NV12 frames for MFTs that want
+  surfaces), then without one, then Microsoft's software encoder; an attempt that ends up with a
+  software MFT is dropped. The same settings go to every encoder. If the hardware encoder fails
+  while encoding / finishing, or its file fails the self-check, the export is redone once with the
+  software encoder on a second renderer (`ExportOptions::retryRenderer`, created next to the first
+  by `ExportJob` / `replaynes-export`): same picture and timing, and the result's encoder reads
+  "... - the hardware encoder failed (...)". "mf_hardware" / "mf_software" in Export -> Advanced
+  force one (no retry). The result line names the encoder ("(hardware)" when it is one;
+  `"hardware": true` in `replaynes-export`'s JSON). The VM has no hardware MFT (Parallels on
+  Apple silicon: "H264 Encoder MFT (software)" only), so the hardware path and the retry are
+  exercised by the self-test's simulated failure (`simulateHardwareFailureAfter`) there.
 * Timestamps from counts: frame n at n x 655171 / 39375000 s, audio sample n at n / 48000 s (in
   Media Foundation's 100 ns units). The MPEG-4 sink stores the video at a rounded timescale (fps x
   1000 = 60098: 999 / 1000 ticks per frame), so after `Finalize` the moov box is rewritten

@@ -8,6 +8,12 @@
 namespace rnl {
 
 // ------------------------------------------------------------------ ExportJob
+std::shared_ptr<rn_renderer> makeRetryRenderer(rn_session* session, uint64_t startFrame, uint64_t endFrame) {
+  rn_renderer* r = nullptr;
+  if (!session || rn_renderer_new(session, startFrame, endFrame, &r) != RN_OK || !r) return nullptr;
+  return std::shared_ptr<rn_renderer>(r, rn_renderer_free);
+}
+
 ExportJob::~ExportJob() {
   cancel_ = true;
   if (worker_.joinable()) worker_.join();
@@ -40,6 +46,8 @@ bool ExportJob::start(rn_session* session, ExportOptions opt, std::string outPat
     finished_ = true;
     return false;
   }
+  if (opt.encoder.empty() && !opt.retryRenderer)
+    opt.retryRenderer = makeRetryRenderer(session, opt.settings.start_frame, opt.settings.end_frame);
   total_ = rn_renderer_total_frames(r);
   running_ = true;
   worker_ = std::thread([this, r, opt = std::move(opt), outPath = std::move(outPath)]() {

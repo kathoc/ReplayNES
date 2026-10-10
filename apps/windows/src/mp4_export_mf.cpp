@@ -21,6 +21,7 @@
 #endif
 #include <windows.h>
 #include <codecapi.h>
+#include <d3d11.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
@@ -109,11 +110,36 @@ void setColorTags(IMFMediaType* t) {
 
 struct Writer {
   IMFSinkWriter* sink = nullptr;
+  IMFDXGIDeviceManager* dxgi = nullptr;  // the hardware encoder's Direct3D 11 device (may be null)
   DWORD video = 0, audio = 0;
   bool hardware = false;
   std::string encoderName;
-  ~Writer() { release(sink); }
+  ~Writer() {
+    release(sink);
+    release(dxgi);
+  }
 };
+
+/// A Direct3D 11 device (video support, multithread protected) in a DXGI device manager for the
+/// sink writer: hardware encoder MFTs then get the frames uploaded to the GPU by Media Foundation
+/// (some only accept Direct3D surfaces). Null when there is no hardware device.
+IMFDXGIDeviceManager* createDxgiManager() {
+  ID3D11Device* dev = nullptr;
+  const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+  if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, levels,
+                               UINT(std::size(levels)), D3D11_SDK_VERSION, &dev, nullptr, nullptr)))
+    return nullptr;
+  ID3D10Multithread* mt = nullptr;
+  if (SUCCEEDED(dev->QueryInterface(__uuidof(ID3D10Multithread), reinterpret_cast<void**>(&mt)))) {
+    mt->SetMultithreadProtected(TRUE);
+    mt->Release();
+  }
+  UINT token = 0;
+  IMFDXGIDeviceManager* m = nullptr;
+  if (FAILED(MFCreateDXGIDeviceManager(&token, &m)) || FAILED(m->ResetDevice(dev, token))) release(m);
+  dev->Release();
+  return m;
+}
 
 /// The H.264 encoder the sink writer loaded for the video stream: its name and whether it is a
 /// hardware MFT.
@@ -145,15 +171,25 @@ void identifyEncoder(Writer& w) {
 }
 
 /// Creates the sink writer with an H.264 video and an AAC audio stream and starts writing.
+/// allowHardware + withDevice: hardware MFTs allowed and given a Direct3D 11 device manager.
 bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t bitrate, int audioBitrate, bool allowHardware,
-                Writer& w, std::string* why) {
+                bool withDevice, Writer& w, std::string* why) {
   IMFAttributes* attr = nullptr;
-  HRESULT h = MFCreateAttributes(&attr, 3);
+  HRESULT h = MFCreateAttributes(&attr, 4);
   if (FAILED(h)) {
     *why = hrText("MFCreateAttributes", h);
     return false;
   }
   attr->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, allowHardware ? TRUE : FALSE);
+  if (allowHardware && withDevice) {
+    w.dxgi = createDxgiManager();
+    if (!w.dxgi) {
+      attr->Release();
+      *why = "no Direct3D 11 device";
+      return false;
+    }
+    attr->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, w.dxgi);
+  }
   attr->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4);
   h = MFCreateSinkWriterFromURL(path.c_str(), nullptr, attr, &w.sink);
   attr->Release();
@@ -429,13 +465,17 @@ std::string availableEncodersDescription() {
   return out.empty() ? "no H.264 encoder" : out;
 }
 
-bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::string& outPath,
-                   const ExportProgressFn& progress, const ExportCancelFn& cancelled, ExportResult* result,
-                   std::string* error) {
+namespace {
+
+/// One export pass with `renderer` (not owned). *hardwareFailed: a hardware encoder was used and
+/// the failure came from encoding / finishing / the self-check (worth a software retry).
+bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::string& outPath, const ExportProgressFn& progress,
+                const ExportCancelFn& cancelled, ExportResult* result, std::string* error, bool* hardwareFailed) {
   std::string localError;
   std::string& err = error ? *error : localError;
   err.clear();
-  std::unique_ptr<rn_renderer, void (*)(rn_renderer*)> rend(renderer, rn_renderer_free);
+  *hardwareFailed = false;
+  std::unique_ptr<rn_renderer, void (*)(rn_renderer*)> rend(renderer, [](rn_renderer*) {});
   if (!rend) {
     err = "no renderer";
     return false;
@@ -504,13 +544,19 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
       err = "Unknown encoder \"" + opt.encoder + "\" (mf_hardware, mf_software)";
       return false;
     }
+    // Hardware first (with a Direct3D 11 device, then without one), then Microsoft's software
+    // encoder. A hardware attempt that ends up with a software MFT is dropped for the plain one.
     std::string tried;
-    for (bool hw : {true, false}) {
-      if ((hw && forceSw) || (!hw && forceHw)) continue;
+    struct Attempt {
+      bool hw, device;
+      const char* label;
+    };
+    for (const Attempt& at : {Attempt{true, true, "hardware (Direct3D 11)"}, Attempt{true, false, "hardware"}, Attempt{false, false, "software"}}) {
+      if ((at.hw && forceSw) || (!at.hw && forceHw)) continue;
       auto cand = std::make_unique<Writer>();
       std::string why;
-      if (openWriter(wpath, g, bitrate, opt.audioBitrate, hw, *cand, &why)) {
-        if (forceHw && !cand->hardware) {
+      if (openWriter(wpath, g, bitrate, opt.audioBitrate, at.hw, at.device, *cand, &why)) {
+        if (at.hw && !cand->hardware) {
           why = "no hardware H.264 encoder";
         } else {
           w = std::move(cand);
@@ -519,7 +565,7 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
       }
       cand.reset();
       removeFile();
-      tried += (tried.empty() ? "" : "; ") + std::string(hw ? "hardware: " : "software: ") + why;
+      tried += (tried.empty() ? "" : "; ") + std::string(at.label) + ": " + why;
     }
     if (!w) {
       err = "No usable H.264 encoder (" + tried + ")";
@@ -531,6 +577,11 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     w.reset();  // abandons the file without finalising it
     removeFile();
     return false;
+  };
+  const bool usedHardware = w->hardware;
+  auto failEncoder = [&](const std::string& m) {  // encoder / sink / file trouble (not the renderer's)
+    *hardwareFailed = usedHardware;
+    return fail(m);
   };
 
   const int W = g.canvas_width, H = g.canvas_height;
@@ -586,8 +637,16 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     const uint64_t idx = f - startFrame;
     const int64_t t0 = exportframe::frameTime100ns(idx), t1 = exportframe::frameTime100ns(idx + 1);
     std::string why;
-    if (!writeSample(w->sink, w->video, nv12.data(), nv12.size(), t0, t1 - t0, copyBytes, &why)) return fail(why);
+    if (!writeSample(w->sink, w->video, nv12.data(), nv12.size(), t0, t1 - t0, copyBytes, &why)) return failEncoder(why);
     ++framesWritten;
+    if (opt.simulateHardwareFailureAfter && framesWritten >= opt.simulateHardwareFailureAfter) {
+      const std::string m = "simulated hardware encoder failure";
+      err = m;
+      w.reset();
+      removeFile();
+      *hardwareFailed = true;
+      return false;
+    }
 
     // Audio: sample position from the absolute count at 48 kHz. The renderer's PCM is contiguous;
     // a gap would be filled with silence and an overlap dropped so A/V never drift.
@@ -602,7 +661,7 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
       if (!pcm.empty()) {
         samplesQueued = from + pcm.size();
         const int64_t a0 = exportframe::sampleTime100ns(from), a1 = exportframe::sampleTime100ns(samplesQueued);
-        if (!writeSample(w->sink, w->audio, pcm.data(), pcm.size() * 2, a0, a1 - a0, copyBytes, &why)) return fail(why);
+        if (!writeSample(w->sink, w->audio, pcm.data(), pcm.size() * 2, a0, a1 - a0, copyBytes, &why)) return failEncoder(why);
       }
     }
     if (progress) progress(rn_renderer_frames_done(rend.get()), total);
@@ -610,17 +669,17 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
 
   if (cancelled && cancelled()) return fail("cancelled");
   h = w->sink->Finalize();
-  if (FAILED(h)) return fail(hrText("Finishing the file", h));
+  if (FAILED(h)) return failEncoder(hrText("Finishing the file", h));
   const std::string encName = w->encoderName + (w->hardware ? " (hardware)" : "");
   w.reset();
   // The MPEG-4 sink stores the video at a rounded timescale (fps x 1000): exact NTSC frame times
   // (timescale 39375000, 655171 per frame) as the FFmpeg exporter writes them.
   {
     std::string why;
-    if (!retimeMp4Video(partPath, framesWritten, RN_FPS_NUM, RN_FPS_DEN, &why)) return fail(why);
+    if (!retimeMp4Video(partPath, framesWritten, RN_FPS_NUM, RN_FPS_DEN, &why)) return failEncoder(why);
     // Self-check before the file gets its name: complete box structure, every chunk offset
     // pointing at its samples (also past 4 GiB), and Media Foundation plays it to the last frame.
-    if (!verifyExportedMp4(partPath, framesWritten, &why)) return fail(why);
+    if (!verifyExportedMp4(partPath, framesWritten, &why)) return failEncoder(why);
   }
   // (Media Foundation may close the self-check's file handle a moment after the reader is gone.)
   for (int attempt = 0;; ++attempt) {
@@ -637,7 +696,38 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     result->rendererHash = rn_renderer_hash(rend.get());
     result->duration = double(framesWritten) * RN_FPS_DEN / RN_FPS_NUM;
     result->encoder = encName;
+    result->hardware = usedHardware;
   }
+  return true;
+}
+
+}  // namespace
+
+bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::string& outPath,
+                   const ExportProgressFn& progress, const ExportCancelFn& cancelled, ExportResult* result,
+                   std::string* error) {
+  std::unique_ptr<rn_renderer, void (*)(rn_renderer*)> rend(renderer, rn_renderer_free);
+  std::string localError;
+  std::string& err = error ? *error : localError;
+  if (!rend) {
+    err = "no renderer";
+    return false;
+  }
+  bool hardwareFailed = false;
+  if (exportOnce(rend.get(), opt, outPath, progress, cancelled, result, &err, &hardwareFailed)) return true;
+  // Automatic encoder choice: a hardware encoder that failed while encoding, finishing or in the
+  // self-check gets one retry with the software encoder (the same picture, timing and settings).
+  if (!hardwareFailed || !opt.encoder.empty() || !opt.retryRenderer || (cancelled && cancelled())) return false;
+  const std::string hwError = err;
+  ExportOptions sw = opt;
+  sw.encoder = "mf_software";
+  sw.retryRenderer.reset();
+  sw.simulateHardwareFailureAfter = 0;
+  if (!exportOnce(opt.retryRenderer.get(), sw, outPath, progress, cancelled, result, &err, &hardwareFailed)) {
+    if (err != "cancelled") err = "Hardware encoder: " + hwError + "; software encoder: " + err;
+    return false;
+  }
+  if (result) result->encoder += " - the hardware encoder failed (" + hwError + ")";
   return true;
 }
 

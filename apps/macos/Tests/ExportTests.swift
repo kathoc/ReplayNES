@@ -59,6 +59,9 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(lastProgress.1, UInt64(frames))
         XCTAssertEqual(result.audioSamples, rn_audio_samples_before(UInt64(frames)))
         XCTAssertEqual(result.rendererHash, refHash, "export run must match a normal offline replay")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: out.path + ".part"), "no temporary file left")
+        XCTAssertTrue(result.encoder.hasPrefix("VideoToolbox H.264"))
+        print("export encoder: \(result.encoder)")
 
         // Export must not mutate the project/session.
         XCTAssertEqual(s.takeLength, lengthBefore)
@@ -105,8 +108,12 @@ final class ExportTests: XCTestCase {
         settings.pixelAspect87 = true
         settings.flashReduction = .standard
         let url = URL(fileURLWithPath: out)
+        let t0 = Date()
         let result = try MP4Exporter(renderer: try s.makeRenderer(), settings: settings, url: url)
             .run(progress: { _, _ in }, isCancelled: { false })
+        let seconds = Date().timeIntervalSince(t0)
+        print(String(format: "long export: %llu frames in %.1f s (%.1f fps), %@", result.frames, seconds,
+                     Double(result.frames) / seconds, result.encoder))
         XCTAssertEqual(result.frames, s.takeLength)
         let expected = Double(result.frames) * Double(RN_FPS_DEN) / Double(RN_FPS_NUM)
         let exp = expectation(description: "load")

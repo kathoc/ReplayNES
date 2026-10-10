@@ -25,7 +25,7 @@ target_compile_options(rnw_crt PRIVATE ${RNL_WARNINGS})
 add_library(rnw_export STATIC src/mp4_export_mf.cpp ${RNL_DESKTOP_DIR}/src/export/export_frame.cpp
   ${RNL_DESKTOP_DIR}/src/export/export_job.cpp ${RNL_DESKTOP_DIR}/src/export/mp4_retime.cpp
   ${RNL_DESKTOP_DIR}/src/export/mp4_check.cpp)
-target_link_libraries(rnw_export PUBLIC rnl_logic mfplat mfreadwrite mfuuid ole32 oleaut32 uuid)
+target_link_libraries(rnw_export PUBLIC rnl_logic mfplat mfreadwrite mfuuid d3d11 ole32 oleaut32 uuid)
 target_compile_definitions(rnw_export PRIVATE UNICODE _UNICODE)
 target_compile_options(rnw_export PRIVATE ${RNL_WARNINGS})
 add_executable(replaynes-export ${RNL_DESKTOP_DIR}/src/export/export_cli.cpp)

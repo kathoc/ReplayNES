@@ -7,6 +7,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import Metal
+import VideoToolbox
 
 struct ExportSettings: Equatable {
     enum Codec: String, CaseIterable, Identifiable {
@@ -139,6 +140,8 @@ struct ExportResult {
     let rendererHash: UInt64
     let duration: Double
     let url: URL
+    var encoder = ""        // e.g. "VideoToolbox H.264 (hardware)"
+    var hardware = false
 }
 
 /// Encodes one rn_renderer to an MP4 file. Takes ownership of the renderer (frees it).
@@ -164,9 +167,12 @@ final class MP4Exporter {
         let total = rn_renderer_total_frames(renderer)
         if total == 0 { throw ExportError.invalidSettings(String(localized: "There are no frames to export (the take is empty)")) }
 
-        try? FileManager.default.removeItem(at: url)
+        // Written as "<name>.mp4.part" and moved to "<name>.mp4" once finished: an export that never
+        // finishes (crash, kill) can't leave an unplayable file (no moov) under the chosen name.
+        let part = url.appendingPathExtension("part")
+        try? FileManager.default.removeItem(at: part)
         let writer: AVAssetWriter
-        do { writer = try AVAssetWriter(outputURL: url, fileType: .mp4) } catch { throw ExportError.writer(error.localizedDescription) }
+        do { writer = try AVAssetWriter(outputURL: part, fileType: .mp4) } catch { throw ExportError.writer(error.localizedDescription) }
         writer.movieTimeScale = CMTimeScale(RN_FPS_NUM)
 
         let g = geometry
@@ -179,6 +185,9 @@ final class MP4Exporter {
         if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: settings.codec.avCodec,
+            // Hardware (the media engine) whenever there is one; VideoToolbox falls back to its
+            // software encoder otherwise (same bit rate / GOP / profile).
+            AVVideoEncoderSpecificationKey: [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true],
             AVVideoWidthKey: g.canvasWidth,
             AVVideoHeightKey: g.canvasHeight,
             AVVideoCompressionPropertiesKey: compression,
@@ -346,7 +355,7 @@ final class MP4Exporter {
 
         if let failure {
             writer.cancelWriting()
-            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: part)
             throw failure
         }
         let endTime = CMTime(value: CMTimeValue(framesWritten * UInt64(RN_FPS_DEN)), timescale: CMTimeScale(RN_FPS_NUM))
@@ -355,11 +364,40 @@ final class MP4Exporter {
         writer.finishWriting { done.signal() }
         done.wait()
         if writer.status != .completed {
-            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: part)
             throw ExportError.writer(writer.error?.localizedDescription ?? "finishWriting status \(writer.status.rawValue)")
         }
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: part)
+            } else {
+                try FileManager.default.moveItem(at: part, to: url)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: part)
+            throw ExportError.writer(error.localizedDescription)
+        }
+        let hw = Self.hardwareEncoderAvailable(codec: settings.codec, width: g.canvasWidth, height: g.canvasHeight)
         return ExportResult(frames: framesWritten, audioSamples: samplesWritten,
-                            rendererHash: rn_renderer_hash(renderer), duration: endTime.seconds, url: url)
+                            rendererHash: rn_renderer_hash(renderer), duration: endTime.seconds, url: url,
+                            encoder: "VideoToolbox \(settings.codec.label) (\(hw ? "hardware" : "software"))", hardware: hw)
+    }
+
+    /// Whether VideoToolbox gives this codec / size a hardware encoder (what AVAssetWriter uses with
+    /// EnableHardwareAcceleratedVideoEncoder): a probe session, nothing is encoded.
+    static func hardwareEncoderAvailable(codec: ExportSettings.Codec, width: Int, height: Int) -> Bool {
+        var session: VTCompressionSession?
+        let spec = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true] as CFDictionary
+        let type: CMVideoCodecType = codec == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC
+        guard VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: type,
+                                         encoderSpecification: spec, imageBufferAttributes: nil, compressedDataAllocator: nil,
+                                         outputCallback: nil, refcon: nil, compressionSessionOut: &session) == noErr,
+              let session else { return false }
+        defer { VTCompressionSessionInvalidate(session) }
+        var value: CFTypeRef?
+        let st = VTSessionCopyProperty(session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
+                                       allocator: nil, valueOut: &value)
+        return st == noErr && (value as? Bool) == true
     }
 
     /// Nearest-neighbour scale BGRA 256x240 -> canvas (black borders). Rows are built once and
