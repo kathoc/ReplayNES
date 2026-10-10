@@ -403,8 +403,9 @@ final class MP4Exporter {
               let session else { return false }
         defer { VTCompressionSessionInvalidate(session) }
         var value: CFTypeRef?
-        let st = VTSessionCopyProperty(session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
-                                       allocator: nil, valueOut: &value)
+        let key: CFString
+        if #available(iOS 17.4, *) { key = kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder } else { return true }
+        let st = VTSessionCopyProperty(session, key: key, allocator: nil, valueOut: &value)
         return st == noErr && (value as? Bool) == true
     }
 
