@@ -1603,8 +1603,20 @@ struct LargeMp4 {
     std::string stsdA(4, '\0');
     be32(stsdA, 1);
     stsdA += box("mp4a", std::string(28, '\0'));
-    std::string video = box("trak", tkhd(4800) + box("mdia", header("mdhd", 60098, 5995, 4) + hdlr("vide") +
-                                                                  box("minf", box("stbl", box("stsd", stsdV) + stts(6, 999) + stsc(3) +
+    // Video tables as Media Foundation's sink writes them: 999 / 1000 ticks alternating (several
+    // stts runs) and all-zero composition offsets - the retimed moov is smaller than this one.
+    std::string sttsV(4, '\0');
+    be32(sttsV, 3);
+    for (uint32_t d : {1000u, 999u, 1000u}) {
+      be32(sttsV, 2);
+      be32(sttsV, d);
+    }
+    std::string cttsV(4, '\0');
+    be32(cttsV, 1);
+    be32(cttsV, 6);
+    be32(cttsV, 0);
+    std::string video = box("trak", tkhd(4800) + box("mdia", header("mdhd", 60098, 5998, 4) + hdlr("vide") +
+                                                                  box("minf", box("stbl", box("stsd", stsdV) + box("stts", sttsV) + box("ctts", cttsV) + stsc(3) +
                                                                                                   stsz(uint32_t(v.size()), 6) + offsets_(videoChunk)))));
     std::string audio = box("trak", tkhd(4800) + box("mdia", header("mdhd", 48000, 4800, 4) + hdlr("soun") +
                                                                   box("minf", box("stbl", box("stsd", stsdA) + stts(4, 1024) + stsc(2) +
@@ -1650,9 +1662,18 @@ TEST_CASE("export: MP4 check + retime of a file past 4 GiB (largesize mdat, co64
   CHECK_EQ(sum.tracks[0].samples, uint64_t(6));
   CHECK_EQ(sum.tracks[0].chunks, uint64_t(2));
   CHECK(sum.tracks[0].dataEnd > (uint64_t(1) << 32));
-  // Retime: the moov at the end is rewritten, the chunk offsets (64-bit) stay as they are.
+  // Retime: the moov at the end is rewritten (smaller: the stts runs collapse, the zero ctts
+  // goes), the chunk offsets (64-bit) stay as they are and the file keeps its size - the rest of
+  // the old moov becomes a 'free' box. (0.5.2 truncated it with std::filesystem::resize_file,
+  // which llvm-mingw's libc++ does through a 32-bit off_t: a file past 4 GiB was cut to its size
+  // modulo 2^32, losing the moov.)
   REQUIRE(rnl::retimeMp4Video(path, 6, RN_FPS_NUM, RN_FPS_DEN, &err));
+  {
+    std::error_code ec;
+    CHECK_EQ(uint64_t(fs::file_size(fs::u8path(path), ec)), m.fileSize);
+  }
   REQUIRE(rnl::checkMp4File(path, &sum, &err));
+  CHECK(sum.tracks.size() == 2);
   CHECK(sum.tracks[0].co64);
   CHECK_EQ(sum.tracks[0].timescale, uint32_t(RN_FPS_NUM));
   CHECK_EQ(sum.tracks[0].duration, uint64_t(6) * RN_FPS_DEN);

@@ -304,14 +304,22 @@ bool retimeMp4Video(const std::string& path, uint64_t frames, uint32_t timescale
   }
   std::vector<uint8_t> out;
   serialize(moov, out);
+  // A smaller moov leaves the rest of the old one as a 'free' box: the file is never truncated.
+  // (std::filesystem::resize_file must not be used: with llvm-mingw's libc++ it goes through a
+  // 32-bit off_t and cut files past 4 GiB to their size modulo 2^32 - moov and the end of the
+  // media data were gone, the file unplayable. That was the 0.5.2 export bug on Windows.)
+  if (out.size() < raw.size()) {
+    size_t pad = raw.size() - out.size();
+    if (pad < 8) pad += 8;  // a box needs 8 bytes: grow the file by 8 instead (fine at the end)
+    const size_t at = out.size();
+    out.resize(at + pad, 0);
+    set32(out.data() + at, uint32_t(pad));
+    std::memcpy(out.data() + at + 4, "free", 4);
+  }
   f.seekp(std::streamoff(moovOff));
   f.write(reinterpret_cast<const char*>(out.data()), std::streamsize(out.size()));
   f.close();
   if (!f) return fail("cannot write moov");
-  if (out.size() < raw.size()) {
-    fs::resize_file(fp, moovOff + out.size(), ec);
-    if (ec) return fail("cannot truncate the file");
-  }
   return true;
 }
 

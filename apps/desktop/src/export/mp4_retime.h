@@ -4,7 +4,8 @@
 // and exactly 655171 ticks per frame (video frame f starts at f * 655171 / 39375000 s, as the
 // FFmpeg exporter writes it), with 64-bit durations where needed. The samples, their order and
 // the audio track are untouched; composition offsets / edit lists are rescaled (all-zero offsets
-// are dropped). Needs moov after mdat (the end of the file): it is rewritten in place.
+// are dropped). Needs moov after mdat (the end of the file): it is rewritten in place; when it
+// gets smaller the rest of the old one becomes a 'free' box (the file is never truncated).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 

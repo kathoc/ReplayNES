@@ -154,10 +154,10 @@ failed / cancelled export removes its file.
 
 * **Written under a temporary name** (`<name>.mp4.part` next to the destination) and renamed to
   `<name>.mp4` only after `Finalize`, the timescale fix-up and the self-check below succeeded
-  (Linux: the same). Until 0.5.2 the sink wrote the final name directly: an export that never got
-  to `Finalize` (process killed / crashed, PC asleep or shut down) left an `.mp4` with media data
-  but no `moov` box, which no player opens ("moov atom not found"; reproduced by killing an
-  export in the VM). Now such a run leaves at most a `.part` file.
+  (Linux and macOS: the same). Until 0.5.2 the sink wrote the final name directly: an export that
+  never got to `Finalize` (process killed / crashed, PC asleep or shut down) left an `.mp4` with
+  media data but no `moov` box, which no player opens ("moov atom not found"; reproduced by
+  killing an export in the VM). Now such a run leaves at most a `.part` file.
 * **Self-check before the rename** (`verifyExportedMp4`; `replaynes-export --check FILE.mp4
   [--frames N]` runs it on any file): `export/mp4_check.*` walks the box structure (top-level
   boxes up to the end of the file, one `moov`, no unterminated `mdat`), every chunk of every track
@@ -191,7 +191,13 @@ failed / cancelled export removes its file.
   take longer than 109 s needs more than 32 bits - 27:53 = 65,895,133,667 ticks); `tkhd` / `mvhd`
   stay in the movie timescale (48000) and switch to version 1 only when needed; chunk offsets
   (`stco` / `co64`) and a 64-bit `mdat` size are left as the sink wrote them (moov is at the end,
-  so rewriting it moves no media data). Unit tests: a 27:53 take (100577 frames) and a sparse
+  so rewriting it moves no media data). The rewritten moov is smaller (the sink's 999 / 1000 stts
+  runs collapse to one): the rest of the old one becomes a `free` box - **the file is never
+  truncated**. 0.5.2 truncated it with `std::filesystem::resize_file`, which llvm-mingw's libc++
+  implements through a 32-bit `off_t`: every export past 4 GiB was cut to its size modulo 2^32
+  (moov and the end of the media data gone; nothing plays it), or failed when that remainder was
+  over 2 GiB. Reproduced in the VM: the 27:53 Salamander take, 1920x1080 + CRT (31 Mbit/s, 6.42 GB)
+  came out as 2.13 GB; the user's unplayable 1.4 GB file is the same cut of a ~5.7 GB export. Unit tests: a 27:53 take (100577 frames) and a sparse
   file past 4 GiB (64-bit `mdat`, `co64`), plus files the check must reject (wrapped 32-bit
   offsets, no `moov`, a 32-bit `mdat` size past 4 GiB).
 * Verification: `scripts/windows-vm/verify-export.sh [arch]` runs `replaynes-export --self-test` in
