@@ -1,8 +1,9 @@
 // hprog, fast path (MSL tube_h_fast): h[((parity*height + y)*ow + x)*4 + c] from branch
-// c*2 + parity. A workgroup covers 64 columns x 16 rows, one invocation per (parity, column,
-// channel): the drive samples the tile reaches (tiles[] = first, last index) are staged in shared
-// memory once, each invocation keeps its branch's taps in registers (N = the plan's tap count
-// rounded up to 8, 12, 16 or 24; fast-plan padding taps point at the tile's first input, weight 0).
+// c*2 + parity. A workgroup covers 64 columns x 64 rows, one invocation per (parity, column,
+// channel): the invocation loads its branch's taps into registers once (N = the plan's tap count
+// rounded up to 8, 12, 16 or 24; fast-plan padding taps point at the tile's first input, weight 0);
+// the drive samples the tile reaches (tiles[] = first, last index) are staged in shared memory 16
+// rows at a time.
 // SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
 #version 450
 #extension GL_GOOGLE_include_directive : enable
@@ -17,16 +18,30 @@ FAST_TUBE_PARAMS
 // different banks: <= 3 * 2571 floats.
 shared float rowv[7716];
 #define TUBE_H_ROWS(NAME, N)                                                                     \
-  void NAME(int rv, int S, int ny, int tapBase, int n, int first, int o, int ostride) {          \
+  void NAME(int S, int PS, int lid, int c, int y0, int ny, int span, ivec2 sp, int tapBase, int n, \
+            bool live, int o, int ostride) {                                                   \
     int idx[N]; float wt[N];                                                                     \
     for (int k = 0; k < N; k++) {                                                                \
-      vec2 t = k < n ? xmap[tapBase + k] : vec2(float(first), 0.0);                              \
-      idx[k] = int(t.x) - first; wt[k] = t.y;                                                    \
+      vec2 t = live && k < n ? xmap[tapBase + k] : vec2(float(sp.x), 0.0);                     \
+      idx[k] = int(t.x) - sp.x; wt[k] = t.y;                                                     \
     }                                                                                            \
-    for (int r = 0; r < ny; r++) {                                                               \
-      float sum = 0.0;                                                                           \
-      for (int k = 0; k < N; k++) sum += rowv[rv + r * S + idx[k]] * wt[k];                      \
-      h[o + r * ostride] = sum;                                                                  \
+    for (int yb = 0; yb < ny; yb += 16) {                                                        \
+      int nb = min(16, ny - yb);                                                                 \
+      barrier();                                                                                 \
+      for (int i = lid; i < nb * span; i += 384) {                                               \
+        int r = i / span, x = i - r * span;                                                      \
+        vec4 v = src[(y0 + yb + r) * 512 + sp.x + x];                                            \
+        rowv[r * S + x] = v.x; rowv[PS + r * S + x] = v.y; rowv[2 * PS + r * S + x] = v.z;       \
+      }                                                                                          \
+      barrier();                                                                                 \
+      if (live) {                                                                              \
+        int rv = c * PS;                                                                         \
+        for (int r = 0; r < nb; r++) {                                                           \
+          float sum = 0.0;                                                                       \
+          for (int k = 0; k < N; k++) sum += rowv[rv + r * S + idx[k]] * wt[k];                  \
+          h[o + (yb + r) * ostride] = sum;                                                       \
+        }                                                                                        \
+      }                                                                                          \
     }                                                                                            \
   }
 TUBE_H_ROWS(tubeHRows8, 8)
@@ -38,21 +53,14 @@ void main() {
   int S = P.hStride;
   int PS = (16 * S + 31) / 32 * 32 + 11;
   int c = lid % 3, pxl = (lid / 3) % 64, parity = lid / 192;
-  int tile = int(gl_WorkGroupID.x), px = tile * 64 + pxl, y0 = int(gl_WorkGroupID.y) * 16, ny = min(16, P.height - y0);
+  int tile = int(gl_WorkGroupID.x), px = tile * 64 + pxl, y0 = int(gl_WorkGroupID.y) * 64, ny = min(64, P.height - y0);
   ivec2 sp = tiles[tile];
   int span = sp.y - sp.x + 1;
-  for (int i = lid; i < ny * span; i += 384) {
-    int r = i / span, x = i - r * span;
-    vec4 v = src[(y0 + r) * 512 + sp.x + x];
-    rowv[r * S + x] = v.x; rowv[PS + r * S + x] = v.y; rowv[2 * PS + r * S + x] = v.z;
-  }
-  barrier();
-  if (px >= P.ow) return;
-  int tapBase = (px * 6 + c * 2 + parity) * P.xCount;
+  bool live = px < P.ow;
+  int tapBase = (min(px, P.ow - 1) * 6 + c * 2 + parity) * P.xCount;
   int o = ((parity * P.height + y0) * P.ow + px) * 4 + c;
-  int rv = c * PS;
-  if (P.xCount <= 8) tubeHRows8(rv, S, ny, tapBase, P.xCount, sp.x, o, P.ow * 4);
-  else if (P.xCount <= 12) tubeHRows12(rv, S, ny, tapBase, P.xCount, sp.x, o, P.ow * 4);
-  else if (P.xCount <= 16) tubeHRows16(rv, S, ny, tapBase, P.xCount, sp.x, o, P.ow * 4);
-  else tubeHRows24(rv, S, ny, tapBase, P.xCount, sp.x, o, P.ow * 4);
+  if (P.xCount <= 8) tubeHRows8(S, PS, lid, c, y0, ny, span, sp, tapBase, P.xCount, live, o, P.ow * 4);
+  else if (P.xCount <= 12) tubeHRows12(S, PS, lid, c, y0, ny, span, sp, tapBase, P.xCount, live, o, P.ow * 4);
+  else if (P.xCount <= 16) tubeHRows16(S, PS, lid, c, y0, ny, span, sp, tapBase, P.xCount, live, o, P.ow * 4);
+  else tubeHRows24(S, PS, lid, c, y0, ny, span, sp, tapBase, P.xCount, live, o, P.ow * 4);
 }

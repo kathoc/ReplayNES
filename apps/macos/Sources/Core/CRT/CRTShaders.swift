@@ -865,21 +865,37 @@ struct FastTubeParams {
     float4 amb;    // ambient: (scale, diffuse fraction, normal slope x, normal slope y)
     float4 light;  // normalised light direction (w unused)
 };
-// hprog: h[(parity*height + y)*ow + x] = half4(R, G, B, 0), channel c from branch c*2 + parity.
-// A threadgroup covers 64 columns x 16 rows, one thread per (parity, column, channel): the drive
-// samples the tile reaches (tiles[] = first, last index) are staged in threadgroup memory once,
-// each thread keeps its branch's taps in registers (N = the plan's tap count rounded up to 8, 12,
-// 16 or 24; fast-plan padding taps point at the tile's first input with weight 0).
+// hprog: h[((parity*height + y)*ow + x)*4 + c] from branch c*2 + parity. A threadgroup covers
+// 64 columns x 64 rows, one thread per (parity, column, channel): the thread loads its branch's
+// taps into registers once (N = the plan's tap count rounded up to 8, 12, 16 or 24; fast-plan
+// padding taps point at the tile's first input with weight 0); the drive samples the tile reaches
+// (tiles[] = first, last index) are staged in threadgroup memory 16 rows at a time.
 template <int N>
-static inline void tubeHRows(threadgroup const float* rowv, int S, int ny, device const float2* taps, int n, int first,
+static inline void tubeHRows(threadgroup float* rowv, int S, int PS, int lid, int c, int y0, int ny, int span, int2 sp,
+                             device const float4* src, device const float2* taps, int n, bool active,
                              device float* o, int ostride) {
     int idx[N]; float wt[N];
-    for (int k = 0; k < N; k++) { float2 t = k < n ? taps[k] : float2(float(first), 0.0f); idx[k] = int(t.x) - first; wt[k] = t.y; }
-    for (int r = 0; r < ny; r++) {
-        threadgroup const float* rv = rowv + r * S;
-        float sum = 0.0f;
-        for (int k = 0; k < N; k++) sum += rv[idx[k]] * wt[k];
-        o[r * ostride] = sum;
+    for (int k = 0; k < N; k++) {
+        float2 t = active && k < n ? taps[k] : float2(float(sp.x), 0.0f);
+        idx[k] = int(t.x) - sp.x; wt[k] = t.y;
+    }
+    for (int yb = 0; yb < ny; yb += 16) {
+        int nb = min(16, ny - yb);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (int i = lid; i < nb * span; i += 384) {
+            int r = i / span, x = i - r * span;
+            float4 v = src[(y0 + yb + r) * 512 + sp.x + x];
+            rowv[r * S + x] = v.x; rowv[PS + r * S + x] = v.y; rowv[2 * PS + r * S + x] = v.z;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (active) {
+            threadgroup const float* rv = rowv + c * PS;
+            for (int r = 0; r < nb; r++) {
+                float sum = 0.0f;
+                for (int k = 0; k < N; k++) sum += rv[r * S + idx[k]] * wt[k];
+                o[(yb + r) * ostride] = sum;
+            }
+        }
     }
 }
 kernel void tube_h_fast(device const float4* src [[buffer(0)]], device const float2* xmap [[buffer(1)]],
@@ -889,23 +905,16 @@ kernel void tube_h_fast(device const float4* src [[buffer(0)]], device const flo
     int S = P.hStride;   // >= the widest tile span
     int PS = (16 * S + 31) / 32 * 32 + 11;   // channel plane stride: planes start in different banks
     int c = int(lid) % 3, pxl = (int(lid) / 3) % 64, parity = int(lid) / 192;
-    int px = int(tg.x) * 64 + pxl, y0 = int(tg.y) * 16, ny = min(16, P.height - y0);
+    int px = int(tg.x) * 64 + pxl, y0 = int(tg.y) * 64, ny = min(64, P.height - y0);
     int2 sp = tiles[tg.x];
     int span = sp.y - sp.x + 1;
-    for (int i = int(lid); i < ny * span; i += 384) {
-        int r = i / span, x = i - r * span;
-        float4 v = src[(y0 + r) * 512 + sp.x + x];
-        rowv[r * S + x] = v.x; rowv[PS + r * S + x] = v.y; rowv[2 * PS + r * S + x] = v.z;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (px >= P.ow) return;
-    device const float2* taps = xmap + (px * 6 + c * 2 + parity) * P.xCount;
+    bool active = px < P.ow;
+    device const float2* taps = xmap + (min(px, P.ow - 1) * 6 + c * 2 + parity) * P.xCount;
     device float* o = h + ((parity * P.height + y0) * P.ow + px) * 4 + c;
-    threadgroup const float* rv = rowv + c * PS;
-    if (P.xCount <= 8) tubeHRows<8>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
-    else if (P.xCount <= 12) tubeHRows<12>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
-    else if (P.xCount <= 16) tubeHRows<16>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
-    else tubeHRows<24>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
+    if (P.xCount <= 8) tubeHRows<8>(rowv, S, PS, int(lid), c, y0, ny, span, sp, src, taps, P.xCount, active, o, P.ow * 4);
+    else if (P.xCount <= 12) tubeHRows<12>(rowv, S, PS, int(lid), c, y0, ny, span, sp, src, taps, P.xCount, active, o, P.ow * 4);
+    else if (P.xCount <= 16) tubeHRows<16>(rowv, S, PS, int(lid), c, y0, ny, span, sp, src, taps, P.xCount, active, o, P.ow * 4);
+    else tubeHRows<24>(rowv, S, PS, int(lid), c, y0, ny, span, sp, src, taps, P.xCount, active, o, P.ow * 4);
 }
 // vprog (fixed or growth spot) + mixprog: emission, the scatter (bilinear from the drive-domain
 // scatter source) and the ambient reflection, straight into the half-float output. Fast-plan

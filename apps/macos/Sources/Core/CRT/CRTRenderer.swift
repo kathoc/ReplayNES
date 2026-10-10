@@ -801,7 +801,7 @@ final class CRTRenderer {
             $0.setBuffer(t.scatterTmp, offset: 0, index: 0); $0.setBuffer(t.scatterWY, offset: 0, index: 1)
             $0.setBuffer(scatterSrc, offset: 0, index: 2); $0.setBytes(&sp, length: MemoryLayout<ScatterParams>.stride, index: 3)
         }
-        dispatchGroups("tube_h_fast", size((ow + 63) / 64, (p.height + 15) / 16, 1), size(384, 1, 1)) {
+        dispatchGroups("tube_h_fast", size((ow + 63) / 64, (p.height + 63) / 64, 1), size(384, 1, 1)) {
             $0.setBuffer(hsrc, offset: 0, index: 0); $0.setBuffer(t.xmapFast, offset: 0, index: 1)
             $0.setBuffer(hplanes, offset: 0, index: 2); $0.setBytes(&tp, length: tps, index: 3); $0.setBuffer(t.tiles, offset: 0, index: 4)
             $0.setThreadgroupMemoryLength(((16 * t.hStride + 31) / 32 * 32 + 11) * 3 * 4 / 16 * 16 + 16, index: 0)

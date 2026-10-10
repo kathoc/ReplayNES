@@ -964,7 +964,7 @@ void CrtRendererD3D11::encodeFast(const Input& input, uint64_t ordinal, int64_t 
                     {float(crt::tube::kLightX / lightNorm), float(crt::tube::kLightY / lightNorm), float(crt::tube::kLightZ / lightNorm), 0}};
   ScatterParams scp{rows, t.sry, 0, 0, {t.kappa[0], t.kappa[1], t.kappa[2], 0}};
   dispatch("scatter_drive", {&t.scatterTmp, &t.swy, &t.scatterSrc}, &scp, sizeof scp, groups(512, 32), groups(rows, 8));
-  dispatch("tube_h_fast", {drive, &t.xmapFast, &t.hplanes, &t.tiles}, &tp, sizeof tp, groups(t.ow, 64), groups(t.height, 16));
+  dispatch("tube_h_fast", {drive, &t.xmapFast, &t.hplanes, &t.tiles}, &tp, sizeof tp, groups(t.ow, 64), groups(t.height, 64));
   dispatch("tube_v_fast", {&t.hplanes, &t.vcoef, &t.colinv, &t.vrows, &t.scatterSrc, &t.outH}, &tp, sizeof tp, groups(t.ow, 32),
            groups(t.oh, 8));
 }

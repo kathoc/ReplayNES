@@ -229,6 +229,7 @@ func compare(_ spec: String, _ w: Int, _ h: Int) {
     let modes = spec.split(separator: ":").map(String.init)
     let ra = makeRenderer(modes[0], w, h), rb = makeRenderer(modes[1], w, h)
     let ta = target(w, h, .rgba32Float), tb = target(w, h, .rgba32Float)
+    var worstFrame = -1
     var worst = Double.infinity, psnrSum = 0.0, deSum = 0.0, deMax = 0.0, maxAbs: Float = 0, count = 0
     let n = min(opt.frames, frames.count)
     for i in 0..<n {
@@ -250,6 +251,7 @@ func compare(_ spec: String, _ w: Int, _ h: Int) {
         }
         let mse = se / Double(w * h * 3)
         let psnr = mse > 0 ? 10 * log10(1 / mse) : 200
+        if psnr < worst { worstFrame = i }
         worst = min(worst, psnr); psnrSum += psnr; deSum += de / Double((w * h + 6) / 7); count += 1
         if let dir = opt.png, opt.pngFrames.contains(i) {
             let tag = "\(dir)/\(w)x\(h)_f\(i)"
@@ -258,8 +260,8 @@ func compare(_ spec: String, _ w: Int, _ h: Int) {
             writePNG(zip(a, b).map { abs($0 - $1) }, w, h, "\(tag)_diff_x10.png", scale: 10)
         }
     }
-    print(String(format: "%5dx%-5d %@ vs %@: PSNR mean %.2f dB, worst %.2f dB; dE76 mean %.4f, max %.3f; max |diff| %.4f (%d frames)",
-                 w, h, modes[0], modes[1], psnrSum / Double(max(1, count)), worst, deSum / Double(max(1, count)), deMax, maxAbs, count))
+    print(String(format: "%5dx%-5d %@ vs %@: PSNR mean %.2f dB, worst %.2f dB (frame %d); dE76 mean %.4f, max %.3f; max |diff| %.4f (%d frames)",
+                 w, h, modes[0], modes[1], psnrSum / Double(max(1, count)), worst, worstFrame, deSum / Double(max(1, count)), deMax, maxAbs, count))
 }
 
 for (w, h) in opt.sizes {
