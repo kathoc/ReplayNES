@@ -43,6 +43,7 @@ class NestopiaCore final : public ICore {
     if (frame) *frame = codesFrame_;
     return codes_.data();
   }
+  const uint8_t* cpuRam() const override;
   Status saveState(std::vector<uint8_t>& out) override;
   Status loadState(const uint8_t* data, size_t size) override;
   std::string compatId() const override { return staticCompatId(); }

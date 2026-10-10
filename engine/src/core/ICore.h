@@ -55,6 +55,9 @@ class ICore {
     (void)burstPhase; (void)frame;
     return nullptr;
   }
+  // Debug / test side channel: the 2 KiB of CPU work RAM ($0000-$07FF), read-only. Never part of
+  // the emulation path. nullptr = not supported (mock core).
+  virtual const uint8_t* cpuRam() const { return nullptr; }
   virtual Status saveState(std::vector<uint8_t>& out) = 0;
   virtual Status loadState(const uint8_t* data, size_t size) = 0;
   virtual std::string compatId() const = 0;    // changes whenever replay results could change

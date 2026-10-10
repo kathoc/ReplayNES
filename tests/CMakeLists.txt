@@ -27,6 +27,14 @@ rn_add_test(test_persist)
 rn_add_test(test_input)
 rn_add_test(test_render)
 rn_add_test(test_longrun)
+# ReplayNES Test Cartridge (tools/testcart): determinism, raster effects, rapid-fire meter.
+rn_add_test(test_testcart)
+# The committed ROM image (engine/src/testrom/TestCartridge*.inc) matches its 6502 source.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME testcart_generated_up_to_date
+           COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/testcart/build.py --check)
+endif()
 # Practice mode + A/B repeat slots (engine + persistence + C API).
 rn_add_test(test_practice)
 # A/B slots defined from take frames (timeline selection: rn_practice_set_range).

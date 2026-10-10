@@ -1,5 +1,7 @@
 // replaynes-cli: developer tool over the portable engine (no UI).
-//   make-test-rom <out.nes>                 write the generated ReplayNES test ROM (own code)
+//   make-test-rom [--cartridge] <out.nes>   write the generated ReplayNES test ROM (own code; the
+//                                           legacy determinism fixture), or with --cartridge the
+//                                           ReplayNES Test Cartridge (tools/testcart, CC0)
 //   sha256 <file>
 //   info <project.nesrec> [--rom PATH]      manifest, takes, bookmarks, checkpoints
 //   verify <project.nesrec> [--rom PATH]    replay active take from power-on on a fresh core and
@@ -7,10 +9,11 @@
 //   determinism <rom> [--frames N] [--runs R] [--mid F] [--seed S] [--reset-every K] [--mock]
 //   record-random <rom> <project.nesrec> [--frames N] [--seed S] [--mock]
 //   render-hash <project.nesrec> [--rom PATH]   run the export renderer, print hash + timing
-//   screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..] [--p2]
-//                                           run from power-on, write PREFIX_<frame>.png after the
+//   screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..] [--press2 ...]
+//              [--ram HEXADDR:LEN]          run from power-on, write PREFIX_<frame>.png after the
 //                                           given frames; btn = a b select start up down left right,
 //                                           held for D frames (default 6) starting at frame F
+//                                           (--press2: controller 2); --ram prints CPU RAM too
 //   bench-flash <rom> [frames=600] [level=2] [--reps R] [--warmup W]
 //                                           emulate `frames` frames from power-on (no input) into
 //                                           memory, then time only rn_flash_filter_process per frame
@@ -32,6 +35,7 @@
 #include "render/OfflineRenderer.h"
 #include "replaynes/replaynes.h"
 #include "session/Session.h"
+#include "testrom/TestCartridge.h"
 #include "testrom/TestRom.h"
 #include "util/Fs.h"
 #include "util/Hash.h"
@@ -66,14 +70,14 @@ int fail(const Status& st) {
 int usage() {
   std::fprintf(stderr,
                "usage: replaynes-cli <command> ...\n"
-               "  make-test-rom <out.nes>\n"
+               "  make-test-rom [--cartridge] <out.nes>\n"
                "  sha256 <file>\n"
                "  info <project.nesrec> [--rom PATH]\n"
                "  verify <project.nesrec> [--rom PATH]\n"
                "  determinism <rom> [--frames N] [--runs R] [--mid F] [--seed S] [--reset-every K] [--mock]\n"
                "  record-random <rom> <project.nesrec> [--frames N] [--seed S] [--mock]\n"
                "  render-hash <project.nesrec> [--rom PATH]\n"
-               "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..]\n"
+               "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..] [--press2 ..] [--ram ADDR:LEN]\n"
                "  bench-flash <rom> [frames=600] [level=0..3, default 2] [--reps R] [--warmup W]\n"
                "  dump-ppu <rom> --out FILE [--frames N] [--skip S] [--press btn@F[+D],..]\n"
                "  version\n");
@@ -287,30 +291,42 @@ int cmdScreenshot(const Args& a) {
   if (prefix.empty()) return usage();
   std::vector<uint64_t> at;
   for (auto& f : splitList(a.get("--at", "300"))) at.push_back(std::strtoull(f.c_str(), nullptr, 10));
-  struct Press { uint8_t mask; uint64_t from, to; };
+  struct Press { uint8_t mask; uint64_t from, to; int pad; };
   std::vector<Press> presses;
   static const char* kNames[] = {"a", "b", "select", "start", "up", "down", "left", "right"};
-  for (auto& p : splitList(a.get("--press"))) {
-    size_t atPos = p.find('@');
-    if (atPos == std::string::npos) return usage();
-    std::string name = p.substr(0, atPos);
-    uint8_t mask = 0;
-    for (int i = 0; i < 8; ++i) if (name == kNames[i]) mask = uint8_t(1u << i);
-    if (!mask) { std::fprintf(stderr, "unknown button %s\n", name.c_str()); return 1; }
-    std::string rest = p.substr(atPos + 1);
-    size_t plus = rest.find('+');
-    uint64_t from = std::strtoull(rest.c_str(), nullptr, 10);
-    uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
-    presses.push_back({mask, from, from + dur});
+  for (int pad = 0; pad < 2; ++pad) {
+    for (auto& p : splitList(a.get(pad ? "--press2" : "--press"))) {
+      size_t atPos = p.find('@');
+      if (atPos == std::string::npos) return usage();
+      std::string name = p.substr(0, atPos);
+      uint8_t mask = 0;
+      for (int i = 0; i < 8; ++i) if (name == kNames[i]) mask = uint8_t(1u << i);
+      if (!mask) { std::fprintf(stderr, "unknown button %s\n", name.c_str()); return 1; }
+      std::string rest = p.substr(atPos + 1);
+      size_t plus = rest.find('+');
+      uint64_t from = std::strtoull(rest.c_str(), nullptr, 10);
+      uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
+      presses.push_back({mask, from, from + dur, pad});
+    }
+  }
+  // --ram ADDR:LEN (hex address, decimal length): CPU RAM printed with every screenshot.
+  uint32_t ramAddr = 0, ramLen = 0;
+  if (!a.get("--ram").empty()) {
+    std::string r = a.get("--ram");
+    ramAddr = uint32_t(std::strtoul(r.c_str(), nullptr, 16));
+    size_t colon = r.find(':');
+    ramLen = colon == std::string::npos ? 16 : uint32_t(std::strtoul(r.c_str() + colon + 1, nullptr, 10));
+    if (ramAddr >= 0x800) ramAddr = 0x7FF;
+    ramLen = std::min<uint32_t>(ramLen, 0x800 - ramAddr);
   }
   auto core = createCore(a.has("--mock") ? CoreKind::Mock : CoreKind::Nestopia);
   st = core->loadROM(rom.data(), rom.size());
   if (!st.ok()) return fail(st);
   uint64_t last = at.empty() ? 0 : *std::max_element(at.begin(), at.end());
   for (uint64_t f = 0; f < last; ++f) {
-    uint8_t p1 = 0;
-    for (auto& p : presses) if (f >= p.from && f < p.to) p1 |= p.mask;
-    st = core->stepFrame(p1, 0, true);
+    uint8_t pads[2] = {0, 0};
+    for (auto& p : presses) if (f >= p.from && f < p.to) pads[p.pad] |= p.mask;
+    st = core->stepFrame(pads[0], pads[1], true);
     if (!st.ok()) return fail(st);
     if (std::find(at.begin(), at.end(), f + 1) != at.end()) {
       std::string path = prefix + "_" + std::to_string(f + 1) + ".png";
@@ -323,6 +339,12 @@ int cmdScreenshot(const Args& a) {
         if (std::find(colors.begin(), colors.end(), v[i]) == colors.end()) colors.push_back(v[i]);
       std::printf("frame %llu -> %s (%zu%s distinct colors, video hash %016llx)\n", (unsigned long long)(f + 1),
                   path.c_str(), colors.size(), colors.size() >= 64 ? "+" : "", (unsigned long long)core->videoHash());
+      if (ramLen && core->cpuRam()) {
+        const uint8_t* ram = core->cpuRam();
+        for (uint32_t i = 0; i < ramLen; ++i)
+          std::printf("%s%02x", i % 16 == 0 ? (i ? "\n  " : "  ") : " ", ram[ramAddr + i]);
+        std::printf("\n");
+      }
     }
   }
   return 0;
@@ -461,7 +483,7 @@ int main(int argc, char** argv) {
     std::string s = argv[i];
     if (s.size() > 2 && s[0] == '-' && s[1] == '-') {
       a.flags.push_back(s);
-      if (s != "--mock" && i + 1 < argc) a.flags.push_back(argv[++i]);
+      if (s != "--mock" && s != "--cartridge" && i + 1 < argc) a.flags.push_back(argv[++i]);
     } else {
       a.pos.push_back(s);
     }
@@ -473,7 +495,7 @@ int main(int argc, char** argv) {
   }
   if (a.pos.size() < 2) return usage();
   if (cmd == "make-test-rom") {
-    std::vector<uint8_t> rom = buildTestRom();
+    std::vector<uint8_t> rom = a.has("--cartridge") ? buildTestCartridge() : buildTestRom();
     Status st = fs::writeFileAtomic(a.pos[1], rom.data(), rom.size());
     if (!st.ok()) return fail(st);
     std::printf("%s  %s\n", Sha256::hex(rom.data(), rom.size()).c_str(), a.pos[1].c_str());

@@ -13,6 +13,7 @@
 #include "persist/ProjectStore.h"
 #include "render/OfflineRenderer.h"
 #include "session/Session.h"
+#include "testrom/TestCartridge.h"
 #include "testrom/TestRom.h"
 #include "util/Fs.h"
 #include "util/Hash.h"
@@ -139,6 +140,14 @@ rn_status rn_write_test_rom(const char* path) {
   return guard([&] {
     if (!path) return invalid("null path");
     std::vector<uint8_t> rom = rn::buildTestRom();
+    return ret(rn::fs::writeFileAtomic(path, rom.data(), rom.size()));
+  });
+}
+
+rn_status rn_write_test_cartridge(const char* path) {
+  return guard([&] {
+    if (!path) return invalid("null path");
+    std::vector<uint8_t> rom = rn::buildTestCartridge();
     return ret(rn::fs::writeFileAtomic(path, rom.data(), rom.size()));
   });
 }

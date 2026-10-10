@@ -3,6 +3,7 @@
 #include <cstring>
 #include <sstream>
 
+#include "core/api/NstApiCheats.hpp"
 #include "core/api/NstApiEmulator.hpp"
 #include "core/api/NstApiInput.hpp"
 #include "core/api/NstApiMachine.hpp"
@@ -204,6 +205,12 @@ Status NestopiaCore::loadState(const uint8_t* data, size_t size) {
   frame_ = frame;
   audioCount_ = 0;
   return Status::Ok();
+}
+
+const uint8_t* NestopiaCore::cpuRam() const {
+  if (!impl_) return nullptr;
+  // Read-only view of the CPU RAM through Nestopia's cheat API (no side effects).
+  return Nes::Api::Cheats(impl_->emu).GetRam();
 }
 
 }  // namespace rn

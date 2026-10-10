@@ -94,8 +94,12 @@ const char* rn_status_name(rn_status s);
 rn_status rn_sha256_file(const char* path, char out_hex[65]);
 uint64_t rn_audio_samples_before(uint64_t frame);
 uint32_t rn_audio_samples_for_frame(uint64_t frame);
-/* Writes the generated ReplayNES test ROM (own code, NROM) to path. */
+/* Writes the generated ReplayNES test ROM (own code, NROM) to path. The legacy fixture of the
+ * determinism tests (input mixed into an RNG); not meant to be looked at. */
 rn_status rn_write_test_rom(const char* path);
+/* Writes the ReplayNES Test Cartridge (own code, NROM, CC0) to path: palette chart, colour bars,
+ * sprites, scrolling, controllers, rapid-fire meter, sound test. The user-facing sample ROM. */
+rn_status rn_write_test_cartridge(const char* path);
 void rn_string_free(char* s); /* frees strings returned by rn_*_json functions */
 
 /* ------------------------------------------------------------------ session */
