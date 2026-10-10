@@ -5,7 +5,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
 
 enum CRTShaders {
-    static let source = #"""
+    /// Reference kernels (the 1:1 port and its bit-identical restructurings) + the fast path.
+    static let source = reference + fast
+
+    static let reference = #"""
 #include <metal_stdlib>
 using namespace metal;
 
@@ -26,9 +29,8 @@ static inline float gaussAt(int pos, int key) {
 struct RFParams { int hop; int overlap; int delay; int blocks; float scale; float signalLevel; float noiseSigma; int noiseKey; };
 
 // initCodes: PPU codes -> composite voltage -> AM carrier (+ M3-NOISE), bit-reversed rows.
-static inline float rfInitValue(int x, int block, device const ushort* codes, device const int* phases,
-                                device const float* volts, constant RFParams& P) {
-    int pos = block * P.hop + P.delay - P.overlap + reverse12(x);
+static inline float rfInitAt(int pos, device const ushort* codes, device const int* phases,
+                            device const float* volts, constant RFParams& P) {
     float v = 0.312f;
     if (pos >= 0 && pos < 654720) {
         int row = pos / 2728; int n = pos % 2728; int phase = (n + phases[row]) % 12;
@@ -38,6 +40,10 @@ static inline float rfInitValue(int x, int block, device const ushort* codes, de
     }
     float noise = (pos >= 0 && pos < 654720 && P.noiseSigma > 0.0f) ? P.noiseSigma * gaussAt(pos, P.noiseKey) : 0.0f;
     return (1.0f - P.scale * (v - 0.048f)) * P.signalLevel + noise;
+}
+static inline float rfInitValue(int x, int block, device const ushort* codes, device const int* phases,
+                                device const float* volts, constant RFParams& P) {
+    return rfInitAt(block * P.hop + P.delay - P.overlap + reverse12(x), codes, phases, volts, P);
 }
 kernel void rf_init_codes(device float2* outp [[buffer(0)]], device const ushort* codes [[buffer(1)]],
                           device const int* phases [[buffer(2)]], device const float* volts [[buffer(3)]],
@@ -505,6 +511,463 @@ kernel void show_kernel(device const float4* img [[buffer(0)]], constant ShowPar
     float2 frag = float2(g) + 0.5f;
     bool inside = frag.x >= P.dst.x && frag.y >= P.dst.y && frag.x < P.dst.x + P.dst.z && frag.y < P.dst.y + P.dst.w;
     target.write(inside ? float4(encodeSRGB(showSample(img, P, frag)), 1.0f) : float4(0.0f, 0.0f, 0.0f, 1.0f), g);
+}
+"""#
+
+    /// Fast path (CRTRenderer.Quality.fast, the live display): the same model and stage order with
+    /// the work restructured and a few approximations far below 8-bit display precision. Compiled
+    /// together with `reference` (shares its helpers and parameter structs). docs/CRT_PORT.md
+    /// "Fast path" lists every difference; CRTTests bounds the error against the reference.
+    static let fast = #"""
+// ================================================================ fast path
+static inline float2 cmulF(float2 a, float2 b) { return float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+// 8-point DFT in registers: X[k] = sum_n v[n] e^(s i 2 pi n k / 8), natural order in and out.
+static inline void dft8(thread float2* v, float s) {
+    const float h = 0.70710678118654752f;
+    float2 a0 = v[0] + v[4], a1 = v[1] + v[5], a2 = v[2] + v[6], a3 = v[3] + v[7];
+    float2 b0 = v[0] - v[4], b1 = v[1] - v[5], b2 = v[2] - v[6], b3 = v[3] - v[7];
+    b1 = float2(h * (b1.x - s * b1.y), h * (b1.y + s * b1.x));
+    b2 = float2(-s * b2.y, s * b2.x);
+    b3 = float2(-h * (b3.x + s * b3.y), h * (s * b3.x - b3.y));
+    float2 c0 = a0 + a2, c1 = a1 + a3, d0 = a0 - a2, d1 = a1 - a3; d1 = float2(-s * d1.y, s * d1.x);
+    float2 e0 = b0 + b2, e1 = b1 + b3, f0 = b0 - b2, f1 = b1 - b3; f1 = float2(-s * f1.y, s * f1.x);
+    v[0] = c0 + c1; v[4] = c0 - c1; v[2] = d0 + d1; v[6] = d0 - d1;
+    v[1] = e0 + e1; v[5] = e0 - e1; v[3] = f0 + f1; v[7] = f0 - f1;
+}
+// 4096-point Stockham radix-8 FFT, 512 threads (j), natural order in and out. The data stay in
+// registers (8 points per thread); each pass exchanges them through 16 KB of threadgroup memory,
+// real and imaginary parts in turn (half the memory of a complex buffer: two threadgroups fit a
+// core). Twiddles from the same float32 table as the reference butterflies.
+static inline void fftPass(thread float2* v, threadgroup float* x, device const float2* tw, float s, int j, int ns) {
+    int k = j % ns, step = 4096 / (ns * 8);
+    if (k > 0) {
+        // w^r, w = e^(s i 2 pi k step / 4096) from the twiddle table, powers by multiplication
+        // (one table read per pass instead of seven).
+        float2 t = tw[k * step], w1 = float2(t.x, s * t.y), wr = w1;
+        for (int r = 1; r < 8; r++) { v[r] = cmulF(v[r], wr); wr = cmulF(wr, w1); }
+    }
+    dft8(v, s);
+    int d = (j / ns) * ns * 8 + k;
+    int nsNext = ns * 8;
+    if (nsNext >= 4096) {   // last pass: leave the natural-order result in x as (re, im) planes
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (int r = 0; r < 8; r++) x[d + r * ns] = v[r].x;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float re[8];
+        for (int r = 0; r < 8; r++) re[r] = x[j + r * 512];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (int r = 0; r < 8; r++) x[d + r * ns] = v[r].y;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (int r = 0; r < 8; r++) v[r] = float2(re[r], x[j + r * 512]);
+        return;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int r = 0; r < 8; r++) x[d + r * ns] = v[r].x;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float re[8];
+    for (int r = 0; r < 8; r++) re[r] = x[j + r * 512];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int r = 0; r < 8; r++) x[d + r * ns] = v[r].y;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int r = 0; r < 8; r++) v[r] = float2(re[r], x[j + r * 512]);
+}
+// v[r] = element j + 512 r on entry and on exit.
+static inline void fft4096(thread float2* v, threadgroup float* x, device const float2* tw, float s, int j) {
+    for (int ns = 1; ns < 4096; ns *= 8) fftPass(v, x, tw, s, j, ns);
+}
+// RF/IF stage: the receiver only uses the real part of the IF output, i.e. the composite signal
+// filtered by Re(h) (a real FIR). Two consecutive overlap-save blocks ride in one complex FFT
+// (block 2m real, 2m+1 imaginary), multiplied by the spectrum of Re(h) and transformed back in the
+// same threadgroup: real part = block 2m, imaginary part = block 2m+1. Output: carrier (real).
+kernel void rf_fast(device float* carrier [[buffer(0)]], device const ushort* codes [[buffer(1)]],
+                    device const int* phases [[buffer(2)]], device const float* volts [[buffer(3)]],
+                    constant RFParams& P [[buffer(4)]], device const float2* tw [[buffer(5)]],
+                    device const float2* hspec [[buffer(6)]], threadgroup float* x [[threadgroup(0)]],
+                    uint tid [[thread_index_in_threadgroup]], uint pair [[threadgroup_position_in_grid]]) {
+    int b0 = int(pair) * 2, j = int(tid);
+    bool has1 = b0 + 1 < P.blocks;
+    int base0 = b0 * P.hop + P.delay - P.overlap, base1 = base0 + P.hop;
+    float2 v[8];
+    for (int r = 0; r < 8; r++) {
+        int i = j + r * 512;
+        v[r] = float2(rfInitAt(base0 + i, codes, phases, volts, P), has1 ? rfInitAt(base1 + i, codes, phases, volts, P) : 0.0f);
+    }
+    fft4096(v, x, tw, -1.0f, j);
+    for (int r = 0; r < 8; r++) v[r] = cmulF(v[r], hspec[j + r * 512]);
+    fft4096(v, x, tw, 1.0f, j);
+    for (int r = 0; r < 8; r++) {
+        int k = j + r * 512 - P.overlap;
+        if (k < 0 || k >= P.hop) continue;
+        float2 y = v[r] * (1.0f / 4096.0f);
+        int n0 = b0 * P.hop + k, n1 = n0 + P.hop;
+        if (n0 < 654720) carrier[n0] = y.x;
+        if (has1 && n1 < 654720) carrier[n1] = y.y;
+    }
+}
+// receiver-webgl reduction of one row (64 threads): porch clamp, burst correlation, sync level;
+// plus the row's GatedAGC control target. log(gain * sync) = log(gain) + log(sync), so the target
+// clamp(log(gain) - log(gain * sync)) is clamp(-log(sync)), independent of the gain in force:
+// agc[y] = (target, control gate on, 0, 0).
+kernel void rx_stats_fast(device const float* carrier [[buffer(0)]], device const float2* basis [[buffer(1)]],
+                          device float4* stats [[buffer(2)]], device float4* agc [[buffer(3)]],
+                          constant AGCParams& P [[buffer(4)]],
+                          uint tid [[thread_index_in_threadgroup]], uint row [[threadgroup_position_in_grid]]) {
+    threadgroup float4 part[64];
+    int y = int(row), t = int(tid);
+    device const float* c = carrier + y * 2728;
+    float porch = 0.0f, bc = 0.0f, bs = 0.0f, sync = 0.0f;
+    for (int n = 2172 + t; n < 2244; n += 64) porch += c[n];
+    for (int n = 2476 + t; n < 2596; n += 64) { float a = c[n]; float2 b = basis[n]; bc += a * b.x; bs += a * b.y; }
+    for (int n = 2324 + t; n < 2364; n += 64) sync += c[n];
+    part[t] = float4(porch, bc, bs, sync);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int w = 32; w > 0; w >>= 1) {
+        if (t < w) part[t] += part[t + w];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (t == 0) {
+        float4 s = part[0] / float4(72.0f, 60.0f, 60.0f, 40.0f);
+        stats[y] = s;
+        bool gateValid = y * 2728 + 2324 - P.delay >= 0 && y * 2728 + 2363 + P.delay < 654720;
+        bool control = P.enabled != 0 && gateValid && s.w > 0.0f;
+        agc[y] = float4(control ? clamp(-log(s.w), log(P.minGain), log(P.maxGain)) : 0.0f, control ? 1.0f : 0.0f, 0.0f, 0.0f);
+    }
+}
+// GatedAGC over the 240 rows from the per-row control targets (one threadgroup: thread 0 runs the
+// recurrence, a few multiply-adds per row; the gains are exponentiated in parallel). The control
+// targets keep lg within [log minGain, log maxGain], so the reference's clamps are no-ops there.
+kernel void rx_agc_fast(device const float4* agc [[buffer(0)]], device float* gains [[buffer(1)]],
+                        device AGCState* state [[buffer(2)]], constant AGCParams& P [[buffer(3)]],
+                        uint tid [[thread_index_in_threadgroup]]) {
+    threadgroup float2 target[240];
+    threadgroup float logg[240];
+    threadgroup bool changedT;
+    threadgroup float g0T;
+    int t = int(tid);
+    if (t < 240) target[t] = agc[t].xy;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (t == 0) {
+        float lo = log(P.minGain), hi = log(P.maxGain);
+        float fa = 1.0f - exp(-P.lineSeconds / P.attack), fr = 1.0f - exp(-P.lineSeconds / P.release);
+        float g0 = state->gain, lg = log(g0);
+        bool changed = false;
+        for (int r = 0; r < 240; r++) {
+            logg[r] = changed ? lg : 1e30f;
+            float2 q = target[r];
+            if (q.y != 0.0f) { lg = clamp(lg + (q.x - lg) * (q.x < lg ? fa : fr), lo, hi); changed = true; }
+        }
+        if (changed) state->gain = clamp(exp(lg), P.minGain, P.maxGain);
+        state->signalLost = 0.0f;
+        g0T = g0;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (t < 240) gains[t] = logg[t] > 1e29f ? g0T : clamp(exp(logg[t]), P.minGain, P.maxGain);
+}
+// prepare + decode of one row (256 threads); the 682 prepared (Y, C, S) values stay in
+// threadgroup memory. Also the row's mean drive (supply_mean).
+kernel void rx_decode_fast(device const float* carrier [[buffer(0)]], device const float2* basis [[buffer(1)]],
+                           device const float4* stats [[buffer(2)]], device const float* gains [[buffer(3)]],
+                           device float4* outp [[buffer(4)]], device float4* means [[buffer(5)]],
+                           uint tid [[thread_index_in_threadgroup]], uint row [[threadgroup_position_in_grid]]) {
+    threadgroup float3 prep[682];
+    threadgroup float3 part[256];
+    int py = int(row), t = int(tid);
+    float4 stat = stats[py];
+    float porch = stat.x;
+    device const float* c = carrier + py * 2728;
+    for (int px = t; px < 682; px += 256) {
+        float Y = 0.0f, C = 0.0f, S = 0.0f;
+        for (int k = 0; k < 4; k++) {
+            int n = px * 4 + k; Y += porch - c[n];
+            n = min(n + 2, 2727); float a = porch - c[n];
+            float2 b = basis[n]; C += a * b.x; S += a * b.y;
+        }
+        prep[px] = float3(Y, C, S);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float gn = gains[py];
+    float lengthC = length(stat.yz); float2 rot = float2(-stat.y, stat.z) / max(lengthC, 1e-30f);
+    float factor = gn / ((0.875f / (1.100f - 0.048f)) * (1.100f - 0.312f));
+    float3 total = float3(0.0f);
+    for (int px = t; px < 512; px += 256) {
+        float Y = 0.0f; float2 CS = float2(0.0f);
+        for (int k = 0; k < 3; k++) Y += prep[px + 8 + k].x;
+        for (int k = 0; k < 12; k++) CS += prep[px + 3 + k].yz;
+        Y *= factor / 12.0f;
+        float u = (CS.x * rot.x - CS.y * rot.y) * factor * (-2.0f / 48.0f);
+        float cv = (CS.y * rot.x + CS.x * rot.y) * factor * (2.0f / 48.0f);
+        float I = 0.838670568f * cv - 0.544639035f * u, Q = 0.544639035f * cv + 0.838670568f * u;
+        float3 rgb = float3(Y + 0.956f * I + 0.621f * Q, Y - 0.272f * I - 0.647f * Q, Y - 1.106f * I + 1.703f * Q);
+        rgb = pow(clamp(rgb, 0.0f, 1.0f), float3(2.2f));
+        outp[py * 512 + px] = float4(rgb, 1.0f);
+        total += rgb;
+    }
+    part[t] = total;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int w = 128; w > 0; w >>= 1) {
+        if (t < w) part[t] += part[t + w];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (t == 0) means[py] = float4(part[0] / 512.0f, 1.0f);
+}
+// supply_mean as a tree reduction (128 threads per row).
+kernel void row_mean_fast(device const float4* src [[buffer(0)]], device float4* means [[buffer(1)]],
+                          uint tid [[thread_index_in_threadgroup]], uint row [[threadgroup_position_in_grid]]) {
+    threadgroup float3 part[128];
+    float3 s = float3(0.0f);
+    for (int x = int(tid); x < 512; x += 128) s += src[row * 512u + uint(x)].rgb;
+    part[tid] = s;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint w = 64u; w > 0u; w >>= 1) {
+        if (tid < w) part[tid] += part[tid + w];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (tid == 0u) means[row] = float4(part[0] / 512.0f, 1.0f);
+}
+// supply_row + supply_state (+ prime mode) in one threadgroup (256 threads). The anode-voltage
+// recurrence v_j = a v_(j-1) + (1 - a) target_j (a = decay) is affine with a constant factor, so
+// v_j = a^(j+1) v_start + P_j with P the a-weighted prefix sum of (1 - a) target (parallel scan);
+// the prime mode's three passes over the frame reuse P_last.
+kernel void supply_fast(device const float4* means [[buffer(0)]], device const float4* now [[buffer(1)]],
+                        device float4* next [[buffer(2)]], device float4* perRow [[buffer(3)]],
+                        constant SupplyParams& P [[buffer(4)]], uint tid [[thread_index_in_threadgroup]]) {
+    threadgroup float scan[2][256];
+    threadgroup float red[256];
+    threadgroup float4 st;
+    threadgroup float vStart;
+    int t = int(tid), R = P.rows;
+    float drive = t < R ? dot(means[t].rgb, P.share.xyz) : 0.0f;
+    red[t] = P.imax * drive;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int w = 128; w > 0; w >>= 1) {
+        if (t < w) red[t] += red[t + w];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float req = red[0];
+    if (t == 0) {
+        if (P.pad != 0.0f) {
+            float requested = req * P.reqScale;
+            st = float4(P.v0, requested, requested > P.ilim ? P.ilim / requested : 1.0f, 1.0f);
+        } else st = now[0];
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float4 s0 = st;
+    float a = P.decay;
+    // b_j = (1 - a) * target_j, scanned with weights a^o (Hillis-Steele).
+    int cur = 0;
+    scan[0][t] = t < R ? (1.0f - a) * (P.v0 - P.reff * P.imax * s0.z * drive) : 0.0f;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ao = a;
+    for (int o = 1; o < 256; o <<= 1) {
+        float v = scan[cur][t];
+        if (t >= o) v += ao * scan[cur][t - o];
+        scan[1 - cur][t] = v;
+        cur = 1 - cur;
+        ao *= ao;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (t == 0) {
+        float aR = pow(a, float(R)), last = scan[cur][R - 1];
+        float v = s0.x;
+        if (P.pad != 0.0f) for (int i = 0; i < 3; i++) v = P.v0 + (aR * v + last - P.v0) * P.relax;
+        vStart = v;
+        float vEnd = P.v0 + (aR * v + last - P.v0) * P.relax;
+        float requested = s0.y + (req * P.reqScale - s0.y) * P.ablFraction;
+        if (P.pad != 0.0f) requested = s0.y;
+        next[0] = float4(vEnd, requested, requested > P.ilim ? P.ilim / requested : 1.0f, 1.0f);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (t < R) {
+        float v = pow(a, float(t + 1)) * vStart + scan[cur][t], m = sqrt(P.v0 / v);
+        perRow[t] = float4(m, s0.z * pow(v / P.v0, P.n) / m, 0.0f, 1.0f);
+    }
+}
+// supply_resample + spot_h + phosphor persistence of one row (512 threads). Spot: tap k of
+// source sample j weighs e_|k| / sum with e_k = exp(-k^2 / 2s^2) = e1^(k^2), s from the source's
+// own drive; each thread resamples and weighs its 7 sources itself. Persistence (fast path: in the
+// drive domain): the frame's drive goes into its ring slot and the tube is driven by the
+// persistence-weighted sum of the slots, i.e. the tube is applied to the weighted drive instead of
+// weighting the tube's light (the same except for the beam-current spot growth of the < 12 %
+// afterglow share). Also the x pass of the scatter source (scatter_drive) on the result.
+struct PostParams { int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx; };
+static inline float3 postResample(device const float4* src, int py, int x, float2 k, int supply) {
+    if (x < 0 || x >= 512) return float3(0.0f);
+    if (supply == 0) return src[py * 512 + x].rgb;
+    float sx = 256.0f + (float(x) + 0.5f - 256.0f) / k.x - 0.5f; int x0 = int(floor(sx)); float t = sx - float(x0);
+    float3 a = (x0 >= 0 && x0 < 512) ? src[py * 512 + x0].rgb : float3(0.0f);
+    float3 b = (x0 + 1 >= 0 && x0 + 1 < 512) ? src[py * 512 + x0 + 1].rgb : float3(0.0f);
+    return glmix3(a, b, t) * k.y;
+}
+kernel void drive_post_fast(device const float4* src [[buffer(0)]], device const float4* perRow [[buffer(1)]],
+                            device float4* outp [[buffer(2)]], constant PostParams& P [[buffer(3)]],
+                            device half4* ring [[buffer(4)]], constant float4* w [[buffer(5)]],
+                            constant float* wx [[buffer(6)]], device half4* blurX [[buffer(7)]],
+                            uint tid [[thread_index_in_threadgroup]], uint row [[threadgroup_position_in_grid]]) {
+    threadgroup float rowv[3 * 512];
+    int px = int(tid), py = int(row), i = py * 512 + px;
+    float2 k = P.supply != 0 ? perRow[py].xy : float2(1.0f);
+    float3 v;
+    if (P.spot != 0) {
+        v = float3(0.0f);
+        for (int d = -3; d <= 3; d++) {
+            int j = px - d;
+            if (j < 0 || j >= 512) continue;
+            float3 u = postResample(src, py, j, k, P.supply);
+            float3 sg = P.k1 * sqrt(max(u, 0.0f));
+            float3 e1 = exp(-0.5f / max(sg * sg, 1e-30f));
+            float3 e2 = e1 * e1; e2 *= e2; float3 e3 = e2 * e2 * e1;
+            float3 ek = d == 0 ? float3(1.0f) : (abs(d) == 1 ? e1 : (abs(d) == 2 ? e2 : e3));
+            float3 wk = ek / (1.0f + 2.0f * (e1 + e2 + e3));
+            wk = select(wk, float3(d == 0 ? 1.0f : 0.0f), sg <= 1e-6f);
+            v += u * wk;
+        }
+    } else v = postResample(src, py, px, k, P.supply);
+    if (P.persistence != 0) {
+        int area = 512 * P.rows;
+        ring[P.newSlot * area + i] = half4(half3(v), 1.0h);
+        float3 eff = v * w[P.newSlot].rgb;
+        for (int s = 0; s < P.depth; s++) {
+            float3 q = w[s].rgb;
+            if (s == P.newSlot || all(q == 0.0f)) continue;
+            eff += float3(ring[s * area + i].rgb) * q;
+        }
+        v = eff;
+    }
+    outp[i] = float4(v, 1.0f);
+    rowv[px] = v.r; rowv[512 + px] = v.g; rowv[1024 + px] = v.b;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float3 s = float3(0.0f);
+    int lo = max(-P.rx, -px), hi = min(P.rx, 511 - px);
+    for (int d = lo; d <= hi; d++) { int j = px + d; s += float3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + P.rx]; }
+    blurX[i] = half4(half3(s), 1.0h);
+}
+// Scatter source (fast path): the 2 mm screen scatter of the emitted light, evaluated on the tube
+// drive. The scatter Gaussian is ~8x wider than the beam spot, the detector and the slot pitch,
+// so the scattered light is the drive blurred by sqrt(scatter^2 + spot^2 + detector^2 - bilinear)
+// (in drive samples per axis; zero extension) times the mean emission per unit drive and the
+// scatter fraction (kappa, from the plan). The x pass runs in drive_post_fast; this is the y pass.
+struct ScatterParams { int rows; int ry; int pad0; int pad1; float4 kappa; };
+kernel void scatter_drive(device const half4* src [[buffer(0)]], constant float* w [[buffer(1)]],
+                          device half4* outp [[buffer(2)]], constant ScatterParams& P [[buffer(3)]],
+                          uint2 g [[thread_position_in_grid]]) {
+    int x = int(g.x), y = int(g.y);
+    if (x >= 512 || y >= P.rows) return;
+    float3 s = float3(0.0f);
+    int lo = max(-P.ry, -y), hi = min(P.ry, P.rows - 1 - y);
+    device const half4* c = src + y * 512 + x;
+    for (int d = lo; d <= hi; d++) s += float3(c[d * 512].rgb) * w[d + P.ry];
+    outp[y * 512 + x] = half4(half3(s * P.kappa.rgb), 1.0h);
+}
+
+// 64 bytes (the Vulkan push-constant budget). The drive is 512 samples wide.
+struct FastTubeParams {
+    int height; int ow; int oh; int xCount; int gCount; int hStride; float gain; float keep;
+    float4 amb;    // ambient: (scale, diffuse fraction, normal slope x, normal slope y)
+    float4 light;  // normalised light direction (w unused)
+};
+// hprog: h[(parity*height + y)*ow + x] = half4(R, G, B, 0), channel c from branch c*2 + parity.
+// A threadgroup covers 64 columns x 16 rows, one thread per (parity, column, channel): the drive
+// samples the tile reaches (tiles[] = first, last index) are staged in threadgroup memory once,
+// each thread keeps its branch's taps in registers (N = the plan's tap count rounded up to 8, 12,
+// 16 or 24; fast-plan padding taps point at the tile's first input with weight 0).
+template <int N>
+static inline void tubeHRows(threadgroup const float* rowv, int S, int ny, device const float2* taps, int n, int first,
+                             device float* o, int ostride) {
+    int idx[N]; float wt[N];
+    for (int k = 0; k < N; k++) { float2 t = k < n ? taps[k] : float2(float(first), 0.0f); idx[k] = int(t.x) - first; wt[k] = t.y; }
+    for (int r = 0; r < ny; r++) {
+        threadgroup const float* rv = rowv + r * S;
+        float sum = 0.0f;
+        for (int k = 0; k < N; k++) sum += rv[idx[k]] * wt[k];
+        o[r * ostride] = sum;
+    }
+}
+kernel void tube_h_fast(device const float4* src [[buffer(0)]], device const float2* xmap [[buffer(1)]],
+                        device float* h [[buffer(2)]], constant FastTubeParams& P [[buffer(3)]],
+                        device const int2* tiles [[buffer(4)]], threadgroup float* rowv [[threadgroup(0)]],
+                        uint2 tg [[threadgroup_position_in_grid]], uint lid [[thread_index_in_threadgroup]]) {
+    int S = P.hStride;   // >= the widest tile span
+    int PS = (16 * S + 31) / 32 * 32 + 11;   // channel plane stride: planes start in different banks
+    int c = int(lid) % 3, pxl = (int(lid) / 3) % 64, parity = int(lid) / 192;
+    int px = int(tg.x) * 64 + pxl, y0 = int(tg.y) * 16, ny = min(16, P.height - y0);
+    int2 sp = tiles[tg.x];
+    int span = sp.y - sp.x + 1;
+    for (int i = int(lid); i < ny * span; i += 384) {
+        int r = i / span, x = i - r * span;
+        float4 v = src[(y0 + r) * 512 + sp.x + x];
+        rowv[r * S + x] = v.x; rowv[PS + r * S + x] = v.y; rowv[2 * PS + r * S + x] = v.z;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (px >= P.ow) return;
+    device const float2* taps = xmap + (px * 6 + c * 2 + parity) * P.xCount;
+    device float* o = h + ((parity * P.height + y0) * P.ow + px) * 4 + c;
+    threadgroup const float* rv = rowv + c * PS;
+    if (P.xCount <= 8) tubeHRows<8>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
+    else if (P.xCount <= 12) tubeHRows<12>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
+    else if (P.xCount <= 16) tubeHRows<16>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
+    else tubeHRows<24>(rv, S, ny, taps, P.xCount, sp.x, o, P.ow * 4);
+}
+// vprog (fixed or growth spot) + mixprog: emission, the scatter (bilinear from the drive-domain
+// scatter source) and the ambient reflection, straight into the half-float output. Fast-plan
+// tables (CRTTube.FastPlan): per output row and parity the contiguous input rows (first, count),
+// per tap a cubic in the beam-current fraction u = h / colsum fitted to the growth-level tables
+// (fixed spot: the constant weight, colinv = 0).
+kernel void tube_v_fast(device const float4* h [[buffer(0)]], device const float4* vcoef [[buffer(1)]],
+                        device const float4* colinv [[buffer(2)]], device const int2* vrows [[buffer(3)]],
+                        device const half4* scatter [[buffer(4)]], device half4* outp [[buffer(5)]],
+                        constant FastTubeParams& P [[buffer(6)]], uint2 g [[thread_position_in_grid]]) {
+    int px = int(g.x), py = int(g.y);
+    if (px >= P.ow || py >= P.oh) return;
+    int plane = P.height * P.ow;
+    float3 value = float3(0.0f);
+    for (int parity = 0; parity < 2; parity++) {
+        int2 fr = vrows[py * 2 + parity];
+        device const float4* cf = vcoef + (py * 2 + parity) * P.gCount;
+        float3 sc = colinv[parity * P.ow + px].rgb;
+        device const float4* h0 = h + parity * plane + fr.x * P.ow + px;
+        float3 sum = float3(0.0f);
+        for (int k = 0; k < fr.y; k++) {
+            float3 hv = float3(h0[k * P.ow].rgb);
+            float4 c = cf[k];
+            float3 u = clamp(hv * sc, 0.0f, 1.0f);
+            sum += hv * (((c.w * u + c.z) * u + c.y) * u + c.x);
+        }
+        value += sum * P.gain;
+    }
+    // Scatter source sampled at the pixel centre in drive coordinates (512 x height samples).
+    float sx = (float(px) + 0.5f) * 512.0f / float(P.ow) - 0.5f, sy = (float(py) + 0.5f) * float(P.height) / float(P.oh) - 0.5f;
+    float fx0 = floor(sx), fy0 = floor(sy), fx = sx - fx0, fy = sy - fy0;
+    int x0 = clamp(int(fx0), 0, 511), x1 = clamp(int(fx0) + 1, 0, 511);
+    int y0 = clamp(int(fy0), 0, P.height - 1), y1 = clamp(int(fy0) + 1, 0, P.height - 1);
+    float3 top = mix(float3(scatter[y0 * 512 + x0].rgb), float3(scatter[y0 * 512 + x1].rgb), fx);
+    float3 bot = mix(float3(scatter[y1 * 512 + x0].rgb), float3(scatter[y1 * 512 + x1].rgb), fx);
+    float nx = ((float(px) + 0.5f) / float(P.ow) * 2.0f - 1.0f) * P.amb.z;
+    float ny = ((float(py) + 0.5f) / float(P.oh) * 2.0f - 1.0f) * P.amb.w;
+    float cosine = max(0.0f, (nx * P.light.x + ny * P.light.y + P.light.z) / sqrt(nx * nx + ny * ny + 1.0f));
+    float3 val = float3(P.amb.x * (P.amb.y + (1.0f - P.amb.y) * cosine)) + value * P.keep + mix(top, bot, fy);
+    outp[py * P.ow + px] = half4(half3(val), 1.0h);
+}
+static inline float3 tubeAtH(device const half4* img, int x, int y, int ow, int oh) {
+    x = clamp(x, 0, ow - 1); y = clamp(y, 0, oh - 1); return float3(img[y * ow + x].rgb);
+}
+static inline float3 showSampleH(device const half4* img, constant ShowParams& P, float2 frag) {
+    float u = (frag.x - P.dst.x) / P.dst.z * P.src.z + P.src.x - 0.5f;
+    float v = (frag.y - P.dst.y) / P.dst.w * P.src.w + P.src.y - 0.5f;
+    float x0 = floor(u), y0 = floor(v), fx = u - x0, fy = v - y0;
+    int ix = int(x0), iy = int(y0);
+    float3 a = tubeAtH(img, ix, iy, P.ow, P.oh), b = tubeAtH(img, ix + 1, iy, P.ow, P.oh);
+    float3 c = tubeAtH(img, ix, iy + 1, P.ow, P.oh), d = tubeAtH(img, ix + 1, iy + 1, P.ow, P.oh);
+    return mix(mix(a, b, fx), mix(c, d, fx), fy);
+}
+fragment float4 show_fragment_h(ShowOut in [[stage_in]], device const half4* img [[buffer(0)]], constant ShowParams& P [[buffer(1)]]) {
+    return float4(encodeSRGB(showSampleH(img, P, in.pos.xy)), 1.0f);
+}
+kernel void show_kernel_h(device const half4* img [[buffer(0)]], constant ShowParams& P [[buffer(1)]],
+                          texture2d<float, access::write> target [[texture(0)]], uint2 g [[thread_position_in_grid]]) {
+    if (g.x >= target.get_width() || g.y >= target.get_height()) return;
+    float2 frag = float2(g) + 0.5f;
+    bool inside = frag.x >= P.dst.x && frag.y >= P.dst.y && frag.x < P.dst.x + P.dst.z && frag.y < P.dst.y + P.dst.w;
+    target.write(inside ? float4(encodeSRGB(showSampleH(img, P, frag)), 1.0f) : float4(0.0f, 0.0f, 0.0f, 1.0f), g);
 }
 """#
 }

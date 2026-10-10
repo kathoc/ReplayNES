@@ -101,10 +101,16 @@ enum CRTRF {
     }
 
     /// rf-webgl.mjs kernelSpectrum(): forward FFT (double) of the zero-padded FIR, float32 out.
-    static let kernelSpectrum: [SIMD2<Float>] = {
+    static let kernelSpectrum: [SIMD2<Float>] = spectrum(real: filter.real, imag: filter.imag)
+
+    /// Fast path: spectrum of Re(h) alone. The receiver only reads the real part of the IF output,
+    /// and for a real input signal Re(signal * h) = signal * Re(h), a real FIR.
+    static let kernelSpectrumReal: [SIMD2<Float>] = spectrum(real: filter.real, imag: [Double](repeating: 0, count: filter.real.count))
+
+    private static func spectrum(real: [Double], imag: [Double]) -> [SIMD2<Float>] {
         let n = fftSize
         var r = [Double](repeating: 0, count: n), q = [Double](repeating: 0, count: n)
-        for i in 0..<filter.real.count { r[i] = filter.real[i]; q[i] = filter.imag[i] }
+        for i in 0..<real.count { r[i] = real[i]; q[i] = imag[i] }
         var j = 0
         for i in 1..<n {
             var bit = n >> 1
@@ -127,7 +133,7 @@ enum CRTRF {
             w *= 2
         }
         return (0..<n).map { SIMD2(Float(r[$0]), Float(q[$0])) }
-    }()
+    }
 
     /// rf-webgl.mjs twiddles: (cos, sin)(2*pi*i/N) as float32.
     static let twiddles: [SIMD2<Float>] = (0..<fftSize).map {
@@ -363,6 +369,144 @@ enum CRTTube {
         let kernels: [(radius: Int, weights: [Float])]      // scatter x, y
         let ambient: [Float]                                // ow*oh (same value in r,g,b)
         let growth: Bool
+    }
+
+    /// Fast path tables, repacked from a Plan: horizontal taps whose padding points at the tile's
+    /// first input (weight 0) plus the input span of every 64-column tile; vertical spot tables as
+    /// contiguous input rows (first, count) per output row and parity with, per tap, a cubic in the
+    /// beam-current fraction u = h / colsum least-squares fitted to the 33 growth-level tables
+    /// (max error ~5e-4 of the row's largest weight; fixed spot: the constant weight, duplicate
+    /// input rows of the detector map merged); and 1 / colsum per branch column (0 if colsum <= 0).
+    struct FastPlan {
+        let xmap: [SIMD2<Float>]; let tiles: [SIMD2<Int32>]; let maxSpan: Int
+        let vrows: [SIMD2<Int32>]; let vcoef: [SIMD4<Float>]; let taps: Int
+        let colinv: [SIMD4<Float>]   // [parity * ow + x] = 1 / colsum of branches (c * 2 + parity), c = 0...2
+    }
+
+    /// Least-squares cubic through (l / (n - 1), y[l]).
+    static func cubicFit(_ y: [Double]) -> SIMD4<Float> {
+        let n = y.count
+        if n < 2 { return SIMD4(Float(y.first ?? 0), 0, 0, 0) }
+        var a = [[Double]](repeating: [Double](repeating: 0, count: 5), count: 4)
+        for i in 0..<n {
+            let u = Double(i) / Double(n - 1)
+            let p = [1, u, u * u, u * u * u]
+            for r in 0..<4 { for c in 0..<4 { a[r][c] += p[r] * p[c] }; a[r][4] += p[r] * y[i] }
+        }
+        for c in 0..<4 {
+            var piv = c
+            for r in c..<4 where abs(a[r][c]) > abs(a[piv][c]) { piv = r }
+            a.swapAt(c, piv)
+            for r in 0..<4 where r != c {
+                let f = a[r][c] / a[c][c]
+                for k in c...4 { a[r][k] -= f * a[c][k] }
+            }
+        }
+        return SIMD4((0..<4).map { Float(a[$0][4] / a[$0][$0]) })
+    }
+
+    static func fastPlan(_ p: Plan) -> FastPlan {
+        let ow = p.outputWidth, oh = p.outputHeight, n = p.xCount
+        var xmap = p.xmap
+        var tiles: [SIMD2<Int32>] = []
+        var maxSpan = 0
+        for tile in 0..<((ow + 63) / 64) {
+            let cols = (tile * 64)..<min(ow, tile * 64 + 64)
+            var lo = Int.max, hi = Int.min
+            for x in cols { for b in 0..<6 { for k in 0..<n where xmap[(x * 6 + b) * n + k].y != 0 {
+                lo = min(lo, Int(xmap[(x * 6 + b) * n + k].x)); hi = max(hi, Int(xmap[(x * 6 + b) * n + k].x))
+            } } }
+            if lo > hi { lo = 0; hi = 0 }
+            for x in cols { for b in 0..<6 { for k in 0..<n where xmap[(x * 6 + b) * n + k].y == 0 {
+                xmap[(x * 6 + b) * n + k] = SIMD2(Float(lo), 0)
+            } } }
+            tiles.append(SIMD2(Int32(lo), Int32(hi)))
+            maxSpan = max(maxSpan, hi - lo + 1)
+        }
+        var vrows: [SIMD2<Int32>] = [], vcoef: [SIMD4<Float>] = []
+        var taps = 1
+        if p.growth {
+            taps = p.gCount
+            let L = p.growthLevels, rowWidth = L * p.gCount
+            for row in 0..<(oh * 2) {
+                let base = row * rowWidth
+                var count = 0
+                while count < p.gCount && p.gmap[base + count].x >= 0 { count += 1 }
+                vrows.append(SIMD2(Int32(count > 0 ? p.gmap[base].x : 0), Int32(count)))
+                for k in 0..<p.gCount {
+                    vcoef.append(k < count ? cubicFit((0..<L).map { Double(p.gmap[base + $0 * p.gCount + k].y) }) : .zero)
+                }
+            }
+        } else {
+            var rows: [[Float]] = [], firsts: [Int] = []
+            for row in 0..<(oh * 2) {
+                let e = (0..<p.yCount).map { p.ymap[row * p.yCount + $0] }.filter { $0.y != 0 }
+                guard let lo = e.map({ Int($0.x) }).min(), let hi = e.map({ Int($0.x) }).max() else { rows.append([]); firsts.append(0); continue }
+                var w = [Float](repeating: 0, count: hi - lo + 1)
+                for v in e { w[Int(v.x) - lo] += v.y }
+                rows.append(w); firsts.append(lo)
+            }
+            taps = max(1, rows.map { $0.count }.max() ?? 1)
+            for (row, w) in rows.enumerated() {
+                vrows.append(SIMD2(Int32(firsts[row]), Int32(w.count)))
+                for k in 0..<taps { vcoef.append(SIMD4(k < w.count ? w[k] : 0, 0, 0, 0)) }
+            }
+        }
+        var colinv = [SIMD4<Float>](repeating: .zero, count: 2 * ow)
+        if p.growth {
+            for parity in 0..<2 { for x in 0..<ow { for c in 0..<3 {
+                let cs = p.colsum[(c * 2 + parity) * ow + x]
+                colinv[parity * ow + x][c] = cs > 0 ? 1 / cs : 0
+            } } }
+        }
+        return FastPlan(xmap: xmap, tiles: tiles, maxSpan: maxSpan, vrows: vrows, vcoef: vcoef, taps: taps, colinv: colinv)
+    }
+
+    /// Fast path scatter source: the scattered light evaluated on the tube drive (512 x lines).
+    /// The 2 mm scatter Gaussian is ~8x wider than the beam spot, the detector and the slot pitch,
+    /// so blur(emission) = kappa * blur'(drive), blur' with the variances of scatter, beam spot and
+    /// detector minus the bilinear upsampling tent (per axis, in drive samples), kappa = the mean
+    /// emission per unit drive of the plan (flat field, per phosphor) times the scatter fraction.
+    struct DriveScatter { let rx: Int; let ry: Int; let wx: [Float]; let wy: [Float]; let kappa: SIMD3<Float> }
+
+    static func driveScatter(_ p: Plan) -> DriveScatter {
+        let rows = Double(p.height), mass = rows / 240
+        let sx = scatterSigmaM / (surfaceWidthM / 512), sy = scatterSigmaM / (surfaceHeightM / rows)
+        let bx = sigmaXPitches * 512 / 256, by = sigmaYPitches * mass
+        let dx = sigmaOutputPixels * 512 / Double(p.outputWidth), dy = sigmaOutputPixels * rows / Double(p.outputHeight)
+        let sigX = (sx * sx + bx * bx + dx * dx - 1.0 / 6).squareRoot(), sigY = (sy * sy + by * by + dy * dy - 1.0 / 6).squareRoot()
+        let ry = Int((4 * sigY).rounded(.up)), rx = Int((4 * sigX).rounded(.up))
+        func kernel(_ sigma: Double, _ r: Int) -> [Float] {
+            let w = (-r...r).map { d -> Double in let x = Double(d) / sigma; return exp(-0.5 * x * x) }
+            let t = w.reduce(0, +)
+            return w.map { Float($0 / t) }
+        }
+        // Flat field d: h = d * colsum, emission = gain * d * sum_parity colsum(x) * V(y), V = the
+        // vertical weights at beam-current fraction d (growth) - separable, so the mean is cheap.
+        let d = 0.5, ow = p.outputWidth, oh = p.outputHeight
+        var kappa = SIMD3<Float>(0, 0, 0)
+        for c in 0..<3 {
+            var total = 0.0
+            for parity in 0..<2 {
+                var meanX = 0.0
+                if p.growth { for x in 0..<ow { meanX += Double(p.colsum[(c * 2 + parity) * ow + x]) } }
+                else { for x in 0..<ow { for k in 0..<p.xCount { meanX += Double(p.xmap[(x * 6 + c * 2 + parity) * p.xCount + k].y) } } }
+                meanX /= Double(ow)
+                var meanY = 0.0
+                for y in 0..<oh {
+                    let row = y * 2 + parity
+                    if p.growth {
+                        let L = p.growthLevels, G = p.gCount, t = d * Double(L - 1), kk = min(L - 2, Int(t)), f = t - Double(kk)
+                        for k in 0..<G where p.gmap[row * L * G + k].x >= 0 {
+                            meanY += Double(p.gmap[row * L * G + kk * G + k].y) * (1 - f) + Double(p.gmap[row * L * G + (kk + 1) * G + k].y) * f
+                        }
+                    } else { for k in 0..<p.yCount { meanY += Double(p.ymap[row * p.yCount + k].y) } }
+                }
+                total += meanX * meanY / Double(oh)
+            }
+            kappa[c] = Float(total * p.gain * p.scatterFraction)
+        }
+        return DriveScatter(rx: rx, ry: ry, wx: kernel(sigX, rx), wy: kernel(sigY, ry), kappa: kappa)
     }
 
     /// createTubePlan(input {width: 512, height: lines, beamReferenceWidth: 256, beamReferenceHeight: 240},

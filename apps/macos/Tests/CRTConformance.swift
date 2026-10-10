@@ -83,8 +83,11 @@ struct CRTConformance {
 
     // MARK: running the port
 
-    func renderer(_ s: CRTRenderer.Settings, ow: Int = 256, oh: Int = 192) throws -> CRTRenderer {
+    /// The conformance checks run the reference path (the 1:1 port); the fast path is checked
+    /// against it (fastVsReference).
+    func renderer(_ s: CRTRenderer.Settings, ow: Int = 256, oh: Int = 192, quality: CRTRenderer.Quality = .reference) throws -> CRTRenderer {
         let r = try CRTRenderer(device: device, targetPixelFormat: nil)
+        r.quality = quality
         r.configure(settings: s, outputWidth: ow, outputHeight: oh, synchronous: true)
         return r
     }
@@ -169,7 +172,7 @@ struct CRTConformance {
     /// picture shown in continuous play, all effects on, noise off. `phases`: burst phase per
     /// sequence frame (the still uses the last one). Returns (max abs diff, worst per-channel mean
     /// difference) of the tube output; a fresh renderer's first frame is checked the same way.
-    func stillAfterSeek(phases: [UInt32]) throws -> (maxAbs: Double, meanAbs: Double) {
+    func stillAfterSeek(phases: [UInt32], quality: CRTRenderer.Quality = .reference) throws -> (maxAbs: Double, meanAbs: Double) {
         func mean(_ a: [SIMD4<Float>]) -> SIMD3<Double> {
             var m = SIMD3<Double>(0, 0, 0)
             for v in a { m += SIMD3(Double(v.x), Double(v.y), Double(v.z)) }
@@ -183,13 +186,13 @@ struct CRTConformance {
             return (m, max(d.x, d.y, d.z))
         }
         let last = UInt64(phases.count)
-        let r = try renderer(CRTRenderer.Settings())
+        let r = try renderer(CRTRenderer.Settings(), quality: quality)
         r.noiseEnabled = false
         for (i, b) in phases.enumerated() { Self.codes.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: b), ordinal: UInt64(i + 1)) } }
         let played = r.read(.output)
         Self.codes.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: phases.last!), ordinal: last) }  // seek back
         let afterSeek = r.read(.output)
-        let fresh = try renderer(CRTRenderer.Settings())
+        let fresh = try renderer(CRTRenderer.Settings(), quality: quality)
         fresh.noiseEnabled = false
         Self.codes.withUnsafeBufferPointer { run(fresh, .codes($0.baseAddress!, burstPhase: phases.last!), ordinal: last) }
         let (m1, a1) = diff(played, afterSeek), (m2, a2) = diff(played, fresh.read(.output))
@@ -211,14 +214,65 @@ struct CRTConformance {
     }
 
     /// Two fresh renderers fed the same frame sequence produce bit-identical output.
-    func deterministic() throws -> Bool {
+    func deterministic(quality: CRTRenderer.Quality = .reference) throws -> Bool {
         let s = CRTRenderer.Settings()
         var outs: [[SIMD4<Float>]] = []
         for _ in 0..<2 {
-            let r = try renderer(s)
+            let r = try renderer(s, quality: quality)
             for f in 0..<4 { Self.codes.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: UInt32(f % 3)), ordinal: UInt64(f)) } }
             outs.append(r.read(.output))
         }
         return outs[0] == outs[1] && !outs[0].isEmpty
+    }
+
+    // MARK: fast path (CRTRenderer.Quality.fast)
+
+    /// Moving test picture: the fixture codes scrolled `f` pixels (and the burst phase advanced)
+    /// per frame, so persistence, AGC, supply and the RF artefacts all change between frames.
+    static func movingCodes(_ f: Int) -> [UInt16] {
+        var c = [UInt16](repeating: 0, count: 256 * 240)
+        for y in 0..<240 { for x in 0..<256 { c[y * 256 + x] = codes[y * 256 + (x + 3 * f) % 256] } }
+        return c
+    }
+
+    struct Quality: CustomStringConvertible {
+        var psnr = Double.infinity, maxAbs = 0.0, meanAbs = 0.0
+        var description: String { String(format: "PSNR %.1f dB, max %.3g, mean %.3g", psnr, maxAbs, meanAbs) }
+    }
+
+    /// The fast path against the reference on the same moving sequence: the worst frame's PSNR of
+    /// the displayed (sRGB-encoded, clamped) tube picture over the last `checked` frames.
+    func fastVsReference(_ s: CRTRenderer.Settings = CRTRenderer.Settings(), ow: Int = 320, oh: Int = 240, frames: Int = 10,
+                         checked: Int = 4, rgb: Bool = false) throws -> Quality {
+        let rs = [try renderer(s, ow: ow, oh: oh, quality: .reference), try renderer(s, ow: ow, oh: oh, quality: .fast)]
+        func encode(_ v: Float) -> Double {
+            let x = Double(min(max(v, 0), 1))
+            return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1 / 2.4) - 0.055
+        }
+        var q = Quality()
+        for f in 0..<frames {
+            let c = Self.movingCodes(f)
+            var outs: [[SIMD4<Float>]] = []
+            for r in rs {
+                if rgb {
+                    let px = c.map { UInt32(0xFF00_0000) | UInt32($0 & 0x3F) * 0x0004_0201 }
+                    px.withUnsafeBufferPointer { run(r, .rgb($0.baseAddress!), ordinal: UInt64(f + 1)) }
+                } else {
+                    c.withUnsafeBufferPointer { run(r, .codes($0.baseAddress!, burstPhase: UInt32(f % 3)), ordinal: UInt64(f + 1)) }
+                }
+                if f >= frames - checked { outs.append(r.read(.output)) }
+            }
+            guard outs.count == 2 else { continue }
+            guard outs[0].count == ow * oh, outs[1].count == ow * oh else { return Quality(psnr: -.infinity) }
+            var se = 0.0, sum = 0.0, mx = 0.0
+            for i in 0..<(ow * oh) { for ch in 0..<3 {
+                let d = abs(encode(outs[0][i][ch]) - encode(outs[1][i][ch]))
+                se += d * d; sum += d; mx = max(mx, d.isNaN ? .infinity : d)
+            } }
+            let n = Double(ow * oh * 3)
+            q.psnr = min(q.psnr, se > 0 ? 10 * log10(n / se) : 200)
+            q.maxAbs = max(q.maxAbs, mx); q.meanAbs = max(q.meanAbs, sum / n)
+        }
+        return q
     }
 }
