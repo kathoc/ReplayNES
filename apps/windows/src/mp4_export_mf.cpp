@@ -237,14 +237,21 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   // RNF_EXPORT_GOP_FRAMES frames (YouTube: half the frame rate; as the FFmpeg exporter), no
   // B-frames (no reordering delay; presentation order = decode order; deviation from YouTube's 2
   // B-frames).
-  IMFAttributes* enc = nullptr;
-  MFCreateAttributes(&enc, 4);
-  enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_UnconstrainedVBR);
-  enc->SetUINT32(CODECAPI_AVEncCommonMeanBitRate, UINT32(std::min<int64_t>(bitrate, 0xFFFFFFFF)));
-  enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, RNF_EXPORT_GOP_FRAMES);
-  enc->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
-  h = w.sink->SetInputMediaType(w.video, in, enc);
-  enc->Release();
+  // Peak-constrained VBR (peaks up to 1.5x the mean; without a cap the software encoder spends
+  // about 3x the mean on a noisy picture), else - an encoder that refuses it - unconstrained VBR.
+  for (int peak = 1; peak >= 0; --peak) {
+    IMFAttributes* enc = nullptr;
+    MFCreateAttributes(&enc, 5);
+    enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode,
+                   peak ? eAVEncCommonRateControlMode_PeakConstrainedVBR : eAVEncCommonRateControlMode_UnconstrainedVBR);
+    enc->SetUINT32(CODECAPI_AVEncCommonMeanBitRate, UINT32(std::min<int64_t>(bitrate, 0xFFFFFFFF)));
+    if (peak) enc->SetUINT32(CODECAPI_AVEncCommonMaxBitRate, UINT32(std::min<int64_t>(bitrate * 3 / 2, 0xFFFFFFFF)));
+    enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, RNF_EXPORT_GOP_FRAMES);
+    enc->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
+    h = w.sink->SetInputMediaType(w.video, in, enc);
+    enc->Release();
+    if (SUCCEEDED(h) || h == MF_E_TOPO_CODEC_NOT_FOUND) break;
+  }
   in->Release();
   if (FAILED(h)) {
     *why = hrText(h == MF_E_TOPO_CODEC_NOT_FOUND ? "No H.264 encoder (Media Foundation)" : "H.264 encoder input (NV12)", h);

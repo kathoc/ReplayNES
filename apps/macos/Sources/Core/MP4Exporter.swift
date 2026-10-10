@@ -208,10 +208,16 @@ final class MP4Exporter {
             AVVideoMaxKeyFrameIntervalKey: Int(RNF_EXPORT_GOP_FRAMES),
             AVVideoAllowFrameReorderingKey: true,
         ]
-        // Average bit rate with a peak cap of 1.5x the target over any 1 s (DataRateLimits: bytes,
-        // seconds). Not a constant rate: a simple picture (flat pixel art, a still) takes fewer bits
-        // and gives a smaller file; the Export sheet's size (rnf_export_predict_size) is an estimate.
-        compression[kVTCompressionPropertyKey_DataRateLimits as String] = [NSNumber(value: Double(bitrate) * 1.5 / 8), NSNumber(value: 1.0)]
+        // Average bit rate (not a constant rate: a simple picture such as flat pixel art or a still
+        // takes fewer bits and gives a smaller file; the Export sheet's size, rnf_export_predict_size,
+        // is an estimate). macOS adds a peak cap of 1.5x the target over any 1 s (DataRateLimits:
+        // bytes, seconds) when the writer accepts it for the codec (checked below); elsewhere (iOS,
+        // where AVAssetWriterInput raises on DataRateLimits for HEVC) the average rate alone.
+        #if os(macOS)
+        let peakCap: [NSNumber]? = [NSNumber(value: Double(bitrate) * 1.5 / 8), NSNumber(value: 1.0)]
+        #else
+        let peakCap: [NSNumber]? = nil
+        #endif
         if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         var videoSettings: [String: Any] = [
             AVVideoCodecKey: settings.codec.avCodec,
@@ -231,6 +237,15 @@ final class MP4Exporter {
         videoSettings[AVVideoEncoderSpecificationKey] =
             [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true]
         #endif
+        if let peakCap {
+            var capped = compression
+            capped[kVTCompressionPropertyKey_DataRateLimits as String] = peakCap
+            var withCap = videoSettings
+            withCap[AVVideoCompressionPropertiesKey] = capped
+            // AVAssetWriterInput raises an Objective-C exception (uncatchable in Swift) for settings
+            // the writer rejects: only use the cap when canApply accepts it.
+            if writer.canApply(outputSettings: withCap, forMediaType: .video) { videoSettings = withCap }
+        }
         let vIn = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         vIn.expectsMediaDataInRealTime = false
         vIn.mediaTimeScale = CMTimeScale(RN_FPS_NUM)

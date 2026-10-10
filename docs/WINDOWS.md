@@ -167,7 +167,7 @@ failed / cancelled export removes its file.
   = the frame count), decodes the first frame and the last 3 s up to the final frame, and reads
   the last 3 s of audio. Any failure is the export's error message; the file is removed.
 
-* `IMFSinkWriter` -> MPEG-4: H.264 High, VBR with the shared bit rate as the mean (YouTube table x Light 0.5 / Standard 1 / High 2; no padding, simple pictures give smaller files, the Export dialog's size is an estimate), GOP 30, **no B-frames** (no
+* `IMFSinkWriter` -> MPEG-4: H.264 High, peak-constrained VBR (unconstrained if the encoder refuses it) with the shared bit rate as the mean and 1.5x as the peak (YouTube table x Light 0.5 / Standard 1 / High 2; no padding, simple pictures give smaller files, the Export dialog's size is an estimate), GOP 30, **no B-frames** (no
   reordering delay against the audio); AAC-LC 48 kHz 128 kbit/s mono from the engine's 16-bit PCM. BT.709
   colour tags.
 * **Encoder: hardware first.** Automatic mode tries a hardware H.264 MFT
