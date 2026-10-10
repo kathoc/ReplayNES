@@ -12,9 +12,8 @@ float gaussAt(int pos, int key) {
 
 uint codeAt(int i) { uint w = codes[i >> 1]; return (i & 1) != 0 ? (w >> 16u) : (w & 0xFFFFu); }
 
-// initCodes: PPU codes -> composite voltage -> AM carrier (+ M3-NOISE), bit-reversed rows.
-float rfInitValue(int x, int block) {
-  int pos = block * P.hop + P.delay - P.overlap + reverse12(x);
+// initCodes: PPU codes -> composite voltage -> AM carrier (+ M3-NOISE) at sample `pos`.
+float rfInitAt(int pos) {
   float v = 0.312;
   if (pos >= 0 && pos < 654720) {
     int row = pos / 2728; int n = pos % 2728; int phase = (n + phases[row]) % 12;
@@ -26,4 +25,6 @@ float rfInitValue(int x, int block) {
   precise float r = (1.0 - P.scale * (v - 0.048)) * P.signalLevel + noise;
   return r;
 }
+// Bit-reversed rows (the reference FFT's input order).
+float rfInitValue(int x, int block) { return rfInitAt(block * P.hop + P.delay - P.overlap + reverse12(x)); }
 

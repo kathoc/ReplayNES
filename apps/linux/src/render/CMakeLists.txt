@@ -9,8 +9,11 @@ set(CRT_SHADERS
   rf_extract.comp rx_reduce.comp rx_agc.comp rx_prepare.comp rx_decode.comp raster_area.comp supply_mean.comp
   supply_row.comp supply_state.comp supply_resample.comp spot_h.comp tube_h.comp tube_v.comp tube_v_growth.comp
   tube_scatter.comp tube_scatter_x16.comp tube_scatter_y16.comp tube_mix.comp tube_lit.comp tube_persist.comp
-  show_kernel.comp tube_scatter_tx.comp tube_h_rows.comp tube_lit_persist.comp show.vert show.frag)
-set(CRT_SHADER_INCLUDES ${CRT_SHADER_DIR}/common.glsl ${CRT_SHADER_DIR}/rf_common.glsl ${CRT_SHADER_DIR}/precise_math.glsl)
+  show_kernel.comp tube_scatter_tx.comp tube_h_rows.comp tube_lit_persist.comp show.vert show.frag
+  rf_fast.comp rx_stats_fast.comp rx_agc_fast.comp rx_decode_fast.comp row_mean_fast.comp supply_fast.comp drive_post_fast.comp
+  scatter_drive.comp tube_h_fast.comp tube_v_fast.comp show_kernel_h.comp show_h.frag)
+set(CRT_SHADER_INCLUDES ${CRT_SHADER_DIR}/common.glsl ${CRT_SHADER_DIR}/rf_common.glsl ${CRT_SHADER_DIR}/precise_math.glsl
+  ${CRT_SHADER_DIR}/fast_common.glsl)
 set(CRT_SPV)
 foreach(sh ${CRT_SHADERS})
   set(src ${CRT_SHADER_DIR}/${sh})

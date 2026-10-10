@@ -79,6 +79,37 @@ final class CRTTests: XCTestCase {
         XCTAssertTrue(try c.fastPathsMatchDirectPort())
     }
 
+    // Fast path (live display): bounded against the reference on moving pictures. Observed on
+    // M1 Max: 60-75 dB; the bound (45 dB, an 8-bit display step is ~48 dB) leaves room for
+    // other GPUs' transcendental functions without letting a structural error through.
+    func testFastPathMatchesReference() throws {
+        for (w, h) in [(320, 240), (640, 480)] {
+            let q = try c.fastVsReference(ow: w, oh: h)
+            XCTAssertGreaterThan(q.psnr, 45, "\(w)x\(h): \(q)")
+            XCTAssertLessThan(q.meanAbs, 2e-3, "\(w)x\(h): \(q)")
+        }
+    }
+
+    func testFastPathMatchesReferenceWithEffectsOff() throws {
+        let q = try c.fastVsReference(CRTConformance.off)
+        XCTAssertGreaterThan(q.psnr, 45, "\(q)")
+        var s = CRTRenderer.Settings()
+        s.lines = 160
+        let r = try c.fastVsReference(s)
+        XCTAssertGreaterThan(r.psnr, 45, "160 lines: \(r)")
+        let g = try c.fastVsReference(rgb: true)
+        XCTAssertGreaterThan(g.psnr, 45, "RGB input: \(g)")
+    }
+
+    func testFastPathStillAfterSeekMatchesContinuousPlay() throws {
+        let still = try c.stillAfterSeek(phases: [UInt32](repeating: 1, count: 12), quality: .fast)
+        XCTAssertLessThan(still.maxAbs, 3e-3, "\(still)")
+    }
+
+    func testFastPathIsDeterministic() throws {
+        XCTAssertTrue(try c.deterministic(quality: .fast))
+    }
+
     func testNoiseHashAndKeyMatchReference() throws {
         guard let meta = c.cases["noiseHash"]?.meta else { return XCTFail("noiseHash fixture") }
         let hashes = (meta["hash"] as? [NSNumber])?.map { $0.uint32Value } ?? []

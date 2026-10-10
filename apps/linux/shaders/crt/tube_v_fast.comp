@@ -1,0 +1,48 @@
+// vprog (fixed or growth spot) + mixprog, fast path (MSL tube_v_fast): emission, the scatter
+// (bilinear from the drive-domain scatter source) and the ambient reflection, straight into the
+// half-float output. Fast-plan tables: per output row and parity the contiguous input rows
+// (first, count), per tap a cubic in the beam-current fraction u = h / colsum fitted to the
+// growth-level tables (fixed spot: the constant weight, colinv = 0).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "fast_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 h[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 vcoef[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { vec4 colinv[]; };
+layout(std430, set = 0, binding = 3) readonly buffer B3 { ivec2 vrows[]; };
+layout(std430, set = 0, binding = 4) readonly buffer B4 { uvec2 scatterSrc[]; };
+layout(std430, set = 0, binding = 5) writeonly buffer B5 { uvec2 outp[]; };
+FAST_TUBE_PARAMS
+void main() {
+  int px = int(gl_GlobalInvocationID.x), py = int(gl_GlobalInvocationID.y);
+  if (px >= P.ow || py >= P.oh) return;
+  int plane = P.height * P.ow;
+  vec3 value = vec3(0.0);
+  for (int parity = 0; parity < 2; parity++) {
+    ivec2 fr = vrows[py * 2 + parity];
+    int cf = (py * 2 + parity) * P.gCount;
+    vec3 sc = colinv[parity * P.ow + px].rgb;
+    int h0 = parity * plane + fr.x * P.ow + px;
+    vec3 sum = vec3(0.0);
+    for (int k = 0; k < fr.y; k++) {
+      vec3 hv = h[h0 + k * P.ow].rgb;
+      vec4 c = vcoef[cf + k];
+      vec3 u = clamp(hv * sc, 0.0, 1.0);
+      sum += hv * (((c.w * u + c.z) * u + c.y) * u + c.x);
+    }
+    value += sum * P.gain;
+  }
+  float sx = (float(px) + 0.5) * 512.0 / float(P.ow) - 0.5, sy = (float(py) + 0.5) * float(P.height) / float(P.oh) - 0.5;
+  float fx0 = floor(sx), fy0 = floor(sy), fx = sx - fx0, fy = sy - fy0;
+  int x0 = clamp(int(fx0), 0, 511), x1 = clamp(int(fx0) + 1, 0, 511);
+  int y0 = clamp(int(fy0), 0, P.height - 1), y1 = clamp(int(fy0) + 1, 0, P.height - 1);
+  vec3 top = mix(unpackH4(scatterSrc[y0 * 512 + x0]).rgb, unpackH4(scatterSrc[y0 * 512 + x1]).rgb, fx);
+  vec3 bot = mix(unpackH4(scatterSrc[y1 * 512 + x0]).rgb, unpackH4(scatterSrc[y1 * 512 + x1]).rgb, fx);
+  float nx = ((float(px) + 0.5) / float(P.ow) * 2.0 - 1.0) * P.amb.z;
+  float ny = ((float(py) + 0.5) / float(P.oh) * 2.0 - 1.0) * P.amb.w;
+  float cosine = max(0.0, (nx * P.light.x + ny * P.light.y + P.light.z) / sqrt(nx * nx + ny * ny + 1.0));
+  vec3 val = vec3(P.amb.x * (P.amb.y + (1.0 - P.amb.y) * cosine)) + value * P.keep + mix(top, bot, fy);
+  outp[py * P.ow + px] = packH4(vec4(val, 1.0));
+}

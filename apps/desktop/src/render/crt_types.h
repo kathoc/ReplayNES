@@ -13,6 +13,12 @@ namespace rnl {
 
 enum class CrtInputKind { codes, rgb, drive };
 
+/// `reference`: the 1:1 port (conformance tests, MP4 export). `fast`: the live display path - the
+/// same model with restructured kernels and approximations far below 8-bit display precision
+/// (docs/CRT_PORT.md "Fast path"; bounded against the reference by the conformance harness).
+/// Takes effect at the next configure(). Mirrors CRTRenderer.Quality (macOS).
+enum class CrtQuality { reference, fast };
+
 /// One emulated frame for the CRT.
 struct CrtInput {
   CrtInputKind kind = CrtInputKind::codes;

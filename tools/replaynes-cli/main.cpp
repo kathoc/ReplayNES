@@ -75,6 +75,7 @@ int usage() {
                "  render-hash <project.nesrec> [--rom PATH]\n"
                "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..]\n"
                "  bench-flash <rom> [frames=600] [level=0..3, default 2] [--reps R] [--warmup W]\n"
+               "  dump-ppu <rom> --out FILE [--frames N] [--skip S] [--press btn@F[+D],..]\n"
                "  version\n");
   return 1;
 }
@@ -327,6 +328,59 @@ int cmdScreenshot(const Args& a) {
   return 0;
 }
 
+// Raw PPU output of a frame sequence for the CRT benchmark / quality harness (display-only data,
+// never ROM bytes): "RNPPU1\0\0", u32 count, u32 0, then per frame u64 ordinal, u32 burst phase,
+// u32 0, 256x240 u16 codes (little endian).
+int cmdDumpPpu(const Args& a) {
+  std::vector<uint8_t> rom;
+  Status st = fs::readFile(a.pos[1], rom);
+  if (!st.ok()) return fail(st);
+  const std::string out = a.get("--out");
+  if (out.empty()) return usage();
+  const uint64_t frames = uint64_t(a.num("--frames", 600)), skip = uint64_t(a.num("--skip", 0));
+  struct Press { uint8_t mask; uint64_t from, to; };
+  std::vector<Press> presses;
+  static const char* kNames[] = {"a", "b", "select", "start", "up", "down", "left", "right"};
+  for (auto& p : splitList(a.get("--press"))) {
+    size_t atPos = p.find('@');
+    if (atPos == std::string::npos) return usage();
+    std::string name = p.substr(0, atPos), rest = p.substr(atPos + 1);
+    uint8_t mask = 0;
+    for (int i = 0; i < 8; ++i) if (name == kNames[i]) mask = uint8_t(1u << i);
+    if (!mask) { std::fprintf(stderr, "unknown button %s\n", name.c_str()); return 1; }
+    size_t plus = rest.find('+');
+    uint64_t from = std::strtoull(rest.c_str(), nullptr, 10);
+    uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
+    presses.push_back({mask, from, from + dur});
+  }
+  auto core = createCore(CoreKind::Nestopia);
+  st = core->loadROM(rom.data(), rom.size());
+  if (!st.ok()) return fail(st);
+  std::vector<uint8_t> buf = {'R', 'N', 'P', 'P', 'U', '1', 0, 0};
+  auto put = [&](uint64_t v, int bytes) { for (int i = 0; i < bytes; ++i) buf.push_back(uint8_t(v >> (8 * i))); };
+  put(frames, 4);
+  put(0, 4);
+  for (uint64_t f = 0; f < skip + frames; ++f) {
+    uint8_t p1 = 0;
+    for (auto& p : presses) if (f >= p.from && f < p.to) p1 |= p.mask;
+    st = core->stepFrame(p1, 0, true);
+    if (!st.ok()) return fail(st);
+    if (f < skip) continue;
+    uint32_t burst = 0;
+    uint64_t ordinal = 0;
+    const uint16_t* codes = core->videoCodes(&burst, &ordinal);
+    if (!codes) { std::fprintf(stderr, "core has no PPU codes\n"); return 1; }
+    put(ordinal, 8);
+    put(burst, 4);
+    put(0, 4);
+    for (int i = 0; i < kVideoWidth * kVideoHeight; ++i) put(codes[i], 2);
+  }
+  st = fs::writeFileAtomic(out, buf.data(), buf.size());
+  if (!st.ok()) return fail(st);
+  std::printf("%llu frames -> %s\n", (unsigned long long)frames, out.c_str());
+  return 0;
+}
+
 int cmdBenchFlash(const Args& a) {
   const int frames = a.pos.size() > 2 ? std::atoi(a.pos[2].c_str()) : 600;
   const int level = a.pos.size() > 3 ? std::atoi(a.pos[3].c_str()) : 2;
@@ -441,5 +495,6 @@ int main(int argc, char** argv) {
   if (cmd == "render-hash") return cmdRenderHash(a);
   if (cmd == "screenshot") return cmdScreenshot(a);
   if (cmd == "bench-flash") return cmdBenchFlash(a);
+  if (cmd == "dump-ppu") return cmdDumpPpu(a);
   return usage();
 }

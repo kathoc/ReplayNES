@@ -261,8 +261,14 @@ final class GameRenderer {
     private var crtInfo: String { buildTimesLock.lock(); defer { buildTimesLock.unlock() }; return crtInfo_ }
     private func drainBuildTimes() {
         buildTimesLock.lock(); let t = buildTimesIn; buildTimesIn.removeAll(keepingCapacity: true); buildTimesLock.unlock()
-        for x in t { buildAhead.add(x) }
+        let width = crtRenderer_?.outputSize?.width ?? 0
+        for x in t {
+            buildAhead.add(x)
+            if width > 0 { adaptiveScale.add(x, tubeWidth: width) }
+        }
     }
+    /// Tube resolution steps from the build GPU times (CRTAdaptiveScale; 1 = maps 1:1).
+    private var adaptiveScale = CRTAdaptiveScale()
 
     /// Takes a newly published frame into the texture (and the CRT store). Returns its meta and
     /// whether anything else that is shown changed since the last draw.
@@ -292,7 +298,7 @@ final class GameRenderer {
     @discardableResult
     private func configureCRT(_ crt: CRTRenderer, crtState: CRTSettingsModel.Snapshot, size: CGSize) -> (CGRect, Double) {
         let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
-        let (tw, th) = CRTRenderer.tubeSize(forDestination: dst.size, cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
+        let (tw, th) = CRTRenderer.tubeSize(forDestination: adaptiveScale.scaled(dst.size), cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
         crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
         return (dst, cropFraction)
     }
@@ -342,6 +348,7 @@ final class GameRenderer {
         } else if !crtOn && crtRenderer_ != nil {
             crtRenderer_ = nil          // free the tube buffers when CRT is switched off
             store.valid = false
+            adaptiveScale.reset()
         }
         crtPending = crtOn && !crtShown
         if !crtShown, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {

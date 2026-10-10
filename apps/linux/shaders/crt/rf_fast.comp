@@ -1,0 +1,77 @@
+// RF/IF stage, fast path (MSL rf_fast): the receiver only uses the real part of the IF output,
+// i.e. the composite signal filtered by Re(h) (a real FIR). Two consecutive overlap-save blocks ride
+// in one complex FFT (block 2m real, 2m+1 imaginary), multiplied by the spectrum of Re(h) and
+// transformed back in the same workgroup: real part = block 2m, imaginary part = block 2m+1.
+// 4096-point Stockham radix-8 FFT, 512 invocations x 8 points in registers, each pass exchanging
+// through 16 KB of shared memory (real and imaginary parts in turn).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 512) in;
+#include "common.glsl"
+#include "fast_common.glsl"
+layout(std430, set = 0, binding = 0) writeonly buffer B0 { float carrier[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { uint codes[]; };
+layout(std430, set = 0, binding = 2) readonly buffer B2 { int phases[]; };
+layout(std430, set = 0, binding = 3) readonly buffer B3 { float volts[]; };
+layout(std430, set = 0, binding = 4) readonly buffer B4 { vec2 tw[]; };
+layout(std430, set = 0, binding = 5) readonly buffer B5 { vec2 hspec[]; };
+RF_PARAMS
+#include "rf_common.glsl"
+shared float xs[4096];
+vec2 v[8];
+
+// 8-point DFT in registers: X[k] = sum_n v[n] e^(s i 2 pi n k / 8), natural order in and out.
+void dft8(float s) {
+  const float h = 0.70710678118654752;
+  vec2 a0 = v[0] + v[4], a1 = v[1] + v[5], a2 = v[2] + v[6], a3 = v[3] + v[7];
+  vec2 b0 = v[0] - v[4], b1 = v[1] - v[5], b2 = v[2] - v[6], b3 = v[3] - v[7];
+  b1 = vec2(h * (b1.x - s * b1.y), h * (b1.y + s * b1.x));
+  b2 = vec2(-s * b2.y, s * b2.x);
+  b3 = vec2(-h * (b3.x + s * b3.y), h * (s * b3.x - b3.y));
+  vec2 c0 = a0 + a2, c1 = a1 + a3, d0 = a0 - a2, d1 = a1 - a3; d1 = vec2(-s * d1.y, s * d1.x);
+  vec2 e0 = b0 + b2, e1 = b1 + b3, f0 = b0 - b2, f1 = b1 - b3; f1 = vec2(-s * f1.y, s * f1.x);
+  v[0] = c0 + c1; v[4] = c0 - c1; v[2] = d0 + d1; v[6] = d0 - d1;
+  v[1] = e0 + e1; v[5] = e0 - e1; v[3] = f0 + f1; v[7] = f0 - f1;
+}
+// One Stockham pass (span ns); v[r] = element j + 512 r on entry and on exit.
+void fftPass(float s, int j, int ns) {
+  int k = j % ns, step = 4096 / (ns * 8);
+  if (k > 0) {
+    // w^r, w = e^(s i 2 pi k step / 4096) from the twiddle table, powers by multiplication.
+    vec2 t = tw[k * step], w1 = vec2(t.x, s * t.y), wr = w1;
+    for (int r = 1; r < 8; r++) { v[r] = cmulF(v[r], wr); wr = cmulF(wr, w1); }
+  }
+  dft8(s);
+  int d = (j / ns) * ns * 8 + k;
+  barrier();
+  for (int r = 0; r < 8; r++) xs[d + r * ns] = v[r].x;
+  barrier();
+  float re[8];
+  for (int r = 0; r < 8; r++) re[r] = xs[j + r * 512];
+  barrier();
+  for (int r = 0; r < 8; r++) xs[d + r * ns] = v[r].y;
+  barrier();
+  for (int r = 0; r < 8; r++) v[r] = vec2(re[r], xs[j + r * 512]);
+}
+void fft4096(float s, int j) { for (int ns = 1; ns < 4096; ns *= 8) fftPass(s, j, ns); }
+void main() {
+  int j = int(gl_LocalInvocationID.x), b0 = int(gl_WorkGroupID.x) * 2;
+  bool has1 = b0 + 1 < P.blocks;
+  int base0 = b0 * P.hop + P.delay - P.overlap, base1 = base0 + P.hop;
+  for (int r = 0; r < 8; r++) {
+    int i = j + r * 512;
+    v[r] = vec2(rfInitAt(base0 + i), has1 ? rfInitAt(base1 + i) : 0.0);
+  }
+  fft4096(-1.0, j);
+  for (int r = 0; r < 8; r++) v[r] = cmulF(v[r], hspec[j + r * 512]);
+  fft4096(1.0, j);
+  for (int r = 0; r < 8; r++) {
+    int k = j + r * 512 - P.overlap;
+    if (k < 0 || k >= P.hop) continue;
+    vec2 y = v[r] * (1.0 / 4096.0);
+    int n0 = b0 * P.hop + k, n1 = n0 + P.hop;
+    if (n0 < 654720) carrier[n0] = y.x;
+    if (has1 && n1 < 654720) carrier[n1] = y.y;
+  }
+}

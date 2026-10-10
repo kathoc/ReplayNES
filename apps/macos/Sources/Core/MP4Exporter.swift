@@ -463,8 +463,9 @@ struct CRTExportFrame {
     var flashAltered: Bool
 }
 
-/// Offline CRT rendering for the exporter: the live pipeline (CRTRenderer), synchronous plan,
-/// one frame at a time in order, read back into the encoder's pixel buffer.
+/// Offline CRT rendering for the exporter: the live pipeline (CRTRenderer) at reference quality
+/// (the 1:1 port; time is not critical offline), synchronous plan, one frame at a time in order,
+/// read back into the encoder's pixel buffer.
 final class CRTExportRenderer {
     private let renderer: CRTRenderer
     private let queue: MTLCommandQueue
@@ -477,6 +478,7 @@ final class CRTExportRenderer {
             throw ExportError.writer(String(localized: "Metal isn’t available (CRT effect)"))
         }
         renderer = try CRTRenderer(device: device, targetPixelFormat: nil)
+        renderer.quality = .reference
         self.queue = queue
         cropFraction = Double(crop.cropTop + crop.cropBottom) / 2 / 240
         // Full 4:3 raster minus the cropped overscan rows, fitted into the canvas and centred.
