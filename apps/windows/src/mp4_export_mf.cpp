@@ -232,13 +232,15 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   MFSetAttributeRatio(in, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
   setColorTags(in);
   // Encoder settings (ICodecAPI properties, applied by the sink writer when it creates the
-  // encoder): VBR around the average rate, a key frame every 120 frames (as the FFmpeg exporter),
-  // no B-frames (no reordering delay; presentation order = decode order).
+  // encoder): constant bit rate at the target (the size prediction of the Export dialog relies on
+  // it), a key frame every RNF_EXPORT_GOP_FRAMES
+  // frames (YouTube: half the frame rate; as the FFmpeg exporter), no B-frames (no reordering
+  // delay; presentation order = decode order; deviation from YouTube's 2 B-frames).
   IMFAttributes* enc = nullptr;
   MFCreateAttributes(&enc, 4);
-  enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_UnconstrainedVBR);
+  enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_CBR);
   enc->SetUINT32(CODECAPI_AVEncCommonMeanBitRate, UINT32(std::min<int64_t>(bitrate, 0xFFFFFFFF)));
-  enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, 120);
+  enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, RNF_EXPORT_GOP_FRAMES);
   enc->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
   h = w.sink->SetInputMediaType(w.video, in, enc);
   enc->Release();
@@ -499,7 +501,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   std::vector<int> cols(size_t(std::max(0, g.dst_width))), rows(size_t(std::max(0, g.dst_height)));
   rnf_export_column_map(&g, cols.data());
   rnf_export_row_map(&g, rows.data());
-  const int64_t bitrate = rnf_export_video_bitrate(&g, opt.videoBitsPerPixel);
+  const int64_t bitrate = rnf_export_video_bitrate(&g, 0, opt.quality);
 
   // ---- optional processor (CRT), flash filter
   std::unique_ptr<ExportVideoProcessor> processor;

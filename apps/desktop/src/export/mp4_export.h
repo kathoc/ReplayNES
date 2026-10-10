@@ -56,8 +56,9 @@ struct ExportOptions {
   rnf_export_settings settings = defaultExportSettings();  // preset / crops / 8:7 / start / end
   /// Photosensitive flash reduction of the exported picture only (renderer, hash, project unaffected).
   rn_flash_level flash = RN_FLASH_OFF;
-  int audioBitrate = 192000;
-  double videoBitsPerPixel = 0.25;  // per frame; pixel art needs more than camera footage
+  /// rnf_export_quality: scales the YouTube-table video bit rate (Light x0.5 / Standard / High x2).
+  int quality = 1;
+  int audioBitrate = 128000;  // AAC mono, YouTube's recommendation (rnf_export_audio_bitrate)
   /// "" = auto: a hardware encoder when there is one that works, else software. Linux: h264_vaapi,
   /// then libx264, then libopenh264 (first one that opens), or that FFmpeg encoder only. Windows: a
   /// hardware H.264 MFT when there is one, else Microsoft's software encoder; "mf_hardware" /

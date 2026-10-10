@@ -409,6 +409,7 @@ class UI : public DialogHost {
   int exportStart_ = 0, exportEnd_ = 0;
   int exportPreset_ = -1;
   int exportEncoder_ = 0;
+  int exportQuality_ = RNF_QUALITY_STANDARD;  // rnf_export_quality
   char exportName_[200] = {0};
   std::string exportError_;
   // Layout check.

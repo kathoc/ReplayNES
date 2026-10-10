@@ -101,6 +101,7 @@ void UI::startExport() {
   rn_flash_level level = d_.settings->flash == RN_FLASH_OFF ? RN_FLASH_STANDARD : rn_flash_level(d_.settings->flash);
   eo.flash = exportApplyFlash_ ? level : RN_FLASH_OFF;
   const auto& encoders = exportEncoderChoices();
+  eo.quality = exportQuality_;
   if (exportEncoder_ > 0 && size_t(exportEncoder_) <= encoders.size()) eo.encoder = encoders[size_t(exportEncoder_ - 1)].id;
   if (exportApplyCRT_) eo.makeProcessor = crtExportProcessorFactory(crtSettings());
   std::string dir = d_.library->root() + "/Exports";
@@ -170,6 +171,15 @@ void UI::buildExportDialog() {
       // collapsible advanced options, so the buttons are always on screen at 1280x800.
       const EmuStatus& st = d_.emu->status();
       const float colW = S(460), gap = S(24);
+      rnf_export_settings s = defaultExportSettings();
+      rnf_export_preset p{};
+      if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
+      int crop = exportCropOverscan_ ? 8 : 0;
+      s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
+      s.pixel_aspect_87 = exportPar87_;
+      rnf_export_geometry g{};
+      rnf_export_geometry_compute(&s, &g);
+      uint64_t frames = exportWholeTake_ ? st.takeLength : uint64_t(std::max(0, exportEnd_ - exportStart_));
       // The options scroll (focus-driven) if they ever outgrow the screen; the buttons below stay.
       float maxBody = io.DisplaySize.y * 0.94f - S(40) - S(100);
       ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, maxBody));
@@ -199,6 +209,19 @@ void UI::buildExportDialog() {
       if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
       if (ImGui::RadioButton(TR("8:7 (as on a CRT TV)"), exportPar87_)) exportPar87_ = true;
       ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
+      section(TR("Bit rate"), x0 + colW);
+      for (int q = 0; q < RNF_QUALITY_COUNT; ++q) {
+        const char* name = q == RNF_QUALITY_LIGHT ? TR("Light") : q == RNF_QUALITY_STANDARD ? TR("Standard (YouTube)") : TR("High quality");
+        // Predicted for exactly this range / canvas / bit rate (rnf_export_predict_size).
+        const int64_t bytes = rnf_export_predict_size(&g, 0, q, frames, nullptr);
+        char mbit[16], size[24];
+        std::snprintf(mbit, sizeof mbit, "%.1f", double(rnf_export_video_bitrate(&g, 0, q)) / 1e6);
+        if (bytes >= 1000000000) std::snprintf(size, sizeof size, "%.2f GB", double(bytes) / 1e9);
+        else std::snprintf(size, sizeof size, "%.1f MB", double(bytes) / 1e6);
+        std::string l = TRF("%@ · %@ Mbit/s · about %@", {std::string(name), std::string(mbit), std::string(size)}) + "##quality" +
+                        std::to_string(q);
+        if (ImGui::RadioButton(l.c_str(), exportQuality_ == q)) exportQuality_ = q;
+      }
       ImGui::PopItemWidth();
       ImGui::Dummy(ImVec2(colW, 0));
       ImGui::EndGroup();
@@ -233,19 +256,10 @@ void UI::buildExportDialog() {
       ImGui::InputText("##exportname", exportName_, sizeof exportName_);
       ImGui::SameLine();
       ImGui::TextDisabled(".mp4");
-      rnf_export_settings s = defaultExportSettings();
-      rnf_export_preset p{};
-      if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
-      int crop = exportCropOverscan_ ? 8 : 0;
-      s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
-      s.pixel_aspect_87 = exportPar87_;
-      rnf_export_geometry g{};
-      rnf_export_geometry_compute(&s, &g);
       std::string canvas = std::to_string(g.canvas_width) + "×" + std::to_string(g.canvas_height);
       std::string picture = std::to_string(g.dst_width) + "×" + std::to_string(g.dst_height);
       ImGui::TextDisabled("%s: %s", TR("Output"),
                           TRF("%@ (picture %@, vertical ×%lld, nearest neighbor)", {canvas, picture, g.vertical_scale}).c_str());
-      uint64_t frames = exportWholeTake_ ? st.takeLength : uint64_t(std::max(0, exportEnd_ - exportStart_));
       ImGui::TextDisabled("%s: %s", TR("Length"),
                           TRF("%@ (%llu frames, 60.0988 fps, AAC 48 kHz)", {timecode(frames), (unsigned long long)frames}).c_str());
       if (ImGui::CollapsingHeader(TR("Advanced"))) {

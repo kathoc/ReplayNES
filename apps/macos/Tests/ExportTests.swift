@@ -32,6 +32,82 @@ final class ExportTests: XCTestCase {
         return s
     }
 
+    /// Synthetic pixel-art picture for rate-control checks (no ROM needed): flat 8x8 cells in a
+    /// 16-colour palette, optionally scrolling 2 px per frame; a small sprite moves every 2 s.
+    static func syntheticPatch(scroll: Bool) -> (UInt64, inout [UInt32]) -> Void {
+        return { frame, px in
+            let w = Int(RN_VIDEO_WIDTH), h = Int(RN_VIDEO_HEIGHT)
+            let shift = scroll ? Int(frame) * 2 : 0
+            for y in 0..<h {
+                for x in 0..<w {
+                    let cx = (x + shift) / 8, cy = y / 8
+                    var hh = UInt32(truncatingIfNeeded: cx) &* 2654435761 ^ UInt32(truncatingIfNeeded: cy) &* 40503
+                    hh ^= hh >> 13
+                    let pal: UInt32 = cy > 22 ? 3 + UInt32((cx / 2) & 1) : (hh % 9 < 6 ? 0 : 1 + hh % 12)
+                    let v = 0x20 + pal * 14
+                    px[y * w + x] = 0xFF00_0000 | ((v * 3 / 2) & 0xFF) << 16 | ((v * 2 + 40 * (pal & 1)) % 256) << 8 | ((255 - v) & 0xFF)
+                }
+            }
+            let sx = Int((frame / 120) % 8) * 32 + 24, sy = 96
+            for y in sy..<min(h, sy + 16) { for x in sx..<min(w, sx + 16) { px[y * w + x] = 0xFFF0_E040 } }
+        }
+    }
+
+    /// Exports `frames` frames and returns (predicted, actual) bytes.
+    private func exportedSize(_ s: EngineSession, settings: ExportSettings, patch: ((UInt64, inout [UInt32]) -> Void)?, name: String) throws -> (predicted: Int64, actual: Int64, seconds: Double) {
+        let out = tmp.appendingPathComponent(name)
+        let t0 = Date()
+        let exporter = MP4Exporter(renderer: try s.makeRenderer(), settings: settings, url: out)
+        exporter.picturePatch = patch
+        let result = try exporter.run(progress: { _, _ in }, isCancelled: { false })
+        let actual = (try FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int64) ?? 0
+        let predicted = ExportGeometry(settings).predictedBytes(hevc: settings.codec == .hevc, quality: settings.quality, frames: result.frames)
+        if let keep = ProcessInfo.processInfo.environment["RN_PREDICT_KEEP"] {   // inspect the files with ffprobe
+            try? FileManager.default.createDirectory(atPath: keep, withIntermediateDirectories: true)
+            let dst = URL(fileURLWithPath: keep).appendingPathComponent("\(name)-\(settings.codec.rawValue)-q\(settings.quality.rawValue)-\(result.frames).mp4")
+            try? FileManager.default.removeItem(at: dst)
+            try? FileManager.default.copyItem(at: out, to: dst)
+        }
+        try? FileManager.default.removeItem(at: out)
+        return (predicted, actual, Date().timeIntervalSince(t0))
+    }
+
+    /// The Export sheet's size prediction against the real file (the encoder is asked for a constant
+    /// rate). Only measured and printed (PREDICT lines; goal +-3%): a size mismatch never fails. Short default run; RN_PREDICT_FRAMES (e.g. 18000) turns
+    /// it into a long measurement of the whole matrix (content x quality x codec), printed as PREDICT lines.
+    func testPredictedSizeTracksTarget() throws {
+        let env = ProcessInfo.processInfo.environment
+        let frames = Int(env["RN_PREDICT_FRAMES"] ?? "") ?? 600
+        let long = env["RN_PREDICT_FRAMES"] != nil
+        let s = try recordTake(frames: frames)
+        var settings = ExportSettings()
+        settings.preset = .canvas(1920, 1080)
+        // Default run: the two cases the hardware encoder tracks (flat pixel art at Standard, the test
+        // ROM's noise at High - noise at lower rates is beyond what the encoder can compress).
+        typealias Patch = (UInt64, inout [UInt32]) -> Void
+        let cases: [(String, Patch?, ExportSettings.Quality, ExportSettings.Codec)]
+        if long {
+            var all: [(String, Patch?, ExportSettings.Quality, ExportSettings.Codec)] = []
+            for (n, patch) in [("noise", nil), ("still", Self.syntheticPatch(scroll: false)), ("scroll", Self.syntheticPatch(scroll: true))] as [(String, Patch?)] {
+                for q in ExportSettings.Quality.allCases { for c in ExportSettings.Codec.allCases { all.append((n, patch, q, c)) } }
+            }
+            cases = all
+        } else {
+            cases = [("still", Self.syntheticPatch(scroll: false), .standard, .h264), ("noise", nil, .high, .h264)]
+        }
+        // RN_PREDICT_ONLY="still:1:h264,noise:2:hevc" (content:quality:codec) picks cases of the matrix.
+        let only = env["RN_PREDICT_ONLY"]?.split(separator: ",").map(String.init)
+        for (cname, patch, q, codec) in cases {
+            if let only, !only.contains("\(cname):\(q.rawValue):\(codec.rawValue)") { continue }
+            settings.quality = q
+            settings.codec = codec
+            let r = try exportedSize(s, settings: settings, patch: patch, name: cname)
+            let err = (Double(r.actual) - Double(r.predicted)) * 100 / Double(r.predicted)
+            print("PREDICT frames=\(frames) \(cname) \(codec.rawValue) q=\(q.rawValue) predicted=\(r.predicted) actual=\(r.actual) error=\(String(format: "%.2f", err))% time=\(String(format: "%.1f", r.seconds))s")
+        }
+    }
+
+
     func testExportShortTakeH264() throws {
         let frames = 180
         let s = try recordTake(frames: frames)

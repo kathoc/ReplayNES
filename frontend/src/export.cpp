@@ -108,10 +108,87 @@ void rnf_export_row_map(const rnf_export_geometry* g, int* out) {
   for (int i = 0; i < g->dst_height; ++i) out[i] = g->src_y + (i * g->src_height) / g->dst_height;
 }
 
-int64_t rnf_export_video_bitrate(const rnf_export_geometry* g, double bits_per_pixel) {
-  if (!g) return 2000000;
-  double pixels = double(g->canvas_width * g->canvas_height);
-  return std::max<int64_t>(2000000, int64_t(pixels * 60.0 * bits_per_pixel));
+int64_t rnf_export_video_bitrate(const rnf_export_geometry* g, int hevc, int quality) {
+  // YouTube's recommended SDR bit rates for 48-60 fps uploads (Mbit/s) by height.
+  static const struct { double h, mbit; } kTable[] = {{360, 1.5}, {480, 4}, {720, 7.5}, {1080, 12}, {1440, 24}, {2160, 60}};
+  const double floorMbit = 1.5;
+  const double h = g ? double(std::max(1, g->canvas_height)) : 360.0;
+  const double h2 = h * h;
+  const int n = int(sizeof kTable / sizeof kTable[0]);
+  double mbit;
+  if (h2 <= kTable[0].h * kTable[0].h) {
+    mbit = kTable[0].mbit * h2 / (kTable[0].h * kTable[0].h);
+  } else if (h2 >= kTable[n - 1].h * kTable[n - 1].h) {
+    mbit = kTable[n - 1].mbit * h2 / (kTable[n - 1].h * kTable[n - 1].h);
+  } else {
+    int i = 0;
+    while (i + 2 < n && h2 > kTable[i + 1].h * kTable[i + 1].h) ++i;
+    const double a = kTable[i].h * kTable[i].h, b = kTable[i + 1].h * kTable[i + 1].h;
+    mbit = kTable[i].mbit + (kTable[i + 1].mbit - kTable[i].mbit) * (h2 - a) / (b - a);
+  }
+  mbit = std::max(floorMbit, mbit);
+  if (hevc) mbit *= 0.7;
+  if (quality == RNF_QUALITY_LIGHT) mbit *= 0.5;
+  else if (quality == RNF_QUALITY_HIGH) mbit *= 2.0;
+  return int64_t(std::llround(mbit * 1e6));
+}
+
+int64_t rnf_export_audio_bitrate(void) { return 128000; }
+
+int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int quality, uint64_t frames,
+                                rnf_export_prediction* detail) {
+  rnf_export_prediction p{};
+  p.video_bitrate = rnf_export_video_bitrate(g, hevc, quality);
+  p.audio_bitrate = rnf_export_audio_bitrate();
+  p.seconds = double(frames) * 655171.0 / 39375000.0;
+  p.video_bytes = int64_t(std::llround(p.seconds * double(p.video_bitrate) / 8.0));
+  p.audio_bytes = int64_t(std::llround(p.seconds * double(p.audio_bitrate) / 8.0));
+  // Container: the boxes the platform's muxer writes (ISO 14496-12; sizes of the boxes of a real
+  // file of each muxer, tables per sample / chunk), see container notes below.
+  const int64_t n = int64_t(frames);
+  const int64_t keys = (n + RNF_EXPORT_GOP_FRAMES - 1) / RNF_EXPORT_GOP_FRAMES;
+  const int64_t aac = int64_t(std::ceil(p.seconds * double(RN_SAMPLE_RATE) / 1024.0));
+  const bool big = p.video_bytes + p.audio_bytes > int64_t(4) * 1024 * 1024 * 1024;  // co64 / 64-bit mdat
+  const int64_t offset = big ? 8 : 4;
+  auto table = [&](int64_t entries, int64_t entryBytes) { return 16 + entries * entryBytes; };
+  // trak: tkhd 92, edts 36, mdhd 32, hdlr ~47, xmhd ~18, dinf 36 + the box headers.
+  const int64_t trackFixed = 8 + 92 + 36 + 8 + 32 + 47 + 8 + 18 + 36 + 8;
+  int64_t vChunks, vStsc, aChunks, aStsc, perSample = 4, vStsd = hevc ? 260 : 200, aStsd = 110, extra;
+#if defined(__APPLE__)
+  // AVAssetWriter: a chunk per track every 0.5 s or ~800 kB of video, B-frames (stsz 4 + ctts 8 +
+  // sdtp 1 byte per frame; sdtp box header 12), stsd avc1 185 / hvc1 254 / mp4a 103.
+  perSample += 9;
+  vStsd = hevc ? 254 : 185;
+  aStsd = 103;
+  vChunks = std::max<int64_t>(1, std::max<int64_t>(int64_t(std::ceil(p.seconds / 0.5)), (p.video_bytes + 799999) / 800000));
+  vStsc = std::max<int64_t>(1, vChunks / 5);
+  aChunks = vChunks;
+  aStsc = std::max<int64_t>(1, aChunks * 4 / 5);
+  extra = 12 + 54 /* sdtp header, sgpd + sbgp */;
+#elif defined(_WIN32)
+  // Media Foundation MPEG-4 sink: ~1 s chunks, no B-frames.
+  vChunks = aChunks = std::max<int64_t>(1, int64_t(std::ceil(p.seconds)));
+  vStsc = aStsc = 1;
+  extra = 100;
+#else
+  // libav mov muxer: one chunk per interleaved AAC frame; the stsc run table changes whenever the
+  // frames per chunk change (N / aac = frames per audio frame, e.g. 1.28 -> chunks of 1 or 2).
+  aChunks = std::max<int64_t>(1, aac);
+  vChunks = aChunks;
+  const double r = aac > 0 ? double(n) / double(aac) : 1.0, f = r - std::floor(r);
+  vStsc = std::max<int64_t>(1, int64_t(std::llround(2.0 * std::min(f, 1.0 - f) * double(aChunks))));
+  aStsc = 1;
+  extra = 8 /* free */ + 98 /* udta */ + 54 /* sgpd, sbgp */;
+#endif
+  int64_t c = 32 /* ftyp */ + (big ? 16 : 8) /* mdat header */ + 8 + 108 /* moov, mvhd */ + extra;
+  // video: stsd, stts (one run), stss (key frames), stsz (20 + 4/sample), stsc, stco
+  c += trackFixed + vStsd + table(1, 8) + table(keys, 4) + 4 + table(n, perSample) + table(vStsc, 12) + table(vChunks, offset);
+  // audio: stsd, stts, stsz (one entry per AAC frame), stsc, stco
+  c += trackFixed + aStsd + table(1, 8) + 4 + table(aac, 4) + table(aStsc, 12) + table(aChunks, offset);
+  p.container_bytes = c;
+  p.total_bytes = p.video_bytes + p.audio_bytes + p.container_bytes;
+  if (detail) *detail = p;
+  return p.total_bytes;
 }
 
 // ------------------------------------------------------------------ streaming output

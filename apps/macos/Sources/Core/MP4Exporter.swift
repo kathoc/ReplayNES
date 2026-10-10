@@ -43,14 +43,28 @@ struct ExportSettings: Equatable {
         }
     }
 
+    enum Quality: Int, CaseIterable, Identifiable {
+        case light = 0, standard = 1, high = 2
+        var id: Int { rawValue }
+        var label: String {
+            switch self {
+            case .light: return String(localized: "Light")
+            case .standard: return String(localized: "Standard (YouTube)")
+            case .high: return String(localized: "High quality")
+            }
+        }
+    }
+
     var codec: Codec = .h264
     var preset: SizePreset = .canvas(1280, 960)
     var cropTop = 8, cropBottom = 8, cropLeft = 0, cropRight = 0
     var pixelAspect87 = false
     var startFrame: UInt64 = 0
     var endFrame: UInt64 = 0          // 0 = take end
-    var audioBitrate = 192_000
-    var videoBitsPerPixel = 0.25      // per frame; pixel art needs more than camera footage
+    /// AAC mono, YouTube's recommendation (shared with the other platforms).
+    var audioBitrate: Int { Int(rnf_export_audio_bitrate()) }
+    /// Video bit rate choice (scales YouTube's recommended rate).
+    var quality: Quality = .standard
     /// Photosensitive flash reduction applied to the exported picture only (the renderer, its
     /// hash and the project are unaffected). .off = the exact emulated frames.
     var flashReduction: FlashLevel = .off
@@ -112,10 +126,16 @@ struct ExportGeometry: Equatable {
         return out.map(Int.init)
     }
 
-    /// Average video bit rate for `bitsPerPixel` per frame (at least 2 Mbit/s).
-    func videoBitrate(bitsPerPixel: Double) -> Int {
+    /// Average video bit rate: YouTube's recommended SDR 48-60 fps table by canvas height (HEVC x0.7).
+    func videoBitrate(hevc: Bool, quality: ExportSettings.Quality = .standard) -> Int {
         var g = cValue
-        return Int(rnf_export_video_bitrate(&g, bitsPerPixel))
+        return Int(rnf_export_video_bitrate(&g, hevc ? 1 : 0, Int32(quality.rawValue)))
+    }
+
+    /// Expected file size in bytes of exactly `frames` frames (video + audio + MP4 structure).
+    func predictedBytes(hevc: Bool, quality: ExportSettings.Quality, frames: UInt64) -> Int64 {
+        var g = cValue
+        return rnf_export_predict_size(&g, hevc ? 1 : 0, Int32(quality.rawValue), frames, nil)
     }
 }
 
@@ -148,6 +168,9 @@ struct ExportResult {
 final class MP4Exporter {
     private let renderer: OpaquePointer
     private let settings: ExportSettings
+    /// Test hook: edits the 256x240 BGRA picture of each frame (index in the take) before scaling,
+    /// e.g. to export synthetic still / scrolling content for rate-control measurements.
+    var picturePatch: ((UInt64, inout [UInt32]) -> Void)?
     private let url: URL
     let geometry: ExportGeometry
 
@@ -176,12 +199,21 @@ final class MP4Exporter {
         writer.movieTimeScale = CMTimeScale(RN_FPS_NUM)
 
         let g = geometry
-        let bitrate = g.videoBitrate(bitsPerPixel: settings.videoBitsPerPixel)
+        let bitrate = g.videoBitrate(hevc: settings.codec == .hevc, quality: settings.quality)
+        // Key frame every RNF_EXPORT_GOP_FRAMES frames (YouTube: half the frame rate); B-frames
+        // allowed (High profile, CABAC by default).
         var compression: [String: Any] = [
             AVVideoAverageBitRateKey: bitrate,
             AVVideoExpectedSourceFrameRateKey: 60,
-            AVVideoMaxKeyFrameIntervalKey: 120,
+            AVVideoMaxKeyFrameIntervalKey: Int(RNF_EXPORT_GOP_FRAMES),
+            AVVideoAllowFrameReorderingKey: true,
         ]
+        // Constant bit rate (macOS 13+), so the file size follows the target that the Export sheet
+        // predicts (rnf_export_predict_size). The hardware encoder delivers ~95% of what it is
+        // asked on easy pictures and 100% on detailed ones, hence the 2.5% calibration: both land
+        // within the +-3% the size tests allow.
+        compression.removeValue(forKey: AVVideoAverageBitRateKey)
+        compression[kVTCompressionPropertyKey_ConstantBitRate as String] = Int(Double(bitrate) * 1.025)
         if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         var videoSettings: [String: Any] = [
             AVVideoCodecKey: settings.codec.avCodec,
@@ -275,13 +307,16 @@ final class MP4Exporter {
                                             ? Array(UnsafeBufferPointer(start: info.codes, count: frameBytes)) : nil,
                                         burstPhase: info.burst_phase, ordinal: info.codes != nil ? info.frame : f, flashAltered: false)
             }
+            var picture: [UInt32]
             if let flash {
                 let altered = filtered.withUnsafeMutableBufferPointer { flash.process(video, into: $0.baseAddress!) }
                 signal?.flashAltered = altered
-                videoQueue.append((filtered, pts, signal))
+                picture = filtered
             } else {
-                videoQueue.append((Array(UnsafeBufferPointer(start: video, count: frameBytes)), pts, signal))
+                picture = Array(UnsafeBufferPointer(start: video, count: frameBytes))
             }
+            picturePatch?(f - startFrame, &picture)
+            videoQueue.append((picture, pts, signal))
             if n > 0, let audio {
                 // Audio PTS from the absolute sample count at 48 kHz.
                 let apts = CMTime(value: CMTimeValue(rn_audio_samples_before(f) - sampleBase), timescale: CMTimeScale(RN_SAMPLE_RATE))

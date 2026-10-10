@@ -236,7 +236,8 @@ If you moved the ROM file, specify it again when opening (it is confirmed to be 
 
 Quick Menu › Share › Export MP4, or Share › Export MP4… in the menu bar.
 
-- Format: H.264 or HEVC with AAC (48 kHz)
+- Format: H.264 or HEVC with AAC (48 kHz, 128 kbit/s mono)
+- Bit rate: Light / Standard (YouTube) / High quality. Standard is YouTube's recommended upload rate for 60 fps SDR, chosen by the output height (1080p 12 Mbit/s, 1440p 24, 720p 7.5, 480p 4; between them interpolated by height², at least 1.5 Mbit/s; HEVC uses 70% of that); Light is half of it and High twice. The encoder is asked for a constant rate, and every choice in the export sheet shows its rate and the file size predicted for exactly this range, size and codec (within about 3%; a very noisy picture can need more than a hardware encoder's lowest rate, and flat pixel art is padded up to the rate by the software encoder).
 - Size: integer multiples of 256×240, 1280×960, 1920×1440, and so on
 - You can choose overscan cropping and the pixel aspect ratio 1:1 / 8:7.
 - With "Apply Flash Reduction", you can get a video with intense flashing toned down (see "Flash Reduction" above).

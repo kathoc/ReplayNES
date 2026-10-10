@@ -87,8 +87,13 @@ struct ExportSheet: View {
                 Text("\(canvas) (picture \(picture), vertical ×\(g.verticalScale), nearest neighbor)")
                     .font(.caption)
             }
+            let frames = wholeTake ? model.status.takeLength : UInt64(max(0, endFrame - startFrame))
+            Picker("Bit rate", selection: $settings.quality) {
+                ForEach(ExportSettings.Quality.allCases) { q in
+                    Text(qualityLabel(q, geometry: g, frames: frames)).tag(q)
+                }
+            }
             LabeledContent("Length") {
-                let frames = wholeTake ? model.status.takeLength : UInt64(max(0, endFrame - startFrame))
                 Text("\(Engine.timecode(forFrame: frames)) (\(frames) frames, 60.0988 fps, AAC 48 kHz)").font(.caption)
             }
         }
@@ -103,6 +108,15 @@ struct ExportSheet: View {
             Button("Export…") { chooseAndStart() }.keyboardShortcut(.defaultAction)
                 .disabled(model.status.takeLength == 0)
         }
+    }
+
+    /// "Standard (YouTube) · 12.0 Mbit/s · about 91 MB": the size is predicted for exactly this range,
+    /// canvas, codec and bit rate (rnf_export_predict_size).
+    private func qualityLabel(_ q: ExportSettings.Quality, geometry g: ExportGeometry, frames: UInt64) -> String {
+        let hevc = settings.codec == .hevc
+        let mbit = String(format: "%.1f", Double(g.videoBitrate(hevc: hevc, quality: q)) / 1e6)
+        let size = ByteCountFormatter.string(fromByteCount: g.predictedBytes(hevc: hevc, quality: q, frames: frames), countStyle: .file)
+        return String(localized: "\(q.label) · \(mbit) Mbit/s · about \(size)")
     }
 
     /// Controller confirm / cancel (the sheet's window has the keyboard itself).

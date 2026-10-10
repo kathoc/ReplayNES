@@ -90,7 +90,16 @@ bool openVideoEncoder(const std::string& name, const rnf_export_geometry& g, int
   c->time_base = AVRational{RN_FPS_DEN, RN_FPS_NUM};  // one tick per frame
   c->framerate = AVRational{RN_FPS_NUM, RN_FPS_DEN};
   c->bit_rate = bitrate;
-  c->gop_size = 120;
+  // YouTube: closed GOP of half the frame rate. B-frames stay off (exact frame timestamps, no
+  // reordering delay; also not offered by the AMD VAAPI H.264 encoder).
+  c->gop_size = RNF_EXPORT_GOP_FRAMES;
+  c->max_b_frames = 0;
+  // Constant rate (min = max = average) with a quarter-second VBV buffer (a bigger one lets the
+  // first second overshoot by several percent of a short clip): the output size follows the target,
+  // which the Export dialog's size prediction relies on (VAAPI picks CBR from this too).
+  c->rc_min_rate = bitrate;
+  c->rc_max_rate = bitrate;
+  c->rc_buffer_size = int(std::min<int64_t>(bitrate / 4, INT32_MAX));
   c->color_primaries = AVCOL_PRI_BT709;
   c->color_trc = AVCOL_TRC_BT709;
   c->colorspace = AVCOL_SPC_BT709;
@@ -102,10 +111,11 @@ bool openVideoEncoder(const std::string& name, const rnf_export_geometry& g, int
     c->profile = AV_PROFILE_H264_HIGH;
     av_opt_set(c->priv_data, "profile", "high", 0);
     av_opt_set(c->priv_data, "preset", "medium", 0);
+    // Closed GOP, CABAC (High), and real CBR: nal-hrd=cbr pads with filler data where the picture is
+    // too simple to use the rate, so the file size follows the target (rnf_export_predict_size).
+    av_opt_set(c->priv_data, "x264-params", "open-gop=0:cabac=1:nal-hrd=cbr", 0);
   } else if (vaapi) {
     c->profile = AV_PROFILE_H264_HIGH;
-    c->rc_max_rate = bitrate * 2;  // VBR around the average rate
-    c->rc_buffer_size = int(std::min<int64_t>(bitrate * 2, INT32_MAX));
     int r = av_hwdevice_ctx_create(&av.hwDevice, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0);
     if (r < 0) {
       *why = name + ": no VAAPI device (" + avError(r) + ")";
@@ -256,7 +266,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   std::vector<int> cols(size_t(std::max(0, g.dst_width))), rows(size_t(std::max(0, g.dst_height)));
   rnf_export_column_map(&g, cols.data());
   rnf_export_row_map(&g, rows.data());
-  const int64_t bitrate = rnf_export_video_bitrate(&g, opt.videoBitsPerPixel);
+  const int64_t bitrate = rnf_export_video_bitrate(&g, 0, opt.quality);
 
   // ---- optional processor (CRT), flash filter
   std::unique_ptr<ExportVideoProcessor> processor;

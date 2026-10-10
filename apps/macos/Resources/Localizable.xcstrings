@@ -51,6 +51,16 @@
         }
       }
     },
+    "%@ · %@ Mbit/s · about %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ・ %2$@ Mbit/s ・ 約 %3$@"
+          }
+        }
+      }
+    },
     "%@ (4:3, with black bars)": {
       "localizations": {
         "ja": {
@@ -3374,6 +3384,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "左Super"
+          }
+        }
+      }
+    },
+    "Bit rate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビットレート"
+          }
+        }
+      }
+    },
+    "High quality": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高画質"
+          }
+        }
+      }
+    },
+    "Light": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "軽量"
+          }
+        }
+      }
+    },
+    "Standard (YouTube)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準（YouTube 相当）"
           }
         }
       }

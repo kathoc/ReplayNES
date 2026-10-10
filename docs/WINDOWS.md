@@ -167,8 +167,8 @@ failed / cancelled export removes its file.
   = the frame count), decodes the first frame and the last 3 s up to the final frame, and reads
   the last 3 s of audio. Any failure is the export's error message; the file is removed.
 
-* `IMFSinkWriter` -> MPEG-4: H.264 High, VBR at the shared bit rate, GOP 120, **no B-frames** (no
-  reordering delay against the audio); AAC-LC 48 kHz mono from the engine's 16-bit PCM. BT.709
+* `IMFSinkWriter` -> MPEG-4: H.264 High, CBR at the shared bit rate (YouTube table x Light 0.5 / Standard 1 / High 2), GOP 30, **no B-frames** (no
+  reordering delay against the audio); AAC-LC 48 kHz 128 kbit/s mono from the engine's 16-bit PCM. BT.709
   colour tags.
 * **Encoder: hardware first.** Automatic mode tries a hardware H.264 MFT
   (`MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS`) with a Direct3D 11 device manager

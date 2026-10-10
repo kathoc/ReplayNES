@@ -1,6 +1,7 @@
 // Frontend core: export settings + geometry, streaming output canvas, flash level texts and the
 // shared localization table (generated from Localizable.xcstrings) with its formatter.
 // Ported from the macOS ExportTests (geometry) / StreamOutputTests / UILanguageTests.
+#include <cmath>
 #include <vector>
 
 #include "support/FrontendTestUtil.h"
@@ -54,11 +55,36 @@ TEST_CASE("export geometry") {
   g = geometry(s);
   CHECK_EQ(g.vertical_scale, 4);
   CHECK_EQ(g.dst_height, 960);
-  CHECK_EQ(rnf_export_video_bitrate(&g, 0.25), int64_t(1920 * 1080 * 60 * 0.25));
-  rnf_export_geometry tiny{};
-  tiny.canvas_width = 16;
-  tiny.canvas_height = 16;
-  CHECK_EQ(rnf_export_video_bitrate(&tiny, 0.25), int64_t(2000000));
+  const int S = RNF_QUALITY_STANDARD;
+  CHECK_EQ(rnf_export_video_bitrate(&g, 0, S), int64_t(12000000));  // 1920x1080: YouTube 1080p60
+  CHECK_EQ(rnf_export_video_bitrate(&g, 1, S), int64_t(8400000));    // HEVC x0.7
+  CHECK_EQ(rnf_export_video_bitrate(&g, 0, RNF_QUALITY_LIGHT), int64_t(6000000));
+  CHECK_EQ(rnf_export_video_bitrate(&g, 0, RNF_QUALITY_HIGH), int64_t(24000000));
+  rnf_export_geometry c{};
+  auto at = [&](int w, int h, int hevc) {
+    c.canvas_width = w;
+    c.canvas_height = h;
+    return rnf_export_video_bitrate(&c, hevc, S);
+  };
+  CHECK_EQ(at(1920, 1440, 0), int64_t(24000000));
+  CHECK_EQ(at(1280, 720, 0), int64_t(7500000));
+  CHECK_EQ(at(3840, 2160, 0), int64_t(60000000));
+  CHECK_EQ(at(640, 480, 0), int64_t(4000000));
+  const int64_t b960 = at(1280, 960, 0);  // between 720p and 1080p
+  CHECK(b960 > 7500000 && b960 < 12000000);
+  CHECK_EQ(at(256, 240, 0), int64_t(1500000));  // floor
+  CHECK_EQ(at(256, 240, 1), int64_t(1050000));
+  CHECK_EQ(rnf_export_video_bitrate(nullptr, 0, S), int64_t(1500000));
+  CHECK_EQ(rnf_export_audio_bitrate(), int64_t(128000));
+  // 60 s of 1080p: (12 + 0.128) Mbit/s x 60 s / 8 = 90.96 MB + a container of well under 1 MB.
+  rnf_export_prediction pr{};
+  const int64_t total = rnf_export_predict_size(&g, 0, S, 3606, &pr);  // 3606 frames ~= 60.0 s
+  CHECK_EQ(total, pr.total_bytes);
+  CHECK(std::fabs(pr.seconds - 60.0) < 0.01);
+  CHECK(pr.container_bytes > 15000 && pr.container_bytes < 100000);
+  CHECK(total > 90900000 && total < 91200000);
+  CHECK(rnf_export_predict_size(&g, 0, RNF_QUALITY_HIGH, 3606, nullptr) > 2 * pr.video_bytes);
+  CHECK(rnf_export_predict_size(&g, 0, S, 0, &pr) < 3000);  // no frames: just the fixed boxes
 }
 
 TEST_CASE("export validation and presets") {

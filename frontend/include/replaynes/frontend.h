@@ -1284,8 +1284,32 @@ void rnf_export_geometry_compute(const rnf_export_settings* s, rnf_export_geomet
 /* Source column / row of every destination column / row (out: dst_width / dst_height entries). */
 void rnf_export_column_map(const rnf_export_geometry* g, int* out);
 void rnf_export_row_map(const rnf_export_geometry* g, int* out);
-/* Average video bit rate: canvas pixels x 60 x bits_per_pixel, at least 2 Mbit/s. */
-int64_t rnf_export_video_bitrate(const rnf_export_geometry* g, double bits_per_pixel);
+/* Bit rate choice of the export dialog: the YouTube table scaled by 0.5 / 1 / 2. */
+typedef enum rnf_export_quality { RNF_QUALITY_LIGHT = 0, RNF_QUALITY_STANDARD = 1, RNF_QUALITY_HIGH = 2 } rnf_export_quality;
+#define RNF_QUALITY_COUNT 3
+/* Average video bit rate (bit/s) following YouTube's recommended SDR upload table for 48-60 fps:
+ * 2160p 60, 1440p 24, 1080p 12, 720p 7.5, 480p 4, 360p 1.5 Mbit/s. Keyed by the canvas height: exact at
+ * those heights, linear in height^2 (= the 16:9 pixel count) between two of them, proportional to
+ * height^2 beyond the ends, the base never below 1.5 Mbit/s. hevc != 0: x0.7 (HEVC needs ~30% less).
+ * quality scales the result (Light x0.5, Standard x1 = the table, High x2); out-of-range = Standard. */
+int64_t rnf_export_video_bitrate(const rnf_export_geometry* g, int hevc, int quality);
+/* AAC mono, as YouTube recommends (128 kbit/s). */
+int64_t rnf_export_audio_bitrate(void);
+/* Key frame interval (frames): half the frame rate, as YouTube recommends. */
+#define RNF_EXPORT_GOP_FRAMES 30
+typedef struct rnf_export_prediction {
+  int64_t video_bitrate, audio_bitrate; /* bit/s */
+  double seconds;                       /* frames x 655171 / 39375000 */
+  int64_t video_bytes, audio_bytes;     /* rate x duration */
+  int64_t container_bytes;              /* MP4 boxes: ftyp/moov headers, per-sample tables, chunk offsets */
+  int64_t total_bytes;
+} rnf_export_prediction;
+/* Expected size of the MP4 for exactly `frames` frames of this canvas / codec / quality: the encoders'
+ * rate control targets the bit rates (the file is within a few percent), the container part is
+ * computed from the MP4 structure (stsz 4 B per video / AAC sample, stss per key frame, stco per
+ * 1 s chunk, fixed boxes). Returns total_bytes; `detail` may be NULL. */
+int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int quality, uint64_t frames,
+                                rnf_export_prediction* detail);
 
 typedef enum rnf_stream_size {
   RNF_STREAM_X1 = 0, RNF_STREAM_X2, RNF_STREAM_X3, RNF_STREAM_X4, RNF_STREAM_W1280, RNF_STREAM_W1920

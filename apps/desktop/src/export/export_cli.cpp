@@ -3,7 +3,7 @@
 // Windows: Media Foundation; the self-test writes the expected values of each file to
 // <DIR>/expect.jsonl, which scripts/windows-vm/verify-export.sh checks with ffprobe on the Mac.
 //   replaynes-export --project DIR --out FILE.mp4 [--start N] [--end N] [--preset INDEX] [--flash 0-3]
-//                    [--par87] [--no-crop] [--encoder NAME] [--bpp X] [--verify-hash] [--quiet]
+//                    [--par87] [--no-crop] [--encoder NAME] [--verify-hash] [--quiet]
 //   replaynes-export --self-test DIR [--frames N] [--encoder NAME]
 //   replaynes-export --list-presets | --encoders
 // Prints progress on stderr and one JSON result line on stdout.
@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -84,7 +85,7 @@ int usage() {
   std::fprintf(stderr,
                "usage:\n"
                "  replaynes-export --project DIR --out FILE.mp4 [--start N] [--end N] [--preset INDEX]\n"
-               "                   [--flash 0-3] [--par87] [--no-crop] [--encoder NAME] [--bpp X]\n"
+               "                   [--flash 0-3] [--par87] [--no-crop] [--encoder NAME] [--quality 0-2]\n"
                "                   [--verify-hash] [--quiet]\n"
                "                   [--crt [--crt-lines N] [--crt-dbuv X] [--crt-no-growth|-persistence|-supply]]\n"
                "  replaynes-export --self-test DIR [--frames N] [--encoder NAME]\n"
@@ -344,10 +345,51 @@ class TestProcessor : public rnl::ExportVideoProcessor {
   }
 };
 
+/// Synthetic pixel-art content for rate-control measurements (no ROM needed): "still" = a static
+/// tile scene with a small sprite that moves every 2 s; "scroll" = the same scene scrolling 2 px
+/// per frame. Flat 8x8-pixel cells (x canvas scale) in a 16-colour palette, like a console picture.
+class SyntheticProcessor : public rnl::ExportVideoProcessor {
+ public:
+  explicit SyntheticProcessor(bool scroll) : scroll_(scroll) {}
+  bool begin(const rnf_export_settings&, const rnf_export_geometry& geo, std::string*) override {
+    g_ = geo;
+    return true;
+  }
+  bool render(const rnl::ExportFrameSignal&, const uint32_t*, uint8_t* canvas, size_t stride, std::string*) override {
+    const int cell = std::max(2, g_.canvas_height / 30);  // 8 NES pixels
+    const int shift = scroll_ ? int(frame_ * 2) * g_.canvas_height / 240 : 0;
+    for (int y = 0; y < g_.canvas_height; ++y) {
+      uint32_t* row = reinterpret_cast<uint32_t*>(canvas + size_t(y) * stride);
+      for (int x = 0; x < g_.canvas_width; ++x) {
+        const int cx = (x + shift) / cell, cy = y / cell;
+        uint32_t h = uint32_t(cx) * 2654435761u ^ uint32_t(cy) * 40503u;
+        h ^= h >> 13;
+        const uint32_t pal = (cy > 22) ? 3 + ((cx / 2) & 1) : (h % 9 < 6 ? 0 : 1 + h % 12);
+        const uint32_t v = 0x20 + pal * 14;
+        row[x] = 0xFF000000u | ((v * 3 / 2) & 0xFF) << 16 | (v * 2 + 40 * (pal & 1)) % 256 << 8 | (255 - v) & 0xFF;
+      }
+    }
+    // the sprite
+    const int sx = int((frame_ / 120) % 8) * cell * 4 + cell * 3, sy = cell * 12, sz = cell * 2;
+    for (int y = sy; y < sy + sz && y < g_.canvas_height; ++y) {
+      uint32_t* row = reinterpret_cast<uint32_t*>(canvas + size_t(y) * stride);
+      for (int x = sx; x < sx + sz && x < g_.canvas_width; ++x) row[x] = 0xFFF0E040u;
+    }
+    ++frame_;
+    return true;
+  }
+
+ private:
+  rnf_export_geometry g_{};
+  uint64_t frame_ = 0;
+  bool scroll_;
+};
+
 int selfTest(const Args& a) {
   const fs::path dir = fs::u8path(a.get("--self-test"));
   const uint64_t frames = std::max<uint64_t>(a.num("--frames", 300), 260);
   const std::string encoder = a.get("--encoder") ? a.get("--encoder") : "";
+  const int quality = a.get("--quality") ? std::atoi(a.get("--quality")) : RNF_QUALITY_STANDARD;
   std::error_code ec;
   fs::create_directories(dir, ec);
   const fs::path rom = dir / "selftest.nes", proj = dir / "selftest.nesrec";
@@ -396,6 +438,10 @@ int selfTest(const Args& a) {
   }
   const uint64_t take = rn_take_length(s);
   std::printf("  recorded %" PRIu64 " frames into %s\n", take, proj.u8string().c_str());
+  if (a.has("--record-only")) {  // just the project (for --project exports of a long take)
+    rn_session_close(s);
+    return 0;
+  }
 
   int failures = 0;
   auto expectTrue = [&](bool ok, const char* what) {
@@ -406,6 +452,7 @@ int selfTest(const Args& a) {
   // 1) whole take, defaults (1280x960, crop 8/8)
   ExportOptions base;
   base.encoder = encoder;
+  base.quality = quality;
   const std::string fullOut = (dir / "full.mp4").u8string();
   RunOut full = runExport(s, base, fullOut, false);
   std::printf("  full:      %s\n", resultJson(full, fullOut).c_str());
@@ -424,6 +471,29 @@ int selfTest(const Args& a) {
     if (!why.empty()) std::printf("    %s\n", why.c_str());
   }
   failures += checkFile("full", fullOut, full.res, rn_audio_samples_before(take), 1280, 960);
+
+  // 1b) size prediction (rnf_export_predict_size) against the real files, detailed (the test ROM's
+  // noise) and flat pixel-art content: measured and printed, never asserted.
+  {
+    auto sizeError = [&](const ExportOptions& o, const std::string& file, uint64_t frames) {
+      rnf_export_geometry geo{};
+      rnf_export_geometry_compute(&o.settings, &geo);
+      std::error_code e;
+      const double actual = double(fs::file_size(fs::u8path(file), e));
+      const double predicted = double(rnf_export_predict_size(&geo, 0, o.quality, frames, nullptr));
+      return (actual - predicted) * 100.0 / predicted;
+    };
+    const double errNoise = sizeError(base, fullOut, full.res.frames);
+    std::printf("  predicted size vs file (noise):  %+.2f%%\n", errNoise);
+    ExportOptions flat = base;
+    flat.makeProcessor = [](std::string*) { return std::make_unique<SyntheticProcessor>(false); };
+    const std::string flatOut = (dir / "flat.mp4").u8string();
+    RunOut flatr = runExport(s, flat, flatOut, false);
+    const double errFlat = flatr.ok ? sizeError(flat, flatOut, flatr.res.frames) : 100.0;
+    std::printf("  predicted size vs file (pixel art): %+.2f%%\n", errFlat);
+    // Reported only: a size that differs from the prediction never fails an export or the self-test.
+    std::printf("  (goal: within 3%%; encoder %s)\n", full.res.encoder.c_str());
+  }
 
   // 2) flash reduction High + a processor: same renderer hash (display only)
   ExportOptions fx = base;
@@ -541,7 +611,11 @@ int exportCmd(const Args& a) {
   if (a.has("--par87")) opt.settings.pixel_aspect_87 = 1;
   if (a.has("--no-crop")) opt.settings.crop_top = opt.settings.crop_bottom = 0;
   if (const char* e = a.get("--encoder")) opt.encoder = e;
-  if (const char* b = a.get("--bpp")) opt.videoBitsPerPixel = std::atof(b);
+  if (const char* q = a.get("--quality")) opt.quality = std::atoi(q);
+  if (const char* syn = a.get("--synthetic")) {  // "still" | "scroll": see SyntheticProcessor
+    const bool scroll = std::string(syn) == "scroll";
+    opt.makeProcessor = [scroll](std::string*) { return std::make_unique<SyntheticProcessor>(scroll); };
+  }
 #ifdef RNL_EXPORT_CRT
   if (a.has("--crt")) {
     // "Apply CRT effect" (nesterm physical model, offline on a window-less Vulkan / Direct3D 11 device).
@@ -571,6 +645,19 @@ int exportCmd(const Args& a) {
     j.pop_back();
     j += ",\"fresh_hash\":\"" + hex(h) + "\",\"hash_match\":" + (same ? "true" : "false") + "}";
     if (!same) o.ok = false;
+  }
+  if (o.ok) {
+    // Predicted vs actual size (rnf_export_predict_size).
+    rnf_export_geometry g{};
+    rnf_export_geometry_compute(&opt.settings, &g);
+    std::error_code ec;
+    const auto actual = fs::file_size(fs::u8path(out), ec);
+    const int64_t predicted = rnf_export_predict_size(&g, 0, opt.quality, o.res.frames, nullptr);
+    char b[128];
+    std::snprintf(b, sizeof b, ",\"predicted_bytes\":%" PRId64 ",\"actual_bytes\":%" PRIu64 ",\"error_percent\":%.2f}", predicted,
+                  uint64_t(actual), predicted > 0 ? (double(actual) - double(predicted)) * 100.0 / double(predicted) : 0.0);
+    j.pop_back();
+    j += b;
   }
   std::printf("%s\n", j.c_str());
   rn_session_close(s);
