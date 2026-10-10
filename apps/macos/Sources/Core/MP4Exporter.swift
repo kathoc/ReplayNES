@@ -183,11 +183,8 @@ final class MP4Exporter {
             AVVideoMaxKeyFrameIntervalKey: 120,
         ]
         if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
-        let videoSettings: [String: Any] = [
+        var videoSettings: [String: Any] = [
             AVVideoCodecKey: settings.codec.avCodec,
-            // Hardware (the media engine) whenever there is one; VideoToolbox falls back to its
-            // software encoder otherwise (same bit rate / GOP / profile).
-            AVVideoEncoderSpecificationKey: [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true],
             AVVideoWidthKey: g.canvasWidth,
             AVVideoHeightKey: g.canvasHeight,
             AVVideoCompressionPropertiesKey: compression,
@@ -197,6 +194,13 @@ final class MP4Exporter {
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ],
         ]
+        #if os(macOS)
+        // Hardware (the media engine) whenever there is one; VideoToolbox falls back to its
+        // software encoder otherwise (same bit rate / GOP / profile). iOS always uses the hardware
+        // encoder and doesn't accept this key.
+        videoSettings[AVVideoEncoderSpecificationKey] =
+            [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true]
+        #endif
         let vIn = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         vIn.expectsMediaDataInRealTime = false
         vIn.mediaTimeScale = CMTimeScale(RN_FPS_NUM)
@@ -387,7 +391,11 @@ final class MP4Exporter {
     /// EnableHardwareAcceleratedVideoEncoder): a probe session, nothing is encoded.
     static func hardwareEncoderAvailable(codec: ExportSettings.Codec, width: Int, height: Int) -> Bool {
         var session: VTCompressionSession?
+        #if os(macOS)
         let spec = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true] as CFDictionary
+        #else
+        let spec: CFDictionary? = nil // iOS: VideoToolbox uses the hardware encoder by default
+        #endif
         let type: CMVideoCodecType = codec == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC
         guard VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: type,
                                          encoderSpecification: spec, imageBufferAttributes: nil, compressedDataAllocator: nil,
