@@ -19,6 +19,7 @@ ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 INC = os.path.join(ROOT, 'engine', 'src', 'testrom', 'TestCartridge.inc')
 SYMS = os.path.join(ROOT, 'engine', 'src', 'testrom', 'TestCartridgeSyms.inc')
 sys.path.insert(0, HERE)
+sys.dont_write_bytecode = True  # no __pycache__ in the source tree
 
 import asm6502  # noqa: E402
 import chr as chrgen  # noqa: E402

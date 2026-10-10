@@ -289,7 +289,7 @@ pads_text:
         .byte $20, $71, "$00 %00000000", 0
         .byte $21, $E2, "Player 2", 0                            ; row 15
         .byte $21, $F1, "$00 %00000000", 0
-        .byte $23, $02, "Hold Select+Start: menu", 0              ; row 24
+        .byte $23, $02, "Select+Start together: menu", 0          ; row 24
         .byte $23, $42, "Read once per frame: strobe,", 0         ; row 26
         .byte $23, $62, "8 reads of $4016 / $4017", 0             ; row 27
         .byte $FF

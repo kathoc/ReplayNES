@@ -63,7 +63,8 @@ GPL-3.0, multi-threaded internally and designed around one global emulator insta
   harness/   DeterminismHarness: multi-run + mid-savestate comparison, first divergent frame/component
   core/      ICore; NestopiaCore (pinned settings); MockCore (fast deterministic fake for tests)
   util/      SHA-256, CRC32, Hasher64, JSON, byte codecs, Fs (the ONLY OS-specific file: fsync/rename)
-  testrom/   generator of our own NROM test ROM (hand-assembled 6502)
+  testrom/   our own NROM test ROMs: the RNG determinism fixture (hand-assembled 6502) and the
+             ReplayNES Test Cartridge image (generated from tools/testcart, CC0)
 ```
 
 Rules: only `core/` knows Nestopia; only `util/Fs.cpp` has OS calls; only `capi/` is exported.

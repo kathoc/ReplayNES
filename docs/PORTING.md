@@ -239,6 +239,6 @@ Audio needs no special output: OBS captures application audio on every OS.
 
 ## Tools
 
-`replaynes-cli make-test-rom | sha256 | info | verify | determinism | record-random | render-hash`
+`replaynes-cli make-test-rom [--cartridge] | sha256 | info | verify | determinism | record-random | render-hash | screenshot`
 (see `tools/replaynes-cli/main.cpp`). `verify` replays a project's active take on a fresh core and
 checks every stored checkpoint — useful in bug reports from any platform.

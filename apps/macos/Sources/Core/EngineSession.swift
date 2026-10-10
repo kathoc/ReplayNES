@@ -26,8 +26,14 @@ enum Engine {
     static var coreCompatID: String { String(cString: rn_core_compat_id()) }
     static var coreBuildID: String { String(cString: rn_core_build_id()) }
 
+    /// The legacy RNG test ROM (determinism fixture; tests use it).
     static func writeTestROM(to url: URL) throws {
         try rnCheck(rn_write_test_rom(url.path))
+    }
+
+    /// The ReplayNES Test Cartridge (tools/testcart, CC0): the sample ROM for people.
+    static func writeTestCartridge(to url: URL) throws {
+        try rnCheck(rn_write_test_cartridge(url.path))
     }
 
     static func sha256(of url: URL) throws -> String {

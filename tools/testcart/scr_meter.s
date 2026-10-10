@@ -1974,8 +1974,10 @@ meter_status:
         cmp #2
         bne @have
         lda mt_cool
-        beq @have               ; 2 = done, may restart
-        lda #4                  ; done, cooling down
+        bne @cool
+        lda #2                  ; done, may restart
+        bne @have
+@cool:  lda #4                  ; done, cooling down
 @have:  cmp mt_shown
         beq @r
         sta mt_shown

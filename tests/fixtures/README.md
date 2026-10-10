@@ -13,3 +13,13 @@ and XORs the pad bits into it, writes an LFSR-derived tile into the nametable, c
 entries $3F00-$3F03 (video) and pulse/triangle/noise periods (audio). RESET does not clear RAM and
 counts resets, so soft-reset timing changes later output deterministically. `*.nes` files are
 git-ignored.
+
+The **ReplayNES Test Cartridge** (`tools/testcart`, CC0) is the user-facing sample ROM: palette
+chart, colour bars, sprites, scrolling, controllers, rapid-fire meter, sound test. Its image is
+generated source (`engine/src/testrom/TestCartridge.inc`, `rn::buildTestCartridge()`, checked
+against the assembly by the `testcart_generated_up_to_date` ctest); `tests/test_testcart.cpp`
+runs it with scripted input. Write a file with
+
+    replaynes-cli make-test-rom --cartridge "ReplayNES Test Cartridge.nes"
+
+The legacy RNG ROM above stays the determinism / conformance fixture.
