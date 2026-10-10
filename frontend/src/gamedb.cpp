@@ -120,7 +120,8 @@ struct Db {
 };
 
 const char* const kGenreCodes[RNF_GENRE_COUNT] = {"",       "action", "shooter",  "puzzle", "rpg",   "adventure",   "sports",
-                                                  "racing", "fighting", "strategy", "table", "music", "educational", "other"};
+                                                  "racing", "fighting", "strategy", "table", "music", "educational", "other",
+                                                  "utility"};
 
 std::vector<std::string> split(const std::string& s, char sep) {
   std::vector<std::string> out;
@@ -619,6 +620,7 @@ const char* rnf_genre_name(rnf_genre g) {
     case RNF_GENRE_MUSIC: return tr(RNF_L("Music (genre)"));
     case RNF_GENRE_EDUCATIONAL: return tr(RNF_L("Educational (genre)"));
     case RNF_GENRE_OTHER: return tr(RNF_L("Other (genre)"));
+    case RNF_GENRE_UTILITY: return tr(RNF_L("Utility (genre)"));
     default: return "";
   }
 }

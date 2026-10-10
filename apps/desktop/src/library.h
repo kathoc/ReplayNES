@@ -58,6 +58,13 @@ class LibraryModel {
 
   /// Starts a background rescan (coalesced).
   void refresh();
+  /// "Add Test Cartridge": writes the ReplayNES Test Cartridge as ROM/RNF_TEST_CARTRIDGE_FILE and
+  /// rescans, unless the library already has it (a ROM the game database identifies as the
+  /// cartridge, or that file): nothing is written then. Returns the cartridge's path, or "" with
+  /// *error set.
+  std::string addTestCartridge(std::string* error);
+  /// a and b name the same file (UTF-8 paths, separators and "." / ".." normalised; no disk access).
+  static bool samePath(const std::string& a, const std::string& b);
   /// Frame thread: takes finished scan results. Returns true when roms/projects changed.
   bool poll();
   /// While the library is visible: rescans when a folder's modification time changed (~every 3 s).

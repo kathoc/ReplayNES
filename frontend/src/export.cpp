@@ -143,7 +143,8 @@ int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int qual
   p.seconds = double(frames) * 655171.0 / 39375000.0;
   p.video_bytes = int64_t(std::llround(p.seconds * double(p.video_bitrate) / 8.0));
   p.audio_bytes = int64_t(std::llround(p.seconds * double(p.audio_bitrate) / 8.0));
-  // Container: the boxes the platform's muxer writes (ISO 14496-12; sizes of the boxes of a real
+  // An estimate: the encoders' average rate (capped VBR) is reached by detailed pictures; simple
+  // ones give smaller files. Container: the boxes the platform's muxer writes (ISO 14496-12; sizes of the boxes of a real
   // file of each muxer, tables per sample / chunk), see container notes below.
   const int64_t n = int64_t(frames);
   const int64_t keys = (n + RNF_EXPORT_GOP_FRAMES - 1) / RNF_EXPORT_GOP_FRAMES;

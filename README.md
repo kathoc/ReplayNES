@@ -237,7 +237,7 @@ If you moved the ROM file, specify it again when opening (it is confirmed to be 
 Quick Menu › Share › Export MP4, or Share › Export MP4… in the menu bar.
 
 - Format: H.264 or HEVC with AAC (48 kHz, 128 kbit/s mono)
-- Bit rate: Light / Standard (YouTube) / High quality. Standard is YouTube's recommended upload rate for 60 fps SDR, chosen by the output height (1080p 12 Mbit/s, 1440p 24, 720p 7.5, 480p 4; between them interpolated by height², at least 1.5 Mbit/s; HEVC uses 70% of that); Light is half of it and High twice. The encoder is asked for a constant rate, and every choice in the export sheet shows its rate and the file size predicted for exactly this range, size and codec (within about 3%; a very noisy picture can need more than a hardware encoder's lowest rate, and flat pixel art is padded up to the rate by the software encoder).
+- Bit rate: Light / Standard (YouTube) / High quality. Standard is YouTube's recommended upload rate for 60 fps SDR, chosen by the output height (1080p 12 Mbit/s, 1440p 24, 720p 7.5, 480p 4; between them interpolated by height², at least 1.5 Mbit/s; HEVC uses 70% of that); Light is half of it and High twice. The encoder uses this as its average rate (peaks up to 1.5×), and every choice in the export sheet shows its rate and an **estimated** file size for exactly this range, size and codec ("≈ 91 MB (estimate)"). The estimate is not a guarantee: the actual size depends on the picture. Detailed, busy pictures come close to it; simple pixel art and still scenes give much smaller files.
 - Size: integer multiples of 256×240, 1280×960, 1920×1440, and so on
 - You can choose overscan cropping and the pixel aspect ratio 1:1 / 8:7.
 - With "Apply Flash Reduction", you can get a video with intense flashing toned down (see "Flash Reduction" above).
@@ -259,7 +259,7 @@ The game screen is output via [Syphon](https://syphon.github.io) and can be brou
 
 ### Test Cartridge (no game needed)
 
-ReplayNES comes with its own test program for the NES, the **ReplayNES Test Cartridge** (written for this project: code, graphics and font are our own; CC0 public domain). Write it with `replaynes-cli make-test-rom --cartridge "ReplayNES Test Cartridge.nes"` into your ROM folder. It also runs on other emulators and on real hardware (NROM-128). On the title screen, choose with Up/Down and open with A; in a test, Select goes to the next test and Start back to the menu.
+ReplayNES comes with its own test program for the NES, the **ReplayNES Test Cartridge** (written for this project: code, graphics and font are our own; CC0 public domain). Add it to your library with **Add Test Cartridge** (the last button of the library's filter row, or on the empty library's card; it writes "ReplayNES Test Cartridge.nes" into the ROM folder once and selects it), or write it with `replaynes-cli make-test-rom --cartridge "ReplayNES Test Cartridge.nes"`. It also runs on other emulators and on real hardware (NROM-128). On the title screen, choose with Up/Down and open with A; in a test, Select goes to the next test and Start back to the menu.
 
 - **Palette chart**: all 64 colours ($00–$3F) at once (the palette is rewritten between the rows), with the colour emphasis bits (A) and greyscale (B). Handy for checking the CRT picture and palette settings.
 - **Color bars**: bars, a grey ramp and 1-pixel stripe / checker patterns for sharpness, with emphasis and greyscale.

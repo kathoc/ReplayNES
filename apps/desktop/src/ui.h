@@ -251,6 +251,8 @@ class UI : public DialogHost {
   void handleLibraryInput(double now, size_t cardCount, size_t pages, bool hero);
   void buildLibraryBar(ImDrawList* dl, const LRect& bar, double now);
   void libraryBarAction(int item);
+  /// "Add Test Cartridge" (the library bar / the empty-library card): writes it if missing, focuses it.
+  void addTestCartridge(double now);
   void buildSearchField(const LRect& r);  // a filter chip, the sort (cycles) or the search
   std::vector<const LibraryROM*> libraryRoms() const;
   const LibraryROM* projectsRom() const;
@@ -321,6 +323,8 @@ class UI : public DialogHost {
   int libBar_ = 0;     // focused item of that row
   int libPage_ = 0;
   bool libMoved_ = false;  // the user moved the focus since the library showed
+  std::string libFocusPath_;     // focus this ROM once a scan lists it (Add Test Cartridge)
+  double libFocusPathUntil_ = 0;
   std::string projectsRomPath_;  // the projects page's ROM
   char search_[128] = {0};
   bool focusSearch_ = false;

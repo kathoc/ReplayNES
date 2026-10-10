@@ -175,6 +175,14 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// "Add Test Cartridge" (LibraryPaths.addTestCartridge), then a rescan. Returns the cartridge's file.
+    func addTestCartridge() throws -> URL {
+        let r = try paths.addTestCartridge(existing: roms)
+        folderError = nil
+        refresh()
+        return r.url
+    }
+
     func revealROMFolder() { reveal(paths.roms) }
     func revealProjectsFolder() { reveal(paths.projects) }
 

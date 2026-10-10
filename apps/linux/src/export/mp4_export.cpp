@@ -94,12 +94,13 @@ bool openVideoEncoder(const std::string& name, const rnf_export_geometry& g, int
   // reordering delay; also not offered by the AMD VAAPI H.264 encoder).
   c->gop_size = RNF_EXPORT_GOP_FRAMES;
   c->max_b_frames = 0;
-  // Constant rate (min = max = average) with a quarter-second VBV buffer (a bigger one lets the
-  // first second overshoot by several percent of a short clip): the output size follows the target,
-  // which the Export dialog's size prediction relies on (VAAPI picks CBR from this too).
-  c->rc_min_rate = bitrate;
-  c->rc_max_rate = bitrate;
-  c->rc_buffer_size = int(std::min<int64_t>(bitrate / 4, INT32_MAX));
+  // Average bit rate, capped: peaks up to 1.5x the target through a VBV buffer of 2 s at the target
+  // rate. No minimum and no filler: a simple picture (flat pixel art, a still) takes fewer bits and
+  // gives a smaller file; the Export dialog's size (rnf_export_predict_size) is an estimate. VAAPI
+  // picks VBR from max > average.
+  c->rc_min_rate = 0;
+  c->rc_max_rate = bitrate * 3 / 2;
+  c->rc_buffer_size = int(std::min<int64_t>(bitrate * 2, INT32_MAX));
   c->color_primaries = AVCOL_PRI_BT709;
   c->color_trc = AVCOL_TRC_BT709;
   c->colorspace = AVCOL_SPC_BT709;
@@ -111,9 +112,8 @@ bool openVideoEncoder(const std::string& name, const rnf_export_geometry& g, int
     c->profile = AV_PROFILE_H264_HIGH;
     av_opt_set(c->priv_data, "profile", "high", 0);
     av_opt_set(c->priv_data, "preset", "medium", 0);
-    // Closed GOP, CABAC (High), and real CBR: nal-hrd=cbr pads with filler data where the picture is
-    // too simple to use the rate, so the file size follows the target (rnf_export_predict_size).
-    av_opt_set(c->priv_data, "x264-params", "open-gop=0:cabac=1:nal-hrd=cbr", 0);
+    // Closed GOP, CABAC (High); ABR with the VBV cap above (no nal-hrd, so no filler data).
+    av_opt_set(c->priv_data, "x264-params", "open-gop=0:cabac=1", 0);
   } else if (vaapi) {
     c->profile = AV_PROFILE_H264_HIGH;
     int r = av_hwdevice_ctx_create(&av.hwDevice, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0);

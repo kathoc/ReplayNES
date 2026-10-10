@@ -603,6 +603,43 @@ TEST_CASE("library search") {
   CHECK_FALSE(librarySearchMatches("zelda", r));
 }
 
+TEST_CASE("library: Add Test Cartridge writes it once, the game database names it") {
+  std::string dir = tmpDir("testcart-lib");
+  LibraryModel lib(dir + "/ReplayNES");
+  auto scan = [&] {
+    for (int i = 0; i < 300 && !lib.poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    for (int i = 0; i < 300 && lib.scanning(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    lib.poll();
+  };
+  std::string error;
+  const std::string path = lib.addTestCartridge(&error);
+  REQUIRE(!path.empty());
+  CHECK(error.empty());
+  CHECK(LibraryModel::samePath(path, lib.romDir() + "/" + RNF_TEST_CARTRIDGE_FILE));
+  CHECK(LibraryModel::samePath(path, lib.romDir() + "/./" + RNF_TEST_CARTRIDGE_FILE));
+  CHECK_FALSE(LibraryModel::samePath(path, lib.romDir() + "/other.nes"));
+  REQUIRE(fs::exists(fs::u8path(path)));
+  const auto size = fs::file_size(fs::u8path(path));
+  scan();
+  REQUIRE_EQ(lib.roms().size(), size_t(1));
+  const LibraryROM& rom = lib.roms().front();
+  CHECK(LibraryModel::samePath(rom.path, path));
+  REQUIRE(rom.known);  // by its hash (frontend/data/nesdb-overrides.json)
+  CHECK_EQ(std::string(rom.game.id), std::string(RNF_TEST_CARTRIDGE_GAME_ID));
+  CHECK_EQ(rom.game.genre, RNF_GENRE_UTILITY);
+  CHECK_EQ(rom.game.year, 2026);
+  CHECK_EQ(std::string(rom.game.publisher_en), std::string("ReplayNES"));
+  // Again: the same file, nothing written (a renamed copy is found by the database id too).
+  CHECK(LibraryModel::samePath(lib.addTestCartridge(&error), path));
+  CHECK_EQ(fs::file_size(fs::u8path(path)), size);
+  fs::rename(fs::u8path(path), fs::u8path(lib.romDir() + "/cart.nes"));
+  lib.refresh();
+  scan();
+  REQUIRE_EQ(lib.roms().size(), size_t(1));
+  CHECK(LibraryModel::samePath(lib.addTestCartridge(&error), lib.romDir() + "/cart.nes"));
+  CHECK_FALSE(fs::exists(fs::u8path(path)));
+}
+
 TEST_CASE("controller conventions: timeline scrub steps and L1 / R1 jumps") {
   CHECK_EQ(scrubStepFrames(0.0), 1);
   CHECK_EQ(scrubStepFrames(1.0), 4);

@@ -5,7 +5,8 @@
     "Q617752": {"en": "Irem", "ja": "アイレム"},
     "Q2150493": {"en": "Milton Bradley", "ja": "ミルトン・ブラッドリー"},
     "Q2298387": {"en": "Sunsoft", "ja": "サンソフト"},
-    "Q11331181": {"en": "Bullet-Proof Software", "ja": "ビーピーエス"}
+    "Q11331181": {"en": "Bullet-Proof Software", "ja": "ビーピーエス"},
+    "x-replaynes": {"en": "ReplayNES", "ja": "ReplayNES"}
   },
   "games": {
     "Q11168": {"genre": "action"},
@@ -19,6 +20,15 @@
       "genre": "puzzle",
       "region": "JP",
       "aliases": ["Tetris (Bulletproof)", "Tetris (BPS)"]
+    },
+    "x-replaynes-test-cartridge": {
+      "en": "ReplayNES Test Cartridge",
+      "ja": "ReplayNES テストカートリッジ",
+      "reading": "リプレイエヌイーエステストカートリッジ",
+      "publisher": "x-replaynes",
+      "year": 2026,
+      "genre": "utility",
+      "aliases": ["ReplayNES Test Cart"]
     },
     "Q67387683": {"year": 1989, "region": "NA,EU", "genre": "puzzle"},
     "Q11338868": {"ja": "テトリス2+ボンブリス", "reading": "テトリスツーボンブリス", "genre": "puzzle", "aliases": ["Tetris 2 + Bombliss"]},
@@ -557,7 +567,8 @@
     {"crc32": "3FF44F87", "sha1": "6D707AA6E1BC88DD905269936FF16A50F65BFBCA", "game": "Q11338868", "note": "Tetris 2 + Bombliss (Japan)"},
     {"crc32": "F808AF60", "sha1": "B933C1E9D5FF18D6BC18EBAA5525B8DA1B57A5FB", "game": "Q3628242", "note": "Atlantis no Nazo (Japan)"},
     {"crc32": "14CD576E", "sha1": "07CDE12D71BE979F9FED6FC6313142524FF0AA20", "game": "Q2660330", "note": "Abadox (Japan)"},
-    {"crc32": "CF4DBDBE", "sha1": "F42B719D99DFF23951A912F8483F20E757FE4883", "game": "Q1040033", "note": "Front Line (Japan)"}
+    {"crc32": "CF4DBDBE", "sha1": "F42B719D99DFF23951A912F8483F20E757FE4883", "game": "Q1040033", "note": "Front Line (Japan)"},
+    {"crc32": "FC1EB738", "sha1": "5D884FAEAB22ECA06A48E3518036DBD6A6642FE7", "game": "x-replaynes-test-cartridge", "note": "ReplayNES Test Cartridge (engine/src/testrom; update when the cartridge changes, tests/test_testcart.cpp checks it)"}
   ],
   "exclude": [
     "Q71910",

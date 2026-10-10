@@ -212,16 +212,18 @@ void UI::buildExportDialog() {
       section(TR("Bit rate"), x0 + colW);
       for (int q = 0; q < RNF_QUALITY_COUNT; ++q) {
         const char* name = q == RNF_QUALITY_LIGHT ? TR("Light") : q == RNF_QUALITY_STANDARD ? TR("Standard (YouTube)") : TR("High quality");
-        // Predicted for exactly this range / canvas / bit rate (rnf_export_predict_size).
+        // Estimated for exactly this range / canvas / bit rate (rnf_export_predict_size); simple
+        // pictures give smaller files.
         const int64_t bytes = rnf_export_predict_size(&g, 0, q, frames, nullptr);
         char mbit[16], size[24];
         std::snprintf(mbit, sizeof mbit, "%.1f", double(rnf_export_video_bitrate(&g, 0, q)) / 1e6);
         if (bytes >= 1000000000) std::snprintf(size, sizeof size, "%.2f GB", double(bytes) / 1e9);
         else std::snprintf(size, sizeof size, "%.1f MB", double(bytes) / 1e6);
-        std::string l = TRF("%@ · %@ Mbit/s · about %@", {std::string(name), std::string(mbit), std::string(size)}) + "##quality" +
+        std::string l = TRF("%@ · %@ Mbit/s · ≈ %@ (estimate)", {std::string(name), std::string(mbit), std::string(size)}) + "##quality" +
                         std::to_string(q);
         if (ImGui::RadioButton(l.c_str(), exportQuality_ == q)) exportQuality_ = q;
       }
+      ImGui::TextDisabled("%s", TR("Actual size depends on the picture"));
       ImGui::PopItemWidth();
       ImGui::Dummy(ImVec2(colW, 0));
       ImGui::EndGroup();

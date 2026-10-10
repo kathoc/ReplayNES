@@ -31,6 +31,35 @@ final class LibraryTests: XCTestCase {
         }
     }
 
+    /// "Add Test Cartridge": written once into ROM/, identified by the game database by its hash; a
+    /// renamed copy in the library counts as present (nothing written).
+    func testAddTestCartridgeWritesOnceAndIsIdentified() throws {
+        let paths = LibraryPaths(root: tmp.appendingPathComponent("ReplayNES"))
+        let first = try paths.addTestCartridge(existing: [])
+        XCTAssertTrue(first.written)
+        XCTAssertEqual(first.url.lastPathComponent, "ReplayNES Test Cartridge.nes")
+        XCTAssertEqual(first.url.deletingLastPathComponent().standardizedFileURL.path, paths.roms.standardizedFileURL.path)
+        let again = try paths.addTestCartridge(existing: [])
+        XCTAssertFalse(again.written)
+        XCTAssertEqual(again.url, first.url)
+
+        var roms = try LibraryScanner.scanROMs(in: paths.roms)
+        XCTAssertEqual(roms.count, 1)
+        let hashes = ROMHashCache()
+        roms[0].game = hashes.game(of: roms[0])
+        XCTAssertEqual(roms[0].game?.id, RNF_TEST_CARTRIDGE_GAME_ID)
+        XCTAssertEqual(roms[0].game?.year, 2026)
+
+        let renamed = paths.roms.appendingPathComponent("cart.nes")
+        try FileManager.default.moveItem(at: first.url, to: renamed)
+        roms = try LibraryScanner.scanROMs(in: paths.roms)
+        roms[0].game = hashes.game(of: roms[0])
+        let existing = try paths.addTestCartridge(existing: roms)
+        XCTAssertFalse(existing.written)
+        XCTAssertEqual(existing.url.standardizedFileURL.path, renamed.standardizedFileURL.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.path))
+    }
+
     func testScanFindsNesFilesOneLevelDeepSortedByName() throws {
         let paths = LibraryPaths(root: tmp)
         try paths.ensure()

@@ -37,7 +37,7 @@ H	<CRC32>	<SHA1 or empty>	<game id>
 
 Game id is a Wikidata Q-id or `x-<slug>` for override-only games. Genre is one of
 `action shooter puzzle rpg adventure sports racing fighting strategy table music
-educational other` or empty. Region is a subset of `JP,NA,EU`.
+educational other utility` or empty. Region is a subset of `JP,NA,EU`.
 The ja title falls back to the en title; the publisher ja name falls back to en.
 
 Reading priority: override > Wikidata P1814 > ja title if written only in kana

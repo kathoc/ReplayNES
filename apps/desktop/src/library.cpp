@@ -189,6 +189,30 @@ void LibraryModel::refresh() {
   worker_ = std::thread([this] { scanThread(); });
 }
 
+std::string LibraryModel::addTestCartridge(std::string* error) {
+  for (const LibraryROM& r : roms_)
+    if (r.known && r.game.id && std::string(r.game.id) == RNF_TEST_CARTRIDGE_GAME_ID) return r.path;
+  if (!ensureFolders()) {
+    if (error) *error = folderError_;
+    return "";
+  }
+  const std::string path = romDir() + "/" + RNF_TEST_CARTRIDGE_FILE;
+  std::error_code ec;
+  if (!fs::exists(fs::u8path(path), ec)) {
+    if (rn_write_test_cartridge(path.c_str()) != RN_OK) {
+      if (error) *error = rn_last_error();
+      return "";
+    }
+  }
+  refresh();
+  return path;
+}
+
+bool LibraryModel::samePath(const std::string& a, const std::string& b) {
+  if (a.empty() || b.empty()) return false;
+  return fs::u8path(a).lexically_normal() == fs::u8path(b).lexically_normal();
+}
+
 void LibraryModel::scanThread() {
   for (;;) {
     again_ = false;

@@ -208,12 +208,10 @@ final class MP4Exporter {
             AVVideoMaxKeyFrameIntervalKey: Int(RNF_EXPORT_GOP_FRAMES),
             AVVideoAllowFrameReorderingKey: true,
         ]
-        // Constant bit rate (macOS 13+), so the file size follows the target that the Export sheet
-        // predicts (rnf_export_predict_size). The hardware encoder delivers ~95% of what it is
-        // asked on easy pictures and 100% on detailed ones, hence the 2.5% calibration: both land
-        // within the +-3% the size tests allow.
-        compression.removeValue(forKey: AVVideoAverageBitRateKey)
-        compression[kVTCompressionPropertyKey_ConstantBitRate as String] = Int(Double(bitrate) * 1.025)
+        // Average bit rate with a peak cap of 1.5x the target over any 1 s (DataRateLimits: bytes,
+        // seconds). Not a constant rate: a simple picture (flat pixel art, a still) takes fewer bits
+        // and gives a smaller file; the Export sheet's size (rnf_export_predict_size) is an estimate.
+        compression[kVTCompressionPropertyKey_DataRateLimits as String] = [NSNumber(value: Double(bitrate) * 1.5 / 8), NSNumber(value: 1.0)]
         if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         var videoSettings: [String: Any] = [
             AVVideoCodecKey: settings.codec.avCodec,

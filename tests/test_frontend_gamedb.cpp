@@ -191,6 +191,37 @@ TEST_CASE("display strings follow the language") {
   }
   CHECK_EQ(int(rnf_genre_from_code("puzzle")), int(RNF_GENRE_PUZZLE));
   CHECK_EQ(std::string(rnf_genre_code(RNF_GENRE_RPG)), std::string("rpg"));
+  CHECK_EQ(int(rnf_genre_from_code("utility")), int(RNF_GENRE_UTILITY));
+}
+
+// The hash key in frontend/data/nesdb-overrides.json must follow the cartridge (engine/src/testrom):
+// rebuild nesdb.tsv with the new CRC32 / SHA-1 whenever tools/testcart changes its image.
+TEST_CASE("the ReplayNES Test Cartridge is in the database by its hash") {
+  const std::string path = (std::filesystem::temp_directory_path() / "rn-gamedb-testcart.nes").string();
+  REQUIRE(rn_write_test_cartridge(path.c_str()) == RN_OK);
+  rnf_game_info g{};
+  CHECK_EQ(int(rnf_gamedb_identify_file(path.c_str(), &g)), int(RNF_GAME_MATCH_HASH));  // not by its name: "x.nes" below
+  std::remove(path.c_str());
+  std::ifstream probe(path);
+  CHECK_FALSE(probe.good());
+  REQUIRE(g.id != nullptr);
+  CHECK_EQ(std::string(g.id), std::string(RNF_TEST_CARTRIDGE_GAME_ID));
+  CHECK_EQ(int(g.genre), int(RNF_GENRE_UTILITY));
+  CHECK_EQ(g.year, 2026);
+  {
+    LangScope ja("ja");
+    CHECK_EQ(take(rnf_game_title(&g, "x.nes")), std::string("ReplayNES テストカートリッジ"));
+    CHECK_EQ(take(rnf_game_details(&g)), std::string("ReplayNES・2026・ツール"));
+  }
+  {
+    LangScope en("en");
+    CHECK_EQ(take(rnf_game_title(&g, "x.nes")), std::string("ReplayNES Test Cartridge"));
+    CHECK_EQ(take(rnf_game_details(&g)), std::string("ReplayNES · 2026 · Utility"));
+  }
+  // Also by the file name "Add Test Cartridge" gives it.
+  rnf_game_info n{};
+  REQUIRE(rnf_gamedb_find_name(RNF_TEST_CARTRIDGE_FILE, &n));
+  CHECK_EQ(std::string(n.id), std::string(RNF_TEST_CARTRIDGE_GAME_ID));
 }
 
 // ------------------------------------------------------------------ catalog

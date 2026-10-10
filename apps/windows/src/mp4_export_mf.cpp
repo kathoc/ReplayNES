@@ -232,13 +232,14 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   MFSetAttributeRatio(in, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
   setColorTags(in);
   // Encoder settings (ICodecAPI properties, applied by the sink writer when it creates the
-  // encoder): constant bit rate at the target (the size prediction of the Export dialog relies on
-  // it), a key frame every RNF_EXPORT_GOP_FRAMES
-  // frames (YouTube: half the frame rate; as the FFmpeg exporter), no B-frames (no reordering
-  // delay; presentation order = decode order; deviation from YouTube's 2 B-frames).
+  // encoder): VBR with the target as the mean (no padding: a simple picture such as flat pixel art
+  // gives a smaller file; the Export dialog's size is an estimate), a key frame every
+  // RNF_EXPORT_GOP_FRAMES frames (YouTube: half the frame rate; as the FFmpeg exporter), no
+  // B-frames (no reordering delay; presentation order = decode order; deviation from YouTube's 2
+  // B-frames).
   IMFAttributes* enc = nullptr;
   MFCreateAttributes(&enc, 4);
-  enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_CBR);
+  enc->SetUINT32(CODECAPI_AVEncCommonRateControlMode, eAVEncCommonRateControlMode_UnconstrainedVBR);
   enc->SetUINT32(CODECAPI_AVEncCommonMeanBitRate, UINT32(std::min<int64_t>(bitrate, 0xFFFFFFFF)));
   enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, RNF_EXPORT_GOP_FRAMES);
   enc->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 0);

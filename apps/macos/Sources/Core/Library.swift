@@ -40,6 +40,18 @@ struct LibraryPaths: Equatable {
             throw LibraryError.cannotCreate(path, message)
         }
     }
+
+    /// "Add Test Cartridge": the ReplayNES Test Cartridge as ROM/RNF_TEST_CARTRIDGE_FILE, written only
+    /// when the library doesn't have it yet (a ROM of `roms` that the game database identifies as the
+    /// cartridge, or that file). Returns the cartridge's file and whether it was written now.
+    func addTestCartridge(existing roms: [LibraryROM]) throws -> (url: URL, written: Bool) {
+        if let r = roms.first(where: { $0.game?.id == RNF_TEST_CARTRIDGE_GAME_ID }) { return (r.url, false) }
+        try ensure()
+        let url = self.roms.appendingPathComponent(RNF_TEST_CARTRIDGE_FILE)
+        if FileManager.default.fileExists(atPath: url.path) { return (url, false) }
+        try Engine.writeTestCartridge(to: url)
+        return (url, true)
+    }
 }
 
 enum LibraryError: Error, LocalizedError, Equatable {

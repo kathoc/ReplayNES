@@ -93,6 +93,7 @@ struct ExportSheet: View {
                     Text(qualityLabel(q, geometry: g, frames: frames)).tag(q)
                 }
             }
+            Text("Actual size depends on the picture").font(.caption).foregroundStyle(.secondary)
             LabeledContent("Length") {
                 Text("\(Engine.timecode(forFrame: frames)) (\(frames) frames, 60.0988 fps, AAC 48 kHz)").font(.caption)
             }
@@ -110,13 +111,13 @@ struct ExportSheet: View {
         }
     }
 
-    /// "Standard (YouTube) · 12.0 Mbit/s · about 91 MB": the size is predicted for exactly this range,
-    /// canvas, codec and bit rate (rnf_export_predict_size).
+    /// "Standard (YouTube) · 12.0 Mbit/s · ≈ 91 MB (estimate)": the size estimated for exactly this
+    /// range, canvas, codec and bit rate (rnf_export_predict_size); simple pictures give smaller files.
     private func qualityLabel(_ q: ExportSettings.Quality, geometry g: ExportGeometry, frames: UInt64) -> String {
         let hevc = settings.codec == .hevc
         let mbit = String(format: "%.1f", Double(g.videoBitrate(hevc: hevc, quality: q)) / 1e6)
         let size = ByteCountFormatter.string(fromByteCount: g.predictedBytes(hevc: hevc, quality: q, frames: frames), countStyle: .file)
-        return String(localized: "\(q.label) · \(mbit) Mbit/s · about \(size)")
+        return String(localized: "\(q.label) · \(mbit) Mbit/s · ≈ \(size) (estimate)")
     }
 
     /// Controller confirm / cancel (the sheet's window has the keyboard itself).

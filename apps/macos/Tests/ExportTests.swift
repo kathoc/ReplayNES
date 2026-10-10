@@ -72,9 +72,11 @@ final class ExportTests: XCTestCase {
         return (predicted, actual, Date().timeIntervalSince(t0))
     }
 
-    /// The Export sheet's size prediction against the real file (the encoder is asked for a constant
-    /// rate). Only measured and printed (PREDICT lines; goal +-3%): a size mismatch never fails. Short default run; RN_PREDICT_FRAMES (e.g. 18000) turns
-    /// it into a long measurement of the whole matrix (content x quality x codec), printed as PREDICT lines.
+    /// The Export sheet's size estimate against the real file (the encoder uses an average bit rate
+    /// capped at 1.5x, so simple pictures give smaller files). Only measured and printed (PREDICT
+    /// lines): the estimate is no promise, a size mismatch never fails. Short default run;
+    /// RN_PREDICT_FRAMES (e.g. 18000) turns it into a long measurement of the whole matrix
+    /// (content x quality x codec), printed as PREDICT lines.
     func testPredictedSizeTracksTarget() throws {
         let env = ProcessInfo.processInfo.environment
         let frames = Int(env["RN_PREDICT_FRAMES"] ?? "") ?? 600
@@ -82,8 +84,8 @@ final class ExportTests: XCTestCase {
         let s = try recordTake(frames: frames)
         var settings = ExportSettings()
         settings.preset = .canvas(1920, 1080)
-        // Default run: the two cases the hardware encoder tracks (flat pixel art at Standard, the test
-        // ROM's noise at High - noise at lower rates is beyond what the encoder can compress).
+        // Default run: flat pixel art at Standard in both codecs (the rate limits are accepted by the
+        // H.264 and HEVC encoders) and the test ROM's noise at High.
         typealias Patch = (UInt64, inout [UInt32]) -> Void
         let cases: [(String, Patch?, ExportSettings.Quality, ExportSettings.Codec)]
         if long {
@@ -93,7 +95,8 @@ final class ExportTests: XCTestCase {
             }
             cases = all
         } else {
-            cases = [("still", Self.syntheticPatch(scroll: false), .standard, .h264), ("noise", nil, .high, .h264)]
+            cases = [("still", Self.syntheticPatch(scroll: false), .standard, .h264), ("still", Self.syntheticPatch(scroll: false), .standard, .hevc),
+                     ("noise", nil, .high, .h264)]
         }
         // RN_PREDICT_ONLY="still:1:h264,noise:2:hevc" (content:quality:codec) picks cases of the matrix.
         let only = env["RN_PREDICT_ONLY"]?.split(separator: ",").map(String.init)

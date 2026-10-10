@@ -472,8 +472,8 @@ int selfTest(const Args& a) {
   }
   failures += checkFile("full", fullOut, full.res, rn_audio_samples_before(take), 1280, 960);
 
-  // 1b) size prediction (rnf_export_predict_size) against the real files, detailed (the test ROM's
-  // noise) and flat pixel-art content: measured and printed, never asserted.
+  // 1b) size estimate (rnf_export_predict_size) against the real files, detailed (the test ROM's
+  // noise) and flat pixel-art content (average-rate encoders: smaller): measured and printed, never asserted.
   {
     auto sizeError = [&](const ExportOptions& o, const std::string& file, uint64_t frames) {
       rnf_export_geometry geo{};
@@ -492,7 +492,7 @@ int selfTest(const Args& a) {
     const double errFlat = flatr.ok ? sizeError(flat, flatOut, flatr.res.frames) : 100.0;
     std::printf("  predicted size vs file (pixel art): %+.2f%%\n", errFlat);
     // Reported only: a size that differs from the prediction never fails an export or the self-test.
-    std::printf("  (goal: within 3%%; encoder %s)\n", full.res.encoder.c_str());
+    std::printf("  (an estimate: detailed pictures land near it, simple ones below; encoder %s)\n", full.res.encoder.c_str());
   }
 
   // 2) flash reduction High + a processor: same renderer hash (display only)
@@ -647,7 +647,7 @@ int exportCmd(const Args& a) {
     if (!same) o.ok = false;
   }
   if (o.ok) {
-    // Predicted vs actual size (rnf_export_predict_size).
+    // Estimated vs actual size (rnf_export_predict_size; reported only).
     rnf_export_geometry g{};
     rnf_export_geometry_compute(&opt.settings, &g);
     std::error_code ec;

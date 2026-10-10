@@ -6,7 +6,9 @@
 // game database in the UI language, "maker · year" under it, a star on favourites).
 // A plays the focused game (a new project), Y marks it as a favourite, X lists its projects,
 // View / Select (Tab) cycles the sort, L / R turn the pages, the Menu pill (L+R / Esc) opens
-// Settings. An empty library is one card saying where the games go. Nothing scrolls.
+// Settings. An empty library is one card saying where the games go. "Add Test Cartridge" (the last
+// item of the row; Y on the empty card) writes the ReplayNES Test Cartridge into the ROM folder (once)
+// and focuses it. Nothing scrolls.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -118,8 +120,9 @@ namespace {
 constexpr int kFocusHero = -1;
 constexpr int kFocusPageStart = -2;  // L / R: the first card of the new page
 constexpr int kFocusBar = -3;        // the filter / sort / search row
-constexpr int kBarItems = RNF_LIBRARY_FILTER_COUNT + 2;  // filters, sort, search
+constexpr int kBarItems = RNF_LIBRARY_FILTER_COUNT + 3;  // filters, sort, search, Add Test Cartridge
 constexpr int kBarSort = RNF_LIBRARY_FILTER_COUNT, kBarSearch = RNF_LIBRARY_FILTER_COUNT + 1;
+constexpr int kBarTestCart = RNF_LIBRARY_FILTER_COUNT + 2;
 constexpr ImU32 kStar = IM_COL32(255, 200, 40, 255);
 
 std::string playTime(double seconds) {
@@ -145,14 +148,34 @@ void UI::libraryBarAction(int item) {
   } else if (item == kBarSort) {
     lib->setSort(rnf_library_sort((int(lib->sort()) + 1) % RNF_LIBRARY_SORT_COUNT));
     libPage_ = 0;
-  } else {
+  } else if (item == kBarSearch) {
     focusSearch_ = true;
     searchShown_ = true;
+  } else if (item == kBarTestCart) {
+    addTestCartridge(ImGui::GetTime());
   }
 }
 
+void UI::addTestCartridge(double now) {
+  LibraryModel* lib = d_.library;
+  std::string error;
+  std::string path = lib->addTestCartridge(&error);
+  if (path.empty()) {
+    Dialog d;
+    d.title = TR("Add Test Cartridge");
+    d.message = TRF("Can’t add the Test Cartridge: %@", {error});
+    showDialog(std::move(d));
+    return;
+  }
+  // Shown in any case: all games, no search; focused as soon as the scan lists it.
+  lib->setFilter(RNF_LIBRARY_FILTER_ALL);
+  search_[0] = 0;
+  searchShown_ = false;
+  libFocusPath_ = path;
+  libFocusPathUntil_ = now + 10;
+}
+
 void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool hero) {
-  (void)now;
   if (menuOpen_ || popupOpen() || popupLastFrame_ || ImGui::GetIO().WantTextInput || focusSearch_) return;
   auto pressed = [](ImGuiKey k, bool repeat) { return ImGui::IsKeyPressed(k, repeat); };
   const int perPage = 8, cols = 4;
@@ -219,6 +242,7 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
     }
   } else if (keyY) {
     if (focused) d_.library->toggleFavorite(*focused);  // the focus stays (a Favorites list may shrink)
+    else if (d_.library->roms().empty()) addTestCartridge(now);
   } else if (keySort) {
     libraryBarAction(kBarSort);
   } else if (keySearch) {
@@ -250,20 +274,22 @@ void UI::buildLibraryBar(ImDrawList* dl, const LRect& bar, double now) {
   items.push_back({std::string(icons::glyph("list")) + "  " + rnf_library_sort_name(lib->sort()), false});
   std::string searchText = search_[0] ? std::string(search_) : std::string(TR("Search"));
   items.push_back({std::string(icons::glyph("search")) + "  " + searchText, search_[0] != 0});
+  items.push_back({std::string(icons::glyph("plus")) + "  " + TR("Add Test Cartridge"), false});
   // Natural widths, shrunk together when the row is narrow (labels are then cut).
   std::vector<float> widths;
-  float total = gap * 2 + gap * float(items.size() - 1);
+  float total = gap * 4 + gap * float(items.size() - 1);
   for (int i = 0; i < int(items.size()); ++i) {
     float w = measure(fs, items[size_t(i)].text.c_str()).x + h * 0.9f;
     if (i == kBarSearch) w = std::max(w, searchShown_ ? S(260) : S(150));
     widths.push_back(w);
     total += w;
   }
-  float k = total > bar.w && total > 0 ? std::max(0.3f, (bar.w - gap * 2 - gap * float(items.size() - 1)) / (total - gap * 2 - gap * float(items.size() - 1))) : 1.0f;
+  const float gaps = gap * 4 + gap * float(items.size() - 1);
+  float k = total > bar.w && total > gaps ? std::max(0.3f, (bar.w - gaps) / (total - gaps)) : 1.0f;
   float x = bar.x;
   for (int i = 0; i < int(items.size()); ++i) {
     float w = widths[size_t(i)] * k;
-    if (i == kBarSort) x += gap * 2;  // a little apart from the filters
+    if (i == kBarSort || i == kBarTestCart) x += gap * 2;  // a little apart from the filters / the search
     LRect r{x, bar.y, w, h};
     if (i == kBarSearch && searchShown_) {
       buildSearchField(r);
@@ -336,6 +362,16 @@ void UI::buildLibrary(double now) {
   if (!libMoved_) libFocus_ = hero ? kFocusHero : (n > 0 ? 0 : kFocusBar);  // until the user moves (the scan may finish late)
   if (libFocus_ == kFocusHero && !hero) libFocus_ = n > 0 ? 0 : kFocusBar;
   if (libFocus_ >= n) libFocus_ = n > 0 ? n - 1 : kFocusBar;
+  if (!libFocusPath_.empty()) {  // Add Test Cartridge: focus it once a scan lists it
+    for (int i = 0; i < n; ++i)
+      if (LibraryModel::samePath(roms[size_t(i)]->path, libFocusPath_)) {
+        libFocus_ = i;
+        libMoved_ = true;
+        libFocusPath_.clear();
+        break;
+      }
+    if (now > libFocusPathUntil_) libFocusPath_.clear();
+  }
   if (libFocus_ >= 0 && n > 0) libPage_ = libFocus_ / perPage;
   handleLibraryInput(now, size_t(n), size_t(pages), hero);
   if (!hasSession() && menuOpen_) return;  // Settings over the library draw everything
@@ -387,19 +423,26 @@ void UI::buildLibrary(double now) {
     textCentered(dl, m.label(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f, kTextDim, Paths::display(lib->romDir()));
     textCentered(dl, m.hint(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f + m.label() * 1.6f, kTextFaint,
                  TR(".nes files; they appear here by themselves"));
-    // Buttons: Open Folder (A), Reload (X).
-    float bw = S(220), bh = m.label() * 2.2f, gap = S(16);
-    LRect b1{r.x + r.w / 2 - bw - gap / 2, r.bottom() - bh - S(24), bw, bh}, b2{r.x + r.w / 2 + gap / 2, b1.y, bw, bh};
-    for (int i = 0; i < 2; ++i) {
-      const LRect& br_ = i == 0 ? b1 : b2;
+    // Buttons: Open Folder (A), Reload (X), Add Test Cartridge (Y).
+    float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * 2) / 3), bh = m.label() * 2.2f;
+    float bx = r.x + (r.w - bw * 3 - gap * 2) / 2;
+    static const char* const kIcon[3] = {"folder-open", "refresh", "plus"};
+    for (int i = 0; i < 3; ++i) {
+      const LRect br_{bx + float(i) * (bw + gap), r.bottom() - bh - S(24), bw, bh};
       ImGui::SetCursorScreenPos(tl(br_));
       ImGui::PushID(i);
       bool clicked = ImGui::InvisibleButton("##emptybtn", ImVec2(br_.w, br_.h));
       ImGui::PopID();
       dl->AddRectFilled(tl(br_), br(br_), i == 0 ? kBrand : kTile, br_.h / 2);
-      std::string t = std::string(icons::glyph(i == 0 ? "folder-open" : "refresh")) + "  " + (i == 0 ? TR("Open Folder") : TR("Reload"));
-      textCentered(dl, m.label(), br_, br_.y + (br_.h - m.label()) / 2, kText, t);
+      const char* label = i == 0 ? TR("Open Folder") : i == 1 ? TR("Reload") : TR("Add Test Cartridge");
+      std::string t = std::string(icons::glyph(kIcon[i])) + "  " + label;
+      textFit(dl, m.label(), ImVec2(br_.x + S(12) + std::max(0.0f, (br_.w - S(24) - measure(m.label(), t.c_str()).x) / 2), br_.y + (br_.h - m.label()) / 2),
+              br_.w - S(24), kText, t);
       if (clicked) {
+        if (i == 2) {
+          addTestCartridge(now);
+          continue;
+        }
         lib->ensureFolders();
         if (i == 0) openFolder(lib->romDir());
         else lib->refresh();
@@ -408,6 +451,7 @@ void UI::buildLibrary(double now) {
     if (!lib->folderError().empty()) description_ = lib->folderError();
     prompt({"ui.confirm"}, TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
+    prompt({"face.north"}, TR("Add Test Cartridge"));
   } else {
     // Continue: the last session (also after a crash), else the latest project.
     if (hero) {
@@ -514,6 +558,8 @@ void UI::buildLibrary(double now) {
       prompt({"ui.confirm"}, TR("Select"));
       if (libBar_ < RNF_LIBRARY_FILTER_COUNT) description_ = rnf_library_filter_name(rnf_library_filter(libBar_));
       else if (libBar_ == kBarSort) description_ = TRF("Sort by %@", {std::string(rnf_library_sort_name(lib->sort()))});
+      else if (libBar_ == kBarTestCart)
+        description_ = TR("Adds the ReplayNES Test Cartridge (palette, sprites, controllers, rapid-fire meter, sound) to the ROM folder");
       else description_ = TR("Search ROMs");
     } else if (n > 0) {
       const LibraryROM* fr = libFocus_ >= 0 && libFocus_ < n ? roms[size_t(libFocus_)] : nullptr;

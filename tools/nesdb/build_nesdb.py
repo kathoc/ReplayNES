@@ -251,10 +251,10 @@ REGION_ORDER = ["JP", "NA", "EU"]
 NST_REGION = {"Famicom": "JP", "NES-NTSC": "NA"}  # NES-PAL* -> EU
 
 GENRE_CODES = ["action", "shooter", "puzzle", "rpg", "adventure", "sports", "racing",
-               "fighting", "strategy", "table", "music", "educational", "other"]
+               "fighting", "strategy", "table", "music", "educational", "other", "utility"]
 # Tie-break when two genres are equally specific (earlier wins).
 GENRE_PRIORITY = ["rpg", "shooter", "fighting", "racing", "sports", "puzzle", "table",
-                  "music", "educational", "strategy", "adventure", "action", "other"]
+                  "music", "educational", "strategy", "adventure", "action", "other", "utility"]
 
 # Wikidata genre Q-id -> (code, specificity). Specificity 1 = generic umbrella genre.
 GENRE_MAP = {

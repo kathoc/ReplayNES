@@ -196,6 +196,7 @@ P	Q139796646	Towa Chiki	Towa Chiki
 P	Q139796920	M&M	M&M
 P	Q139797350	Epoch	Epoch
 P	Q139806798	NEXOFT Corporation	NEXOFT Corporation
+P	x-replaynes	ReplayNES	ReplayNES
 G	Q11168	Super Mario Bros.	スーパーマリオブラザーズ	スーパーマリオブラザーズ	Q8093	1985	action	JP,NA,EU	SMB|SMB 1|SMB.|SMB. 1|SMB1|Super Mario Bros. 1|Super Mario Brothers|スーパーマリオ
 G	Q12384	Donkey Kong	ドンキーコング	ドンキーコング	Q8093	1983	action	JP,NA,EU	1981 Donkey Kong
 G	Q12395	The Legend of Zelda	ゼルダの伝説	ゼルダノデンセツ	Q8093	1986	action	JP,NA,EU	Zelda no Densetsu 1 - The Hyrule Fantasy|Legend of Zelda|LoZ|TLoZ|The Hyrule Fantasy|The Hyrule Fantasy: Zelda no Densetsu|Zelda|Zelda 1|Zerudanodensetsu
@@ -1515,6 +1516,7 @@ G	Q141539793	Multidude	Multidude			2019
 G	Q141539802	Super Painter	Super Painter			2019			
 G	Q141572347	Dreamworld Pogie	Dreamworld Pogie			2016			
 G	Q141586128	Cheetahmen II	Cheetahmen II			0			
+G	x-replaynes-test-cartridge	ReplayNES Test Cartridge	ReplayNES テストカートリッジ	リプレイエヌイーエステストカートリッジ	x-replaynes	2026	utility		ReplayNES Test Cart
 G	x-tetris-bps	Tetris	テトリス	テトリス	Q11331181	1988	puzzle	JP	Tetris (Bulletproof)|Tetris (BPS)|Tetorisu
 H	14CD576E	07CDE12D71BE979F9FED6FC6313142524FF0AA20	Q2660330
 H	3FF44F87	6D707AA6E1BC88DD905269936FF16A50F65BFBCA	Q11338868
@@ -1525,3 +1527,4 @@ H	D074653D	A7F135CF49F92E0FD9D03B6F48C1BD65CE8BCC77	x-tetris-bps
 H	D445F698	FACEE9C577A5262DBE33AC4930BB0B58C8C037F7	Q11168
 H	D8EFF0DF	C823768907793E5BF3BECF52E8A654CEE69EE116	Q1324646
 H	F808AF60	B933C1E9D5FF18D6BC18EBAA5525B8DA1B57A5FB	Q3628242
+H	FC1EB738	5D884FAEAB22ECA06A48E3518036DBD6A6642FE7	x-replaynes-test-cartridge

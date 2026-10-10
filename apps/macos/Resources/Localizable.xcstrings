@@ -51,16 +51,6 @@
         }
       }
     },
-    "%@ · %@ Mbit/s · about %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ ・ %2$@ Mbit/s ・ 約 %3$@"
-          }
-        }
-      }
-    },
     "%@ (4:3, with black bars)": {
       "localizations": {
         "ja": {
@@ -87,6 +77,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@（画像 %2$@、縦 %3$lld 倍・最近傍）"
+          }
+        }
+      }
+    },
+    "%@ · %@ Mbit/s · ≈ %@ (estimate)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ・ %2$@ Mbit/s ・ 約 %3$@（目安）"
           }
         }
       }
@@ -547,6 +547,16 @@
         }
       }
     },
+    "Actual size depends on the picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実際のサイズは映像の内容で変わります"
+          }
+        }
+      }
+    },
     "Add": {
       "localizations": {
         "ja": {
@@ -573,6 +583,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ここに追加"
+          }
+        }
+      }
+    },
+    "Add Test Cartridge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テストカートリッジを追加"
           }
         }
       }
@@ -623,6 +643,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Steam のライブラリに追加（先に Steam を終了）"
+          }
+        }
+      }
+    },
+    "Adds the ReplayNES Test Cartridge (palette, sprites, controllers, rapid-fire meter, sound) to the ROM folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNES テストカートリッジ（パレット、スプライト、コントローラー、連射メーター、サウンド）を ROM フォルダに追加します"
           }
         }
       }
@@ -1125,6 +1155,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ボタンの割り当てを既定に戻しました"
+          }
+        }
+      }
+    },
+    "Can’t add the Test Cartridge: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テストカートリッジを追加できません: %@"
           }
         }
       }
@@ -7345,6 +7385,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "画面全体を使います"
+          }
+        }
+      }
+    },
+    "Utility (genre)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utility"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール"
           }
         }
       }

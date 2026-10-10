@@ -5,6 +5,8 @@
 // it, a star on favourites), or one card saying where to put ROMs. ROMs live in
 // ~/Documents/ReplayNES/ROM, their projects (matched by SHA-256) in Projects. Controller / keyboard:
 // D-pad moves, A plays, Y = favourite, X = projects of the game, View / S = next sort, / = search.
+// "Add Test Cartridge" (the last item of the filter row; Y on the empty-library card) writes the
+// ReplayNES Test Cartridge into the ROM folder once and focuses it.
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
@@ -12,10 +14,11 @@ import SwiftUI
 final class LibraryNav: ObservableObject {
     static let heroFocus = -1
     static let barFocus = -3
-    /// The filter / sort / search row: filters, then the sort, then the search.
-    static let barItems = Int(RNF_LIBRARY_FILTER_COUNT.rawValue) + 2
+    /// The filter / sort / search row: filters, then the sort, the search and Add Test Cartridge.
+    static let barItems = Int(RNF_LIBRARY_FILTER_COUNT.rawValue) + 3
     static var barSort: Int { Int(RNF_LIBRARY_FILTER_COUNT.rawValue) }
     static var barSearch: Int { barSort + 1 }
+    static var barTestCart: Int { barSort + 2 }
 
     /// -1 = the Continue card, -3 = the filter / sort / search row, else a game (all pages).
     @Published var focus = 0
@@ -29,6 +32,8 @@ final class LibraryNav: ObservableObject {
     /// Set by the view from its size.
     var columns = 4
     var perPage = 8
+    /// Add Test Cartridge: focus this ROM once the library lists it.
+    var pendingFocus: URL?
 
     func entries(_ library: LibraryModel) -> [LibraryROM] {
         library.arranged(query: search.trimmingCharacters(in: .whitespaces))
@@ -44,9 +49,35 @@ final class LibraryNav: ObservableObject {
         } else if item == Self.barSort {
             library.sort = rnf_library_sort(rawValue: (library.sort.rawValue + 1) % RNF_LIBRARY_SORT_COUNT.rawValue)
             page = 0
-        } else {
+        } else if item == Self.barSearch {
             searchRequested += 1
+        } else {
+            addTestCartridge(library)
         }
+    }
+
+    /// Writes the ReplayNES Test Cartridge into the ROM folder (once) and focuses it: all games, no
+    /// search, as soon as the scan lists it.
+    func addTestCartridge(_ library: LibraryModel) {
+        do {
+            let url = try library.addTestCartridge()
+            library.filter = RNF_LIBRARY_FILTER_ALL
+            search = ""
+            pendingFocus = url
+            focusPending(library)
+        } catch {
+            AppModel.shared.showError(String(localized: "Add Test Cartridge"),
+                                      String(localized: "Can’t add the Test Cartridge: \(error.localizedDescription)"))
+        }
+    }
+
+    func focusPending(_ library: LibraryModel) {
+        guard let url = pendingFocus else { return }
+        let path = url.standardizedFileURL.path
+        guard let i = entries(library).firstIndex(where: { $0.url.standardizedFileURL.path == path }) else { return }
+        pendingFocus = nil
+        focus = i
+        page = i / max(1, perPage)
     }
 
     func handle(_ n: NavInput, model m: AppModel) {
@@ -70,6 +101,7 @@ final class LibraryNav: ObservableObject {
             case .up: if hero { focus = Self.heroFocus }
             case .down: focus = 0
             case .confirm: if focus < 0 && hero { LibraryHome.continueItem(m)?.run() } else { library.revealROMFolder() }
+            case .y: addTestCartridge(library)
             case .back, .escape: if m.status.hasSession { m.hideLibraryScreen() }
             default: break
             }
@@ -191,7 +223,7 @@ struct LibraryHome: View {
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .onAppear { nav.perPage = per; nav.clamp(count: list.count, hero: hero != nil); library.refresh() }
             .onChange(of: per) { _, p in nav.perPage = p; nav.clamp(count: list.count, hero: hero != nil) }
-            .onChange(of: list.count) { _, c in nav.clamp(count: c, hero: hero != nil) }
+            .onChange(of: list.count) { _, c in nav.clamp(count: c, hero: hero != nil); nav.focusPending(library) }
         }
         .background(Color(red: 0.055, green: 0.055, blue: 0.063))
         .overlay { if let rom = nav.projectsOf { projectsPanel(rom) } }
@@ -224,6 +256,8 @@ struct LibraryHome: View {
             chip(LibraryNav.barSort, icon: "arrow.up.arrow.down", text: LibraryCatalog.name(library.sort), selected: false)
                 .padding(.leading, 10)
             searchField
+            chip(LibraryNav.barTestCart, icon: "plus", text: String(localized: "Add Test Cartridge"), selected: false)
+                .padding(.leading, 10)
         }
     }
 
@@ -281,6 +315,9 @@ struct LibraryHome: View {
             if nav.focus == LibraryNav.barFocus {
                 if nav.barFocus < LibraryNav.barSort { return LibraryCatalog.name(LibraryCatalog.filters[nav.barFocus]) }
                 if nav.barFocus == LibraryNav.barSort { return String(localized: "Sort by \(LibraryCatalog.name(library.sort))") }
+                if nav.barFocus == LibraryNav.barTestCart {
+                    return String(localized: "Adds the ReplayNES Test Cartridge (palette, sprites, controllers, rapid-fire meter, sound) to the ROM folder")
+                }
                 return String(localized: "Search ROMs")
             }
             guard let r = focusedRom else { return "" }
@@ -528,14 +565,25 @@ struct LibraryHome: View {
                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.35)))
-            HStack(spacing: 8) {
-                KeyCap(g.confirm)
-                Text("Open Folder").font(QMStyle.label)
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    KeyCap(g.confirm)
+                    Text("Open Folder").font(QMStyle.label)
+                }
+                .padding(.horizontal, 16).frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: 10).fill(QMStyle.brand.opacity(0.9)))
+                .contentShape(Rectangle())
+                .onTapGesture { library.revealROMFolder() }
+                HStack(spacing: 8) {
+                    KeyCap(g.y)
+                    Image(systemName: "plus").font(.system(size: 13, weight: .semibold))
+                    Text("Add Test Cartridge").font(QMStyle.label)
+                }
+                .padding(.horizontal, 16).frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.12)))
+                .contentShape(Rectangle())
+                .onTapGesture { nav.addTestCartridge(library) }
             }
-            .padding(.horizontal, 16).frame(height: 38)
-            .background(RoundedRectangle(cornerRadius: 10).fill(QMStyle.brand.opacity(0.9)))
-            .contentShape(Rectangle())
-            .onTapGesture { library.revealROMFolder() }
         }
         .padding(32)
         .frame(maxWidth: 560)

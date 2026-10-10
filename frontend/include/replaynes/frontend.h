@@ -878,6 +878,10 @@ void* rnf_thumb_cache_image_before(rnf_thumb_cache* c, uint64_t frame, uint64_t 
  * <root>/ROM: the user's .nes files (top level + one level of sub-folders);
  * <root>/Projects: "<ROM name> <yyyy-MM-dd HHmm>.nesrec", matched to ROMs by SHA-256. */
 #define RNF_LIBRARY_ROM_DIR "ROM"
+/* "Add Test Cartridge" in the library writes the ReplayNES Test Cartridge (rn_write_test_cartridge)
+ * under this name into the ROM folder; the game database knows it by its hash under this id. */
+#define RNF_TEST_CARTRIDGE_FILE "ReplayNES Test Cartridge.nes"
+#define RNF_TEST_CARTRIDGE_GAME_ID "x-replaynes-test-cartridge"
 #define RNF_LIBRARY_PROJECTS_DIR "Projects"
 /* Creates ROM/ and Projects/ if missing. RN_ERR_ALREADY_EXISTS: a file is where a folder should
  * be; RN_ERR_IO: cannot create. *failed_path (may be NULL) receives the folder concerned. */
@@ -941,7 +945,9 @@ char* rnf_backup_path(const char* project_path, double date, rnf_exists_fn exist
 typedef enum rnf_genre {
   RNF_GENRE_UNKNOWN = 0, RNF_GENRE_ACTION = 1, RNF_GENRE_SHOOTER = 2, RNF_GENRE_PUZZLE = 3, RNF_GENRE_RPG = 4,
   RNF_GENRE_ADVENTURE = 5, RNF_GENRE_SPORTS = 6, RNF_GENRE_RACING = 7, RNF_GENRE_FIGHTING = 8, RNF_GENRE_STRATEGY = 9,
-  RNF_GENRE_TABLE = 10, RNF_GENRE_MUSIC = 11, RNF_GENRE_EDUCATIONAL = 12, RNF_GENRE_OTHER = 13, RNF_GENRE_COUNT = 14
+  RNF_GENRE_TABLE = 10, RNF_GENRE_MUSIC = 11, RNF_GENRE_EDUCATIONAL = 12, RNF_GENRE_OTHER = 13,
+  RNF_GENRE_UTILITY = 14, /* tools and test cartridges (the ReplayNES Test Cartridge) */
+  RNF_GENRE_COUNT = 15
 } rnf_genre;
 typedef struct rnf_game_info {
   const char* id;           /* Wikidata Q-id ("Q11168") or "x-<slug>" for games added by hand */
@@ -1304,10 +1310,12 @@ typedef struct rnf_export_prediction {
   int64_t container_bytes;              /* MP4 boxes: ftyp/moov headers, per-sample tables, chunk offsets */
   int64_t total_bytes;
 } rnf_export_prediction;
-/* Expected size of the MP4 for exactly `frames` frames of this canvas / codec / quality: the encoders'
- * rate control targets the bit rates (the file is within a few percent), the container part is
- * computed from the MP4 structure (stsz 4 B per video / AAC sample, stss per key frame, stco per
- * 1 s chunk, fixed boxes). Returns total_bytes; `detail` may be NULL. */
+/* Estimated size of the MP4 for exactly `frames` frames of this canvas / codec / quality, shown as an
+ * estimate ("about"): the encoders use an average (capped, variable) bit rate, so a detailed picture
+ * lands near it and a simple one (flat pixel art, stills) is smaller; no guarantee either way, and a
+ * mismatch never fails an export. Video / audio = rate x duration; the container part is computed
+ * from the MP4 structure (stsz 4 B per video / AAC sample, stss per key frame, stco per 1 s chunk,
+ * fixed boxes). Returns total_bytes; `detail` may be NULL. */
 int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int quality, uint64_t frames,
                                 rnf_export_prediction* detail);
 
