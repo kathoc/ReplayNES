@@ -51,6 +51,10 @@ const KernelSize kKernels[] = {
     {"tube_scatter", 32, 8},    {"tube_scatter_x16", 32, 8}, {"tube_scatter_y16", 32, 8}, {"tube_mix", 32, 8},
     {"tube_lit", 32, 8},        {"tube_persist", 32, 8},    {"show_kernel", 16, 16},  {"tube_scatter_tx", 256, 1},
     {"tube_h_rows", 64, 1},     {"tube_lit_persist", 32, 8},
+    // Fast path.
+    {"rf_fast", 512, 1},        {"rx_stats_fast", 64, 1},   {"rx_agc_fast", 256, 1},  {"rx_decode_fast", 256, 1},
+    {"row_mean_fast", 128, 1},  {"supply_fast", 256, 1},    {"drive_post_fast", 512, 1}, {"scatter_drive", 32, 8},
+    {"tube_h_fast", 384, 1},    {"tube_v_fast", 32, 8},     {"show_kernel_h", 16, 16},
 };
 
 // Constant-buffer blocks (same layout as the GLSL push constants / the generated cbuffers).
@@ -70,8 +74,17 @@ struct TubeParams {
   int32_t radius, depth, extra, pad1, pad2;
 };
 struct ShowParams { float dst[4]; float src[4]; int32_t ow, oh, tw, th; float ndc[4]; };
+// Fast path.
+struct PostParams { int32_t supply, spot; float k1; int32_t persistence, newSlot, depth, rows, rx; };
+struct ScatterParams { int32_t rows, ry, pad0, pad1; float kappa[4]; };
+struct FastTubeParams {
+  int32_t height, ow, oh, xCount, gCount, hStride;
+  float gain, keep;
+  float amb[4], light[4];
+};
 constexpr uint32_t kParamBytes = 64;
-static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64, "constant layout");
+static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64 && sizeof(FastTubeParams) == 64,
+              "constant layout");
 
 uint32_t groups(int n, uint32_t local) { return uint32_t((std::max(0, n) + int(local) - 1) / int(local)); }
 
@@ -247,10 +260,18 @@ bool CrtRendererD3D11::compileKernels(bool withShow, std::string* error) {
       vs->Release();
       return false;
     }
+    ID3DBlob* psH = nullptr;
+    if (!compile("show_h_frag", "ps_5_0", &psH)) {
+      vs->Release();
+      ps->Release();
+      return false;
+    }
     device_->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &showVs_);
     device_->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &showPs_);
+    device_->CreatePixelShader(psH->GetBufferPointer(), psH->GetBufferSize(), nullptr, &showPsH_);
     vs->Release();
     ps->Release();
+    psH->Release();
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = D3D11_FILL_SOLID;
     rd.CullMode = D3D11_CULL_NONE;
@@ -260,7 +281,7 @@ bool CrtRendererD3D11::compileKernels(bool withShow, std::string* error) {
     D3D11_BLEND_DESC bl{};
     bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     device_->CreateBlendState(&bl, &showBlend_);
-    if (!showVs_ || !showPs_ || !showRaster_ || !showBlend_) {
+    if (!showVs_ || !showPs_ || !showPsH_ || !showRaster_ || !showBlend_) {
       *error = "show pipeline";
       return false;
     }
@@ -314,7 +335,10 @@ bool CrtRendererD3D11::init(ID3D11Device* device, ID3D11DeviceContext* context, 
        createBuffer(&stats_, 240 * 16) && createBuffer(&gains_, 240 * 4) && createBuffer(&agcState_, 16) &&
        createBuffer(&prepared_, 682 * 240 * 16) && createBuffer(&rxOut_, 512 * 240 * 16) &&
        createBuffer(&driveIn_, 512 * 240 * 16) && createBuffer(&codes_, 256 * 240 * 2) && createBuffer(&phases_, 240 * 4) &&
-       createBuffer(&rgb_, 256 * 240 * 4) && createBuffer(&weights_, size_t(crt::phosphor::depth()) * 16);
+       createBuffer(&rgb_, 256 * 240 * 4) && createBuffer(&weights_, size_t(crt::phosphor::depth()) * 16) &&
+       createBuffer(&carrierReal_, size_t(crt::rf::kMaxSamples) * 4) &&
+       createBuffer(&kernelSpecReal_, crt::rf::kernelSpectrumReal().size() * 4, crt::rf::kernelSpectrumReal().data()) &&
+       createBuffer(&agcRows_, 240 * 16);
   if (!ok) return fail("buffers");
   resetReceiverPending_ = resetSupplyPending_ = true;
   ready_ = true;
@@ -335,7 +359,7 @@ void CrtRendererD3D11::shutdown() {
   tube_.reset();
   for (Buffer* b : {&ping_, &pong_, &kernelSpec_, &twiddles_, &volts_, &basis_, &carrier_, &stats_, &gains_, &agcState_, &prepared_,
                     &rxOut_, &driveIn_, &codes_, &phases_, &rgb_, &weights_, &rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_,
-                    &spotOut_, &supplyState_[0], &supplyState_[1], &showTarget_})
+                    &spotOut_, &supplyState_[0], &supplyState_[1], &showTarget_, &carrierReal_, &kernelSpecReal_, &agcRows_})
     destroyBuffer(b);
   release(showStaging_);
   showStagingSize_ = 0;
@@ -343,6 +367,7 @@ void CrtRendererD3D11::shutdown() {
   kernels_.clear();
   release(showVs_);
   release(showPs_);
+  release(showPsH_);
   release(showRaster_);
   release(showBlend_);
   release(params_);
@@ -395,7 +420,7 @@ void CrtRendererD3D11::configure(const CrtSettings& newSettings, int outputWidth
   CrtSettings s = newSettings.sanitized();
   if (s.lines != settings_.lines) stageLines_ = 0;  // raster/supply/spot rebuilt (nesterm: rasterChanged)
   settings_ = s;
-  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux};
+  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux, quality};
   if (synchronous) {
     if (!tube_ || !(tube_->key == key)) {
       auto t = makeTube(key);
@@ -464,6 +489,32 @@ std::unique_ptr<CrtRendererD3D11::Tube> CrtRendererD3D11::makeTube(const TubeKey
   t->growth = plan.growth;
   const std::vector<float>& vmap = plan.growth ? plan.gmap : plan.ymap;
   const size_t img = size_t(t->ow) * t->oh * 16;
+  if (k.quality == CrtQuality::fast) {
+    crt::tube::FastPlan fp = crt::tube::fastPlan(plan);
+    if (plan.xCount <= 24 && fp.maxSpan <= 160) {
+      crt::tube::DriveScatter sc = crt::tube::driveScatter(plan);
+      t->fast = true;
+      t->fastTaps = fp.taps;
+      t->hStride = fp.maxSpan;
+      t->srx = sc.rx;
+      t->sry = sc.ry;
+      for (int c = 0; c < 3; ++c) t->kappa[c] = sc.kappa[c];
+      const size_t drive = size_t(512) * size_t(plan.height) * 8;
+      bool ok = createBuffer(&t->xmapFast, fp.xmap.size() * 4, fp.xmap.data()) &&
+                createBuffer(&t->tiles, fp.tiles.size() * 4, fp.tiles.data()) &&
+                createBuffer(&t->vrows, fp.vrows.size() * 4, fp.vrows.data()) &&
+                createBuffer(&t->vcoef, fp.vcoef.size() * 4, fp.vcoef.data()) &&
+                createBuffer(&t->colinv, fp.colinv.size() * 4, fp.colinv.data()) &&
+                createBuffer(&t->swx, sc.wx.size() * 4, sc.wx.data()) && createBuffer(&t->swy, sc.wy.size() * 4, sc.wy.data()) &&
+                createBuffer(&t->hplanes, size_t(t->ow) * t->height * 2 * 16) && createBuffer(&t->outH, size_t(t->ow) * t->oh * 8) &&
+                createBuffer(&t->scatterTmp, drive) && createBuffer(&t->scatterSrc, drive);
+      if (!ok) {
+        destroyTube(t.get());
+        return nullptr;
+      }
+      return t;
+    }
+  }
   bool ok = createBuffer(&t->xmap, plan.xmap.size() * 4, plan.xmap.data()) &&
             createBuffer(&t->vmap, vmap.size() * 4, vmap.data()) &&
             createBuffer(&t->colsum, plan.colsum.size() * 4, plan.colsum.data()) &&
@@ -482,7 +533,8 @@ std::unique_ptr<CrtRendererD3D11::Tube> CrtRendererD3D11::makeTube(const TubeKey
 void CrtRendererD3D11::destroyTube(Tube* t) {
   if (!t) return;
   for (Buffer* b : {&t->xmap, &t->vmap, &t->colsum, &t->kx, &t->ky, &t->ambient, &t->horizontal, &t->emission, &t->scatterX,
-                    &t->scatterY, &t->ring})
+                    &t->scatterY, &t->ring, &t->xmapFast, &t->tiles, &t->vrows, &t->vcoef, &t->colinv, &t->swx, &t->swy, &t->hplanes,
+                    &t->outH, &t->scatterTmp, &t->scatterSrc})
     destroyBuffer(b);
 }
 
@@ -573,7 +625,10 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
   int wantPersistence = settings_.persistence ? 1 : 0;
   if (wantPersistence != appliedPersistence_) {
     // tube.setPersistence(): allocate the ring on demand; always restarts history.
-    if (wantPersistence && !t.ring.buffer && !createBuffer(&t.ring, size_t(crt::phosphor::depth()) * t.ow * t.oh * 8)) return false;
+    // Reference: half4 tube-output slots. Fast: half4 drive slots (512 x lines).
+    if (wantPersistence && !t.ring.buffer &&
+        !createBuffer(&t.ring, size_t(crt::phosphor::depth()) * (t.fast ? size_t(512) * size_t(t.height) : size_t(t.ow) * t.oh) * 8))
+      return false;
     if (wantPersistence && !t.ringCleared) ringClearPending = true;
     slots_.clear();
     appliedPersistence_ = wantPersistence;
@@ -622,9 +677,23 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
     t.ringCleared = true;
   }
   if (profiling_) ctx_->End(profileQueries_[0]);
+  auto finish = [&] {
+    if (set >= 0) {
+      ctx_->End(queries_[set].end);
+      ctx_->End(queries_[set].disjoint);
+      queryPending_.push_back(set);
+    }
+    if (profiling_) ctx_->End(profileDisjoint_);
+    hasOutput_ = true;
+    return true;
+  };
+  usedCodes_ = input.kind == InputKind::codes;
+  if (t.fast) {
+    encodeFast(input, ordinal, ord);
+    return finish();
+  }
 
   const Buffer* drive = nullptr;
-  usedCodes_ = input.kind == InputKind::codes;
   if (input.kind == InputKind::codes) {
     upload(codes_, input.codes);
     auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
@@ -790,14 +859,114 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
   } else {
     dispatch("tube_mix", {&t.emission, &t.scatterY, &t.ambient, out}, &tp, sizeof tp, groups(ow, 32), groups(oh, 8));
   }
-  if (set >= 0) {
-    ctx_->End(queries_[set].end);
-    ctx_->End(queries_[set].disjoint);
-    queryPending_.push_back(set);
+  return finish();
+}
+
+void CrtRendererD3D11::encodeFast(const Input& input, uint64_t ordinal, int64_t ord) {
+  Tube& t = *tube_;
+  const int rows = settings_.lines;
+  const Buffer* drive = nullptr;
+  bool meansReady = false;  // supplyMeans_ already holds this frame's row means (rx_decode_fast)
+  if (input.kind == InputKind::codes) {
+    upload(codes_, input.codes);
+    auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
+    upload(phases_, ph.data());
+    double sigma = crt::rf::noiseSigma(crt::rf::carrierToNoiseDb(settings_.antennaDbuv), 1);
+    RFParams rp{crt::rf::kHop, crt::rf::kOverlap, crt::rf::filter().delaySamples, crt::rf::kBlocks,
+                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), 1.0f,
+                noiseEnabled ? float(sigma) : 0.0f, crt::rf::noiseKey(1, ordinal)};
+    dispatch("rf_fast", {&carrierReal_, &codes_, &phases_, &volts_, &twiddles_, &kernelSpecReal_}, &rp, sizeof rp,
+             uint32_t((crt::rf::kBlocks + 1) / 2));
+    AGCParams ap{float(double(crt::composite::kLineSamples) / crt::rf::sampleRateHz()), float(crt::agc::kAttackSeconds),
+                 float(crt::agc::kReleaseSeconds), float(crt::agc::kMinGain), float(crt::agc::kMaxGain), 1,
+                 crt::rf::filter().delaySamples, 0};
+    dispatch("rx_stats_fast", {&carrierReal_, &basis_, &stats_, &agcRows_}, &ap, sizeof ap, 240);
+    dispatch("rx_agc_fast", {&agcRows_, &gains_, &agcState_}, &ap, sizeof ap, 1);
+    dispatch("rx_decode_fast", {&carrierReal_, &basis_, &stats_, &gains_, &rxOut_, &supplyMeans_}, nullptr, 0, 240);
+    drive = &rxOut_;
+    meansReady = rows == 240;
+  } else if (input.kind == InputKind::rgb) {
+    upload(rgb_, input.rgb);
+    RasterParams rp2{rows, 1, 1, 0};
+    dispatch("raster_area", {&rxOut_, &rgb_, &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
+    drive = &rasterOut_;
+  } else {
+    upload(driveIn_, input.drive);
+    drive = &driveIn_;
   }
-  if (profiling_) ctx_->End(profileDisjoint_);
-  hasOutput_ = true;
-  return true;
+  if (input.kind != InputKind::rgb && rows != 240) {
+    RasterParams rp2{rows, 0, 0, 0};
+    dispatch("raster_area", {drive, drive, &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
+    drive = &rasterOut_;
+  }
+  const Buffer* src = drive;
+  const bool spot = settings_.beamGrowth && !disableSpotH;
+  if (settings_.supply) {
+    namespace f = crt::supply;
+    double line = f::kLineS * f::kVisibleLines / double(rows);
+    SupplyParams sp{512,
+                    rows,
+                    float(std::exp(-line / f::kTauS)),
+                    float(f::kV0),
+                    float(f::kReff),
+                    float(f::kImax),
+                    float(f::kN),
+                    float(std::exp(-(f::kTotalLines - f::kVisibleLines) * f::kLineS / f::kTauS)),
+                    float(f::kVisibleLines / f::kTotalLines / double(rows)),
+                    float(-std::expm1(-f::kFrameS / f::kTauAblS)),
+                    float(f::kIlim),
+                    primeSupply_ ? 1.0f : 0.0f,
+                    {float(f::kShare[0]), float(f::kShare[1]), float(f::kShare[2]), 0}};
+    if (!meansReady) dispatch("row_mean_fast", {src, &supplyMeans_}, nullptr, 0, uint32_t(rows));
+    dispatch("supply_fast", {&supplyMeans_, &supplyState_[supplyCurrent_], &supplyState_[1 - supplyCurrent_], &supplyRow_}, &sp,
+             sizeof sp, 1);
+    supplyCurrent_ = 1 - supplyCurrent_;
+    primeSupply_ = false;
+  }
+  const bool persist = settings_.persistence && t.ring.buffer;
+  PostParams pp{settings_.supply ? 1 : 0, spot ? 1 : 0, float(crt::tube::extraSigmaSamples(1, 1, 512)), 0, 0,
+                crt::phosphor::depth(), rows, t.srx};
+  std::vector<float> w(size_t(crt::phosphor::depth()) * 4, 0.0f);
+  if (persist) {
+    const int depth = crt::phosphor::depth();
+    if (!slots_.empty() && ord <= slots_.front().ordinal) slots_.clear();
+    std::vector<Slot> kept;
+    for (const Slot& s : slots_) {
+      int64_t newer = kept.empty() ? ord : kept.back().ordinal;
+      if (ord - newer + 1 <= int64_t(depth - 1)) kept.push_back(s);
+      else break;
+    }
+    slots_ = kept;
+    int r = 0;
+    for (;;) {
+      bool used = false;
+      for (const Slot& s : kept) used |= s.ring == r;
+      if (!used) break;
+      ++r;
+    }
+    slots_.insert(slots_.begin(), Slot{r, ord});
+    w = persistenceWeights();
+    pp.persistence = 1;
+    pp.newSlot = r;
+  }
+  upload(weights_, w.data());
+  const Buffer* ring = persist ? &t.ring : &t.scatterSrc;  // unused without persistence
+  dispatch("drive_post_fast", {src, &supplyRow_, &spotOut_, ring, &weights_, &t.swx, &t.scatterTmp}, &pp, sizeof pp, uint32_t(rows));
+  drive = &spotOut_;
+  lastDrive_ = drive;
+
+  // Tube.
+  const double lightNorm = std::sqrt(crt::tube::kLightX * crt::tube::kLightX + crt::tube::kLightY * crt::tube::kLightY +
+                                     crt::tube::kLightZ * crt::tube::kLightZ);
+  FastTubeParams tp{t.height, t.ow, t.oh, t.xCount, t.fastTaps, t.hStride, float(t.gain), float(1 - t.scatterFraction),
+                    {float(crt::tube::kAlbedo * t.key.ambient / (3.141592653589793 * crt::tube::kReferenceWhiteCdM2)),
+                     float(crt::tube::kDiffuseFraction), float(crt::tube::kNormalSlopeX), float(crt::tube::kNormalSlopeY)},
+                    {float(crt::tube::kLightX / lightNorm), float(crt::tube::kLightY / lightNorm), float(crt::tube::kLightZ / lightNorm), 0}};
+  ScatterParams scp{rows, t.sry, 0, 0, {t.kappa[0], t.kappa[1], t.kappa[2], 0}};
+  dispatch("scatter_drive", {&t.scatterTmp, &t.swy, &t.scatterSrc}, &scp, sizeof scp, groups(512, 32), groups(rows, 8));
+  dispatch("tube_h_fast", {drive, &t.xmapFast, &t.hplanes, &t.tiles}, &tp, sizeof tp, groups(t.ow, 64), groups(t.height, 16));
+  dispatch("tube_v_fast", {&t.hplanes, &t.vcoef, &t.colinv, &t.vrows, &t.scatterSrc, &t.outH}, &tp, sizeof tp, groups(t.ow, 32),
+           groups(t.oh, 8));
 }
 
 /// tube-webgl.mjs persistenceWeights(): slot i (newest first) also stands for missing ordinals up
@@ -882,9 +1051,9 @@ void CrtRendererD3D11::drawShow(int targetWidth, int targetHeight, const CrtRect
   ctx_->VSSetShader(showVs_, nullptr, 0);
   ctx_->VSSetConstantBuffers(0, 1, &params_);
   ctx_->GSSetShader(nullptr, nullptr, 0);
-  ctx_->PSSetShader(showPs_, nullptr, 0);
+  ctx_->PSSetShader(tube_->fast ? showPsH_ : showPs_, nullptr, 0);
   ctx_->PSSetConstantBuffers(0, 1, &params_);
-  ctx_->PSSetShaderResources(0, 1, &tube_->scatterX.srv);
+  ctx_->PSSetShaderResources(0, 1, tube_->fast ? &tube_->outH.srv : &tube_->scatterX.srv);
   ctx_->Draw(4, 0);
   ID3D11ShaderResourceView* none = nullptr;
   ctx_->PSSetShaderResources(0, 1, &none);
@@ -905,7 +1074,8 @@ bool CrtRendererD3D11::showToBGRA(int tw, int th, const CrtRect& dst, double cro
     showStagingSize_ = showTarget_.size;
   }
   ShowParams sp = showParams(tube_->ow, tube_->oh, tw, th, dst, cropFraction);
-  dispatch("show_kernel", {&tube_->scatterX, &showTarget_}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
+  if (tube_->fast) dispatch("show_kernel_h", {&tube_->outH, &showTarget_}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
+  else dispatch("show_kernel", {&tube_->scatterX, &showTarget_}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
   ctx_->CopyResource(showStaging_, showTarget_.buffer);
   D3D11_MAPPED_SUBRESOURCE m{};
   if (FAILED(ctx_->Map(showStaging_, 0, D3D11_MAP_READ, 0, &m))) return false;
@@ -952,13 +1122,25 @@ std::vector<float> CrtRendererD3D11::readBuffer(const Buffer& b) {
 
 std::vector<float> CrtRendererD3D11::read(Stage stage) {
   const Buffer* src = nullptr;
+  const bool fast = tube_ && tube_->fast;
   switch (stage) {
     case Stage::receiver: src = &rxOut_; break;
     case Stage::tubeInput: src = lastDrive_; break;
-    case Stage::emission: src = tube_ ? &tube_->emission : nullptr; break;
-    case Stage::output: src = hasOutput_ && tube_ ? &tube_->scatterX : nullptr; break;
+    case Stage::emission: src = tube_ && !fast ? &tube_->emission : nullptr; break;  // fast: not kept
+    case Stage::output: src = hasOutput_ && tube_ ? (fast ? &tube_->outH : &tube_->scatterX) : nullptr; break;
   }
-  return src ? readBuffer(*src) : std::vector<float>();
+  if (!src) return {};
+  std::vector<float> raw = readBuffer(*src);
+  if (!(fast && stage == Stage::output)) return raw;
+  // half4 -> float4
+  std::vector<float> out(raw.size() * 2);
+  const uint16_t* h = reinterpret_cast<const uint16_t*>(raw.data());
+  for (size_t i = 0; i < out.size(); ++i) {
+    uint32_t v = h[i], sign = (v >> 15) & 1, e = (v >> 10) & 31, m = v & 1023;
+    float f = e == 0 ? std::ldexp(float(m), -24) : e == 31 ? (m ? NAN : INFINITY) : std::ldexp(float(m | 1024), int(e) - 25);
+    out[i] = sign ? -f : f;
+  }
+  return out;
 }
 
 }  // namespace rnl

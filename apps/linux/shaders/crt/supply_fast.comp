@@ -1,0 +1,62 @@
+// supply_row + supply_state (+ prime mode), fast path (MSL supply_fast), one workgroup of 256.
+// The anode-voltage recurrence v_j = a v_(j-1) + (1 - a) target_j (a = decay) is affine with a
+// constant factor, so v_j = a^(j+1) v_start + P_j with P the a-weighted prefix sum of
+// (1 - a) target (Hillis-Steele scan); the prime mode's three passes over the frame reuse P_last.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+layout(local_size_x = 256) in;
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 means[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 now[]; };
+layout(std430, set = 0, binding = 2) writeonly buffer B2 { vec4 next[]; };
+layout(std430, set = 0, binding = 3) writeonly buffer B3 { vec4 perRow[]; };
+layout(push_constant) uniform SupplyParams { int width; int rows; float decay; float v0; float reff; float imax; float n; float relax; float reqScale; float ablFraction; float ilim; float prime; vec4 share; } P;
+shared float scan[2][256];
+shared float red[256];
+shared vec4 st;
+shared float vStart;
+void main() {
+  int t = int(gl_LocalInvocationID.x), R = P.rows;
+  float drive = t < R ? dot(means[t].rgb, P.share.xyz) : 0.0;
+  red[t] = P.imax * drive;
+  barrier();
+  for (int w = 128; w > 0; w >>= 1) {
+    if (t < w) red[t] += red[t + w];
+    barrier();
+  }
+  float req = red[0];
+  if (t == 0) {
+    if (P.prime != 0.0) {
+      float requested = req * P.reqScale;
+      st = vec4(P.v0, requested, requested > P.ilim ? P.ilim / requested : 1.0, 1.0);
+    } else st = now[0];
+  }
+  barrier();
+  vec4 s0 = st;
+  float a = P.decay;
+  int cur = 0;
+  scan[0][t] = t < R ? (1.0 - a) * (P.v0 - P.reff * P.imax * s0.z * drive) : 0.0;
+  barrier();
+  float ao = a;
+  for (int o = 1; o < 256; o <<= 1) {
+    float v = scan[cur][t];
+    if (t >= o) v += ao * scan[cur][t - o];
+    scan[1 - cur][t] = v;
+    cur = 1 - cur;
+    ao *= ao;
+    barrier();
+  }
+  if (t == 0) {
+    float aR = pow(a, float(R)), last = scan[cur][R - 1];
+    float v = s0.x;
+    if (P.prime != 0.0) for (int i = 0; i < 3; i++) v = P.v0 + (aR * v + last - P.v0) * P.relax;
+    vStart = v;
+    float vEnd = P.v0 + (aR * v + last - P.v0) * P.relax;
+    float requested = P.prime != 0.0 ? s0.y : s0.y + (req * P.reqScale - s0.y) * P.ablFraction;
+    next[0] = vec4(vEnd, requested, requested > P.ilim ? P.ilim / requested : 1.0, 1.0);
+  }
+  barrier();
+  if (t < R) {
+    float v = pow(a, float(t + 1)) * vStart + scan[cur][t], m = sqrt(P.v0 / v);
+    perRow[t] = vec4(m, s0.z * pow(v / P.v0, P.n) / m, 0.0, 1.0);
+  }
+}

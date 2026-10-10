@@ -68,13 +68,14 @@ struct Device {
 struct D3D11Backend {
   using Renderer = CrtRendererD3D11;
   Device& dev;
-  std::unique_ptr<CrtRendererD3D11> make(const CrtSettings& s, int ow, int oh) {
+  std::unique_ptr<CrtRendererD3D11> make(const CrtSettings& s, int ow, int oh, CrtQuality q) {
     auto r = std::make_unique<CrtRendererD3D11>();
     std::string err;
     if (!r->init(dev.device, dev.ctx, false, &err)) {
       std::fprintf(stderr, "%s\n", err.c_str());
       return nullptr;
     }
+    r->quality = q;
     r->configure(s, ow, oh, true);
     return r;
   }
@@ -86,7 +87,7 @@ struct D3D11Backend {
   std::vector<float> read(CrtRendererD3D11& r, CrtStage stage) { return r.read(stage); }
 };
 
-int bench(Device& dev, int ow, int oh, int frames, const std::string& preset, bool rgb) {
+int bench(Device& dev, int ow, int oh, int frames, const std::string& preset, bool rgb, CrtQuality quality) {
   CrtSettings s;
   if (preset == "off") s = crt_conformance::Conformance<D3D11Backend>::off();
   if (preset == "nogrowth") s.beamGrowth = false;
@@ -96,6 +97,7 @@ int bench(Device& dev, int ow, int oh, int frames, const std::string& preset, bo
     std::fprintf(stderr, "%s\n", err.c_str());
     return 1;
   }
+  r.quality = quality;
   auto t0 = std::chrono::steady_clock::now();
   r.configure(s, ow, oh, true);
   double planMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -151,10 +153,11 @@ int bench(Device& dev, int ow, int oh, int frames, const std::string& preset, bo
   double mean = 0;
   for (double g : gpu) mean += g;
   mean = gpu.empty() ? 0 : mean / double(gpu.size()) * 1000;
-  std::printf("{\"device\":\"%s\",\"tube\":\"%dx%d\",\"input\":\"%s\",\"settings\":\"%s\",\"frames\":%d,\"plan_ms\":%.1f,"
+  std::printf("{\"device\":\"%s\",\"tube\":\"%dx%d\",\"quality\":\"%s\",\"input\":\"%s\",\"settings\":\"%s\",\"frames\":%d,\"plan_ms\":%.1f,"
               "\"compile_ms\":%.0f,\"gpu_ms_mean\":%.3f,\"gpu_ms_p50\":%.3f,\"gpu_ms_p90\":%.3f,\"gpu_ms_max\":%.3f,\"wall_ms_mean\":%.3f,"
               "\"throughput_ms\":%.3f}\n",
-              r.deviceDescription().c_str(), r.outputWidth(), r.outputHeight(), rgb ? "rgb" : "codes", preset.c_str(), frames,
+              r.deviceDescription().c_str(), r.outputWidth(), r.outputHeight(), r.fastActive() ? "fast" : "reference",
+              rgb ? "rgb" : "codes", preset.c_str(), frames,
               planMs, r.compileSeconds() * 1000, mean, q(0.5), q(0.9), q(1.0), wall / frames * 1000, through * 1000);
   return 0;
 }
@@ -224,6 +227,7 @@ int main(int argc, char** argv) {
   std::string fixture, preset = "default";
   int bw = 0, bh = 0, frames = 120;
   bool rgb = false, warp = std::getenv("REPLAYNES_D3D11_WARP") != nullptr;
+  CrtQuality quality = CrtQuality::fast;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--fixture" && i + 1 < argc) fixture = argv[++i];
@@ -232,8 +236,10 @@ int main(int argc, char** argv) {
     else if (a == "--settings" && i + 1 < argc) preset = argv[++i];
     else if (a == "--rgb") rgb = true;
     else if (a == "--warp") warp = true;
+    else if (a == "--quality" && i + 1 < argc) quality = std::string(argv[++i]) == "reference" ? CrtQuality::reference : CrtQuality::fast;
     else {
-      std::fprintf(stderr, "usage: test_crt_d3d11 [--fixture F] [--warp] [--bench WxH --frames N --settings default|off|nogrowth --rgb]\n");
+      std::fprintf(stderr, "usage: test_crt_d3d11 [--fixture F] [--warp] [--bench WxH --frames N --settings default|off|nogrowth --rgb "
+                           "--quality fast|reference]\n");
       return 2;
     }
   }
@@ -252,7 +258,7 @@ int main(int argc, char** argv) {
     std::printf("device: %s%s, shaders compiled in %.0f ms\n", probe.deviceDescription().c_str(), dev.warp ? " WARP" : "",
                 probe.compileSeconds() * 1000);
   }
-  if (bw > 0 && bh > 0) return bench(dev, bw, bh, frames, preset, rgb);
+  if (bw > 0 && bh > 0) return bench(dev, bw, bh, frames, preset, rgb, quality);
   if (fixture.empty()) {
     fixture = exeDir() + "/crt_reference.json";
 #ifdef RN_CRT_FIXTURE

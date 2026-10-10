@@ -60,6 +60,9 @@ struct Filter {
 const Filter& filter();
 /// kernelSpectrum(): forward FFT (double) of the zero-padded FIR, float32 (re, im) pairs.
 const std::vector<float>& kernelSpectrum();
+/// Fast path: spectrum of Re(h) alone (the receiver reads only the real part of the IF output, and
+/// for a real signal Re(signal * h) = signal * Re(h)). Float32 (re, im) pairs, natural order.
+const std::vector<float>& kernelSpectrumReal();
 /// twiddles: (cos, sin)(2*pi*i/N) as float32 pairs.
 const std::vector<float>& twiddles();
 
@@ -135,6 +138,29 @@ struct Plan {
 /// {outputWidth, outputHeight, samples 4, ambientLux, beamGrowth}) as used by physical-worker.mjs.
 Plan makePlan(int lines, int outputWidth, int outputHeight, double ambientLux = 40, double beamGrowth = 1,
               int width = 512, int samples = 4, int beamReferenceWidth = 256, int beamReferenceHeight = 240);
+/// Fast path tables (CRTTube.FastPlan): horizontal taps with padding at the tile's first input
+/// (weight 0) + the input span (first, last) of every 64-column tile; vertical spot tables as
+/// contiguous input rows (first, count) per output row and parity with a cubic in the beam-current
+/// fraction per tap (fixed spot: the constant weight); 1 / colsum per (parity, column) as RGBA.
+struct FastPlan {
+  std::vector<float> xmap;      // same layout as Plan::xmap
+  std::vector<int32_t> tiles;   // [tile*2 + {first, last}]
+  int maxSpan = 0;
+  std::vector<int32_t> vrows;   // [(y*2+parity)*2 + {first, count}]
+  std::vector<float> vcoef;     // [((y*2+parity)*taps + k)*4 + {c0..c3}]
+  int taps = 1;
+  std::vector<float> colinv;    // [(parity*ow + x)*4 + c]
+};
+FastPlan fastPlan(const Plan& p);
+
+/// Fast path scatter source (CRTTube.DriveScatter): drive-domain blur radii / weights per axis and
+/// the mean emission per unit drive times the scatter fraction per phosphor.
+struct DriveScatter {
+  int rx = 0, ry = 0;
+  std::vector<float> wx, wy;
+  float kappa[3] = {0, 0, 0};
+};
+DriveScatter driveScatter(const Plan& p);
 }  // namespace tube
 
 }  // namespace rnl::crt

@@ -3,10 +3,11 @@
 //   Direct3D 11  apps/windows/src/crt_test_d3d11.cpp     (test_crt_d3d11, ctest crt_conformance_d3d11)
 // against nesterm's CPU reference models (tests/fixtures/crt/reference.json,
 // tools/crt-reference/generate-fixtures.mjs) with the same inputs and tolerances as the macOS
-// CRTConformance / CRTTests, plus determinism, the fast kernels == direct port bit identity and
-// the setup model. A Backend provides:
+// CRTConformance / CRTTests, plus determinism, the fast kernels == direct port bit identity, the
+// setup model, and the fast display path (CrtQuality::fast) against the reference path (PSNR of the
+// displayed picture on moving input, a still after a seek, determinism). A Backend provides:
 //   using Renderer = ...;  (flags noiseEnabled, disableSpotH, useFastFFT, useFastScatter)
-//   std::unique_ptr<Renderer> make(const CrtSettings&, int ow, int oh);  // tube plan built synchronously
+//   std::unique_ptr<Renderer> make(const CrtSettings&, int ow, int oh, CrtQuality);  // plan built synchronously
 //   bool run(Renderer&, const CrtInput&, uint64_t ordinal);              // encode + wait
 //   std::vector<float> read(Renderer&, CrtStage);                        // stage buffer, RGBA floats
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -188,7 +189,10 @@ class Conformance {
   using Renderer = typename Backend::Renderer;
   Conformance(Backend& backend, std::map<std::string, Case> cases) : backend_(backend), cases_(std::move(cases)) {}
 
-  std::unique_ptr<Renderer> renderer(const CrtSettings& s, int ow = 256, int oh = 192) { return backend_.make(s, ow, oh); }
+  /// The conformance checks run the reference path; the fast path is checked against it.
+  std::unique_ptr<Renderer> renderer(const CrtSettings& s, int ow = 256, int oh = 192, CrtQuality q = CrtQuality::reference) {
+    return backend_.make(s, ow, oh, q);
+  }
   bool run(Renderer& r, const CrtInput& in, uint64_t ordinal) { return backend_.run(r, in, ordinal); }
   std::vector<float> read(Renderer& r, CrtStage stage) { return backend_.read(r, stage); }
   Diff compare(const std::string& name, const std::vector<float>& got, int width) {
@@ -299,7 +303,7 @@ class Conformance {
   /// sequence frame (the still uses the last). Worst of the re-encoded still and a fresh
   /// renderer's first frame: max abs diff and worst per-channel mean difference (the tint).
   struct StillDiff { double maxAbs = INFINITY, meanAbs = INFINITY; };
-  StillDiff stillAfterSeek(const std::vector<uint32_t>& phases) {
+  StillDiff stillAfterSeek(const std::vector<uint32_t>& phases, CrtQuality q = CrtQuality::reference) {
     auto diff = [](const std::vector<float>& a, const std::vector<float>& b) {
       StillDiff d;
       if (a.empty() || a.size() != b.size()) return d;
@@ -318,8 +322,8 @@ class Conformance {
       return d;
     };
     const uint64_t last = phases.size();
-    auto r = renderer(CrtSettings());
-    auto fresh = renderer(CrtSettings());
+    auto r = renderer(CrtSettings(), 256, 192, q);
+    auto fresh = renderer(CrtSettings(), 256, 192, q);
     if (!r || !fresh || phases.empty()) return StillDiff{};
     r->noiseEnabled = false;
     fresh->noiseEnabled = false;
@@ -361,15 +365,56 @@ class Conformance {
     lastFastPathMaxAbs = maxAbs;
     return diff == 0;
   }
-  bool deterministic() {
+  bool deterministic(CrtQuality q = CrtQuality::reference) {
     std::vector<std::vector<float>> outs;
     for (int k = 0; k < 2; ++k) {
-      auto r = renderer(CrtSettings());
+      auto r = renderer(CrtSettings(), 256, 192, q);
       if (!r) return false;
       for (int f = 0; f < 4; ++f) run(*r, codes(uint32_t(f % 3)), uint64_t(f));
       outs.push_back(read(*r, CrtStage::output));
     }
     return !outs[0].empty() && outs[0].size() == outs[1].size() && std::memcmp(outs[0].data(), outs[1].data(), outs[0].size() * 4) == 0;
+  }
+  /// The fast path against the reference on the same moving sequence (the fixture codes scrolled 3
+  /// pixels and the burst phase advanced per frame): the worst frame's PSNR of the displayed
+  /// (sRGB-encoded, clamped) tube picture over the last `checked` frames (CRTConformance.fastVsReference).
+  struct Quality { double psnr = INFINITY, maxAbs = 0, meanAbs = 0; };
+  Quality fastVsReference(const CrtSettings& s, int ow = 320, int oh = 240, bool rgb = false, int frames = 10, int checked = 4) {
+    auto ref = renderer(s, ow, oh, CrtQuality::reference), fast = renderer(s, ow, oh, CrtQuality::fast);
+    Quality q;
+    if (!ref || !fast) { q.psnr = -INFINITY; return q; }
+    auto encode = [](float v) {
+      double x = std::min(std::max(double(v), 0.0), 1.0);
+      return x <= 0.0031308 ? 12.92 * x : 1.055 * std::pow(x, 1 / 2.4) - 0.055;
+    };
+    std::vector<uint16_t> c(256 * 240);
+    std::vector<uint32_t> px(256 * 240);
+    for (int f = 0; f < frames; ++f) {
+      for (int y = 0; y < 240; ++y)
+        for (int x = 0; x < 256; ++x) c[size_t(y * 256 + x)] = codes_[size_t(y * 256 + (x + 3 * f) % 256)];
+      for (size_t i = 0; i < px.size(); ++i) px[i] = 0xFF000000u | uint32_t(c[i] & 0x3F) * 0x00040201u;
+      CrtInput in;
+      if (rgb) { in.kind = CrtInputKind::rgb; in.rgb = px.data(); }
+      else { in.kind = CrtInputKind::codes; in.codes = c.data(); in.burstPhase = uint32_t(f % 3); }
+      run(*ref, in, uint64_t(f + 1));
+      run(*fast, in, uint64_t(f + 1));
+      if (f < frames - checked) continue;
+      auto a = read(*ref, CrtStage::output), b = read(*fast, CrtStage::output);
+      const size_t n = size_t(ow) * size_t(oh);
+      if (a.size() < n * 4 || b.size() < n * 4) { q.psnr = -INFINITY; return q; }
+      double se = 0, sum = 0, mx = 0;
+      for (size_t i = 0; i < n; ++i)
+        for (int ch = 0; ch < 3; ++ch) {
+          double d = std::fabs(encode(a[i * 4 + size_t(ch)]) - encode(b[i * 4 + size_t(ch)]));
+          se += d * d;
+          sum += d;
+          mx = std::max(mx, std::isnan(d) ? INFINITY : d);
+        }
+      q.psnr = std::min(q.psnr, se > 0 ? 10 * std::log10(double(n * 3) / se) : 200.0);
+      q.maxAbs = std::max(q.maxAbs, mx);
+      q.meanAbs = std::max(q.meanAbs, sum / double(n * 3));
+    }
+    return q;
   }
   const Case* find(const std::string& n) const {
     auto it = cases_.find(n);
@@ -491,6 +536,32 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
   };
   fastPaths(256, 192, "restructured kernels (shared-memory FFT/scatter, register taps) == direct port, 256x192");
   fastPaths(1144, 858, "restructured kernels == direct port, 1144x858 (Deck full screen tube)");
+  // Fast display path (CrtQuality::fast) against the reference: observed 60-75 dB; the bound
+  // (45 dB, an 8-bit display step is ~48 dB) leaves room for other GPUs' transcendental functions
+  // without letting a structural error through.
+  auto fastCheck = [&](const CrtSettings& s, int ow, int oh, bool rgb, const char* what) {
+    auto q = c.fastVsReference(s, ow, oh, rgb);
+    char b[160];
+    std::snprintf(b, sizeof b, "fast path vs reference, %s %dx%d: PSNR %.1f dB, max %.3g, mean %.3g", what, ow, oh, q.psnr, q.maxAbs,
+                  q.meanAbs);
+    checker.check(q.psnr > 45 && q.meanAbs < 2e-3, b);
+  };
+  fastCheck(CrtSettings(), 320, 240, false, "defaults");
+  fastCheck(CrtSettings(), 640, 480, false, "defaults");
+  fastCheck(Conformance<Backend>::off(), 320, 240, false, "effects off");
+  {
+    CrtSettings s;
+    s.lines = 160;
+    fastCheck(s, 320, 240, false, "160 lines");
+  }
+  fastCheck(CrtSettings(), 320, 240, true, "RGB input");
+  {
+    auto st = c.stillAfterSeek(std::vector<uint32_t>(12, 1), CrtQuality::fast);
+    char b[128];
+    std::snprintf(b, sizeof b, "fast path: still after a seek == continuous play (max %.3g)", st.maxAbs);
+    checker.check(st.maxAbs < 3e-3, b);
+  }
+  checker.check(c.deterministic(CrtQuality::fast), "fast path: same frame sequence is bit-identical");
   std::printf(checker.failures ? "%d FAILED\n" : "all passed\n", checker.failures);
   return checker.failures;
 }

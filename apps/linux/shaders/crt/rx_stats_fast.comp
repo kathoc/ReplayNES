@@ -1,0 +1,34 @@
+// receiver-webgl reduction of one row, fast path (MSL rx_stats_fast): porch clamp, burst
+// correlation, sync level (64 invocations, shared-memory reduction), plus the row's GatedAGC
+// control target: log(gain * sync) = log(gain) + log(sync), so the target clamp(log(gain) -
+// log(gain * sync)) is clamp(-log(sync)), independent of the gain: agc[y] = (target, gate, 0, 0).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer B0 { float carrier[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec2 basis[]; };
+layout(std430, set = 0, binding = 2) writeonly buffer B2 { vec4 stats[]; };
+layout(std430, set = 0, binding = 3) writeonly buffer B3 { vec4 agc[]; };
+layout(push_constant) uniform AGCParams { float lineSeconds; float attack; float release; float minGain; float maxGain; int enabled; int delay; int pad; } P;
+shared vec4 part[64];
+void main() {
+  int y = int(gl_WorkGroupID.x), t = int(gl_LocalInvocationID.x), c = y * 2728;
+  float porch = 0.0, bc = 0.0, bs = 0.0, sync = 0.0;
+  for (int n = 2172 + t; n < 2244; n += 64) porch += carrier[c + n];
+  for (int n = 2476 + t; n < 2596; n += 64) { float a = carrier[c + n]; vec2 b = basis[n]; bc += a * b.x; bs += a * b.y; }
+  for (int n = 2324 + t; n < 2364; n += 64) sync += carrier[c + n];
+  part[t] = vec4(porch, bc, bs, sync);
+  barrier();
+  for (int w = 32; w > 0; w >>= 1) {
+    if (t < w) part[t] += part[t + w];
+    barrier();
+  }
+  if (t == 0) {
+    vec4 s = part[0] / vec4(72.0, 60.0, 60.0, 40.0);
+    stats[y] = s;
+    bool gateValid = y * 2728 + 2324 - P.delay >= 0 && y * 2728 + 2363 + P.delay < 654720;
+    bool control = P.enabled != 0 && gateValid && s.w > 0.0;
+    agc[y] = vec4(control ? clamp(-log(s.w), log(P.minGain), log(P.maxGain)) : 0.0, control ? 1.0 : 0.0, 0.0, 0.0);
+  }
+}

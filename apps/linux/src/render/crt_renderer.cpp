@@ -105,6 +105,43 @@ const uint32_t tube_lit_persist[] = {
 const uint32_t show_vert[] = {
 #include "crt/show.vert.spv.inc"
 };
+// Fast path (CrtQuality::fast).
+const uint32_t rf_fast[] = {
+#include "crt/rf_fast.comp.spv.inc"
+};
+const uint32_t rx_stats_fast[] = {
+#include "crt/rx_stats_fast.comp.spv.inc"
+};
+const uint32_t rx_agc_fast[] = {
+#include "crt/rx_agc_fast.comp.spv.inc"
+};
+const uint32_t rx_decode_fast[] = {
+#include "crt/rx_decode_fast.comp.spv.inc"
+};
+const uint32_t row_mean_fast[] = {
+#include "crt/row_mean_fast.comp.spv.inc"
+};
+const uint32_t supply_fast[] = {
+#include "crt/supply_fast.comp.spv.inc"
+};
+const uint32_t drive_post_fast[] = {
+#include "crt/drive_post_fast.comp.spv.inc"
+};
+const uint32_t scatter_drive[] = {
+#include "crt/scatter_drive.comp.spv.inc"
+};
+const uint32_t tube_h_fast[] = {
+#include "crt/tube_h_fast.comp.spv.inc"
+};
+const uint32_t tube_v_fast[] = {
+#include "crt/tube_v_fast.comp.spv.inc"
+};
+const uint32_t show_kernel_h[] = {
+#include "crt/show_kernel_h.comp.spv.inc"
+};
+const uint32_t show_h_frag[] = {
+#include "crt/show_h.frag.spv.inc"
+};
 const uint32_t show_frag[] = {
 #include "crt/show.frag.spv.inc"
 };
@@ -126,11 +163,15 @@ const KernelSource kKernels[] = {
     RN_K(tube_scatter, 32, 8),    RN_K(tube_scatter_x16, 32, 8), RN_K(tube_scatter_y16, 32, 8), RN_K(tube_mix, 32, 8),
     RN_K(tube_lit, 32, 8),        RN_K(tube_persist, 32, 8),    RN_K(show_kernel, 16, 16),  RN_K(tube_scatter_tx, 256, 1),
     RN_K(tube_h_rows, 64, 1),       RN_K(tube_lit_persist, 32, 8),
+    // Fast path.
+    RN_K(rf_fast, 512, 1),        RN_K(rx_stats_fast, 64, 1),   RN_K(rx_agc_fast, 256, 1),  RN_K(rx_decode_fast, 256, 1),
+    RN_K(row_mean_fast, 128, 1),  RN_K(supply_fast, 256, 1),    RN_K(drive_post_fast, 512, 1), RN_K(scatter_drive, 32, 8),
+    RN_K(tube_h_fast, 384, 1),    RN_K(tube_v_fast, 32, 8),     RN_K(show_kernel_h, 16, 16),
 };
 #undef RN_K
 
 constexpr uint32_t kPushBytes = 64;
-constexpr uint32_t kBindings = 6;
+constexpr uint32_t kBindings = 8;
 const char* const kDeviceExtensions[] = {VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME};
 
 // Push-constant blocks (same layout as the GLSL declarations).
@@ -150,7 +191,16 @@ struct TubeParams {
   int32_t radius, depth, extra, pad1, pad2;
 };
 struct ShowParams { float dst[4]; float src[4]; int32_t ow, oh, tw, th; float ndc[4]; };
-static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64, "push constant layout");
+// Fast path.
+struct PostParams { int32_t supply, spot; float k1; int32_t persistence, newSlot, depth, rows, rx; };
+struct ScatterParams { int32_t rows, ry, pad0, pad1; float kappa[4]; };
+struct FastTubeParams {
+  int32_t height, ow, oh, xCount, gCount, hStride;
+  float gain, keep;
+  float amb[4], light[4];
+};
+static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64 && sizeof(FastTubeParams) == 64,
+              "push constant layout");
 
 uint32_t groups(int n, uint32_t local) { return uint32_t((std::max(0, n) + int(local) - 1) / int(local)); }
 }  // namespace
@@ -257,6 +307,9 @@ bool CrtRenderer::init(const CrtVulkanContext& ctx, VkRenderPass showPass, std::
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(ctx.physicalDevice, &props);
   sharedFFT_ = props.limits.maxComputeSharedMemorySize >= 4096 * 8 && props.limits.maxComputeWorkGroupInvocations >= 512;
+  // tube_h_fast stages up to 30.9 KB in shared memory; rf_fast / drive_post_fast use 512 invocations.
+  fastSupported_ = props.limits.maxComputeSharedMemorySize >= 32768 && props.limits.maxComputeWorkGroupInvocations >= 512 &&
+                   props.limits.maxComputeWorkGroupSize[0] >= 512;
   timestampPeriod_ = props.limits.timestampPeriod;
 
   // Layouts: one push-descriptor set of storage buffers + 64 bytes of push constants.
@@ -366,8 +419,13 @@ bool CrtRenderer::init(const CrtVulkanContext& ctx, VkRenderPass showPass, std::
     gp.layout = showLayout_;
     gp.renderPass = showPass;
     VkResult r = vkCreateGraphicsPipelines(ctx.device, VK_NULL_HANDLE, 1, &gp, nullptr, &showPipeline_);
+    // The fast path's half-float output.
+    VkShaderModule fsH = module(spv::show_h_frag, sizeof(spv::show_h_frag));
+    st[1].module = fsH;
+    if (r == VK_SUCCESS) r = vkCreateGraphicsPipelines(ctx.device, VK_NULL_HANDLE, 1, &gp, nullptr, &showPipelineH_);
     vkDestroyShaderModule(ctx.device, vs, nullptr);
     vkDestroyShaderModule(ctx.device, fs, nullptr);
+    vkDestroyShaderModule(ctx.device, fsH, nullptr);
     if (r != VK_SUCCESS) return fail("show pipeline");
   }
 
@@ -399,6 +457,9 @@ bool CrtRenderer::init(const CrtVulkanContext& ctx, VkRenderPass showPass, std::
     basis[size_t(i) * 2] = float(std::cos(2 * 3.141592653589793 * double(i) / 12));
     basis[size_t(i) * 2 + 1] = float(std::sin(2 * 3.141592653589793 * double(i) / 12));
   }
+  ok = ok && createBuffer(&carrierReal_, VkDeviceSize(crt::rf::kMaxSamples) * 4, false) &&
+       uploadConst(&kernelSpecReal_, crt::rf::kernelSpectrumReal().data(), crt::rf::kernelSpectrumReal().size() * 4) &&
+       createBuffer(&agcRows_, 240 * 16, false);
   ok = ok && uploadConst(&basis_, basis.data(), basis.size() * 4) && createBuffer(&carrier_, 2728 * 240 * 8, false) &&
        createBuffer(&stats_, 240 * 16, false) && createBuffer(&gains_, 240 * 4, false) && createBuffer(&agcState_, 16, false) &&
        createBuffer(&prepared_, 682 * 240 * 16, false) && createBuffer(&rxOut_, 512 * 240 * 16, false) &&
@@ -428,13 +489,15 @@ void CrtRenderer::shutdown() {
   retired_.clear();
   for (Buffer* b : {&ping_, &pong_, &kernelSpec_, &twiddles_, &volts_, &basis_, &carrier_, &stats_, &gains_, &agcState_, &prepared_,
                     &rxOut_, &driveIn_, &rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0],
-                    &supplyState_[1]})
+                    &supplyState_[1], &carrierReal_, &kernelSpecReal_, &agcRows_})
     destroyBuffer(b);
   for (int i = 0; i < kInputSlots; ++i)
     for (Buffer* b : {&codeBufs_[i], &phaseBufs_[i], &rgbBufs_[i], &weightBufs_[i]}) destroyBuffer(b);
   for (auto& [name, k] : kernels_) vkDestroyPipeline(ctx_.device, k.pipeline, nullptr);
   kernels_.clear();
   if (showPipeline_) vkDestroyPipeline(ctx_.device, showPipeline_, nullptr);
+  if (showPipelineH_) vkDestroyPipeline(ctx_.device, showPipelineH_, nullptr);
+  showPipelineH_ = VK_NULL_HANDLE;
   if (layout_) vkDestroyPipelineLayout(ctx_.device, layout_, nullptr);
   if (showLayout_) vkDestroyPipelineLayout(ctx_.device, showLayout_, nullptr);
   if (setLayout_) vkDestroyDescriptorSetLayout(ctx_.device, setLayout_, nullptr);
@@ -457,7 +520,8 @@ void CrtRenderer::configure(const CrtSettings& newSettings, int outputWidth, int
   CrtSettings s = newSettings.sanitized();
   if (s.lines != settings_.lines) stageLines_ = 0;  // raster/supply/spot rebuilt (nesterm: rasterChanged)
   settings_ = s;
-  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux};
+  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux,
+              quality == CrtQuality::fast && fastSupported_ ? CrtQuality::fast : CrtQuality::reference};
   if (synchronous) {
     if (!tube_ || !(tube_->key == key)) {
       auto t = makeTube(key);
@@ -534,6 +598,31 @@ std::unique_ptr<CrtRenderer::Tube> CrtRenderer::makeTube(const TubeKey& k) {
   t->growth = plan.growth;
   const std::vector<float>& vmap = plan.growth ? plan.gmap : plan.ymap;
   const VkDeviceSize img = VkDeviceSize(t->ow) * t->oh * 16;
+  if (k.quality == CrtQuality::fast) {
+    crt::tube::FastPlan fp = crt::tube::fastPlan(plan);
+    if (plan.xCount <= 24 && fp.maxSpan <= 160) {
+      crt::tube::DriveScatter sc = crt::tube::driveScatter(plan);
+      t->fast = true;
+      t->fastTaps = fp.taps;
+      t->hStride = fp.maxSpan;
+      t->srx = sc.rx;
+      t->sry = sc.ry;
+      for (int c = 0; c < 3; ++c) t->kappa[c] = sc.kappa[c];
+      const VkDeviceSize drive = VkDeviceSize(512) * plan.height * 8;
+      bool ok = uploadConst(&t->xmapFast, fp.xmap.data(), fp.xmap.size() * 4) && uploadConst(&t->tiles, fp.tiles.data(), fp.tiles.size() * 4) &&
+                uploadConst(&t->vrows, fp.vrows.data(), fp.vrows.size() * 4) && uploadConst(&t->vcoef, fp.vcoef.data(), fp.vcoef.size() * 4) &&
+                uploadConst(&t->colinv, fp.colinv.data(), fp.colinv.size() * 4) && uploadConst(&t->swx, sc.wx.data(), sc.wx.size() * 4) &&
+                uploadConst(&t->swy, sc.wy.data(), sc.wy.size() * 4) &&
+                createBuffer(&t->hplanes, VkDeviceSize(t->ow) * t->height * 2 * 16, false) &&
+                createBuffer(&t->outH, VkDeviceSize(t->ow) * t->oh * 8, false) && createBuffer(&t->scatterTmp, drive, false) &&
+                createBuffer(&t->scatterSrc, drive, false);
+      if (!ok) {
+        destroyTube(std::move(t));
+        return nullptr;
+      }
+      return t;
+    }
+  }
   bool ok = uploadConst(&t->xmap, plan.xmap.data(), plan.xmap.size() * 4) && uploadConst(&t->vmap, vmap.data(), vmap.size() * 4) &&
             uploadConst(&t->colsum, plan.colsum.data(), plan.colsum.size() * 4) &&
             uploadConst(&t->kx, plan.kernel[0].data(), plan.kernel[0].size() * 4) &&
@@ -551,7 +640,8 @@ std::unique_ptr<CrtRenderer::Tube> CrtRenderer::makeTube(const TubeKey& k) {
 void CrtRenderer::destroyTube(std::unique_ptr<Tube> t) {
   if (!t) return;
   for (Buffer* b : {&t->xmap, &t->vmap, &t->colsum, &t->kx, &t->ky, &t->ambient, &t->horizontal, &t->emission, &t->scatterX,
-                    &t->scatterY, &t->ring})
+                    &t->scatterY, &t->ring, &t->xmapFast, &t->tiles, &t->vrows, &t->vcoef, &t->colinv, &t->swx, &t->swy, &t->hplanes,
+                    &t->outH, &t->scatterTmp, &t->scatterSrc})
     destroyBuffer(b);
 }
 
@@ -600,6 +690,7 @@ std::string CrtRenderer::planInfo() const {
 }
 
 int CrtRenderer::outputWidth() const { return tube_ ? tube_->ow : 0; }
+bool CrtRenderer::fastActive() const { return tube_ && tube_->fast; }
 int CrtRenderer::outputHeight() const { return tube_ ? tube_->oh : 0; }
 
 // ------------------------------------------------------------------ recording helpers
@@ -680,8 +771,10 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   int wantPersistence = settings_.persistence ? 1 : 0;
   if (wantPersistence != appliedPersistence_) {
     // tube.setPersistence(): allocate the ring on demand; always restarts history.
+    // Reference: half4 tube-output slots. Fast: half4 drive slots (512 x lines).
     if (wantPersistence && !t.ring.buffer &&
-        !createBuffer(&t.ring, VkDeviceSize(crt::phosphor::depth()) * t.ow * t.oh * 8, false))
+        !createBuffer(&t.ring, VkDeviceSize(crt::phosphor::depth()) * (t.fast ? VkDeviceSize(512) * t.height : VkDeviceSize(t.ow) * t.oh) * 8,
+                      false))
       return false;
     // Zero like a fresh WebGL texture: unused slots have weight 0, and 0 * garbage could be NaN.
     if (wantPersistence && !t.ringCleared) ringClearPending = true;
@@ -741,9 +834,27 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   }
   barrier(cmd);
   if (profiling_) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, profileQueries_, 0);
+  auto finish = [&] {
+    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         1, &mb, 0, nullptr, 0, nullptr);
+    if (pair >= 0) {
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries_, uint32_t(pair * 2 + 1));
+      queryPending_.push_back(pair);
+    }
+    hasOutput_ = true;
+    return true;
+  };
+  usedCodes_ = input.kind == InputKind::codes;
+  if (t.fast) {
+    encodeFast(cmd, input, ordinal, ord, slot);
+    return finish();
+  }
 
   const Buffer* drive = nullptr;
-  usedCodes_ = input.kind == InputKind::codes;
   if (input.kind == InputKind::codes) {
     std::memcpy(codeBufs_[slot].map, input.codes, 256 * 240 * 2);
     auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
@@ -913,20 +1024,115 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   } else {
     dispatch(cmd, "tube_mix", {&t.emission, &t.scatterY, &t.ambient, out}, &tp, sizeof tp, groups(ow, 32), groups(oh, 8));
   }
-  {
-    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                         1, &mb, 0, nullptr, 0, nullptr);
+  return finish();
+}
+
+void CrtRenderer::encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t ordinal, int64_t ord, int slot) {
+  Tube& t = *tube_;
+  const int rows = settings_.lines;
+  const Buffer* drive = nullptr;
+  bool meansReady = false;  // supplyMeans_ already holds this frame's row means (rx_decode_fast)
+  if (input.kind == InputKind::codes) {
+    std::memcpy(codeBufs_[slot].map, input.codes, 256 * 240 * 2);
+    auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
+    std::memcpy(phaseBufs_[slot].map, ph.data(), sizeof(ph));
+    double sigma = crt::rf::noiseSigma(crt::rf::carrierToNoiseDb(settings_.antennaDbuv), 1);
+    RFParams rp{crt::rf::kHop, crt::rf::kOverlap, crt::rf::filter().delaySamples, crt::rf::kBlocks,
+                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), 1.0f,
+                noiseEnabled ? float(sigma) : 0.0f, crt::rf::noiseKey(1, ordinal)};
+    dispatch(cmd, "rf_fast", {&carrierReal_, &codeBufs_[slot], &phaseBufs_[slot], &volts_, &twiddles_, &kernelSpecReal_}, &rp, sizeof rp,
+             uint32_t((crt::rf::kBlocks + 1) / 2));
+    AGCParams ap{float(double(crt::composite::kLineSamples) / crt::rf::sampleRateHz()), float(crt::agc::kAttackSeconds),
+                 float(crt::agc::kReleaseSeconds), float(crt::agc::kMinGain), float(crt::agc::kMaxGain), 1,
+                 crt::rf::filter().delaySamples, 0};
+    dispatch(cmd, "rx_stats_fast", {&carrierReal_, &basis_, &stats_, &agcRows_}, &ap, sizeof ap, 240);
+    dispatch(cmd, "rx_agc_fast", {&agcRows_, &gains_, &agcState_}, &ap, sizeof ap, 1);
+    dispatch(cmd, "rx_decode_fast", {&carrierReal_, &basis_, &stats_, &gains_, &rxOut_, &supplyMeans_}, nullptr, 0, 240);
+    drive = &rxOut_;
+    meansReady = rows == 240;
+  } else if (input.kind == InputKind::rgb) {
+    std::memcpy(rgbBufs_[slot].map, input.rgb, 256 * 240 * 4);
+    RasterParams rp2{rows, 1, 1, 0};
+    dispatch(cmd, "raster_area", {&rxOut_, &rgbBufs_[slot], &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
+    drive = &rasterOut_;
+  } else {
+    std::memcpy(driveIn_.map, input.drive, 512 * 240 * 16);
+    drive = &driveIn_;
   }
-  if (pair >= 0) {
-    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries_, uint32_t(pair * 2 + 1));
-    queryPending_.push_back(pair);
+  if (input.kind != InputKind::rgb && rows != 240) {
+    RasterParams rp2{rows, 0, 0, 0};
+    dispatch(cmd, "raster_area", {drive, drive, &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
+    drive = &rasterOut_;
   }
-  hasOutput_ = true;
-  return true;
+  const Buffer* src = drive;
+  const bool spot = settings_.beamGrowth && !disableSpotH;
+  if (settings_.supply) {
+    namespace f = crt::supply;
+    double line = f::kLineS * f::kVisibleLines / double(rows);
+    SupplyParams sp{512,
+                    rows,
+                    float(std::exp(-line / f::kTauS)),
+                    float(f::kV0),
+                    float(f::kReff),
+                    float(f::kImax),
+                    float(f::kN),
+                    float(std::exp(-(f::kTotalLines - f::kVisibleLines) * f::kLineS / f::kTauS)),
+                    float(f::kVisibleLines / f::kTotalLines / double(rows)),
+                    float(-std::expm1(-f::kFrameS / f::kTauAblS)),
+                    float(f::kIlim),
+                    primeSupply_ ? 1.0f : 0.0f,
+                    {float(f::kShare[0]), float(f::kShare[1]), float(f::kShare[2]), 0}};
+    if (!meansReady) dispatch(cmd, "row_mean_fast", {src, &supplyMeans_}, nullptr, 0, uint32_t(rows));
+    dispatch(cmd, "supply_fast", {&supplyMeans_, &supplyState_[supplyCurrent_], &supplyState_[1 - supplyCurrent_], &supplyRow_}, &sp,
+             sizeof sp, 1);
+    supplyCurrent_ = 1 - supplyCurrent_;
+    primeSupply_ = false;
+  }
+  const bool persist = settings_.persistence && t.ring.buffer;
+  PostParams pp{settings_.supply ? 1 : 0, spot ? 1 : 0, float(crt::tube::extraSigmaSamples(1, 1, 512)), 0, 0,
+                crt::phosphor::depth(), rows, t.srx};
+  std::vector<float> w(size_t(crt::phosphor::depth()) * 4, 0.0f);
+  if (persist) {
+    const int depth = crt::phosphor::depth();
+    if (!slots_.empty() && ord <= slots_.front().ordinal) slots_.clear();
+    std::vector<Slot> kept;
+    for (const Slot& s : slots_) {
+      int64_t newer = kept.empty() ? ord : kept.back().ordinal;
+      if (ord - newer + 1 <= int64_t(depth - 1)) kept.push_back(s);
+      else break;
+    }
+    slots_ = kept;
+    int r = 0;
+    for (;;) {
+      bool used = false;
+      for (const Slot& s : kept) used |= s.ring == r;
+      if (!used) break;
+      ++r;
+    }
+    slots_.insert(slots_.begin(), Slot{r, ord});
+    w = persistenceWeights();
+    pp.persistence = 1;
+    pp.newSlot = r;
+  }
+  std::memcpy(weightBufs_[slot].map, w.data(), w.size() * 4);
+  const Buffer* ring = persist ? &t.ring : &t.scatterSrc;  // unused without persistence
+  dispatch(cmd, "drive_post_fast", {src, &supplyRow_, &spotOut_, ring, &weightBufs_[slot], &t.swx, &t.scatterTmp}, &pp, sizeof pp,
+           uint32_t(rows));
+  drive = &spotOut_;
+  lastDrive_ = drive;
+
+  // Tube.
+  const double lightNorm = std::sqrt(crt::tube::kLightX * crt::tube::kLightX + crt::tube::kLightY * crt::tube::kLightY +
+                                     crt::tube::kLightZ * crt::tube::kLightZ);
+  FastTubeParams tp{t.height, t.ow, t.oh, t.xCount, t.fastTaps, t.hStride, float(t.gain), float(1 - t.scatterFraction),
+                    {float(crt::tube::kAlbedo * t.key.ambient / (3.141592653589793 * crt::tube::kReferenceWhiteCdM2)),
+                     float(crt::tube::kDiffuseFraction), float(crt::tube::kNormalSlopeX), float(crt::tube::kNormalSlopeY)},
+                    {float(crt::tube::kLightX / lightNorm), float(crt::tube::kLightY / lightNorm), float(crt::tube::kLightZ / lightNorm), 0}};
+  ScatterParams scp{rows, t.sry, 0, 0, {t.kappa[0], t.kappa[1], t.kappa[2], 0}};
+  dispatch(cmd, "scatter_drive", {&t.scatterTmp, &t.swy, &t.scatterSrc}, &scp, sizeof scp, groups(512, 32), groups(rows, 8));
+  dispatch(cmd, "tube_h_fast", {drive, &t.xmapFast, &t.hplanes, &t.tiles}, &tp, sizeof tp, groups(t.ow, 64), groups(t.height, 16));
+  dispatch(cmd, "tube_v_fast", {&t.hplanes, &t.vcoef, &t.colinv, &t.vrows, &t.scatterSrc, &t.outH}, &tp, sizeof tp, groups(t.ow, 32),
+           groups(t.oh, 8));
 }
 
 /// tube-webgl.mjs persistenceWeights(): slot i (newest first) also stands for missing ordinals up
@@ -1004,14 +1210,14 @@ ShowParams showParams(int ow, int oh, int tw, int th, const CrtRect& dst, double
 void CrtRenderer::encodeShow(VkCommandBuffer cmd, int targetWidth, int targetHeight, const CrtRect& dst, double cropFraction) {
   if (!showPipeline_ || !tube_ || !hasOutput_ || targetWidth <= 0 || targetHeight <= 0) return;
   ShowParams sp = showParams(tube_->ow, tube_->oh, targetWidth, targetHeight, dst, cropFraction);
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, showPipeline_);
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tube_->fast ? showPipelineH_ : showPipeline_);
   VkViewport v{0, 0, float(targetWidth), float(targetHeight), 0.f, 1.f};
   vkCmdSetViewport(cmd, 0, 1, &v);
   int x0 = std::max(0, int(std::floor(dst.x))), y0 = std::max(0, int(std::floor(dst.y)));
   int x1 = std::min(targetWidth, int(std::ceil(dst.x + dst.w))), y1 = std::min(targetHeight, int(std::ceil(dst.y + dst.h)));
   VkRect2D sc{{x0, y0}, {uint32_t(std::max(0, x1 - x0)), uint32_t(std::max(0, y1 - y0))}};
   vkCmdSetScissor(cmd, 0, 1, &sc);
-  VkDescriptorBufferInfo info{tube_->scatterX.buffer, 0, VK_WHOLE_SIZE};
+  VkDescriptorBufferInfo info{tube_->fast ? tube_->outH.buffer : tube_->scatterX.buffer, 0, VK_WHOLE_SIZE};
   VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
   w.dstBinding = 0;
   w.descriptorCount = 1;
@@ -1027,7 +1233,8 @@ void CrtRenderer::encodeShowToBuffer(VkCommandBuffer cmd, VkBuffer target, int t
   ShowParams sp = showParams(tube_->ow, tube_->oh, tw, th, dst, cropFraction);
   Buffer tb;
   tb.buffer = target;
-  dispatch(cmd, "show_kernel", {&tube_->scatterX, &tb}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
+  if (tube_->fast) dispatch(cmd, "show_kernel_h", {&tube_->outH, &tb}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
+  else dispatch(cmd, "show_kernel", {&tube_->scatterX, &tb}, &sp, sizeof sp, groups(tw, 16), groups(th, 16));
 }
 
 // ------------------------------------------------------------------ synchronous helpers (tests / export)
@@ -1059,11 +1266,12 @@ bool CrtRenderer::runSync(const std::function<void(VkCommandBuffer)>& fn) {
 
 std::vector<float> CrtRenderer::read(Stage stage) {
   const Buffer* src = nullptr;
+  const bool fast = tube_ && tube_->fast;
   switch (stage) {
     case Stage::receiver: src = &rxOut_; break;
     case Stage::tubeInput: src = lastDrive_; break;
-    case Stage::emission: src = tube_ ? &tube_->emission : nullptr; break;
-    case Stage::output: src = hasOutput_ && tube_ ? &tube_->scatterX : nullptr; break;
+    case Stage::emission: src = tube_ && !fast ? &tube_->emission : nullptr; break;  // fast: not kept
+    case Stage::output: src = hasOutput_ && tube_ ? (fast ? &tube_->outH : &tube_->scatterX) : nullptr; break;
   }
   if (!src || !src->buffer) return {};
   Buffer staging;
@@ -1074,7 +1282,16 @@ std::vector<float> CrtRenderer::read(Stage stage) {
     vkCmdCopyBuffer(cmd, src->buffer, staging.buffer, 1, &c);
   });
   std::vector<float> out;
-  if (ok) {
+  if (ok && fast && stage == Stage::output) {
+    // half4 -> float4
+    const uint16_t* h = static_cast<const uint16_t*>(staging.map);
+    out.resize(size_t(src->size / 2));
+    for (size_t i = 0; i < out.size(); ++i) {
+      uint32_t v = h[i], sign = (v >> 15) & 1, e = (v >> 10) & 31, m = v & 1023;
+      float f = e == 0 ? std::ldexp(float(m), -24) : e == 31 ? (m ? NAN : INFINITY) : std::ldexp(float(m | 1024), int(e) - 25);
+      out[i] = sign ? -f : f;
+    }
+  } else if (ok) {
     out.resize(size_t(src->size / 4));
     std::memcpy(out.data(), staging.map, size_t(src->size));
   }

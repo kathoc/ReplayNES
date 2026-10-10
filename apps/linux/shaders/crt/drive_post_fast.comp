@@ -1,0 +1,66 @@
+// supply_resample + spot_h + phosphor persistence of one row, fast path (MSL drive_post_fast; 512
+// invocations). Spot: tap k of source sample j weighs e_|k| / sum with e_k = e1^(k^2), s from the
+// source's own drive. Persistence in the drive domain: the frame's drive goes into its ring slot
+// (half4) and the tube is driven by the persistence-weighted sum of the slots. Also the x pass of
+// the scatter source on the result (half4).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 512) in;
+#include "fast_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { vec4 perRow[]; };
+layout(std430, set = 0, binding = 2) writeonly buffer B2 { vec4 outp[]; };
+layout(std430, set = 0, binding = 3) buffer B3 { uvec2 ring[]; };
+layout(std430, set = 0, binding = 4) readonly buffer B4 { vec4 w[]; };
+layout(std430, set = 0, binding = 5) readonly buffer B5 { float wx[]; };
+layout(std430, set = 0, binding = 6) writeonly buffer B6 { uvec2 blurX[]; };
+layout(push_constant) uniform PostParams { int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx; } P;
+shared float rowv[3 * 512];
+vec3 postResample(int py, int x, vec2 k) {
+  if (x < 0 || x >= 512) return vec3(0.0);
+  if (P.supply == 0) return src[py * 512 + x].rgb;
+  float sx = 256.0 + (float(x) + 0.5 - 256.0) / k.x - 0.5; int x0 = int(floor(sx)); float t = sx - float(x0);
+  vec3 a = (x0 >= 0 && x0 < 512) ? src[py * 512 + x0].rgb : vec3(0.0);
+  vec3 b = (x0 + 1 >= 0 && x0 + 1 < 512) ? src[py * 512 + x0 + 1].rgb : vec3(0.0);
+  return (a * (1.0 - t) + b * t) * k.y;
+}
+void main() {
+  int px = int(gl_LocalInvocationID.x), py = int(gl_WorkGroupID.x), i = py * 512 + px;
+  vec2 k = P.supply != 0 ? perRow[py].xy : vec2(1.0);
+  vec3 v;
+  if (P.spot != 0) {
+    v = vec3(0.0);
+    for (int d = -3; d <= 3; d++) {
+      int j = px - d;
+      if (j < 0 || j >= 512) continue;
+      vec3 u = postResample(py, j, k);
+      vec3 sg = P.k1 * sqrt(max(u, 0.0));
+      vec3 e1 = exp(-0.5 / max(sg * sg, vec3(1e-30)));
+      vec3 e2 = e1 * e1; e2 *= e2; vec3 e3 = e2 * e2 * e1;
+      int ad = abs(d);
+      vec3 ek = ad == 0 ? vec3(1.0) : (ad == 1 ? e1 : (ad == 2 ? e2 : e3));
+      vec3 wk = ek / (1.0 + 2.0 * (e1 + e2 + e3));
+      wk = mix(wk, vec3(ad == 0 ? 1.0 : 0.0), lessThanEqual(sg, vec3(1e-6)));
+      v += u * wk;
+    }
+  } else v = postResample(py, px, k);
+  if (P.persistence != 0) {
+    int area = 512 * P.rows;
+    ring[P.newSlot * area + i] = packH4(vec4(v, 1.0));
+    vec3 eff = v * w[P.newSlot].rgb;
+    for (int s = 0; s < P.depth; s++) {
+      vec3 q = w[s].rgb;
+      if (s == P.newSlot || all(equal(q, vec3(0.0)))) continue;
+      eff += unpackH4(ring[s * area + i]).rgb * q;
+    }
+    v = eff;
+  }
+  outp[i] = vec4(v, 1.0);
+  rowv[px] = v.r; rowv[512 + px] = v.g; rowv[1024 + px] = v.b;
+  barrier();
+  vec3 s = vec3(0.0);
+  int lo = max(-P.rx, -px), hi = min(P.rx, 511 - px);
+  for (int d = lo; d <= hi; d++) { int j = px + d; s += vec3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + P.rx]; }
+  blurX[i] = packH4(vec4(s, 1.0));
+}

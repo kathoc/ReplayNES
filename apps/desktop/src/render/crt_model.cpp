@@ -96,36 +96,45 @@ const Filter& filter() {
   return f;
 }
 
-const std::vector<float>& kernelSpectrum() {
-  static const std::vector<float> spec = [] {
-    const int n = kFFTSize;
-    std::vector<double> r(static_cast<size_t>(n), 0.0), q(static_cast<size_t>(n), 0.0);
-    const Filter& f = filter();
-    for (size_t i = 0; i < f.real.size(); ++i) { r[i] = f.real[i]; q[i] = f.imag[i]; }
-    int j = 0;
-    for (int i = 1; i < n; ++i) {
-      int bit = n >> 1;
-      while (j & bit) { j ^= bit; bit >>= 1; }
-      j ^= bit;
-      if (i < j) { std::swap(r[size_t(i)], r[size_t(j)]); std::swap(q[size_t(i)], q[size_t(j)]); }
-    }
-    for (int w = 2; w <= n; w *= 2) {
-      for (int a = 0; a < n; a += w) {
-        for (int k = 0; k < w / 2; ++k) {
-          double c = std::cos(-2 * kPi * double(k) / double(w)), s = std::sin(-2 * kPi * double(k) / double(w));
-          size_t b = size_t(a + k + w / 2), kk = size_t(a + k);
-          double tr = r[b] * c - q[b] * s, ti = r[b] * s + q[b] * c;
-          r[b] = r[kk] - tr;
-          q[b] = q[kk] - ti;
-          r[kk] += tr;
-          q[kk] += ti;
-        }
+namespace {
+// Forward FFT (double) of the zero-padded FIR (real, imag), float32 (re, im) pairs.
+std::vector<float> spectrumOf(const std::vector<double>& real, const std::vector<double>& imag) {
+  const int n = kFFTSize;
+  std::vector<double> r(static_cast<size_t>(n), 0.0), q(static_cast<size_t>(n), 0.0);
+  for (size_t i = 0; i < real.size(); ++i) { r[i] = real[i]; q[i] = imag[i]; }
+  int j = 0;
+  for (int i = 1; i < n; ++i) {
+    int bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) { std::swap(r[size_t(i)], r[size_t(j)]); std::swap(q[size_t(i)], q[size_t(j)]); }
+  }
+  for (int w = 2; w <= n; w *= 2) {
+    for (int a = 0; a < n; a += w) {
+      for (int k = 0; k < w / 2; ++k) {
+        double c = std::cos(-2 * kPi * double(k) / double(w)), s = std::sin(-2 * kPi * double(k) / double(w));
+        size_t b = size_t(a + k + w / 2), kk = size_t(a + k);
+        double tr = r[b] * c - q[b] * s, ti = r[b] * s + q[b] * c;
+        r[b] = r[kk] - tr;
+        q[b] = q[kk] - ti;
+        r[kk] += tr;
+        q[kk] += ti;
       }
     }
-    std::vector<float> out(static_cast<size_t>(n) * 2);
-    for (int i = 0; i < n; ++i) { out[size_t(i) * 2] = float(r[size_t(i)]); out[size_t(i) * 2 + 1] = float(q[size_t(i)]); }
-    return out;
-  }();
+  }
+  std::vector<float> out(static_cast<size_t>(n) * 2);
+  for (int i = 0; i < n; ++i) { out[size_t(i) * 2] = float(r[size_t(i)]); out[size_t(i) * 2 + 1] = float(q[size_t(i)]); }
+  return out;
+}
+}  // namespace
+
+const std::vector<float>& kernelSpectrum() {
+  static const std::vector<float> spec = spectrumOf(filter().real, filter().imag);
+  return spec;
+}
+
+const std::vector<float>& kernelSpectrumReal() {
+  static const std::vector<float> spec = spectrumOf(filter().real, std::vector<double>(filter().real.size(), 0.0));
   return spec;
 }
 
@@ -449,6 +458,168 @@ Plan makePlan(int lines, int ow, int oh, double ambientLux, double beamGrowth, i
   plan.scatterFraction = kScatterFraction;
   return plan;
 }
+namespace {
+// Least-squares cubic through (l / (n - 1), y[l]) (CRTTube.cubicFit).
+std::array<float, 4> cubicFit(const std::vector<double>& y) {
+  const size_t n = y.size();
+  if (n < 2) return {float(n ? y[0] : 0.0), 0, 0, 0};
+  double a[4][5] = {};
+  for (size_t i = 0; i < n; ++i) {
+    double u = double(i) / double(n - 1);
+    double p[4] = {1, u, u * u, u * u * u};
+    for (int r = 0; r < 4; ++r) {
+      for (int c = 0; c < 4; ++c) a[r][c] += p[r] * p[c];
+      a[r][4] += p[r] * y[i];
+    }
+  }
+  for (int c = 0; c < 4; ++c) {
+    int piv = c;
+    for (int r = c; r < 4; ++r)
+      if (std::fabs(a[r][c]) > std::fabs(a[piv][c])) piv = r;
+    for (int k = 0; k < 5; ++k) std::swap(a[c][k], a[piv][k]);
+    for (int r = 0; r < 4; ++r) {
+      if (r == c) continue;
+      double f = a[r][c] / a[c][c];
+      for (int k = c; k < 5; ++k) a[r][k] -= f * a[c][k];
+    }
+  }
+  return {float(a[0][4] / a[0][0]), float(a[1][4] / a[1][1]), float(a[2][4] / a[2][2]), float(a[3][4] / a[3][3])};
+}
+}  // namespace
+
+FastPlan fastPlan(const Plan& p) {
+  FastPlan f;
+  const int ow = p.outputWidth, oh = p.outputHeight, n = p.xCount;
+  f.xmap = p.xmap;
+  auto at = [&](int x, int b, int k) { return size_t(((x * 6 + b) * n + k) * 2); };
+  for (int tile = 0; tile < (ow + 63) / 64; ++tile) {
+    const int x0 = tile * 64, x1 = std::min(ow, tile * 64 + 64);
+    int lo = INT32_MAX, hi = INT32_MIN;
+    for (int x = x0; x < x1; ++x)
+      for (int b = 0; b < 6; ++b)
+        for (int k = 0; k < n; ++k)
+          if (f.xmap[at(x, b, k) + 1] != 0) { lo = std::min(lo, int(f.xmap[at(x, b, k)])); hi = std::max(hi, int(f.xmap[at(x, b, k)])); }
+    if (lo > hi) lo = hi = 0;
+    for (int x = x0; x < x1; ++x)
+      for (int b = 0; b < 6; ++b)
+        for (int k = 0; k < n; ++k)
+          if (f.xmap[at(x, b, k) + 1] == 0) f.xmap[at(x, b, k)] = float(lo);
+    f.tiles.push_back(lo);
+    f.tiles.push_back(hi);
+    f.maxSpan = std::max(f.maxSpan, hi - lo + 1);
+  }
+  if (p.growth) {
+    f.taps = p.gCount;
+    const int L = p.growthLevels, rowWidth = L * p.gCount;
+    for (int row = 0; row < oh * 2; ++row) {
+      const size_t base = size_t(row) * size_t(rowWidth);
+      int count = 0;
+      while (count < p.gCount && p.gmap[(base + size_t(count)) * 2] >= 0) ++count;
+      f.vrows.push_back(count > 0 ? int32_t(p.gmap[base * 2]) : 0);
+      f.vrows.push_back(count);
+      for (int k = 0; k < p.gCount; ++k) {
+        std::array<float, 4> c{0, 0, 0, 0};
+        if (k < count) {
+          std::vector<double> y(static_cast<size_t>(L));
+          for (int l = 0; l < L; ++l) y[size_t(l)] = double(p.gmap[(base + size_t(l * p.gCount + k)) * 2 + 1]);
+          c = cubicFit(y);
+        }
+        f.vcoef.insert(f.vcoef.end(), c.begin(), c.end());
+      }
+    }
+  } else {
+    std::vector<std::vector<float>> rows;
+    std::vector<int> firsts;
+    for (int row = 0; row < oh * 2; ++row) {
+      int lo = INT32_MAX, hi = INT32_MIN;
+      for (int k = 0; k < p.yCount; ++k) {
+        size_t i = size_t((row * p.yCount + k) * 2);
+        if (p.ymap[i + 1] != 0) { lo = std::min(lo, int(p.ymap[i])); hi = std::max(hi, int(p.ymap[i])); }
+      }
+      if (lo > hi) { rows.emplace_back(); firsts.push_back(0); continue; }
+      std::vector<float> w(size_t(hi - lo + 1), 0.0f);
+      for (int k = 0; k < p.yCount; ++k) {
+        size_t i = size_t((row * p.yCount + k) * 2);
+        if (p.ymap[i + 1] != 0) w[size_t(int(p.ymap[i]) - lo)] += p.ymap[i + 1];
+      }
+      rows.push_back(std::move(w));
+      firsts.push_back(lo);
+    }
+    f.taps = 1;
+    for (const auto& w : rows) f.taps = std::max(f.taps, int(w.size()));
+    for (size_t row = 0; row < rows.size(); ++row) {
+      f.vrows.push_back(firsts[row]);
+      f.vrows.push_back(int32_t(rows[row].size()));
+      for (int k = 0; k < f.taps; ++k) {
+        f.vcoef.push_back(size_t(k) < rows[row].size() ? rows[row][size_t(k)] : 0.0f);
+        f.vcoef.insert(f.vcoef.end(), {0.0f, 0.0f, 0.0f});
+      }
+    }
+  }
+  f.colinv.assign(size_t(2 * ow) * 4, 0.0f);
+  if (p.growth)
+    for (int parity = 0; parity < 2; ++parity)
+      for (int x = 0; x < ow; ++x)
+        for (int c = 0; c < 3; ++c) {
+          float cs = p.colsum[size_t((c * 2 + parity) * ow + x)];
+          f.colinv[size_t(parity * ow + x) * 4 + size_t(c)] = cs > 0 ? 1 / cs : 0;
+        }
+  return f;
+}
+
+DriveScatter driveScatter(const Plan& p) {
+  DriveScatter d;
+  const double rows = double(p.height), mass = rows / 240;
+  const double sx = kScatterSigmaM / (kSurfaceWidthM / 512), sy = kScatterSigmaM / (kSurfaceHeightM / rows);
+  const double bx = kSigmaXPitches * 512 / 256, by = kSigmaYPitches * mass;
+  const double dx = sigmaOutputPixels() * 512 / double(p.outputWidth), dy = sigmaOutputPixels() * rows / double(p.outputHeight);
+  const double sigX = std::sqrt(sx * sx + bx * bx + dx * dx - 1.0 / 6), sigY = std::sqrt(sy * sy + by * by + dy * dy - 1.0 / 6);
+  d.rx = int(std::ceil(4 * sigX));
+  d.ry = int(std::ceil(4 * sigY));
+  auto kernel = [](double sigma, int r) {
+    std::vector<double> w;
+    double t = 0;
+    for (int i = -r; i <= r; ++i) { double x = double(i) / sigma; w.push_back(std::exp(-0.5 * x * x)); t += w.back(); }
+    std::vector<float> out;
+    for (double v : w) out.push_back(float(v / t));
+    return out;
+  };
+  d.wx = kernel(sigX, d.rx);
+  d.wy = kernel(sigY, d.ry);
+  // Flat field u: h = u * colsum, emission = gain * u * sum_parity colsum(x) * V(y) - separable.
+  const double u = 0.5;
+  const int ow = p.outputWidth, oh = p.outputHeight;
+  for (int c = 0; c < 3; ++c) {
+    double total = 0;
+    for (int parity = 0; parity < 2; ++parity) {
+      double meanX = 0;
+      for (int x = 0; x < ow; ++x) {
+        if (p.growth) meanX += double(p.colsum[size_t((c * 2 + parity) * ow + x)]);
+        else for (int k = 0; k < p.xCount; ++k) meanX += double(p.xmap[size_t(((x * 6 + c * 2 + parity) * p.xCount + k) * 2 + 1)]);
+      }
+      meanX /= double(ow);
+      double meanY = 0;
+      for (int y = 0; y < oh; ++y) {
+        const int row = y * 2 + parity;
+        if (p.growth) {
+          const int L = p.growthLevels, G = p.gCount, kk = std::min(L - 2, int(u * double(L - 1)));
+          const double t = u * double(L - 1), f = t - double(kk);
+          for (int k = 0; k < G; ++k) {
+            size_t base = size_t(row) * size_t(L * G);
+            if (p.gmap[(base + size_t(k)) * 2] < 0) continue;
+            meanY += double(p.gmap[(base + size_t(kk * G + k)) * 2 + 1]) * (1 - f) + double(p.gmap[(base + size_t((kk + 1) * G + k)) * 2 + 1]) * f;
+          }
+        } else {
+          for (int k = 0; k < p.yCount; ++k) meanY += double(p.ymap[size_t((row * p.yCount + k) * 2 + 1)]);
+        }
+      }
+      total += meanX * meanY / double(oh);
+    }
+    d.kappa[c] = float(total * p.gain * p.scatterFraction);
+  }
+  return d;
+}
+
 }  // namespace tube
 
 }  // namespace rnl::crt

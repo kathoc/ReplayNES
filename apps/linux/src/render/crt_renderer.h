@@ -91,6 +91,11 @@ class CrtRenderer {
   /// completed since the last call.
   std::vector<double> takeGpuTimes();
 
+  /// Kernel set (CrtQuality): fast for the live view (default), reference for tests and export.
+  CrtQuality quality = CrtQuality::fast;
+  /// The tube in use renders with the fast kernels.
+  bool fastActive() const;
+
   // Verification hooks (tests only).
   bool useFastScatter = true;  // register-window scatter (same taps, order and weights)
   bool useFastFFT = true;      // shared-memory FFT (same butterflies)
@@ -124,8 +129,9 @@ class CrtRenderer {
     int ow = 0, oh = 0, lines = 0;
     bool growth = false;
     double ambient = 0;
+    CrtQuality quality = CrtQuality::reference;
     bool operator==(const TubeKey& o) const {
-      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient;
+      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient && quality == o.quality;
     }
   };
   struct Tube {
@@ -135,6 +141,13 @@ class CrtRenderer {
     bool growth = false;
     bool ringCleared = false;
     Buffer xmap, vmap, colsum, kx, ky, ambient, horizontal, emission, scatterX, scatterY, ring;
+    // Fast path (CrtQuality::fast and the plan fits its kernels): fast-plan tables, the horizontal
+    // pass output (RGBA float per parity row), the half-float output, the drive-domain scatter
+    // source (x pass, y pass; half4) and its weights. ring = half4 drive slots (512 x lines).
+    bool fast = false;
+    int fastTaps = 1, hStride = 1, srx = 0, sry = 0;
+    float kappa[3] = {0, 0, 0};
+    Buffer xmapFast, tiles, vrows, vcoef, colinv, swx, swy, hplanes, outH, scatterTmp, scatterSrc;
   };
   struct Slot { int ring; int64_t ordinal; };
 
@@ -152,6 +165,8 @@ class CrtRenderer {
 
   void dispatch(VkCommandBuffer cmd, const char* name, std::initializer_list<const Buffer*> buffers, const void* pc,
                 uint32_t pcSize, uint32_t gx, uint32_t gy = 1);
+  /// The fast path of encode() after the common prologue (same stages, state and slots).
+  void encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t ordinal, int64_t ord, int slot);
   void barrier(VkCommandBuffer cmd);
 
   CrtVulkanContext ctx_;
@@ -161,7 +176,8 @@ class CrtRenderer {
   VkPipelineLayout layout_ = VK_NULL_HANDLE, showLayout_ = VK_NULL_HANDLE;
   struct Kernel { VkPipeline pipeline = VK_NULL_HANDLE; uint32_t lx = 1, ly = 1; };
   std::map<std::string, Kernel> kernels_;
-  VkPipeline showPipeline_ = VK_NULL_HANDLE;
+  VkPipeline showPipeline_ = VK_NULL_HANDLE, showPipelineH_ = VK_NULL_HANDLE;
+  bool fastSupported_ = false;
   bool sharedFFT_ = false;
   VkCommandPool syncPool_ = VK_NULL_HANDLE;
   VkQueryPool queries_ = VK_NULL_HANDLE;
@@ -177,6 +193,7 @@ class CrtRenderer {
   CrtSettings settings_;
   // Receiver (fixed size).
   Buffer ping_, pong_, kernelSpec_, twiddles_, volts_, basis_, carrier_, stats_, gains_, agcState_, prepared_, rxOut_;
+  Buffer carrierReal_, kernelSpecReal_, agcRows_;  // fast path
   // Input ring (host-visible, written right before recording).
   Buffer codeBufs_[kInputSlots], phaseBufs_[kInputSlots], rgbBufs_[kInputSlots], weightBufs_[kInputSlots];
   Buffer driveIn_;

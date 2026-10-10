@@ -1,0 +1,21 @@
+// Scatter source, fast path (MSL scatter_drive): the y pass (the x pass runs in drive_post_fast).
+// The 2 mm screen scatter of the emitted light evaluated on the tube drive: the drive blurred by
+// sqrt(scatter^2 + spot^2 + detector^2 - bilinear) per axis (zero extension) times the mean
+// emission per unit drive and the scatter fraction (kappa, from the plan).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "fast_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { uvec2 src[]; };
+layout(std430, set = 0, binding = 1) readonly buffer B1 { float w[]; };
+layout(std430, set = 0, binding = 2) writeonly buffer B2 { uvec2 outp[]; };
+layout(push_constant) uniform ScatterParams { int rows; int ry; int pad0; int pad1; vec4 kappa; } P;
+void main() {
+  int x = int(gl_GlobalInvocationID.x), y = int(gl_GlobalInvocationID.y);
+  if (x >= 512 || y >= P.rows) return;
+  vec3 s = vec3(0.0);
+  int lo = max(-P.ry, -y), hi = min(P.ry, P.rows - 1 - y);
+  for (int d = lo; d <= hi; d++) s += unpackH4(src[(y + d) * 512 + x]).rgb * w[d + P.ry];
+  outp[y * 512 + x] = packH4(vec4(s * P.kappa.rgb, 1.0));
+}

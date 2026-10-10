@@ -87,6 +87,11 @@ class CrtRendererD3D11 {
   std::vector<double> takeGpuTimes();
   double lastGpuSeconds() const { return lastGpu_; }
 
+  /// Kernel set (CrtQuality): fast for the live view (default), reference for tests and export.
+  CrtQuality quality = CrtQuality::fast;
+  /// The tube in use renders with the fast kernels.
+  bool fastActive() const { return tube_ && tube_->fast; }
+
   // Verification hooks (tests only), as in the Vulkan renderer.
   bool useFastScatter = true;
   bool useFastFFT = true;
@@ -118,8 +123,9 @@ class CrtRendererD3D11 {
     int ow = 0, oh = 0, lines = 0;
     bool growth = false;
     double ambient = 0;
+    CrtQuality quality = CrtQuality::reference;
     bool operator==(const TubeKey& o) const {
-      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient;
+      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient && quality == o.quality;
     }
   };
   struct Tube {
@@ -129,10 +135,16 @@ class CrtRendererD3D11 {
     bool growth = false;
     bool ringCleared = false;
     Buffer xmap, vmap, colsum, kx, ky, ambient, horizontal, emission, scatterX, scatterY, ring;
+    // Fast path (as in the Vulkan renderer): fast-plan tables, horizontal pass output, half-float
+    // output, drive-domain scatter source + weights; ring = half4 drive slots (512 x lines).
+    bool fast = false;
+    int fastTaps = 1, hStride = 1, srx = 0, sry = 0;
+    float kappa[3] = {0, 0, 0};
+    Buffer xmapFast, tiles, vrows, vcoef, colinv, swx, swy, hplanes, outH, scatterTmp, scatterSrc;
   };
   struct Slot { int ring; int64_t ordinal; };
   enum class Bind : uint8_t { none, srv, uav };
-  static constexpr int kBindings = 6;
+  static constexpr int kBindings = 8;
   struct Kernel {
     ID3D11ComputeShader* cs = nullptr;
     Bind slots[kBindings] = {};
@@ -148,6 +160,8 @@ class CrtRendererD3D11 {
   void upload(const Buffer& b, const void* data);
   void dispatch(const char* name, std::initializer_list<const Buffer*> buffers, const void* pc, uint32_t pcSize, uint32_t gx,
                 uint32_t gy = 1);
+  /// The fast path of encode() after the common prologue (same stages, state and slots).
+  void encodeFast(const Input& input, uint64_t ordinal, int64_t ord);
   bool compileKernels(bool withShow, std::string* error);
   std::vector<float> readBuffer(const Buffer& b);
 
@@ -156,6 +170,7 @@ class CrtRendererD3D11 {
   std::map<std::string, Kernel> kernels_;
   ID3D11VertexShader* showVs_ = nullptr;
   ID3D11PixelShader* showPs_ = nullptr;
+  ID3D11PixelShader* showPsH_ = nullptr;  // the fast path's half-float output
   ID3D11RasterizerState* showRaster_ = nullptr;
   ID3D11BlendState* showBlend_ = nullptr;
   ID3D11Buffer* params_ = nullptr;  // 64-byte constant buffer (the Vulkan push constants)
@@ -177,6 +192,7 @@ class CrtRendererD3D11 {
   CrtSettings settings_;
   // Receiver (fixed size) + inputs (UpdateSubresource before the passes that read them).
   Buffer ping_, pong_, kernelSpec_, twiddles_, volts_, basis_, carrier_, stats_, gains_, agcState_, prepared_, rxOut_;
+  Buffer carrierReal_, kernelSpecReal_, agcRows_;  // fast path
   Buffer codes_, phases_, rgb_, weights_, driveIn_;
   // Raster / supply / spot (per line count).
   Buffer rasterOut_, supplyMeans_, supplyRow_, supplyOut_, spotOut_, supplyState_[2];

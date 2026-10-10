@@ -1,0 +1,19 @@
+// supply_mean as a tree reduction (128 invocations per row), fast path (MSL row_mean_fast).
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+layout(local_size_x = 128) in;
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) writeonly buffer B1 { vec4 means[]; };
+shared vec3 part[128];
+void main() {
+  int row = int(gl_WorkGroupID.x), t = int(gl_LocalInvocationID.x);
+  vec3 s = vec3(0.0);
+  for (int x = t; x < 512; x += 128) s += src[row * 512 + x].rgb;
+  part[t] = s;
+  barrier();
+  for (int w = 64; w > 0; w >>= 1) {
+    if (t < w) part[t] += part[t + w];
+    barrier();
+  }
+  if (t == 0) means[row] = vec4(part[0] / 512.0, 1.0);
+}

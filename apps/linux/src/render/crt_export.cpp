@@ -47,6 +47,7 @@ class CrtExportProcessor : public ExportVideoProcessor {
     dst_ = CrtRect{float(std::round((double(w_) - w) / 2)), float(std::round((double(h_) - h) / 2)), float(w), float(h)};
     int tw = 0, th = 0;
     CrtRenderer::tubeSize(w, h, crop_, 1600, &tw, &th);
+    renderer_->quality = CrtQuality::reference;  // offline: the 1:1 port (time is not critical)
     renderer_->configure(settings_, tw, th, true);
     // Host-visible BGRA canvas the show pass writes.
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};

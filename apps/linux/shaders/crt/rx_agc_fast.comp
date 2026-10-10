@@ -1,0 +1,34 @@
+// GatedAGC over the 240 rows from the per-row control targets, fast path (MSL rx_agc_fast): one
+// workgroup, invocation 0 runs the recurrence (a few multiply-adds per row), the gains are
+// exponentiated in parallel.
+// SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 256) in;
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 agc[]; };
+layout(std430, set = 0, binding = 1) writeonly buffer B1 { float gains[]; };
+layout(std430, set = 0, binding = 2) buffer B2 { vec4 state[]; };
+layout(push_constant) uniform AGCParams { float lineSeconds; float attack; float release; float minGain; float maxGain; int enabled; int delay; int pad; } P;
+shared vec2 target[240];
+shared float logg[240];
+shared float g0T;
+void main() {
+  int t = int(gl_LocalInvocationID.x);
+  if (t < 240) target[t] = agc[t].xy;
+  barrier();
+  if (t == 0) {
+    float lo = log(P.minGain), hi = log(P.maxGain);
+    float fa = 1.0 - exp(-P.lineSeconds / P.attack), fr = 1.0 - exp(-P.lineSeconds / P.release);
+    float g0 = state[0].x, lg = log(g0);
+    bool changed = false;
+    for (int r = 0; r < 240; r++) {
+      logg[r] = changed ? lg : 1e30;
+      vec2 q = target[r];
+      if (q.y != 0.0) { lg = clamp(lg + (q.x - lg) * (q.x < lg ? fa : fr), lo, hi); changed = true; }
+    }
+    state[0] = vec4(changed ? clamp(exp(lg), P.minGain, P.maxGain) : g0, 0.0, 0.0, 0.0);
+    g0T = g0;
+  }
+  barrier();
+  if (t < 240) gains[t] = logg[t] > 1e29 ? g0T : clamp(exp(logg[t]), P.minGain, P.maxGain);
+}
