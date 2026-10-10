@@ -79,7 +79,7 @@ if(RNL_DESKTOP_TESTS)
   set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
   file(MAKE_DIRECTORY ${RNL_TEST_TMP})
   add_executable(test_desktop_frontend tests/test_desktop_frontend.cpp ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp
-    src/export/export_frame.cpp src/export/mp4_retime.cpp)
+    tests/sparse_file.cpp src/export/export_frame.cpp src/export/mp4_retime.cpp src/export/mp4_check.cpp)
   target_include_directories(test_desktop_frontend PRIVATE ${RNL_REPO_ROOT}/tests)
   target_link_libraries(test_desktop_frontend PRIVATE rnl_logic)
   target_compile_definitions(test_desktop_frontend PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}")

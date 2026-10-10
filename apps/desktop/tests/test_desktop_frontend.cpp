@@ -29,6 +29,7 @@
 #include "emulation.h"
 #include "export/export_frame.h"
 #include "ui_layout.h"
+#include "export/mp4_check.h"
 #include "export/mp4_retime.h"
 #include "l10n.h"
 #include "library.h"
@@ -38,6 +39,7 @@
 #include "platform/platform.h"
 #include "png_writer.h"
 #include "settings.h"
+#include "sparse_file.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
 #ifndef _WIN32
@@ -1497,5 +1499,269 @@ TEST_CASE("export: MP4 video track retimed to 39375000 / 655171 per frame") {
   const std::string mv = findBox(out, "mvhd");
   CHECK_EQ(rd(mv, 16), 2400u);  // the audio track is longer
   // The audio track is unchanged.
+  CHECK(out.find(audio) != std::string::npos);
+}
+
+namespace {
+void be64(std::string& o, uint64_t v) {
+  be32(o, uint32_t(v >> 32));
+  be32(o, uint32_t(v));
+}
+uint64_t rd64s(const std::string& s, size_t at) { return uint64_t(rd(s, at)) << 32 | rd(s, at + 4); }
+
+/// A finished MP4 as Media Foundation's sink lays it out for a long export: ftyp, one mdat (a
+/// 64-bit "largesize" header when it passes 4 GiB), moov at the end. Video: 6 frames of H.264
+/// (length-prefixed NAL units) in 2 chunks; audio: 4 samples in 2 chunks. The second chunk of
+/// each track starts `gap` bytes into the media data (past 4 GiB: a sparse hole).
+struct LargeMp4 {
+  uint64_t gap = (uint64_t(1) << 32) + 4096;
+  bool largeMdat = true;
+  enum Offsets { kCo64, kStco32Wrapped } offsets = kCo64;
+  bool finished = true;  // false: mdat size 0, no moov (the export never got to Finalize)
+  uint64_t videoChunk[2] = {0, 0}, audioChunk[2] = {0, 0};
+  uint64_t fileSize = 0;
+
+  static std::string videoSample() {  // SPS-like + IDR-like NAL units, 4-byte lengths
+    std::string o;
+    be32(o, 2);
+    o += "\x67\x64";
+    be32(o, 3);
+    o += "\x65\x88\x84";
+    return o;
+  }
+  bool write(const std::string& path) {
+    if (!createSparseFile(path)) return false;
+    const std::string v = videoSample(), a = "AAAAAAAA";  // 3 video samples + 2 audio samples per chunk
+    const uint64_t hdr = largeMdat ? 16 : 8, ftypSize = 24, payload = ftypSize + hdr;
+    videoChunk[0] = payload;
+    audioChunk[0] = payload + 3 * v.size();
+    videoChunk[1] = payload + gap;
+    audioChunk[1] = videoChunk[1] + 3 * v.size();
+    const uint64_t mdatEnd = audioChunk[1] + 2 * a.size();
+    std::string head = box("ftyp", "isom" + std::string(4, '\0') + "isomavc1");
+    if (!finished) {
+      be32(head, 0);
+      head += "mdat";
+    } else if (largeMdat) {
+      be32(head, 1);
+      head += "mdat";
+      be64(head, mdatEnd - ftypSize);
+    } else {
+      be32(head, uint32_t(mdatEnd - ftypSize));
+      head += "mdat";
+    }
+    auto offsets_ = [&](const uint64_t* c) {
+      std::string b(4, '\0');
+      be32(b, 2);
+      if (offsets == kCo64) {
+        be64(b, c[0]);
+        be64(b, c[1]);
+        return box("co64", b);
+      }
+      be32(b, uint32_t(c[0]));
+      be32(b, uint32_t(c[1]));  // what a 32-bit muxer stores: the offset modulo 2^32
+      return box("stco", b);
+    };
+    auto stsz = [&](uint32_t size, uint32_t n) {
+      std::string b(4, '\0');
+      be32(b, size);
+      be32(b, n);
+      return box("stsz", b);
+    };
+    auto stsc = [&](uint32_t per) {
+      std::string b(4, '\0');
+      be32(b, 1);
+      be32(b, 1);
+      be32(b, per);
+      be32(b, 1);
+      return box("stsc", b);
+    };
+    auto stts = [&](uint32_t n, uint32_t d) {
+      std::string b(4, '\0');
+      be32(b, 1);
+      be32(b, n);
+      be32(b, d);
+      return box("stts", b);
+    };
+    auto header = [&](const char* t, uint32_t ts, uint32_t dur, size_t pad) {
+      std::string b(12, '\0');
+      be32(b, ts);
+      be32(b, dur);
+      return box(t, b + std::string(pad, '\0'));
+    };
+    auto tkhd = [&](uint32_t dur) {
+      std::string b(20, '\0');
+      be32(b, dur);
+      return box("tkhd", b + std::string(60, '\0'));
+    };
+    auto hdlr = [&](const char* t) { return box("hdlr", std::string(8, '\0') + t + std::string(13, '\0')); };
+    std::string avcC = box("avcC", std::string("\x01\x64\x00\x2a\xff\xe0\x00", 7));
+    std::string avc1 = box("avc1", std::string(78, '\0') + avcC);
+    std::string stsdV(4, '\0');
+    be32(stsdV, 1);
+    stsdV += avc1;
+    std::string stsdA(4, '\0');
+    be32(stsdA, 1);
+    stsdA += box("mp4a", std::string(28, '\0'));
+    std::string video = box("trak", tkhd(4800) + box("mdia", header("mdhd", 60098, 5995, 4) + hdlr("vide") +
+                                                                  box("minf", box("stbl", box("stsd", stsdV) + stts(6, 999) + stsc(3) +
+                                                                                                  stsz(uint32_t(v.size()), 6) + offsets_(videoChunk)))));
+    std::string audio = box("trak", tkhd(4800) + box("mdia", header("mdhd", 48000, 4800, 4) + hdlr("soun") +
+                                                                  box("minf", box("stbl", box("stsd", stsdA) + stts(4, 1024) + stsc(2) +
+                                                                                                  stsz(uint32_t(a.size()), 4) + offsets_(audioChunk)))));
+    std::string moov = box("moov", header("mvhd", 48000, 4800, 80) + video + audio);
+    std::fstream f(fs::u8path(path), std::ios::in | std::ios::out | std::ios::binary);
+    if (!f) return false;
+    f << head;
+    for (int c = 0; c < 2; ++c) {
+      f.seekp(std::streamoff(videoChunk[c]));
+      f << v << v << v << a << a;
+    }
+    if (finished) {
+      f.seekp(std::streamoff(mdatEnd));
+      f << moov;
+    }
+    f.close();
+    fileSize = finished ? mdatEnd + moov.size() : mdatEnd;
+    std::error_code ec;
+    return bool(f) && fs::file_size(fs::u8path(path), ec) == fileSize;
+  }
+};
+
+std::string readMoov(const std::string& path, uint64_t from) {
+  std::ifstream f(fs::u8path(path), std::ios::binary);
+  f.seekg(std::streamoff(from));
+  return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+}  // namespace
+
+TEST_CASE("export: MP4 check + retime of a file past 4 GiB (largesize mdat, co64)") {
+  const std::string path = tmpDir("mp4-large") + "/large.mp4";
+  LargeMp4 m;
+  REQUIRE(m.write(path));
+  REQUIRE(m.fileSize > (uint64_t(1) << 32));
+  std::string err;
+  rnl::Mp4Summary sum;
+  REQUIRE(rnl::checkMp4File(path, &sum, &err));
+  REQUIRE_EQ(sum.tracks.size(), size_t(2));
+  CHECK(sum.moovAtEnd);
+  CHECK(sum.tracks[0].co64);
+  CHECK_EQ(sum.tracks[0].codec, std::string("avc1"));
+  CHECK_EQ(sum.tracks[0].samples, uint64_t(6));
+  CHECK_EQ(sum.tracks[0].chunks, uint64_t(2));
+  CHECK(sum.tracks[0].dataEnd > (uint64_t(1) << 32));
+  // Retime: the moov at the end is rewritten, the chunk offsets (64-bit) stay as they are.
+  REQUIRE(rnl::retimeMp4Video(path, 6, RN_FPS_NUM, RN_FPS_DEN, &err));
+  REQUIRE(rnl::checkMp4File(path, &sum, &err));
+  CHECK(sum.tracks[0].co64);
+  CHECK_EQ(sum.tracks[0].timescale, uint32_t(RN_FPS_NUM));
+  CHECK_EQ(sum.tracks[0].duration, uint64_t(6) * RN_FPS_DEN);
+  const std::string moov = readMoov(path, m.audioChunk[1] + 16);
+  const std::string co = findBox(moov, "co64");
+  REQUIRE(co.size() >= 24);
+  CHECK_EQ(rd64s(co, 8), m.videoChunk[0]);
+  CHECK_EQ(rd64s(co, 16), m.videoChunk[1]);
+  fs::remove(fs::u8path(path));
+}
+
+TEST_CASE("export: MP4 check rejects wrapped 32-bit chunk offsets, unfinished files, bad box sizes") {
+  const std::string dir = tmpDir("mp4-bad");
+  std::string err;
+  {
+    LargeMp4 m;
+    m.offsets = LargeMp4::kStco32Wrapped;
+    REQUIRE(m.write(dir + "/wrapped.mp4"));
+    CHECK_FALSE(rnl::checkMp4File(dir + "/wrapped.mp4", nullptr, &err));
+    CHECK(err.find("MP4 check:") == 0);
+    fs::remove(fs::u8path(dir + "/wrapped.mp4"));
+  }
+  {
+    LargeMp4 m;
+    m.finished = false;
+    REQUIRE(m.write(dir + "/unfinished.mp4"));
+    CHECK_FALSE(rnl::checkMp4File(dir + "/unfinished.mp4", nullptr, &err));
+    CHECK(err.find("never finished") != std::string::npos);
+    std::string rerr;
+    CHECK_FALSE(rnl::retimeMp4Video(dir + "/unfinished.mp4", 6, RN_FPS_NUM, RN_FPS_DEN, &rerr));
+    fs::remove(fs::u8path(dir + "/unfinished.mp4"));
+  }
+  {
+    // A 32-bit mdat size can't describe more than 4 GiB of media data: the size field wraps and
+    // the next box header lands inside the media data.
+    LargeMp4 m;
+    m.largeMdat = false;
+    REQUIRE(m.write(dir + "/mdat32.mp4"));
+    CHECK_FALSE(rnl::checkMp4File(dir + "/mdat32.mp4", nullptr, &err));
+    fs::remove(fs::u8path(dir + "/mdat32.mp4"));
+  }
+  {
+    // Small file, everything consistent: OK; then one chunk offset off by a byte: rejected.
+    LargeMp4 m;
+    m.gap = 4096;
+    REQUIRE(m.write(dir + "/small.mp4"));
+    rnl::Mp4Summary sum;
+    REQUIRE(rnl::checkMp4File(dir + "/small.mp4", &sum, &err));
+    CHECK(sum.fileSize < 10000);
+    std::fstream f(fs::u8path(dir + "/small.mp4"), std::ios::in | std::ios::out | std::ios::binary);
+    std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    const size_t at = all.find("co64");
+    REQUIRE(at != std::string::npos);
+    f.clear();
+    f.seekp(std::streamoff(at + 4 + 8 + 8 + 7));  // low byte of the second video chunk offset
+    f.put(char(uint8_t(m.videoChunk[1] + 1)));
+    f.close();
+    CHECK_FALSE(rnl::checkMp4File(dir + "/small.mp4", nullptr, &err));
+    CHECK(err.find("not H.264") != std::string::npos);
+  }
+}
+
+TEST_CASE("export: MP4 retime of a long take (27:53, 100577 frames): 64-bit media duration, 32-bit movie fields stay exact") {
+  // Media Foundation's layout for the 100577-frame take: video at 60098 ticks/s (999 / 1000 per
+  // frame), audio and movie at 48000. In the exact timescale the video lasts 100577 x 655171 =
+  // 65,894,233,667 ticks: more than 32 bits (any take longer than 109 s), so mdhd must be version 1.
+  const uint64_t frames = 100577;
+  auto mvhd = [&](uint32_t ts, uint32_t dur) { std::string b(12, '\0'); be32(b, ts); be32(b, dur); return box("mvhd", b + std::string(80, '\0')); };
+  auto mdhd = [&](uint32_t ts, uint32_t dur) { std::string b(12, '\0'); be32(b, ts); be32(b, dur); b += std::string(4, '\0'); return box("mdhd", b); };
+  auto tkhd = [&](uint32_t dur) { std::string b(20, '\0'); be32(b, dur); return box("tkhd", b + std::string(60, '\0')); };
+  auto hdlr = [&](const char* t) { return box("hdlr", std::string(8, '\0') + t + std::string(13, '\0')); };
+  std::string stts(4, '\0');
+  be32(stts, 2);
+  be32(stts, uint32_t(frames / 2));
+  be32(stts, 1000);
+  be32(stts, uint32_t(frames - frames / 2));
+  be32(stts, 999);
+  const uint32_t mfDuration = uint32_t(frames / 2 * 1000 + (frames - frames / 2) * 999);
+  const uint32_t audio48k = uint32_t(std::llround(double(frames) * RN_FPS_DEN / RN_FPS_NUM * 48000)) + 1024;
+  std::string video = box("trak", tkhd(uint32_t(uint64_t(mfDuration) * 48000 / 60098)) +
+                                      box("mdia", mdhd(60098, mfDuration) + hdlr("vide") + box("minf", box("stbl", box("stts", stts)))));
+  std::string audio = box("trak", tkhd(audio48k) + box("mdia", mdhd(48000, audio48k) + hdlr("soun")));
+  std::string file = box("ftyp", "isom") + box("mdat", std::string(16, 'x')) + box("moov", mvhd(48000, audio48k) + video + audio);
+  const std::string path = tmpDir("retime-long") + "/long.mp4";
+  {
+    std::ofstream f(fs::u8path(path), std::ios::binary);
+    f << file;
+  }
+  std::string err;
+  REQUIRE(rnl::retimeMp4Video(path, frames, RN_FPS_NUM, RN_FPS_DEN, &err));
+  std::ifstream f(fs::u8path(path), std::ios::binary);
+  std::string out((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  const std::string md = findBox(out, "mdhd");
+  REQUIRE(md.size() >= 32);
+  CHECK_EQ(int(uint8_t(md[0])), 1);
+  CHECK_EQ(rd(md, 20), uint32_t(RN_FPS_NUM));
+  const uint64_t mediaDuration = uint64_t(rd(md, 24)) << 32 | rd(md, 28);
+  CHECK_EQ(mediaDuration, frames * RN_FPS_DEN);
+  CHECK(mediaDuration > 0xFFFFFFFFull);
+  const std::string st = findBox(out, "stts");
+  CHECK_EQ(rd(st, 4), 1u);
+  CHECK_EQ(rd(st, 8), uint32_t(frames));
+  CHECK_EQ(rd(st, 12), uint32_t(RN_FPS_DEN));
+  // tkhd / mvhd in the movie timescale (48000): 1673.53 s = 80,329,... ticks, fits version 0.
+  const std::string tk = findBox(out, "tkhd");
+  const uint32_t trackDuration = uint32_t(std::llround(double(frames) * RN_FPS_DEN / RN_FPS_NUM * 48000));
+  CHECK_EQ(int(uint8_t(tk[0])), 0);
+  CHECK_EQ(rd(tk, 20), trackDuration);
+  const std::string mv = findBox(out, "mvhd");
+  CHECK_EQ(rd(mv, 16), audio48k);
   CHECK(out.find(audio) != std::string::npos);
 }

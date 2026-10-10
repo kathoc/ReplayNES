@@ -83,12 +83,20 @@ using ExportProgressFn = std::function<void(uint64_t done, uint64_t total)>;
 using ExportCancelFn = std::function<bool()>;
 
 /// Blocking; call on a worker thread. Takes ownership of `renderer` (frees it, also on failure).
-/// Never touches the session / project. Writes outPath directly (an existing file is replaced).
-/// On failure / cancel: removes the partial file, returns false with *error ("cancelled" on cancel).
+/// Never touches the session / project. Writes `outPath + ".part"`, finishes and self-checks it
+/// (verifyExportedMp4) and only then renames it to outPath (an existing file is replaced).
+/// On failure / cancel: removes the partial file, returns false with *error ("cancelled" on cancel);
+/// an existing file at outPath is then left alone.
 /// progress / cancelled are called on the calling thread (every frame) and may be empty.
 bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::string& outPath,
                    const ExportProgressFn& progress, const ExportCancelFn& cancelled, ExportResult* result,
                    std::string* error);
+
+/// Self-check of a finished export file: complete MP4 structure with every chunk offset pointing
+/// at its samples (mp4_check.h), `frames` video samples and, on Windows, Media Foundation opens
+/// it with the duration of `frames` frames and decodes its first frame and its last seconds to the
+/// final frame. frames = 0 (a file from elsewhere): any count, the duration as stored. False + *error.
+bool verifyExportedMp4(const std::string& path, uint64_t frames, std::string* error);
 
 /// The H.264 encoders auto mode tries, in order, and whether this FFmpeg build has each.
 std::string availableEncodersDescription();

@@ -43,6 +43,7 @@ enable_testing()
 # Its header is shared (apps/desktop/src/export/mp4_export.h: the UI's ExportJob).
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavformat libavutil)
 add_library(rnl_export STATIC src/export/mp4_export.cpp ${RNL_DESKTOP_DIR}/src/export/export_frame.cpp
+  ${RNL_DESKTOP_DIR}/src/export/mp4_check.cpp
   ${RNL_DESKTOP_DIR}/src/export/export_job.cpp)
 target_include_directories(rnl_export PUBLIC ${RNL_DESKTOP_DIR}/src/export)
 target_link_libraries(rnl_export PUBLIC replaynes_frontend replaynes_engine PkgConfig::FFMPEG Threads::Threads)

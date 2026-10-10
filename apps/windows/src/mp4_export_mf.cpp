@@ -8,7 +8,10 @@
 // audio sample n at n / 48000 s, both in Media Foundation's 100 ns units (export_frame.h); the
 // finished file's video track is then given the exact timescale 39375000 / 655171 ticks per frame
 // (mp4_retime.h: the sink rounds it to fps x 1000). No B-frames (no reordering delay).
-// Never touches the session / project; a failed or cancelled export removes the partial file.
+// The file is written as "<name>.part", self-checked (mp4_check.h + Media Foundation decodes its
+// first and last frames) and only then renamed: an export that dies before Finalize can't leave an
+// unplayable .mp4 (no moov) under the chosen name. Never touches the session / project; a failed
+// or cancelled export removes the partial file.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -34,6 +37,7 @@
 #include <vector>
 
 #include "export_frame.h"
+#include "mp4_check.h"
 #include "mp4_export.h"
 #include "mp4_retime.h"
 
@@ -268,7 +272,133 @@ bool writeSample(IMFSinkWriter* sink, DWORD stream, const void* data, size_t byt
   return SUCCEEDED(h);
 }
 
+/// Plays the finished file back the way a player on this system would: Media Foundation's MPEG-4
+/// source must open it with the expected duration, decode its first frame and its last seconds
+/// of video (up to the final frame) and read its last seconds of audio.
+/// strict = false (a file from elsewhere): the duration and the last frame's time are not compared
+/// with `frames` (frame times as this exporter writes them); the end is taken from the file.
+bool verifyPlayback(const std::wstring& path, uint64_t frames, bool strict, std::string* why) {
+  IMFSourceReader* r = nullptr;
+  HRESULT h = MFCreateSourceReaderFromURL(path.c_str(), nullptr, &r);
+  if (FAILED(h)) {
+    *why = hrText("Self-check: opening the finished file", h);
+    return false;
+  }
+  std::unique_ptr<IMFSourceReader, void (*)(IMFSourceReader*)> reader(r, [](IMFSourceReader* p) { p->Release(); });
+  const int64_t expected = exportframe::frameTime100ns(frames);
+  PROPVARIANT v;
+  PropVariantInit(&v);
+  h = r->GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &v);
+  const int64_t duration = SUCCEEDED(h) && v.vt == VT_UI8 ? int64_t(v.uhVal.QuadPart) : -1;
+  PropVariantClear(&v);
+  // The audio track may run up to one AAC frame (21 ms) longer than the video.
+  if (duration <= 0 || (strict && (duration < expected - 10000 || duration > expected + 1000000))) {
+    char b[160];
+    std::snprintf(b, sizeof b, "Self-check: the finished file lasts %.3f s, expected %.3f s", double(duration) / 1e7,
+                  double(expected) / 1e7);
+    *why = b;
+    return false;
+  }
+  auto seek = [&](int64_t t) {
+    PROPVARIANT p;
+    PropVariantInit(&p);
+    p.vt = VT_I8;
+    p.hVal.QuadPart = std::max<int64_t>(0, t);
+    return r->SetCurrentPosition(GUID_NULL, p);
+  };
+  // Reads stream `stream` from `from` to its end; *count samples, *last = the last time stamp.
+  auto readToEnd = [&](DWORD stream, int64_t from, bool once, uint64_t* count, int64_t* last) -> HRESULT {
+    HRESULT hr = seek(from);
+    if (FAILED(hr)) return hr;
+    *count = 0;
+    *last = -1;
+    for (int guard = 0; guard < 100000; ++guard) {
+      DWORD flags = 0;
+      LONGLONG ts = 0;
+      IMFSample* sample = nullptr;
+      hr = r->ReadSample(stream, 0, nullptr, &flags, &ts, &sample);
+      if (sample) {
+        ++*count;
+        *last = ts;
+        sample->Release();
+      }
+      if (FAILED(hr)) return hr;
+      if (flags & MF_SOURCE_READERF_ERROR) return E_FAIL;
+      if (flags & MF_SOURCE_READERF_ENDOFSTREAM) return S_OK;
+      if (once && *count) return S_OK;
+    }
+    return E_FAIL;
+  };
+  const DWORD V = DWORD(MF_SOURCE_READER_FIRST_VIDEO_STREAM), A = DWORD(MF_SOURCE_READER_FIRST_AUDIO_STREAM);
+  // Video, decoded to NV12.
+  r->SetStreamSelection(DWORD(MF_SOURCE_READER_ALL_STREAMS), FALSE);
+  h = r->SetStreamSelection(V, TRUE);
+  IMFMediaType* t = nullptr;
+  if (SUCCEEDED(h)) h = MFCreateMediaType(&t);
+  if (SUCCEEDED(h)) {
+    t->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+    t->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+    h = r->SetCurrentMediaType(V, nullptr, t);
+    t->Release();
+  }
+  if (FAILED(h)) {
+    *why = hrText("Self-check: H.264 decoder for the finished file", h);
+    return false;
+  }
+  uint64_t n = 0;
+  int64_t last = -1;
+  h = readToEnd(V, 0, true, &n, &last);
+  if (FAILED(h) || n == 0) {
+    *why = hrText("Self-check: decoding the first frame of the finished file", FAILED(h) ? h : E_FAIL);
+    return false;
+  }
+  const int64_t end = strict ? expected : duration;
+  h = readToEnd(V, end - 30000000, false, &n, &last);
+  const int64_t lastFrame = strict ? exportframe::frameTime100ns(frames - 1) : last;
+  if (FAILED(h) || n == 0 || last < lastFrame - 10000 || last > lastFrame + 10000 || last < end - 10000000) {
+    char b[200];
+    std::snprintf(b, sizeof b, "Self-check: decoding the end of the finished file (0x%08lx, %llu frames, last at %.3f s, expected %.3f s)",
+                  (unsigned long)h, (unsigned long long)n, double(last) / 1e7, double(lastFrame) / 1e7);
+    *why = b;
+    return false;
+  }
+  // Audio (compressed samples as stored).
+  r->SetStreamSelection(V, FALSE);
+  h = r->SetStreamSelection(A, TRUE);
+  if (SUCCEEDED(h)) h = readToEnd(A, end - 30000000, false, &n, &last);
+  if (FAILED(h) || n == 0) {
+    *why = hrText("Self-check: reading the audio at the end of the finished file", FAILED(h) ? h : E_FAIL);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
+
+bool verifyExportedMp4(const std::string& path, uint64_t frames, std::string* error) {
+  std::string localError;
+  std::string& err = error ? *error : localError;
+  Mp4Summary sum;
+  if (!checkMp4File(path, &sum, &err)) return false;
+  const Mp4TrackSummary* video = nullptr;
+  for (const auto& t : sum.tracks)
+    if (t.handler == "vide" && !video) video = &t;
+  if (!video || !video->samples) {
+    err = "MP4 check: no video";
+    return false;
+  }
+  if (frames && video->samples != frames) {
+    err = "MP4 check: " + std::to_string(video->samples) + " video frames, expected " + std::to_string(frames);
+    return false;
+  }
+  MfScope mf;
+  const HRESULT h = mf.init();
+  if (FAILED(h)) {
+    err = hrText("Media Foundation (MFStartup)", h);
+    return false;
+  }
+  return verifyPlayback(widen(path), video->samples, frames != 0, &err);
+}
 
 const std::vector<ExportEncoderChoice>& exportEncoderChoices() {
   static const std::vector<ExportEncoderChoice> choices = {{"mf_hardware", "hardware (MFT)"}, {"mf_software", "software (MFT)"}};
@@ -360,8 +490,13 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     err = hrText("Media Foundation (MFStartup)", h);
     return false;
   }
-  const std::wstring wpath = widen(outPath);
+  // Written under a temporary name next to the destination and renamed only after the file has
+  // been finished, fixed up and checked: a failed / cancelled / crashed export never leaves a
+  // broken file under the chosen name (nor replaces an existing one).
+  const std::string partPath = outPath + ".part";
+  const std::wstring wpath = widen(partPath), wfinal = widen(outPath);
   auto removeFile = [&] { DeleteFileW(wpath.c_str()); };
+  removeFile();
   std::unique_ptr<Writer> w;
   {
     const bool forceHw = opt.encoder == "mf_hardware", forceSw = opt.encoder == "mf_software";
@@ -473,6 +608,7 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     if (progress) progress(rn_renderer_frames_done(rend.get()), total);
   }
 
+  if (cancelled && cancelled()) return fail("cancelled");
   h = w->sink->Finalize();
   if (FAILED(h)) return fail(hrText("Finishing the file", h));
   const std::string encName = w->encoderName + (w->hardware ? " (hardware)" : "");
@@ -481,7 +617,18 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
   // (timescale 39375000, 655171 per frame) as the FFmpeg exporter writes them.
   {
     std::string why;
-    if (!retimeMp4Video(outPath, framesWritten, RN_FPS_NUM, RN_FPS_DEN, &why)) return fail(why);
+    if (!retimeMp4Video(partPath, framesWritten, RN_FPS_NUM, RN_FPS_DEN, &why)) return fail(why);
+    // Self-check before the file gets its name: complete box structure, every chunk offset
+    // pointing at its samples (also past 4 GiB), and Media Foundation plays it to the last frame.
+    if (!verifyExportedMp4(partPath, framesWritten, &why)) return fail(why);
+  }
+  // (Media Foundation may close the self-check's file handle a moment after the reader is gone.)
+  for (int attempt = 0;; ++attempt) {
+    if (MoveFileExW(wpath.c_str(), wfinal.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) break;
+    const DWORD e = GetLastError();
+    if (attempt >= 20 || (e != ERROR_SHARING_VIOLATION && e != ERROR_ACCESS_DENIED))
+      return fail(hrText("Saving the file under its name", HRESULT_FROM_WIN32(e)));
+    Sleep(100);
   }
 
   if (result) {

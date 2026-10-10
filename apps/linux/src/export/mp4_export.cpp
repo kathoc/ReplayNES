@@ -5,10 +5,12 @@
 #include "mp4_export.h"
 
 #include "export_frame.h"
+#include "mp4_check.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cerrno>
 #include <cstring>
 #include <vector>
 
@@ -272,6 +274,9 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
   std::vector<uint32_t> filtered(flash ? size_t(kFrameW) * kFrameH : 0);
 
   // ---- muxer + encoders
+  // Written under a temporary name and renamed once finished and checked (a failed / cancelled
+  // export never leaves a broken file under the chosen name, nor replaces an existing one).
+  const std::string partPath = outPath + ".part";
   AvState av;
   bool fileCreated = false;
   auto fail = [&](const std::string& m) {
@@ -280,11 +285,11 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
       avio_closep(&av.fmt->pb);
       av.fileOpen = false;
     }
-    if (fileCreated) std::remove(outPath.c_str());
+    if (fileCreated) std::remove(partPath.c_str());
     return false;
   };
 
-  int r = avformat_alloc_output_context2(&av.fmt, nullptr, "mp4", outPath.c_str());
+  int r = avformat_alloc_output_context2(&av.fmt, nullptr, "mp4", partPath.c_str());
   if (r < 0 || !av.fmt) return fail("MP4 muxer: " + avError(r));
   const bool globalHeader = (av.fmt->oformat->flags & AVFMT_GLOBALHEADER) != 0;
 
@@ -316,7 +321,7 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
   av.vStream->avg_frame_rate = AVRational{RN_FPS_NUM, RN_FPS_DEN};
   av.aStream->time_base = AVRational{1, RN_SAMPLE_RATE};
 
-  r = avio_open(&av.fmt->pb, outPath.c_str(), AVIO_FLAG_WRITE);
+  r = avio_open(&av.fmt->pb, partPath.c_str(), AVIO_FLAG_WRITE);
   if (r < 0) return fail("Can't create " + outPath + ": " + avError(r));
   av.fileOpen = true;
   fileCreated = true;
@@ -469,6 +474,11 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
   r = avio_closep(&av.fmt->pb);
   av.fileOpen = false;
   if (r < 0) return fail("closing the file: " + avError(r));
+  {
+    std::string why;
+    if (!verifyExportedMp4(partPath, framesWritten, &why)) return fail(why);
+  }
+  if (std::rename(partPath.c_str(), outPath.c_str()) != 0) return fail("saving the file under its name: " + std::string(std::strerror(errno)));
 
   if (result) {
     result->frames = framesWritten;
@@ -478,6 +488,23 @@ bool exportProject(rn_renderer* renderer, const ExportOptions& opt, const std::s
     result->encoder = encName;
   }
   return true;
+}
+
+bool verifyExportedMp4(const std::string& path, uint64_t frames, std::string* error) {
+  std::string localError;
+  std::string& err = error ? *error : localError;
+  Mp4Summary sum;
+  if (!checkMp4File(path, &sum, &err)) return false;
+  for (const auto& t : sum.tracks)
+    if (t.handler == "vide") {
+      if (frames && t.samples != frames) {
+        err = "MP4 check: " + std::to_string(t.samples) + " video frames, expected " + std::to_string(frames);
+        return false;
+      }
+      return t.samples > 0 || (err = "MP4 check: no video frames", false);
+    }
+  err = "MP4 check: no video track";
+  return false;
 }
 
 }  // namespace rnl

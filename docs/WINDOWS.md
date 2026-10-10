@@ -152,6 +152,21 @@ processor, the optional flash filter, the exact BT.709 limited-range 4:2:0 conve
 `ExportJob` (shared: `export/export_frame.*`, `export_job.cpp`); the project is never touched, a
 failed / cancelled export removes its file.
 
+* **Written under a temporary name** (`<name>.mp4.part` next to the destination) and renamed to
+  `<name>.mp4` only after `Finalize`, the timescale fix-up and the self-check below succeeded
+  (Linux: the same). Until 0.5.2 the sink wrote the final name directly: an export that never got
+  to `Finalize` (process killed / crashed, PC asleep or shut down) left an `.mp4` with media data
+  but no `moov` box, which no player opens ("moov atom not found"; reproduced by killing an
+  export in the VM). Now such a run leaves at most a `.part` file.
+* **Self-check before the rename** (`verifyExportedMp4`; `replaynes-export --check FILE.mp4
+  [--frames N]` runs it on any file): `export/mp4_check.*` walks the box structure (top-level
+  boxes up to the end of the file, one `moov`, no unterminated `mdat`), every chunk of every track
+  inside an `mdat` and not overlapping another, and the first H.264 sample of every chunk plus the
+  last one parsing as length-prefixed NAL units of exactly the sample size (a wrong / wrapped
+  32-bit chunk offset fails here); then Media Foundation's MPEG-4 source opens the file (duration
+  = the frame count), decodes the first frame and the last 3 s up to the final frame, and reads
+  the last 3 s of audio. Any failure is the export's error message; the file is removed.
+
 * `IMFSinkWriter` -> MPEG-4: H.264 High (hardware MFT when the system has one -
   `MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS` - else Microsoft's software encoder; "mf_hardware" /
   "mf_software" in Export -> Advanced force one), VBR at the shared bit rate, GOP 120, **no
@@ -161,7 +176,13 @@ failed / cancelled export removes its file.
   Media Foundation's 100 ns units). The MPEG-4 sink stores the video at a rounded timescale (fps x
   1000 = 60098: 999 / 1000 ticks per frame), so after `Finalize` the moov box is rewritten
   (`export/mp4_retime.*`, unit-tested): video timescale **39375000, every frame 655171 ticks**, as the
-  FFmpeg exporter writes it.
+  FFmpeg exporter writes it. The video `mdhd` is version 1 (64-bit duration: in this timescale any
+  take longer than 109 s needs more than 32 bits - 27:53 = 65,895,133,667 ticks); `tkhd` / `mvhd`
+  stay in the movie timescale (48000) and switch to version 1 only when needed; chunk offsets
+  (`stco` / `co64`) and a 64-bit `mdat` size are left as the sink wrote them (moov is at the end,
+  so rewriting it moves no media data). Unit tests: a 27:53 take (100577 frames) and a sparse
+  file past 4 GiB (64-bit `mdat`, `co64`), plus files the check must reject (wrapped 32-bit
+  offsets, no `moov`, a 32-bit `mdat` size past 4 GiB).
 * Verification: `scripts/windows-vm/verify-export.sh [arch]` runs `replaynes-export --self-test` in
   the VM (synthetic test ROM + recorded input: renderer hash == a fresh renderer, flash + processor,
   sub-range, native 8:7, cancel, invalid settings, ExportJob), copies the files back and checks each
