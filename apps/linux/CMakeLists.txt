@@ -12,7 +12,7 @@
 # -DRNL_EXPORT_ONLY=ON builds only the exporter (rnl_export + replaynes-export), e.g. on macOS:
 #   cmake -S apps/linux -B build-export -G Ninja -DRNL_EXPORT_ONLY=ON && ninja -C build-export replaynes-export
 cmake_minimum_required(VERSION 3.16)
-project(ReplayNESLinux VERSION 0.5.2 LANGUAGES C CXX)
+project(ReplayNESLinux VERSION 0.5.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

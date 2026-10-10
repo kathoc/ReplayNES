@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.5.3" date="2026-10-10">
+      <description>
+        <p>MP4 exports over 4 GiB are no longer truncated (all platforms write a temporary file and check it before renaming), hardware encoders with automatic software fallback, a bit rate choice (Light / Standard / High) with an estimated file size, a much faster CRT display, and the ReplayNES Test Cartridge with an "Add Test Cartridge" button in the library.</p>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-10-09">
       <description>
         <p>VHS-style rewind back to A with a 3-2-1 countdown for practice, VTR noise while rewinding, Y/X shortcuts on the paused seek bar, a fix for the purple tint on still CRT pictures, and in-app controller-operable dialogs on macOS.</p>
