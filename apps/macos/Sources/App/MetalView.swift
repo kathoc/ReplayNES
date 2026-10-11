@@ -34,13 +34,21 @@ final class GPUSpan {
 /// Emulation thread only, except `options` (any thread).
 final class GameRenderer {
     let device: MTLDevice
-    private let queue: MTLCommandQueue
+    private var queue: MTLCommandQueue
+    /// GPU errors and confirmed pictures (Metal threads -> emulation thread: DisplayWatchdog).
+    let health = DisplayHealth()
     private let pipeline: MTLRenderPipelineState
     private let pillPipeline: MTLRenderPipelineState
     private let texture: MTLTexture
     let frames: FrameBuffer
     private let latency: LatencyMeter
     private var seenSeq: UInt64 = .max
+    /// FrameBuffer sequence / frame of the picture in `texture` (plain path).
+    private var textureSeq: UInt64 = 0, textureFrame: UInt64 = 0
+    /// The picture in the CRT tube output: its sequence / frame and the GPU work that built it.
+    private var crtOutput: (seq: UInt64, frame: UInt64, work: PictureWork)?
+    /// FrameBuffer sequence / frame of the picture in the CRT frame store.
+    private var storeSeq: UInt64 = 0, storeFrame: UInt64 = 0
     private let optionsLock = NSLock()
     private var options_ = DisplayOptions()
     var options: DisplayOptions {
@@ -158,7 +166,8 @@ final class GameRenderer {
         let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize)
         var newMeta = newFrame ? fetched : nil
         if !newFrame, let m = fetched, m.emulatedTime == 0 { newMeta = m }  // seek / option refresh: show it
-        let crtState = CRTSettingsModel.shared.snapshot
+        var crtState = CRTSettingsModel.shared.snapshot
+        if crtState == crtSuspendedFor { crtState.enabled = false }   // GPU keeps failing the CRT: plain
         updatePipelining(crtOn: crtState.enabled, presentDelay: presentDelay)
         if !pipelined, let p = pending {
             // Left the pipelined mode: show the picture that was built (unless a newer one comes).
@@ -206,7 +215,7 @@ final class GameRenderer {
     private func build(_ m: FrameMeta, crtState: CRTSettingsModel.Snapshot, drawableSize: CGSize, span: GPUSpan) -> UInt64? {
         guard let crt = crtRenderer(), crtFrame.valid, let cb = queue.makeCommandBuffer() else { return nil }
         configureCRT(crt, crtState: crtState, size: drawableSize)
-        crtFrame.encode(into: crt, cb: cb)
+        encodeBuild(crt, cb: cb)
         if m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
         addBuildTiming(cb, span: span)
         cb.commit()
@@ -224,13 +233,30 @@ final class GameRenderer {
         guard let cb = queue.makeCommandBuffer() else { return nil }
         if let m = build { shownFrame = m.frame }
         let pictureFrame = shownFrame
-        encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
+        let shown = encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
         let commit = HostClock.now()
+        // The present's own command buffer: its failure means the drawable showed nothing new.
+        let presentWork = PictureWork()
+        let health = self.health
+        cb.addCompletedHandler { b in
+            let failure = DisplayHealth.failure(status: b.status, error: b.error)
+            presentWork.complete(ok: failure == nil)
+            if let failure, health.commandBufferFailed(failure, build: false, at: HostClock.seconds(HostClock.now())) {
+                NSLog("ReplayNES: display: present command buffer failed: \(failure)")
+            }
+        }
+        // Confirmed on screen: shown (presentedTime > 0), and the GPU work that made the picture -
+        // the CRT build, the present itself - completed without error.
+        let confirm: (Double) -> Void = { t in
+            guard t > 0, presentWork.completed, shown.work?.completed ?? true else { return }
+            health.confirmed(sequence: shown.seq, frame: shown.frame, at: HostClock.seconds(HostClock.now()))
+        }
         if let m = build ?? revealed, m.emulatedTime != 0 {
             if let span, build != nil { cb.addCompletedHandler { b in span.extend(b.gpuStartTime, b.gpuEndTime) } }
-            drawable.addPresentedHandler { d in onPresented(commit, d.presentedTime) }   // 0: never shown (dropped)
+            drawable.addPresentedHandler { d in confirm(d.presentedTime); onPresented(commit, d.presentedTime) }   // 0: never shown (dropped)
         } else {
             drawable.addPresentedHandler { d in
+                confirm(d.presentedTime)
                 if d.presentedTime > 0 { onRepeatPresented(pictureFrame, d.presentedTime) }
             }
         }
@@ -274,6 +300,11 @@ final class GameRenderer {
     /// whether anything else that is shown changed since the last draw.
     private func fetch(drawableSize wanted: CGSize) -> (FrameMeta?, Bool) {
         drainBuildTimes()
+        if health.takeBuildErrors() > 0 {
+            // A CRT build failed on the GPU: its output and the temporal state may be half written.
+            crtRenderer_?.discardOutput()
+            crtOutput = nil
+        }
         let options = self.options
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
@@ -282,12 +313,19 @@ final class GameRenderer {
         let store = crtFrame
         // CRT just switched on (e.g. while paused): fetch the current frame again for it.
         let refetch = crtOn && !store.valid
-        seenSeq = frames.readFrameIfNewer(than: refetch ? .max : seenSeq) { px, codes, meta in
+        var read = false
+        let seq = frames.readFrameIfNewer(than: refetch ? .max : seenSeq) { px, codes, meta in
             texture.replace(region: MTLRegionMake2D(0, 0, w, Int(RN_VIDEO_HEIGHT)), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
             newMeta = meta
             countdownShown = (meta.countdown, meta.countdownFraction)
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
+            read = true
+        }
+        seenSeq = seq
+        if read, let m = newMeta {
+            textureSeq = seq; textureFrame = m.frame
+            if crtOn { storeSeq = seq; storeFrame = m.frame }
         }
         let pill = pillKey(size: wanted, options: options, crtOn: crtOn).key
         let changed = crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT || pill != shownPill
@@ -306,8 +344,9 @@ final class GameRenderer {
     /// Encodes the picture (plain or CRT) into `drawable` on `cb`. CRT: when `newMeta` is given
     /// (or the tube has no picture yet), the passes that build it are committed first in their own
     /// command buffer (timed: GPUSpan / pipelining decision).
+    @discardableResult
     private func encode(newMeta: FrameMeta?, drawable: CAMetalDrawable, cb: MTLCommandBuffer,
-                        crtState: CRTSettingsModel.Snapshot, span: GPUSpan?) {
+                        crtState: CRTSettingsModel.Snapshot, span: GPUSpan?) -> (seq: UInt64, frame: UInt64, work: PictureWork?) {
         let options = self.options
         let crtOn = crtState.enabled
         let store = crtFrame
@@ -325,12 +364,15 @@ final class GameRenderer {
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
-        // Physical CRT model (nesterm port).
+        // Physical CRT model (nesterm port). A recovery (display watchdog) shows the plain picture
+        // for one present.
         var crtShown = false
-        if crtOn, let crt = crtRenderer() {
+        let plainOnce = plainPresents > 0
+        if plainOnce { plainPresents -= 1 }
+        if crtOn, !plainOnce, let crt = crtRenderer() {
             let (dst, cropFraction) = configureCRT(crt, crtState: crtState, size: size)
             if newMeta != nil || !crt.hasOutput, store.valid, let bcb = queue.makeCommandBuffer() {
-                store.encode(into: crt, cb: bcb)
+                encodeBuild(crt, cb: bcb)
                 addBuildTiming(bcb, span: span ?? GPUSpan())
                 bcb.commit()
             }
@@ -347,6 +389,7 @@ final class GameRenderer {
             }
         } else if !crtOn && crtRenderer_ != nil {
             crtRenderer_ = nil          // free the tube buffers when CRT is switched off
+            crtOutput = nil
             store.valid = false
             adaptiveScale.reset()
         }
@@ -373,6 +416,87 @@ final class GameRenderer {
                 guard b.gpuEndTime > b.gpuStartTime else { return }
                 lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: "")
             }
+        }
+        if crtShown { return crtOutput.map { ($0.seq, $0.frame, $0.work) } ?? (0, 0, Self.unconfirmed) }
+        return (textureSeq, textureFrame, nil)
+    }
+
+    /// Encodes the CRT passes of the stored frame into `cb` (its own command buffer). The tube
+    /// output then holds that picture once `cb` completes (crtOutput); a failed encode leaves no
+    /// output (the plain picture is shown until a build succeeds).
+    private func encodeBuild(_ crt: CRTRenderer, cb: MTLCommandBuffer) {
+        let resets = crt.stateResets
+        guard crtFrame.encode(into: crt, cb: cb) else {
+            crtOutput = nil
+            buildFailures += 1
+            if buildFailures <= DisplayHealth.logFirst || buildFailures % DisplayHealth.logEvery == 0 {
+                NSLog("ReplayNES: display: CRT build not encoded (no tube plan or stage buffers yet; \(buildFailures) so far)")
+            }
+            return
+        }
+        if crt.stateResets != resets { NSLog("ReplayNES: display: CRT temporal state was not finite (NaN); reset") }
+        let work = PictureWork()
+        crtOutput = (storeSeq, storeFrame, work)
+        let health = self.health
+        let inject = Self.injectBuildErrors > 0 && injectCounter % Self.injectBuildErrors == Self.injectBuildErrors - 1
+        injectCounter &+= 1
+        cb.addCompletedHandler { b in
+            let failure = inject ? "injected (-crtInjectGPUError)" : DisplayHealth.failure(status: b.status, error: b.error)
+            work.complete(ok: failure == nil)
+            if let failure, health.commandBufferFailed(failure, build: true, at: HostClock.seconds(HostClock.now())) {
+                NSLog("ReplayNES: display: CRT build command buffer failed: \(failure)")
+            }
+        }
+    }
+    private var buildFailures = 0
+    private static let unconfirmed: PictureWork = { let w = PictureWork(); w.complete(ok: false); return w }()
+    /// Test hook: -crtInjectGPUError N reports every N-th CRT build as failed (GPU error path).
+    static let injectBuildErrors = UserDefaults.standard.integer(forKey: "crtInjectGPUError")
+    private var injectCounter = 0
+    private var buildErrorsAtRebuild = -1
+    /// CRT settings under which the CRT model kept failing on the GPU (shown plain instead).
+    private var crtSuspendedFor: CRTSettingsModel.Snapshot?
+    /// Presents left that show the plain picture (display watchdog recovery).
+    private var plainPresents = 0
+
+    // MARK: display watchdog (DisplayWatchdog, EmulationController)
+
+    /// What the display path is doing, for the watchdog's log line.
+    var stateDescription: String {
+        let crt = crtRenderer_.map { r in
+            r.outputSize.map { "CRT \($0.width)x\($0.height)\(r.hasOutput ? "" : " (no output)")" } ?? "CRT (no plan)"
+        } ?? (crtFailed ? "CRT unavailable" : "plain")
+        return "\(crt), \(pipelined ? "built ahead" : "direct")\(pending != nil ? ", picture pending" : ""), "
+            + "texture #\(textureFrame) seq \(textureSeq), layer \(Int(shownSize.width))x\(Int(shownSize.height))"
+    }
+
+    /// Display watchdog recovery (emulation thread): no new picture reached the screen while
+    /// emulation advanced. `rebuild` (second stage): the CRT renderer is recreated from scratch
+    /// (tube plan, buffers, pipelines); otherwise its output and temporal state are discarded.
+    /// Either way: a fresh command queue, nothing pending, the plain picture for the next present.
+    func recover(rebuild: Bool) {
+        if let q = device.makeCommandQueue() { queue = q }
+        pending = nil
+        buildAhead.reset()
+        plainPresents = 1
+        _ = health.takeBuildErrors()
+        crtOutput = nil
+        shownCRT = nil          // forces the next present ("changed")
+        if rebuild {
+            // CRT builds failed on the GPU again since the previous rebuild: show the plain picture
+            // until the CRT settings change (switching it off and on tries again).
+            let errors = health.snapshot.buildErrors
+            if buildErrorsAtRebuild >= 0 && errors > buildErrorsAtRebuild && crtRenderer_ != nil {
+                crtSuspendedFor = CRTSettingsModel.shared.snapshot
+                NSLog("ReplayNES: display: CRT model suspended after repeated GPU errors (\(errors) failed builds); plain picture until the CRT settings change")
+            }
+            buildErrorsAtRebuild = errors
+            crtRenderer_ = nil
+            crtFailed = false
+            crtFrame.valid = false   // refetched for the new renderer
+            adaptiveScale.reset()
+        } else {
+            crtRenderer_?.discardOutput()
         }
     }
 
@@ -535,14 +659,15 @@ final class CRTFrameStore {
 
     /// RF path from the raw PPU codes; the flash-filtered RGB picture (nesterm's synthetic-RGB
     /// source) when the photosensitive filter altered the frame or the core has no codes.
-    func encode(into crt: CRTRenderer, cb: MTLCommandBuffer) {
+    /// Returns false when nothing was encoded (no tube plan yet, stage buffers unavailable).
+    @discardableResult
+    func encode(into crt: CRTRenderer, cb: MTLCommandBuffer) -> Bool {
         usedCodes = meta.hasCodes && !meta.flashAltered
         let ordinal = meta.hasCodes ? meta.signalFrame : meta.frame
         if usedCodes {
-            codes.withUnsafeBufferPointer { _ = crt.encode(.codes($0.baseAddress!, burstPhase: meta.burstPhase), ordinal: ordinal, into: cb) }
-        } else {
-            pixels.withUnsafeBufferPointer { _ = crt.encode(.rgb($0.baseAddress!), ordinal: ordinal, into: cb) }
+            return codes.withUnsafeBufferPointer { crt.encode(.codes($0.baseAddress!, burstPhase: meta.burstPhase), ordinal: ordinal, into: cb) }
         }
+        return pixels.withUnsafeBufferPointer { crt.encode(.rgb($0.baseAddress!), ordinal: ordinal, into: cb) }
     }
 }
 
@@ -596,12 +721,23 @@ final class GameLayerView: NSView {
     override func updateLayer() {}  // drawn by the emulation thread
 
     private var screenObserver: NSObjectProtocol?
+    private var occlusionObserver: NSObjectProtocol?
+
+    /// Occluded / minimised windows present nothing (the emulation runs on the host clock): the
+    /// display watchdog only expects pictures on screen while the window is visible.
+    private func updateVisibility() {
+        displayTarget?.visible = window.map { $0.occlusionState.contains(.visible) && !$0.isMiniaturized } ?? false
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateDrawableSize()
         if let o = screenObserver { NotificationCenter.default.removeObserver(o); screenObserver = nil }
+        if let o = occlusionObserver { NotificationCenter.default.removeObserver(o); occlusionObserver = nil }
         if let w = window {
+            occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w, queue: .main) { [weak self] _ in
+                self?.updateVisibility()
+            }
             // Another display (refresh rate, fixed or variable refresh): a new display link for it.
             screenObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: w, queue: .main) { [weak self] _ in
                 guard let self, self.displayTarget != nil else { return }
@@ -647,6 +783,7 @@ final class GameLayerView: NSView {
         let t = DisplayTarget(layer: metalLayer, renderer: renderer, maxFPS: screen?.maximumFramesPerSecond ?? 60,
                               variableRefresh: screen.map { $0.maximumRefreshInterval - $0.minimumRefreshInterval > 0.0005 } ?? true)
         displayTarget = t
+        updateVisibility()
         emu.setDisplayTarget(t)
     }
 

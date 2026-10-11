@@ -111,6 +111,14 @@ struct rnf_build_ahead {
   }
 };
 
+struct rnf_display_watchdog {
+  double waitingSince = -1;  // first published picture not yet confirmed on screen (-1: none)
+  double lastEmulated = -1;
+  int stage = 0;             // 0 watching, 1 RECOVER issued, 2 RESTART issued (backing off)
+  double actionAt = 0;
+  int actions = 0;
+};
+
 struct rnf_audio_rate {
   double targetFill = 0;
   double base = 1, ratio = 1;
@@ -365,6 +373,58 @@ int rnf_build_ahead_p90(const rnf_build_ahead* b, double* out) {
   if (out) *out = q;
   return 1;
 }
+
+// ------------------------------------------------------------------ display watchdog
+rnf_display_watchdog* rnf_display_watchdog_new(void) {
+  try { return new rnf_display_watchdog; } catch (...) { return nullptr; }
+}
+rnf_display_watchdog* rnf_display_watchdog_clone(const rnf_display_watchdog* w) { return cloneOf(w); }
+void rnf_display_watchdog_free(rnf_display_watchdog* w) { delete w; }
+void rnf_display_watchdog_emulated(rnf_display_watchdog* w, double now) {
+  if (!w) return;
+  // Emulation stood still for longer than a stall (pause, menu, seek): the wait starts over here.
+  bool gap = w->lastEmulated < 0 || now - w->lastEmulated > RNF_DISPLAY_WATCHDOG_STALL;
+  if (w->waitingSince < 0 || gap) w->waitingSince = now;
+  w->lastEmulated = now;
+}
+void rnf_display_watchdog_presented(rnf_display_watchdog* w, double now) {
+  if (!w) return;
+  (void)now;
+  w->waitingSince = -1;
+  w->stage = 0;
+}
+void rnf_display_watchdog_reset(rnf_display_watchdog* w) {
+  if (!w) return;
+  w->waitingSince = -1;
+  w->stage = 0;
+}
+rnf_watchdog_action rnf_display_watchdog_check(rnf_display_watchdog* w, double now) {
+  if (!w || w->waitingSince < 0) return RNF_WATCHDOG_NONE;
+  if (now - w->lastEmulated > RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;  // not advancing
+  if (now - w->waitingSince <= RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;
+  switch (w->stage) {
+    case 0:
+      w->stage = 1;
+      break;
+    case 1:
+      if (now - w->actionAt <= RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;
+      w->stage = 2;
+      w->actionAt = now;
+      w->actions += 1;
+      return RNF_WATCHDOG_RESTART;
+    default:
+      if (now - w->actionAt <= RNF_DISPLAY_WATCHDOG_BACKOFF) return RNF_WATCHDOG_NONE;
+      w->stage = 1;
+      break;
+  }
+  w->actionAt = now;
+  w->actions += 1;
+  return RNF_WATCHDOG_RECOVER;
+}
+double rnf_display_watchdog_waiting(const rnf_display_watchdog* w, double now) {
+  return w && w->waitingSince >= 0 ? std::max(0.0, now - w->waitingSince) : 0;
+}
+int rnf_display_watchdog_recoveries(const rnf_display_watchdog* w) { return w ? w->actions : 0; }
 
 // ------------------------------------------------------------------ audio rate control
 rnf_audio_rate* rnf_audio_rate_new(double target_fill) {

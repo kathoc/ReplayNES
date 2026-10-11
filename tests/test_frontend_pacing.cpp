@@ -479,3 +479,72 @@ TEST_CASE("a stall is not caught up in a burst") {
   CHECK_EQ(rnf_frame_budget_frames(b, 0.1, 0), 1);       // max < 1 counts as 1
   rnf_frame_budget_free(b);
 }
+
+TEST_CASE("display watchdog: stall while emulating -> recover, restart, back off") {
+  rnf_display_watchdog* w = rnf_display_watchdog_new();
+  double t = 100;
+  auto frame = [&](bool shown) {
+    rnf_display_watchdog_emulated(w, t);
+    if (shown) rnf_display_watchdog_presented(w, t + 0.01);
+  };
+  // Healthy: every picture confirmed on screen.
+  for (int i = 0; i < 120; ++i, t += P) {
+    frame(true);
+    CHECK_EQ(rnf_display_watchdog_check(w, t), RNF_WATCHDOG_NONE);
+  }
+  // Frozen display while the game plays on: RECOVER after the stall period, then RESTART one
+  // stall period later, then nothing during the back-off, then RECOVER again.
+  std::vector<std::pair<double, int>> actions;
+  double start = t;
+  for (int i = 0; i < 300; ++i, t += P) {
+    frame(false);
+    int a = rnf_display_watchdog_check(w, t);
+    if (a != RNF_WATCHDOG_NONE) actions.push_back({t - start, a});
+  }
+  REQUIRE(actions.size() >= 3);
+  CHECK_EQ(actions[0].second, RNF_WATCHDOG_RECOVER);
+  CHECK(actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
+  CHECK(actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * P);
+  CHECK_EQ(actions[1].second, RNF_WATCHDOG_RESTART);
+  CHECK(actions[1].first - actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
+  CHECK(actions[1].first - actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * P);
+  CHECK_EQ(actions[2].second, RNF_WATCHDOG_RECOVER);
+  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_BACKOFF);
+  CHECK(rnf_display_watchdog_waiting(w, t) > 4.0);
+  // A confirmed picture ends it at once.
+  frame(true);
+  CHECK_EQ(rnf_display_watchdog_waiting(w, t + 0.02), 0.0);
+  CHECK_EQ(rnf_display_watchdog_check(w, t + 0.02), RNF_WATCHDOG_NONE);
+  CHECK_EQ(rnf_display_watchdog_recoveries(w), int(actions.size()));
+  rnf_display_watchdog_free(w);
+}
+
+TEST_CASE("display watchdog: pause, slow presents and hidden viewport do not trigger") {
+  rnf_display_watchdog* w = rnf_display_watchdog_new();
+  double t = 50;
+  // Paused right after a frame that is never confirmed: emulation is not advancing.
+  rnf_display_watchdog_emulated(w, t);
+  for (int i = 0; i < 100; ++i) CHECK_EQ(rnf_display_watchdog_check(w, t + 0.01 * i), RNF_WATCHDOG_NONE);
+  // Resume after 5 s: the wait starts at the first new picture, not at the frame before the pause.
+  t += 5;
+  rnf_display_watchdog_emulated(w, t);
+  CHECK_EQ(rnf_display_watchdog_check(w, t + 0.001), RNF_WATCHDOG_NONE);
+  CHECK(rnf_display_watchdog_waiting(w, t + 0.001) < 0.01);
+  rnf_display_watchdog_presented(w, t + 0.02);
+  // Pictures shown with a 200 ms lag (a GPU hiccup) stay below the stall period.
+  for (int i = 0; i < 60; ++i) {
+    t += P;
+    rnf_display_watchdog_emulated(w, t);
+    CHECK_EQ(rnf_display_watchdog_check(w, t), RNF_WATCHDOG_NONE);
+    if (i % 12 == 11) rnf_display_watchdog_presented(w, t);
+  }
+  // Hidden viewport (host-clock emulation, nothing presented): the frontend resets every check.
+  for (int i = 0; i < 120; ++i) {
+    t += P;
+    rnf_display_watchdog_emulated(w, t);
+    rnf_display_watchdog_reset(w);
+    CHECK_EQ(rnf_display_watchdog_check(w, t), RNF_WATCHDOG_NONE);
+  }
+  CHECK_EQ(rnf_display_watchdog_recoveries(w), 0);
+  rnf_display_watchdog_free(w);
+}

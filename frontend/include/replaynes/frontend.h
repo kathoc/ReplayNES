@@ -190,6 +190,35 @@ void rnf_build_ahead_update(rnf_build_ahead* b, double present_delay);
 int rnf_build_ahead_active(const rnf_build_ahead* b);
 int rnf_build_ahead_p90(const rnf_build_ahead* b, double* out); /* 0 until a quarter window was seen */
 
+/* Display watchdog (docs/FRAME_PACING.md "Display watchdog"): emulation and audio run on whatever
+ * the display does, so a stuck display path (a GPU command buffer error, a swapchain / device lost,
+ * a display link that stopped calling back, a stale CRT picture) would freeze the picture while the
+ * game plays on. The frontend reports every newly published picture (emulated) and every new
+ * picture confirmed on screen (presented: its GPU work completed without error and it was shown).
+ * While the viewport is visible, check() asks for a recovery once a published picture has waited
+ * RNF_DISPLAY_WATCHDOG_STALL seconds with emulation still advancing: RECOVER (rebuild the renderer's
+ * resources, plain picture for a frame); RESTART when the next stall period still shows nothing
+ * (recreate the display link / swapchain / device); then RNF_DISPLAY_WATCHDOG_BACKOFF seconds before
+ * the cycle repeats. Emulation that stops (pause, the menu, a long seek) never triggers it; a gap
+ * longer than the stall period restarts the wait at the next picture. reset(): the viewport was
+ * hidden / replaced (nothing is expected on screen until it is shown again). */
+#define RNF_DISPLAY_WATCHDOG_STALL 0.25
+#define RNF_DISPLAY_WATCHDOG_BACKOFF 2.0
+typedef enum rnf_watchdog_action {
+  RNF_WATCHDOG_NONE = 0, RNF_WATCHDOG_RECOVER = 1, RNF_WATCHDOG_RESTART = 2
+} rnf_watchdog_action;
+typedef struct rnf_display_watchdog rnf_display_watchdog;
+rnf_display_watchdog* rnf_display_watchdog_new(void);
+rnf_display_watchdog* rnf_display_watchdog_clone(const rnf_display_watchdog* w);
+void rnf_display_watchdog_free(rnf_display_watchdog* w);
+void rnf_display_watchdog_emulated(rnf_display_watchdog* w, double now);
+void rnf_display_watchdog_presented(rnf_display_watchdog* w, double now);
+void rnf_display_watchdog_reset(rnf_display_watchdog* w);
+rnf_watchdog_action rnf_display_watchdog_check(rnf_display_watchdog* w, double now);
+/* Seconds the oldest unshown picture has waited (0: none waiting). */
+double rnf_display_watchdog_waiting(const rnf_display_watchdog* w, double now);
+int rnf_display_watchdog_recoveries(const rnf_display_watchdog* w); /* RECOVER + RESTART actions so far */
+
 /* AudioRateControl: dynamic rate control keeping the audio buffer level (|ratio-base| <= 0.5 %). */
 #define RNF_DRC_MAX_DEVIATION 0.005
 #define RNF_DRC_GAIN 0.005

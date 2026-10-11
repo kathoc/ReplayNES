@@ -82,6 +82,9 @@ final class FrameBuffer {
         lock.unlock()
     }
 
+    /// Sequence number of the latest publish / clear (the display watchdog's "new picture").
+    var sequence: UInt64 { lock.lock(); defer { lock.unlock() }; return seq }
+
     /// Calls body only if a frame newer than `seen` exists. Returns the new sequence number.
     func readIfNewer(than seen: UInt64, _ body: (UnsafePointer<UInt32>, FrameMeta) -> Void) -> UInt64 {
         lock.lock()

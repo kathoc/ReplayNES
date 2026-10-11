@@ -23,6 +23,14 @@ final class DisplayTarget {
         self.maxFPS = maxFPS
         self.variableRefresh = variableRefresh
     }
+    private let lock = NSLock()
+    private var visible_ = true
+    /// The viewport can be seen (window not occluded / minimised, app in the foreground). Set by
+    /// the view (main thread); the display watchdog expects pictures on screen only while true.
+    var visible: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return visible_ }
+        set { lock.lock(); visible_ = newValue; lock.unlock() }
+    }
 }
 
 /// Presentation feedback from Metal's presented handlers to the emulation thread: detects a
@@ -211,6 +219,10 @@ final class EmulationController {
     private var lastDrain: UInt64 = 0
     private var lastUpdateTarget = 0.0          // targetPresentationTimestamp of the last update handled
     private var presentPath = PresentPath()
+    // Display watchdog (docs/FRAME_PACING.md): pictures published vs confirmed on screen.
+    private var watchdog = DisplayWatchdog()
+    private var watchedSeq: UInt64 = 0          // FrameBuffer sequence last seen published
+    private var watchedConfirmed: UInt64 = 0    // DisplayHealth.confirmedSequence last seen
     private var runLoop: CFRunLoop?             // the emulation thread's (targetLock)
     /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
     private var workgroup: OpaquePointer?
@@ -449,6 +461,7 @@ final class EmulationController {
         let after = HostClock.now()
         afterTick(s, slack: nextDeadline &+ period > after ? HostClock.seconds(nextDeadline &+ period - after) : 0)
         nextDeadline &+= period
+        checkDisplay()
         let end = HostClock.now()
         if end > nextDeadline &+ period * 6 {
             // Stalled (app nap, debugger, heavy seek): resync. Never "catch up" by stepping
@@ -478,10 +491,16 @@ final class EmulationController {
         targetChanged = false
         targetLock.unlock()
         guard changed, t !== linkTarget else { return }
+        startLink(t)
+    }
+
+    /// (Re)creates the display link for `t` (nil: none).
+    private func startLink(_ t: DisplayTarget?) {
         link?.invalidate()
         link = nil
         linkTarget = t
         linkActive = false
+        watchdog.reset()
         guard let t else { return }
         let l = CAMetalDisplayLink(metalLayer: t.layer)
         let proxy = DisplayLinkProxy(owner: self)
@@ -565,6 +584,7 @@ final class EmulationController {
             latency.recordBacklogDrain()
         }
         guard newFrame else {
+            defer { checkDisplay() }
             let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
             if drainNow { return }
             if target.renderer.present(drawable: update.drawable, targetPresentation: present,
@@ -607,6 +627,57 @@ final class EmulationController {
                               refresh: refresh, expectedInterval: cadence.expectedFrameInterval, inputLead: inputDeadline.lead)
         let now = HostClock.seconds(HostClock.now())
         afterTick(s, slack: update.targetTimestamp + cadence.expectedFrameInterval - inputDeadline.lead - now)
+        checkDisplay()
+    }
+
+    // MARK: display watchdog (emulation thread)
+
+    /// Feeds the watchdog (new pictures published / confirmed on screen) and runs its recovery:
+    /// RECOVER = the renderer drops its in-flight state (fresh command queue, CRT output and
+    /// temporal state discarded, plain picture for one present) - plus a new display link when its
+    /// callbacks stopped; RESTART = the CRT renderer is rebuilt from scratch and the display link
+    /// recreated. Each action is logged with what the display path was doing.
+    private func checkDisplay() {
+        let now = HostClock.seconds(HostClock.now())
+        let seq = frames.sequence
+        if seq != watchedSeq { watchedSeq = seq; watchdog.emulated(at: now) }
+        guard let target = linkTarget, target.visible else { watchdog.reset(); return }
+        let health = target.renderer.health.snapshot
+        if health.confirmedSequence != watchedConfirmed {
+            watchedConfirmed = health.confirmedSequence
+            watchdog.presented(at: health.confirmedAt)
+        }
+        let action = watchdog.check(at: now)
+        guard action != .none else { return }
+        let linkAge = lastLinkCallback == 0 ? -1 : HostClock.seconds(HostClock.now() &- lastLinkCallback)
+        let linkStalled = !linkActive || linkAge > DisplayWatchdog.stall
+        var why = String(format: "no new picture on screen for %.0f ms while emulating; display link %@ (last callback %.0f ms ago)",
+                         watchdog.waiting(at: now) * 1000, linkStalled ? "stalled" : "running", linkAge * 1000)
+        why += "; last shown frame #\(health.confirmedFrame) (seq \(health.confirmedSequence), latest seq \(seq))"
+        if health.gpuErrors > 0 {
+            why += String(format: "; GPU errors %d (CRT builds %d), last %.0f ms ago: %@", health.gpuErrors, health.buildErrors,
+                          (now - health.lastErrorAt) * 1000, health.lastError)
+        }
+        why += "; " + target.renderer.stateDescription
+        NSLog("ReplayNES: display watchdog: \(action == .recover ? "recover renderer" : "rebuild renderer + restart display link") (\(watchdog.actions)) - \(why)")
+        latency.recordWatchdog(gpuErrors: health.gpuErrors)
+        switch action {
+        case .recover:
+            target.renderer.recover(rebuild: false)
+            if linkStalled { restartLink() }
+        case .restart:
+            target.renderer.recover(rebuild: true)
+            restartLink()
+        case .none: break
+        }
+    }
+
+    private func restartLink() {
+        let t = linkTarget
+        let wd = watchdog
+        startLink(t)
+        watchdog = wd   // keep the escalation state across the new link
+        nextDeadline = HostClock.now()
     }
 
     private func runCommands() {

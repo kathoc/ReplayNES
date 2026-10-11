@@ -129,7 +129,7 @@ extension AppModel {
                 "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "presentCount": s.presentCount,
                 "presentHitches": s.presentHitches, "offCadence": s.offCadence, "skippedFrames": s.skippedFrames,
                 "presentIntervalMaxMs": s.presentIntervalMaxMs, "missedRefreshes": s.missedRefreshes, "droppedFrames": s.droppedFrames, "foreignCallbacks": s.foreignCallbacks,
-                "repeatPresents": s.repeatPresents, "backlogDrains": s.backlogDrains,
+                "repeatPresents": s.repeatPresents, "backlogDrains": s.backlogDrains, "gpuErrors": s.gpuErrors, "watchdogActions": s.watchdogActions,
                 "drawCount": s.drawCount, "drawLate": s.drawLate, "drawGapMaxMs": s.drawGapMaxMs,
                 "tickWakeLate": s.tickWakeLate, "tickWakeMaxMs": s.tickWakeMaxMs, "lateTicks": s.lateTicks,
                 "inputLeadMs": s.inputLeadMs, "pacing": s.pacing, "refreshHz": s.refreshHz,

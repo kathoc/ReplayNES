@@ -206,7 +206,9 @@ final class CRTRenderer {
     /// later encode (the previous plan keeps rendering until then, like nesterm's worker).
     func configure(settings newSettings: Settings, outputWidth: Int, outputHeight: Int, synchronous: Bool = false) {
         let s = newSettings.sanitized
-        if s.lines != settings.lines { stageLines = 0 }  // raster/supply/spot rebuilt (nesterm: rasterChanged)
+        // The line count takes effect with the tube planned for it (encode renders with the tube's
+        // own key.lines): the stages are sized from the tube in use, never from a newer setting whose
+        // plan is still being built (that mismatch read and wrote past the stage / tube buffers).
         settings = s
         let key = TubeKey(ow: max(64, outputWidth), oh: max(48, outputHeight), lines: s.lines, growth: s.beamGrowth, ambient: s.ambientLux,
                           quality: quality == .fast && fastSupported ? .fast : .reference)
@@ -277,18 +279,22 @@ final class CRTRenderer {
         return t
     }
 
-    private func ensureStages() throws {
-        let rows = settings.lines
+    private func ensureStages(rows: Int) throws {
         if stageLines == rows { return }
         func img(_ h: Int) throws -> MTLBuffer {
             guard let b = device.makeBuffer(length: 512 * h * 16, options: .storageModePrivate) else { throw CRTError.metal("stage") }
             return b
         }
+        func make(_ bytes: Int, _ options: MTLResourceOptions) throws -> MTLBuffer {
+            guard let b = device.makeBuffer(length: bytes, options: options) else { throw CRTError.metal("stage") }
+            return b
+        }
+        stageLines = 0
         rasterOut = try img(rows); supplyOut = try img(rows); spotOut = try img(rows)
-        supplyMeans = device.makeBuffer(length: rows * 16, options: .storageModePrivate)
-        supplyRow = device.makeBuffer(length: rows * 16, options: .storageModePrivate)
-        driveIn = device.makeBuffer(length: 512 * 240 * 16, options: .storageModeShared)
-        supplyState = (0..<2).map { _ in device.makeBuffer(length: 16, options: .storageModeShared)! }
+        supplyMeans = try make(rows * 16, .storageModePrivate)
+        supplyRow = try make(rows * 16, .storageModePrivate)
+        driveIn = try make(512 * 240 * 16, .storageModeShared)
+        supplyState = try (0..<2).map { _ in try make(16, .storageModeShared) }
         stageLines = rows
         resetSupply()
     }
@@ -301,6 +307,42 @@ final class CRTRenderer {
         resetSupply()
         lastOrdinal = nil
     }
+
+    /// After a failed command buffer (display watchdog / GPU error): the output and the temporal
+    /// state (AGC, supply, persistence ring) may be half written. The next encode starts a new
+    /// history and nothing is shown until it has produced a picture.
+    func discardOutput() {
+        reset()
+        hasOutput = false
+    }
+
+    /// Temporal state found non-finite (NaN / inf) and reset since creation. A NaN in the AGC gain
+    /// or the supply state would otherwise stay forever (every later frame derives from it).
+    private(set) var stateResets = 0
+
+    /// The AGC and supply state live in shared buffers: checked on the CPU before each frame (a few
+    /// floats) instead of in the kernels (fast-math kernels may fold isfinite away).
+    private func sanitizeState() {
+        let g = agcState.contents().assumingMemoryBound(to: Float.self)[0]
+        var bad = false
+        if !(g.isFinite && g > 0) { resetReceiver(); bad = true }
+        for b in supplyState {
+            let v = b.contents().assumingMemoryBound(to: SIMD4<Float>.self)[0]
+            if !(v.x.isFinite && v.y.isFinite && v.z.isFinite) { resetSupply(); bad = true; break }
+        }
+        if bad { stateResets += 1; slots = [] }
+    }
+
+    /// Tests only: poisons the temporal state with NaN (see sanitizeState).
+    func debugPoisonState() {
+        agcState.contents().assumingMemoryBound(to: Float.self)[0] = .nan
+        for b in supplyState { b.contents().assumingMemoryBound(to: SIMD4<Float>.self)[0] = SIMD4(repeating: .nan) }
+    }
+
+    /// Lines of the tube in use (the stages follow it); nil before the first plan was adopted.
+    var renderedLines: Int? { tube?.key.lines }
+    /// Tests only: makes the next encodes fail as if their stage buffers could not be allocated.
+    var debugFailEncodes = 0
     private func resetReceiver() {
         let p = agcState.contents().assumingMemoryBound(to: Float.self)
         p[0] = Float(CRTAGC.initialGain); p[1] = 0; p[2] = 0; p[3] = 0
@@ -343,9 +385,14 @@ final class CRTRenderer {
         lock.lock()
         if let b = builtTube { builtTube = nil; tube = b; appliedPersistence = nil; hasOutput = false }
         lock.unlock()
-        guard var t = tube, (try? ensureStages()) != nil else { return false }
+        guard var t = tube else { return false }
+        // Nothing encoded: the output is no longer this frame's picture, so it is not shown (the
+        // caller shows the plain picture) instead of the last one staying on screen.
+        if debugFailEncodes > 0 { debugFailEncodes -= 1; hasOutput = false; return false }
+        guard (try? ensureStages(rows: t.key.lines)) != nil else { hasOutput = false; return false }
         let passes = PassEncoder(cb: cb, profiler: profiler)
-        guard passes.valid else { return false }
+        guard passes.valid else { hasOutput = false; return false }
+        sanitizeState()
         let ord = Int64(clamping: ordinal)
         if let last = lastOrdinal, ord <= last {
             resetReceiver(); resetSupply(); slots = []
@@ -364,7 +411,7 @@ final class CRTRenderer {
         }
         let slot = inputSlot
         inputSlot = (inputSlot + 1) % Self.inputSlots
-        let rows = settings.lines
+        let rows = t.key.lines
 
         func dispatch(_ name: String, _ w: Int, _ h: Int = 1, _ bind: (MTLComputeCommandEncoder) -> Void) {
             if benchSkipPasses.contains(name) { return }
@@ -682,7 +729,7 @@ final class CRTRenderer {
                             dispatch: (String, Int, Int, (MTLComputeCommandEncoder) -> Void) -> Void,
                             dispatchGroups: (String, MTLSize, MTLSize, (MTLComputeCommandEncoder) -> Void) -> Void,
                             size: (Int, Int, Int) -> MTLSize) {
-        let rows = settings.lines
+        let rows = t.key.lines
         var drive: MTLBuffer
         var meansReady = false   // supplyMeans already holds this frame's row means (rx_decode_fast)
         switch input {

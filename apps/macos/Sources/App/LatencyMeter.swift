@@ -46,6 +46,8 @@ final class LatencyMeter {
         var tickWakeMaxMs = 0.0
         var emulationCPU = 0.0             // CPU seconds of the emulation thread (cumulative)
         var layerPixels = ""               // game layer drawable size (full screen: should equal the screen)
+        var gpuErrors = 0                  // display command buffers that completed with an error
+        var watchdogActions: UInt64 = 0    // display watchdog recoveries (no picture on screen while emulating)
     }
 
     private let lock = NSLock()
@@ -103,6 +105,7 @@ final class LatencyMeter {
     func recordDropped() { lock.lock(); s.droppedFrames &+= 1; lock.unlock() }
     func recordLayerSize(_ size: CGSize) { lock.lock(); s.layerPixels = "\(Int(size.width))x\(Int(size.height))"; lock.unlock() }
     func recordForeignCallback() { lock.lock(); s.foreignCallbacks &+= 1; lock.unlock() }
+    func recordWatchdog(gpuErrors: Int) { lock.lock(); s.watchdogActions &+= 1; s.gpuErrors = gpuErrors; lock.unlock() }
     func recordBacklogDrain() { lock.lock(); s.backlogDrains &+= 1; lock.unlock() }
 
     /// A frame was rendered. `refresh` = the expected interval in seconds.

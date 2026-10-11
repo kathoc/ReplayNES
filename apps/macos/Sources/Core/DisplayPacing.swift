@@ -159,3 +159,30 @@ struct AudioRateControl {
     /// Buffer level (samples) just before a frame's audio is pushed. Returns the ratio to use.
     mutating func update(fill: Double) -> Double { rnf_audio_rate_update(RNFHandle.unique(&box), fill) }
 }
+
+/// Display watchdog (rnf_display_watchdog, docs/FRAME_PACING.md "Display watchdog"): a published
+/// picture that has not reached the screen within `stall` seconds while emulation advances asks
+/// for a renderer recovery, then a display link restart, then backs off.
+struct DisplayWatchdog {
+    enum Action: Equatable { case none, recover, restart }
+    static let stall = RNF_DISPLAY_WATCHDOG_STALL
+    static let backoff = RNF_DISPLAY_WATCHDOG_BACKOFF
+    private var box = RNFHandle(rnf_display_watchdog_new(), free: { rnf_display_watchdog_free($0) },
+                                clone: { rnf_display_watchdog_clone($0) })
+
+    /// A new picture was published (host seconds).
+    mutating func emulated(at now: Double) { rnf_display_watchdog_emulated(RNFHandle.unique(&box), now) }
+    /// A new picture was confirmed on screen.
+    mutating func presented(at now: Double) { rnf_display_watchdog_presented(RNFHandle.unique(&box), now) }
+    /// The viewport is hidden or was replaced: nothing is expected on screen.
+    mutating func reset() { rnf_display_watchdog_reset(RNFHandle.unique(&box)) }
+    mutating func check(at now: Double) -> Action {
+        switch rnf_display_watchdog_check(RNFHandle.unique(&box), now) {
+        case RNF_WATCHDOG_RECOVER: return .recover
+        case RNF_WATCHDOG_RESTART: return .restart
+        default: return .none
+        }
+    }
+    func waiting(at now: Double) -> Double { rnf_display_watchdog_waiting(box.ptr, now) }
+    var actions: Int { Int(rnf_display_watchdog_recoveries(box.ptr)) }
+}
