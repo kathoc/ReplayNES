@@ -461,7 +461,7 @@ bool CrtRenderer::init(const CrtVulkanContext& ctx, VkRenderPass showPass, std::
        uploadConst(&kernelSpecReal_, crt::rf::kernelSpectrumReal().data(), crt::rf::kernelSpectrumReal().size() * 4) &&
        createBuffer(&agcRows_, 240 * 16, false);
   ok = ok && uploadConst(&basis_, basis.data(), basis.size() * 4) && createBuffer(&carrier_, 2728 * 240 * 8, false) &&
-       createBuffer(&stats_, 240 * 16, false) && createBuffer(&gains_, 240 * 4, false) && createBuffer(&agcState_, 16, false) &&
+       createBuffer(&stats_, 240 * 16, false) && createBuffer(&gains_, 240 * 4, false) && createBuffer(&agcState_, 16, true) &&
        createBuffer(&prepared_, 682 * 240 * 16, false) && createBuffer(&rxOut_, 512 * 240 * 16, false) &&
        createBuffer(&driveIn_, 512 * 240 * 16, true, false);
   for (int i = 0; i < kInputSlots && ok; ++i)
@@ -469,6 +469,10 @@ bool CrtRenderer::init(const CrtVulkanContext& ctx, VkRenderPass showPass, std::
          createBuffer(&rgbBufs_[i], 256 * 240 * 4, true, false) &&
          createBuffer(&weightBufs_[i], VkDeviceSize(crt::phosphor::depth()) * 16, true, false);
   if (!ok) return fail("buffers");
+  if (agcState_.map) {  // read by sanitizeState() before the GPU reset has run
+    const float st[4] = {float(crt::agc::kInitialGain), 0, 0, 0};
+    std::memcpy(agcState_.map, st, sizeof st);
+  }
   resetReceiverPending_ = resetSupplyPending_ = true;
   ready_ = true;
   return true;
@@ -518,7 +522,9 @@ void CrtRenderer::shutdown() {
 // ------------------------------------------------------------------ configuration
 void CrtRenderer::configure(const CrtSettings& newSettings, int outputWidth, int outputHeight, bool synchronous) {
   CrtSettings s = newSettings.sanitized();
-  if (s.lines != settings_.lines) stageLines_ = 0;  // raster/supply/spot rebuilt (nesterm: rasterChanged)
+  // The line count takes effect with the tube planned for it (encode renders with the tube's own
+  // key.lines): the stages are sized from the tube in use, never from a newer setting whose plan is
+  // still being built (that mismatch read and wrote past the stage / tube buffers).
   settings_ = s;
   TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux,
               quality == CrtQuality::fast && fastSupported_ ? CrtQuality::fast : CrtQuality::reference};
@@ -663,8 +669,7 @@ void CrtRenderer::collectRetired() {
   }
 }
 
-bool CrtRenderer::ensureStages() {
-  int rows = settings_.lines;
+bool CrtRenderer::ensureStages(int rows) {
   if (stageLines_ == rows) return true;
   if (stageLines_ != 0 || rasterOut_.buffer) {
     // Line count changed: the old stage buffers may be referenced by frames in flight.
@@ -674,11 +679,60 @@ bool CrtRenderer::ensureStages() {
   const VkDeviceSize img = VkDeviceSize(512) * rows * 16;
   bool ok = createBuffer(&rasterOut_, img, false) && createBuffer(&supplyOut_, img, false) && createBuffer(&spotOut_, img, false) &&
             createBuffer(&supplyMeans_, VkDeviceSize(rows) * 16, false) && createBuffer(&supplyRow_, VkDeviceSize(rows) * 16, false) &&
-            createBuffer(&supplyState_[0], 16, false) && createBuffer(&supplyState_[1], 16, false);
-  if (!ok) return false;
+            createBuffer(&supplyState_[0], 16, true) && createBuffer(&supplyState_[1], 16, true);
+  if (!ok) {
+    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1]}) destroyBuffer(b);
+    stageLines_ = 0;
+    return false;
+  }
+  const float st[4] = {float(crt::supply::kV0), 0, 1, 1};  // read by sanitizeState() before the GPU reset has run
+  for (Buffer& b : supplyState_)
+    if (b.map) std::memcpy(b.map, st, sizeof st);
   stageLines_ = rows;
   resetSupplyPending_ = true;
   return true;
+}
+
+// The AGC and supply state are fed back frame to frame: a NaN / inf there would stay forever. They
+// live in small host-visible buffers and are checked on the CPU before each frame (the kernels are
+// unchanged, so finite values render exactly as before).
+void CrtRenderer::sanitizeState() {
+  bool bad = false;
+  if (const float* g = static_cast<const float*>(agcState_.map)) {
+    if (!(std::isfinite(g[0]) && g[0] > 0)) {
+      resetReceiverPending_ = true;
+      bad = true;
+    }
+  }
+  for (const Buffer& b : supplyState_) {
+    const float* v = static_cast<const float*>(b.map);
+    if (v && !(std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]))) {
+      resetSupplyPending_ = true;
+      bad = true;
+      break;
+    }
+  }
+  if (!bad) return;
+  stateResets_ += 1;
+  slots_.clear();
+  if (tube_) tube_->ringCleared = false;  // 0 * NaN in an unused slot would stay NaN
+}
+
+void CrtRenderer::discardOutput() {
+  resetReceiverPending_ = true;
+  resetSupplyPending_ = true;
+  slots_.clear();
+  hasLastOrdinal_ = false;
+  if (tube_) tube_->ringCleared = false;
+  hasOutput_ = false;
+}
+
+void CrtRenderer::debugPoisonState() {
+  if (!ctx_.device) return;
+  vkDeviceWaitIdle(ctx_.device);
+  const float nan4[4] = {NAN, NAN, NAN, NAN};
+  for (Buffer* b : {&agcState_, &supplyState_[0], &supplyState_[1]})
+    if (b->map) std::memcpy(b->map, nan4, sizeof nan4);
 }
 
 std::string CrtRenderer::planInfo() const {
@@ -752,12 +806,22 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
       hasOutput_ = false;
     }
   }
-  if (!tube_ || !ensureStages()) return false;
-  if (input.kind == InputKind::codes && !input.codes) return false;
-  if (input.kind == InputKind::rgb && !input.rgb) return false;
-  if (input.kind == InputKind::drive && !input.drive) return false;
+  if (!tube_) return false;
+  // Nothing encoded: the output is no longer this frame's picture, so it is not shown (the caller
+  // shows the plain picture) instead of the last one staying on screen.
+  if (debugFailEncodes > 0) {
+    debugFailEncodes -= 1;
+    hasOutput_ = false;
+    return false;
+  }
+  if (!ensureStages(tube_->key.lines) || (input.kind == InputKind::codes && !input.codes) ||
+      (input.kind == InputKind::rgb && !input.rgb) || (input.kind == InputKind::drive && !input.drive)) {
+    hasOutput_ = false;
+    return false;
+  }
   encodes_ += 1;
   collectRetired();
+  sanitizeState();
   Tube& t = *tube_;
   int64_t ord = int64_t(std::min<uint64_t>(ordinal, uint64_t(INT64_MAX)));
   if (hasLastOrdinal_ && ord <= lastOrdinal_) {
@@ -774,8 +838,10 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     // Reference: half4 tube-output slots. Fast: half4 drive slots (512 x lines).
     if (wantPersistence && !t.ring.buffer &&
         !createBuffer(&t.ring, VkDeviceSize(crt::phosphor::depth()) * (t.fast ? VkDeviceSize(512) * t.height : VkDeviceSize(t.ow) * t.oh) * 8,
-                      false))
+                      false)) {
+      hasOutput_ = false;
       return false;
+    }
     // Zero like a fresh WebGL texture: unused slots have weight 0, and 0 * garbage could be NaN.
     if (wantPersistence && !t.ringCleared) ringClearPending = true;
     slots_.clear();
@@ -784,7 +850,7 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   if (settings_.persistence && t.ring.buffer && !t.ringCleared) ringClearPending = true;
   const int slot = inputSlot_;
   inputSlot_ = (inputSlot_ + 1) % kInputSlots;
-  const int rows = settings_.lines;
+  const int rows = t.key.lines;
 
   // Timestamps (GPU time of the CRT passes) + ordering against the previous frame's show pass.
   int pair = -1;
@@ -837,10 +903,12 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   auto finish = [&] {
     VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+    // HOST_READ: sanitizeState() reads the AGC / supply state of finished frames.
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_HOST_READ_BIT;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                         1, &mb, 0, nullptr, 0, nullptr);
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+                             VK_PIPELINE_STAGE_HOST_BIT,
+                         0, 1, &mb, 0, nullptr, 0, nullptr);
     if (pair >= 0) {
       vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries_, uint32_t(pair * 2 + 1));
       queryPending_.push_back(pair);
@@ -1029,7 +1097,7 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
 
 void CrtRenderer::encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t ordinal, int64_t ord, int slot) {
   Tube& t = *tube_;
-  const int rows = settings_.lines;
+  const int rows = t.key.lines;  // the stages follow the tube in use (ensureStages)
   const Buffer* drive = nullptr;
   bool meansReady = false;  // supplyMeans_ already holds this frame's row means (rx_decode_fast)
   if (input.kind == InputKind::codes) {

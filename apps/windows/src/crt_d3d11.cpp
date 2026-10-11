@@ -363,6 +363,8 @@ void CrtRendererD3D11::shutdown() {
     destroyBuffer(b);
   release(showStaging_);
   showStagingSize_ = 0;
+  release(stateStaging_);
+  stateReadPending_ = false;
   for (auto& [name, k] : kernels_) release(k.cs);
   kernels_.clear();
   release(showVs_);
@@ -418,7 +420,9 @@ std::string CrtRendererD3D11::deviceDescription() const {
 // ------------------------------------------------------------------ configuration
 void CrtRendererD3D11::configure(const CrtSettings& newSettings, int outputWidth, int outputHeight, bool synchronous) {
   CrtSettings s = newSettings.sanitized();
-  if (s.lines != settings_.lines) stageLines_ = 0;  // raster/supply/spot rebuilt (nesterm: rasterChanged)
+  // The line count takes effect with the tube planned for it (encode renders with the tube's own
+  // key.lines): the stages are sized from the tube in use, never from a newer setting whose plan is
+  // still being built (that mismatch read and wrote past the stage / tube buffers).
   settings_ = s;
   TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux, quality};
   if (synchronous) {
@@ -538,18 +542,80 @@ void CrtRendererD3D11::destroyTube(Tube* t) {
     destroyBuffer(b);
 }
 
-bool CrtRendererD3D11::ensureStages() {
-  int rows = settings_.lines;
+bool CrtRendererD3D11::ensureStages(int rows) {
   if (stageLines_ == rows) return true;
+  stageLines_ = 0;
   for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1]}) destroyBuffer(b);
   const size_t img = size_t(512) * rows * 16;
   bool ok = createBuffer(&rasterOut_, img) && createBuffer(&supplyOut_, img) && createBuffer(&spotOut_, img) &&
             createBuffer(&supplyMeans_, size_t(rows) * 16) && createBuffer(&supplyRow_, size_t(rows) * 16) &&
             createBuffer(&supplyState_[0], 16) && createBuffer(&supplyState_[1], 16);
-  if (!ok) return false;
+  if (!ok) {
+    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1]}) destroyBuffer(b);
+    return false;
+  }
   stageLines_ = rows;
   resetSupplyPending_ = true;
   return true;
+}
+
+void CrtRendererD3D11::copyStateForCheck() {
+  if (!stateStaging_) {
+    D3D11_BUFFER_DESC bd{};
+    bd.ByteWidth = 48;
+    bd.Usage = D3D11_USAGE_STAGING;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if (FAILED(device_->CreateBuffer(&bd, nullptr, &stateStaging_))) return;
+  }
+  const D3D11_BOX box{0, 0, 0, 16, 1, 1};
+  const Buffer* src[3] = {&agcState_, &supplyState_[0], &supplyState_[1]};
+  for (UINT i = 0; i < 3; ++i)
+    if (src[i]->buffer) ctx_->CopySubresourceRegion(stateStaging_, 0, i * 16, 0, 0, src[i]->buffer, 0, &box);
+  stateReadPending_ = true;
+}
+
+void CrtRendererD3D11::sanitizeState() {
+  if (!stateReadPending_ || !stateStaging_) return;
+  D3D11_MAPPED_SUBRESOURCE m{};
+  HRESULT hr = ctx_->Map(stateStaging_, 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &m);
+  if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return;  // checked at a later frame
+  stateReadPending_ = false;
+  if (FAILED(hr)) return;
+  float v[12];
+  std::memcpy(v, m.pData, sizeof v);
+  ctx_->Unmap(stateStaging_, 0);
+  bool bad = false;
+  if (!(std::isfinite(v[0]) && v[0] > 0)) {
+    resetReceiverPending_ = true;
+    bad = true;
+  }
+  for (int i = 1; i <= 2; ++i)
+    if (!(std::isfinite(v[i * 4]) && std::isfinite(v[i * 4 + 1]) && std::isfinite(v[i * 4 + 2]))) {
+      resetSupplyPending_ = true;
+      bad = true;
+    }
+  if (!bad) return;
+  stateResets_ += 1;
+  slots_.clear();
+  if (tube_) tube_->ringCleared = false;  // 0 * NaN in an unused slot would stay NaN
+}
+
+void CrtRendererD3D11::discardOutput() {
+  resetReceiverPending_ = true;
+  resetSupplyPending_ = true;
+  slots_.clear();
+  hasLastOrdinal_ = false;
+  if (tube_) tube_->ringCleared = false;
+  hasOutput_ = false;
+}
+
+void CrtRendererD3D11::debugPoisonState() {
+  if (!ctx_) return;
+  const float nan4[4] = {NAN, NAN, NAN, NAN};
+  for (Buffer* b : {&agcState_, &supplyState_[0], &supplyState_[1]})
+    if (b->buffer) upload(*b, nan4);
+  copyStateForCheck();
+  finish();
 }
 
 std::string CrtRendererD3D11::planInfo() const {
@@ -608,10 +674,20 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
       hasOutput_ = false;
     }
   }
-  if (!tube_ || !ensureStages()) return false;
-  if (input.kind == InputKind::codes && !input.codes) return false;
-  if (input.kind == InputKind::rgb && !input.rgb) return false;
-  if (input.kind == InputKind::drive && !input.drive) return false;
+  if (!tube_) return false;
+  // Nothing encoded: the output is no longer this frame's picture, so it is not shown (the caller
+  // shows the plain picture) instead of the last one staying on screen.
+  if (debugFailEncodes > 0) {
+    debugFailEncodes -= 1;
+    hasOutput_ = false;
+    return false;
+  }
+  if (!ensureStages(tube_->key.lines) || (input.kind == InputKind::codes && !input.codes) ||
+      (input.kind == InputKind::rgb && !input.rgb) || (input.kind == InputKind::drive && !input.drive)) {
+    hasOutput_ = false;
+    return false;
+  }
+  sanitizeState();
   Tube& t = *tube_;
   int64_t ord = int64_t(std::min<uint64_t>(ordinal, uint64_t(INT64_MAX)));
   if (hasLastOrdinal_ && ord <= lastOrdinal_) {
@@ -627,14 +703,16 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
     // tube.setPersistence(): allocate the ring on demand; always restarts history.
     // Reference: half4 tube-output slots. Fast: half4 drive slots (512 x lines).
     if (wantPersistence && !t.ring.buffer &&
-        !createBuffer(&t.ring, size_t(crt::phosphor::depth()) * (t.fast ? size_t(512) * size_t(t.height) : size_t(t.ow) * t.oh) * 8))
+        !createBuffer(&t.ring, size_t(crt::phosphor::depth()) * (t.fast ? size_t(512) * size_t(t.height) : size_t(t.ow) * t.oh) * 8)) {
+      hasOutput_ = false;
       return false;
+    }
     if (wantPersistence && !t.ringCleared) ringClearPending = true;
     slots_.clear();
     appliedPersistence_ = wantPersistence;
   }
   if (settings_.persistence && t.ring.buffer && !t.ringCleared) ringClearPending = true;
-  const int rows = settings_.lines;
+  const int rows = t.key.lines;  // the stages follow the tube in use (ensureStages)
 
   // GPU time of the CRT passes.
   int set = -1;
@@ -658,6 +736,7 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
     ctx_->Begin(profileDisjoint_);
   }
   // State resets (physical-worker 'reset': receiver.reset(), supply.reset()), in command order.
+  if (resetReceiverPending_ || resetSupplyPending_) stateReadPending_ = false;  // that copy predates the reset
   if (resetReceiverPending_) {
     const float st[4] = {float(crt::agc::kInitialGain), 0, 0, 0};
     upload(agcState_, st);
@@ -684,6 +763,7 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
       queryPending_.push_back(set);
     }
     if (profiling_) ctx_->End(profileDisjoint_);
+    if (!stateReadPending_) copyStateForCheck();  // read back by a later encode, never waited for
     hasOutput_ = true;
     return true;
   };
@@ -864,7 +944,7 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
 
 void CrtRendererD3D11::encodeFast(const Input& input, uint64_t ordinal, int64_t ord) {
   Tube& t = *tube_;
-  const int rows = settings_.lines;
+  const int rows = t.key.lines;  // the stages follow the tube in use (ensureStages)
   const Buffer* drive = nullptr;
   bool meansReady = false;  // supplyMeans_ already holds this frame's row means (rx_decode_fast)
   if (input.kind == InputKind::codes) {

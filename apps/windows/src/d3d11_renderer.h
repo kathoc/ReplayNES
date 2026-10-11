@@ -33,6 +33,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "display_health.h"
 #include "render/crt_display_policy.h"
 #include "renderer.h"
 
@@ -87,6 +88,14 @@ class D3D11Renderer final : public Renderer {
   bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
   void requestScreenshot(const std::string& path) override { screenshotPath_ = path; }
 
+  // Display watchdog (renderer.h). Failed presents / resizes are logged with their HRESULT
+  // (DisplayErrors); DXGI_ERROR_DEVICE_REMOVED / RESET recreate the device with the swap chain,
+  // the ImGui renderer backend and the CRT; other failures recreate the swap chain.
+  bool lastPresentHealthy() const override { return lastHealthy_; }
+  bool occluded() const override { return occluded_; }
+  void recoverDisplay(bool restart) override;
+  std::string displayHealth() const override;
+
  private:
   bool createDevice(std::string* error);
   bool createSwapChain(std::string* error);
@@ -99,6 +108,18 @@ class D3D11Renderer final : public Renderer {
   void saveScreenshot();
   bool fullscreenNow() const;
   void waiterLoop();
+  void startWaiter();
+  void stopWaiter();
+  /// Releases every device object (the ImGui renderer backend and the CRT too); keeps the window.
+  void releaseDevice();
+  /// After DXGI_ERROR_DEVICE_REMOVED / RESET: a new device, swap chain and resources (rate-limited).
+  bool recreateDevice();
+  /// A failed present / resize / missing render target: a new swap chain for the window.
+  bool recreateSwapChain();
+  /// Logs a failed call (rate-limited); device removed / reset flags a device re-creation.
+  void fail(const char* what, long hr);
+  /// The CRT renderer and its policy are dropped (created again, compiled on the worker thread).
+  void dropCrt();
 
   SDL_Window* window_ = nullptr;
   void* hwnd_ = nullptr;
@@ -159,6 +180,16 @@ class D3D11Renderer final : public Renderer {
   double gpuBudget_ = 0;
   double lastAcquireWait_ = 0;
   std::string screenshotPath_;
+  // Display health (display watchdog).
+  DisplayErrors errors_;
+  bool deviceRemoved_ = false, swapBroken_ = false, occluded_ = false;
+  double nextDeviceRetry_ = 0;
+  bool imguiWanted_ = false;
+  bool lastHealthy_ = true;
+  bool plainNext_ = false;     // RECOVER: the next present shows the plain picture
+  int crtFailStreak_ = 0;      // consecutive CRT encodes that failed (a plan in use)
+  int crtFailedRestarts_ = 0;  // RESTARTs while CRT encodes kept failing
+  bool crtGaveUp_ = false;     // CRT shown plain until it is switched off and on again
 
   // Present ids and the waiter thread.
   uint64_t presentId_ = 0;

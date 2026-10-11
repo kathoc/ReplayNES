@@ -35,6 +35,15 @@ class CrtDisplay {
   /// Records the build passes of the stored picture. False when nothing was recorded (no plan yet).
   bool build(VkCommandBuffer cmd);
   bool canShow() const { return renderer_ && renderer_->hasOutput(); }
+  /// A tube plan is in use (a false build() with a plan is a failure, not a plan still building).
+  bool hasPlan() const { return renderer_ && renderer_->renderedLines() > 0; }
+  /// Output and temporal state discarded (a failed submit, the display watchdog): nothing is
+  /// shown until the next build.
+  void discard() {
+    if (renderer_) renderer_->discardOutput();
+  }
+  /// "tube WxH, output yes|no, plan pending, state resets N" (display watchdog log).
+  std::string state() const;
   /// A tube plan is being built / waits to be adopted by the next build.
   bool planPending() { return renderer_ && renderer_->planPending(); }
   void show(VkCommandBuffer cmd, int targetWidth, int targetHeight, const CrtRect& dst, double cropFraction);

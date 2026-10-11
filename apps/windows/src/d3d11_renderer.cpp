@@ -99,8 +99,189 @@ bool D3D11Renderer::init(SDL_Window* window, std::string* error) {
   crtSupported_ = CrtRendererD3D11::supported(device_, &crtWhy);
   status_.crtAvailable = crtSupported_;
   status_.crtError = crtWhy;
-  waiter_ = std::thread([this] { waiterLoop(); });
+  startWaiter();
   return true;
+}
+
+void D3D11Renderer::startWaiter() {
+  if (waiter_.joinable() || !swap_) return;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    stop_ = false;
+  }
+  waiter_ = std::thread([this] { waiterLoop(); });
+}
+
+void D3D11Renderer::stopWaiter() {
+  if (!waiter_.joinable()) return;
+  {
+    std::lock_guard<std::mutex> lk(mutex_);
+    stop_ = true;
+    cv_.notify_all();
+  }
+  waiter_.join();
+  std::lock_guard<std::mutex> lk(mutex_);
+  stop_ = false;
+  toWait_.clear();  // never confirmed (the frame loop settles them as not shown)
+}
+
+void D3D11Renderer::fail(const char* what, long h) {
+  std::string name = h == DXGI_ERROR_DEVICE_REMOVED  ? "DXGI_ERROR_DEVICE_REMOVED"
+                     : h == DXGI_ERROR_DEVICE_RESET  ? "DXGI_ERROR_DEVICE_RESET"
+                     : h == DXGI_ERROR_DEVICE_HUNG   ? "DXGI_ERROR_DEVICE_HUNG"
+                     : h == DXGI_ERROR_INVALID_CALL  ? "DXGI_ERROR_INVALID_CALL"
+                     : h == E_OUTOFMEMORY            ? "E_OUTOFMEMORY"
+                     : h == E_INVALIDARG             ? "E_INVALIDARG"
+                                                     : "HRESULT";
+  bool lost = h == DXGI_ERROR_DEVICE_REMOVED || h == DXGI_ERROR_DEVICE_RESET || h == DXGI_ERROR_DEVICE_HUNG;
+  if (lost && device_) {
+    char b[48];
+    std::snprintf(b, sizeof b, ", removed reason 0x%08lx", (unsigned long)device_->GetDeviceRemovedReason());
+    name += b;
+  }
+  errors_.note(what, h, name);
+  if (lost) deviceRemoved_ = true;
+  else swapBroken_ = true;
+}
+
+void D3D11Renderer::dropCrt() {
+  if (crtInit_.valid()) {  // the worker uses the device
+    CrtInit pending = crtInit_.get();
+    pending.crt.reset();
+  }
+  crt_.reset();
+  crtPolicy_.reset();
+}
+
+bool D3D11Renderer::recreateSwapChain() {
+  stopWaiter();  // it waits on the swap chain's waitable object
+  releaseTargets();
+  if (ctx_) {
+    ctx_->ClearState();
+    ctx_->Flush();
+  }
+  {
+    std::lock_guard<std::mutex> lk(swapMutex_);
+    if (waitable_) CloseHandle(HANDLE(waitable_));
+    waitable_ = nullptr;
+    release(swap_);
+    currentGeneration_ = ++generation_;
+  }
+  std::string err;
+  if (!createSwapChain(&err)) {
+    errors_.note("swap chain re-creation (" + err + ")", 0);
+    releaseTargets();
+    if (waitable_) CloseHandle(HANDLE(waitable_));
+    waitable_ = nullptr;
+    release(swap_);
+    return false;
+  }
+  swapBroken_ = false;
+  startWaiter();
+  std::fprintf(stderr, "ReplayNES: display: swap chain recreated (%dx%d)\n", width_, height_);
+  return true;
+}
+
+void D3D11Renderer::releaseDevice() {
+  stopWaiter();
+  dropCrt();
+  if (imguiReady_) ImGui_ImplDX11_Shutdown();
+  imguiReady_ = false;
+  releaseTargets();
+  release(atlasSrv_);
+  release(atlas_);
+  release(gameSrv_);
+  release(gameTex_);
+  release(point_);
+  release(vs_);
+  release(ps_);
+  release(cb_);
+  release(raster_);
+  release(opaque_);
+  {
+    std::lock_guard<std::mutex> lk(swapMutex_);
+    if (waitable_) CloseHandle(HANDLE(waitable_));
+    waitable_ = nullptr;
+    release(swap_);
+    currentGeneration_ = ++generation_;
+  }
+  release(factory_);
+  if (ctx_) ctx_->ClearState();
+  release(ctx_);
+  release(device_);
+  hasPicture_ = false;
+  // Thumbnails are uploaded again into the new atlas.
+  cellKey_.fill(0);
+  cellUsed_.fill(0);
+  keyCell_.clear();
+  pendingThumbs_.clear();
+}
+
+bool D3D11Renderer::recreateDevice() {
+  double now = nowSeconds();
+  if (now < nextDeviceRetry_) return false;
+  nextDeviceRetry_ = now + 1.0;
+  std::fprintf(stderr, "ReplayNES: display: recreating the Direct3D 11 device (%s)\n", errors_.summary().c_str());
+  releaseDevice();
+  std::string err;
+  bool ok = createDevice(&err) && createSwapChain(&err) && createPipeline(&err);
+  if (ok && !createTextures()) {
+    err = "texture creation failed";
+    ok = false;
+  }
+  if (!ok) {
+    errors_.note("Direct3D 11 device re-creation (" + err + ")", 0);
+    releaseDevice();
+    return false;
+  }
+  std::string crtWhy;
+  crtSupported_ = CrtRendererD3D11::supported(device_, &crtWhy);
+  status_.crtAvailable = crtSupported_;
+  status_.crtError = crtWhy;
+  if (imguiWanted_) {
+    imguiReady_ = ImGui_ImplDX11_Init(device_, ctx_);
+    if (!imguiReady_) errors_.note("ImGui_ImplDX11_Init after device re-creation", 0);
+  }
+  startWaiter();
+  deviceRemoved_ = false;
+  swapBroken_ = false;
+  std::fprintf(stderr, "ReplayNES: display: Direct3D 11 device recreated (%s)\n", description_.c_str());
+  return true;
+}
+
+void D3D11Renderer::recoverDisplay(bool restart) {
+  if (!restart) {
+    // RECOVER: the CRT output and its fed-back state are dropped; the next present shows the
+    // plain picture, the one after it builds the CRT picture anew.
+    if (crt_) crt_->discardOutput();
+    plainNext_ = true;
+    return;
+  }
+  // RESTART: the CRT renderer (compiled again on the worker thread) and the swap chain from
+  // scratch - the device too when it was removed. CRT encodes that keep failing across a restart:
+  // shown plain.
+  if (crtFailStreak_ > 0 && ++crtFailedRestarts_ >= 2 && !crtGaveUp_) {
+    crtGaveUp_ = true;
+    status_.crtError = "CRT stopped after repeated GPU errors (switch it off and on to retry)";
+    std::fprintf(stderr, "ReplayNES: display: CRT encodes keep failing after a restart: plain picture\n");
+  }
+  plainNext_ = true;
+  if (deviceRemoved_ || !device_) {
+    nextDeviceRetry_ = 0;
+    recreateDevice();
+    return;
+  }
+  dropCrt();
+  recreateSwapChain();
+}
+
+std::string D3D11Renderer::displayHealth() const {
+  char b[256];
+  std::snprintf(b, sizeof b, "D3D11 device %s, swap chain %dx%d%s%s, CRT %s%s, CRT encodes failing %d%s",
+                device_ ? (deviceRemoved_ ? "removed" : "ok") : "none", width_, height_, swapBroken_ ? " (to recreate)" : "",
+                occluded_ ? " occluded" : "", crt_ ? (crt_->hasOutput() ? "output yes" : "output no") : "off",
+                crt_ && crt_->planPending() ? " plan pending" : "", crtFailStreak_, crtGaveUp_ ? " (CRT given up)" : "");
+  return errors_.summary() + "; " + b;
 }
 
 bool D3D11Renderer::createDevice(std::string* error) {
@@ -213,12 +394,17 @@ bool D3D11Renderer::resize(int w, int h) {
   // Presents queued before the resize are not confirmed (the waiter skips them).
   currentGeneration_ = ++generation_;
   if (FAILED(r)) {
-    std::fprintf(stderr, "ResizeBuffers %dx%d: 0x%08lx\n", w, h, (unsigned long)r);
+    // Device removed / reset: the device anew; otherwise a new swap chain (next frame).
+    fail("IDXGISwapChain::ResizeBuffers", long(r));
     return false;
   }
   width_ = w;
   height_ = h;
-  return createTargets();
+  if (!createTargets()) {
+    fail("render target view after ResizeBuffers", E_FAIL);
+    return false;
+  }
+  return true;
 }
 
 bool D3D11Renderer::createPipeline(std::string* error) {
@@ -291,11 +477,14 @@ bool D3D11Renderer::createTextures() {
 
 bool D3D11Renderer::initImGui() {
   ImGui_ImplSDL3_InitForD3D(window_);
+  imguiWanted_ = true;
   imguiReady_ = ImGui_ImplDX11_Init(device_, ctx_);
   return imguiReady_;
 }
 
-void D3D11Renderer::newImGuiFrame() { ImGui_ImplDX11_NewFrame(); }
+void D3D11Renderer::newImGuiFrame() {
+  if (imguiReady_) ImGui_ImplDX11_NewFrame();
+}
 
 bool D3D11Renderer::fullscreenNow() const { return window_ && (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN) != 0; }
 
@@ -305,9 +494,22 @@ bool D3D11Renderer::presentTiming() const {
 }
 
 uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
+  lastHealthy_ = false;
+  occluded_ = false;
+  // A removed device / broken swap chain (seen by an earlier call): recreated before anything else.
+  if (deviceRemoved_ || !device_) {
+    if (!recreateDevice()) return 0;
+    ui = nullptr;  // built against the old device's textures; the next frame's UI uses the new ones
+  }
+  if ((swapBroken_ || !swap_) && !recreateSwapChain()) return 0;
+  if (!post_.crt && crtGaveUp_) {  // switched off: the next switch on tries again
+    crtGaveUp_ = false;
+    crtFailedRestarts_ = 0;
+    status_.crtError.clear();
+  }
   // CRT Display on / off (created on first use - compiled on a worker thread, the device is
   // free-threaded - and freed when switched off).
-  bool crtOn = post_.crt && crtSupported_;
+  bool crtOn = post_.crt && crtSupported_ && !crtGaveUp_;
   if (crtInit_.valid() && crtInit_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     CrtInit r = crtInit_.get();
     if (r.crt) {
@@ -347,7 +549,10 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   SDL_GetWindowSizeInPixels(window_, &w, &h);
   if (w <= 0 || h <= 0 || (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED)) return 0;
   if ((w != width_ || h != height_) && !resize(w, h)) return 0;
-  if (!rtv_) return 0;
+  if (!rtv_) {
+    fail("render target view", E_FAIL);  // the swap chain anew next frame
+    return 0;
+  }
   double t0 = nowSeconds();
   if (newPicture) {
     D3D11_MAPPED_SUBRESOURCE m{};
@@ -365,6 +570,9 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
   // here before the show pass (or, built ahead, after this present: the next one shows it).
   bool crtBuildAfter = false;
+  bool crtFailed = false;  // a CRT encode with a plan in use did nothing (its output was cleared)
+  const bool plain = plainNext_;  // display watchdog RECOVER: the plain picture for this present
+  plainNext_ = false;
   if (crtOn) {
     crtPolicy_.update(crt_->takeGpuTimes(), gpuBudget_, post_.allowBuildAhead, post_.adaptiveResolution, crt_->outputWidth());
     if (newPicture) crtPolicy_.store(newPicture, signal);
@@ -374,10 +582,10 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
       crt_->configure(post_.crtSettings, tw, th);
     }
     bool changed = shownPost_ != post_ || shownCrt_.w != rect.crt.w || shownCrt_.h != rect.crt.h;
-    bool needBuild = crtPolicy_.hasFrame() && (newPicture || changed || !crt_->hasOutput() || crt_->planPending());
+    bool needBuild = !plain && crtPolicy_.hasFrame() && (newPicture || changed || !crt_->hasOutput() || crt_->planPending());
     if (needBuild) {
       if (crtPolicy_.pipelined() && crt_->hasOutput()) crtBuildAfter = true;
-      else crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal());
+      else if (!crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
     }
     shownPost_ = post_;
     shownCrt_ = rect.crt;
@@ -386,7 +594,7 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   ctx_->OMSetRenderTargets(1, &rtv_, nullptr);
   const float black[4] = {0, 0, 0, 1};
   ctx_->ClearRenderTargetView(rtv_, black);
-  if (crtOn && rect.visible && crt_->hasOutput()) {
+  if (crtOn && rect.visible && crt_->hasOutput() && !plain) {
     crt_->drawShow(width_, height_, rect.crt, rect.crtCrop);
     status_.crtShown = true;
   } else if (rect.visible && hasPicture_) {
@@ -431,20 +639,30 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
     HRESULT r = swap_->Present(tearing ? 0 : 1, tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
     lastAcquireWait_ += nowSeconds() - p0;  // Present blocks when every buffer is in use
     if (FAILED(r)) {
-      if (r == DXGI_ERROR_DEVICE_REMOVED || r == DXGI_ERROR_DEVICE_RESET)
-        std::fprintf(stderr, "D3D11 device lost (0x%08lx)\n", (unsigned long)device_->GetDeviceRemovedReason());
+      fail("IDXGISwapChain::Present", long(r));  // device removed / reset: recreated next frame
+      if (crt_) crt_->discardOutput();
       return 0;
     }
-    if (r == DXGI_STATUS_OCCLUDED) return 0;  // nothing shown: keep time on the host clock
+    if (r == DXGI_STATUS_OCCLUDED) {  // nothing shown: keep time on the host clock
+      occluded_ = true;
+      return 0;
+    }
     swap_->GetLastPresentCount(&count);
     id = ++presentId_;
   }
   if (crtBuildAfter) {
     // Built ahead: queued after this present's commands (the immediate context keeps the order),
     // so the next present shows it.
-    crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal());
+    if (!crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
     ctx_->Flush();
   }
+  if (crtFailed) {
+    crtFailStreak_ += 1;
+  } else if (crtOn && crt_->hasOutput()) {
+    crtFailStreak_ = 0;
+    crtFailedRestarts_ = 0;
+  }
+  lastHealthy_ = !crtFailed;
   if (crtOn) {
     crtPolicy_.fillStatus(&status_);
     status_.tubeWidth = crt_->outputWidth();
@@ -652,40 +870,6 @@ void D3D11Renderer::saveScreenshot() {
   staging->Release();
 }
 
-void D3D11Renderer::shutdown() {
-  if (waiter_.joinable()) {
-    {
-      std::lock_guard<std::mutex> lk(mutex_);
-      stop_ = true;
-      cv_.notify_all();
-    }
-    waiter_.join();
-  }
-  if (crtInit_.valid()) {  // the worker uses the device
-    CrtInit pending = crtInit_.get();
-    pending.crt.reset();
-  }
-  crt_.reset();
-  if (imguiReady_) ImGui_ImplDX11_Shutdown();
-  imguiReady_ = false;
-  releaseTargets();
-  release(atlasSrv_);
-  release(atlas_);
-  release(gameSrv_);
-  release(gameTex_);
-  release(point_);
-  release(vs_);
-  release(ps_);
-  release(cb_);
-  release(raster_);
-  release(opaque_);
-  if (waitable_) CloseHandle(HANDLE(waitable_));
-  waitable_ = nullptr;
-  release(swap_);
-  release(factory_);
-  if (ctx_) ctx_->ClearState();
-  release(ctx_);
-  release(device_);
-}
+void D3D11Renderer::shutdown() { releaseDevice(); }
 
 }  // namespace rnl

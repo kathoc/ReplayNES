@@ -36,6 +36,7 @@
 
 #include "app_model.h"
 #include "audio_out.h"
+#include "display_health.h"
 #include "display_scheduler.h"
 #include "emulation.h"
 #include "host_clock.h"
@@ -430,6 +431,7 @@ int App::run(const AppOptions& opt) {
   recentLatency_.assign(60, 0.0);
 
   std::map<int, int> waitFailures;  // VkResult -> count (diagnostics)
+  DisplayWatchdog watchdog;          // display_health.h, docs/FRAME_PACING.md "Display watchdog"
   double missGuard = 0, lastTargetIssued = 0;
   auto settle = [&](FrameRecord& rec, const PresentDone* d) {
     if (d && !d->ok) waitFailures[d->result] += 1;
@@ -575,6 +577,26 @@ int App::run(const AppOptions& opt) {
     // Build-ahead budget: GPU time left before the target vblank at the maximum lead.
     renderer_->setGpuBudget(std::max(0.0, rnf_input_deadline_max_lead(deadline_) - rnf_input_deadline_work_quantile(cpuWork_) -
                                        RNF_INPUT_DEADLINE_MARGIN));
+    {
+      // Display watchdog: a published picture that does not reach the screen (present failed or
+      // its CRT build failed) while emulation goes on and the window is visible -> RECOVER, then
+      // RESTART (renderer.h recoverDisplay), then a back-off. Pause / menus publish nothing.
+      const double now = nowSeconds();
+      const SDL_WindowFlags wf = SDL_GetWindowFlags(window_);
+      const bool visible =
+          rect.visible && !(wf & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED)) && !renderer_->occluded();
+      const bool shown = id != 0 && renderer_->lastPresentHealthy();
+      const double waited = watchdog.waiting(now);
+      DisplayWatchdog::Action a = watchdog.frame(now, visible, newPicture, shown);
+      if (a != DisplayWatchdog::Action::none) {
+        const bool restart = a == DisplayWatchdog::Action::restart;
+        std::fprintf(stderr, "ReplayNES: display watchdog: %s (a picture waited %.0f ms with emulation advancing; last present %s; %s)\n",
+                     restart ? "RESTART: CRT renderer and swap chain recreated" : "RECOVER: CRT output discarded, plain picture for a present",
+                     std::max(waited, watchdog.waiting(now)) * 1000, id ? (shown ? "ok" : "ok, CRT build failed") : "failed or skipped",
+                     renderer_->displayHealth().c_str());
+        renderer_->recoverDisplay(restart);
+      }
+    }
     if (id) {
       rec.presentId = id;
       if (renderer_->presentTiming()) inflight.push_back(rec);
