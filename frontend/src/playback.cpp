@@ -25,6 +25,12 @@ struct rnf_practice_loop {
   double lastTick = -1;       // a gap since (paused, menu) does not count
 };
 
+struct rnf_resume_countdown {
+  bool enabled = true;
+  bool active = false;
+  double since = 0;
+};
+
 struct rnf_frame_history {
   static constexpr size_t pixels = size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT;
   int capacity = 1;
@@ -282,6 +288,56 @@ rnf_countdown_visual rnf_practice_countdown_visual(int count, double fraction) {
   v.ring = float(1 - f);
   return v;
 }
+
+// ------------------------------------------------------------------ resume countdown
+rnf_resume_countdown* rnf_resume_countdown_new(void) {
+  try { return new rnf_resume_countdown; } catch (...) { return nullptr; }
+}
+rnf_resume_countdown* rnf_resume_countdown_clone(const rnf_resume_countdown* c) { return cloneOf(c); }
+void rnf_resume_countdown_free(rnf_resume_countdown* c) { delete c; }
+
+void rnf_resume_countdown_set_enabled(rnf_resume_countdown* c, int on) {
+  if (!c) return;
+  c->enabled = on != 0;
+  if (!c->enabled) c->active = false;
+}
+int rnf_resume_countdown_enabled(const rnf_resume_countdown* c) { return c && c->enabled ? 1 : 0; }
+
+int rnf_resume_countdown_wanted(const rnf_resume_countdown* c, rn_mode mode, rnf_practice_phase practice_phase) {
+  if (c && !c->enabled) return 0;
+  if (mode == RN_MODE_RECORD) return 1;
+  return mode == RN_MODE_PRACTICE && practice_phase == RNF_PHASE_PLAYING ? 1 : 0;
+}
+
+int rnf_resume_countdown_start(rnf_resume_countdown* c, double now, rn_mode mode, rnf_practice_phase practice_phase) {
+  if (!c) return 0;
+  c->active = rnf_resume_countdown_wanted(c, mode, practice_phase) != 0;
+  c->since = now;
+  return c->active ? 1 : 0;
+}
+
+rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, double now) {
+  rnf_resume_countdown_state st{};
+  if (!c || !c->active) return st;
+  double e = now - c->since;
+  if (e >= RNF_PRACTICE_COUNTDOWN_SECONDS) {
+    c->active = false;
+    st.done = 1;
+    return st;
+  }
+  rnf_practice_action a = countdownAction(e);
+  st.count = a.count;
+  st.fraction = a.fraction;
+  return st;
+}
+
+void rnf_resume_countdown_hold(rnf_resume_countdown* c, double now) {
+  if (c && c->active) c->since = now;
+}
+void rnf_resume_countdown_cancel(rnf_resume_countdown* c) {
+  if (c) c->active = false;
+}
+int rnf_resume_countdown_active(const rnf_resume_countdown* c) { return c && c->active ? 1 : 0; }
 
 int rnf_practice_history_index(double back, int count) {
   if (count <= 0) return 0;

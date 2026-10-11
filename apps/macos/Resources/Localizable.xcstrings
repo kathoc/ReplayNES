@@ -4440,6 +4440,26 @@
         }
       }
     },
+    "Resume Countdown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開時のカウントダウン"
+          }
+        }
+      }
+    },
+    "3, 2, 1 before play resumes after a pause": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止から再開する前に 3、2、1 と数える"
+          }
+        }
+      }
+    },
     "Paused because %@ was disconnected": {
       "localizations": {
         "ja": {

@@ -149,6 +149,64 @@ struct PracticeLoop: Equatable {
     }
 }
 
+// MARK: - resume countdown
+
+/// 3, 2, 1 over the paused picture before play resumes from a pause (rnf_resume_countdown;
+/// docs/design/UI_REDESIGN.md, "Resume countdown"). The look is the practice countdown's
+/// (PracticeLoop.countdownVisual). Only for live play: record, or practice while its loop plays
+/// (never stacked on the practice return / its own countdown); never replay. The setting is
+/// independent of PracticeLoop.countdownEnabled.
+struct ResumeCountdown: Equatable {
+    struct State: Equatable {
+        var count: Int        // 3, 2, 1 while counting; 0 otherwise
+        var fraction: Double  // 0...1 within that number's second
+        var done: Bool        // the tick it ended: play from this tick on (reported once)
+    }
+
+    private var box = RNFHandle(rnf_resume_countdown_new(), free: { rnf_resume_countdown_free($0) },
+                                clone: { rnf_resume_countdown_clone($0) })
+
+    var enabled: Bool {
+        get { rnf_resume_countdown_enabled(box.ptr) != 0 }
+        set { rnf_resume_countdown_set_enabled(RNFHandle.unique(&box), newValue ? 1 : 0) }
+    }
+    var active: Bool { rnf_resume_countdown_active(box.ptr) != 0 }
+
+    static func == (a: ResumeCountdown, b: ResumeCountdown) -> Bool { a.enabled == b.enabled && a.active == b.active }
+
+    /// Whether a resume in this state counts down (setting on; record, or practice with its loop playing).
+    func wanted(mode: rn_mode, practicePhase: PracticeLoop.Phase) -> Bool {
+        rnf_resume_countdown_wanted(box.ptr, mode, Self.phase(practicePhase)) != 0
+    }
+
+    /// A resume from pause at `now`: starts the countdown when wanted (true); false = play at once.
+    @discardableResult
+    mutating func start(now: Double, mode: rn_mode, practicePhase: PracticeLoop.Phase) -> Bool {
+        rnf_resume_countdown_start(RNFHandle.unique(&box), now, mode, Self.phase(practicePhase)) != 0
+    }
+
+    /// Every unpaused tick while active.
+    mutating func tick(now: Double) -> State {
+        let s = rnf_resume_countdown_tick(RNFHandle.unique(&box), now)
+        return State(count: Int(s.count), fraction: s.fraction, done: s.done != 0)
+    }
+
+    /// A modal UI is up: it waits at its start.
+    mutating func hold(now: Double) { rnf_resume_countdown_hold(RNFHandle.unique(&box), now) }
+
+    /// Back to paused (a pause, the menu, the cancel tap).
+    mutating func cancel() { if active { rnf_resume_countdown_cancel(RNFHandle.unique(&box)) } }
+
+    private static func phase(_ p: PracticeLoop.Phase) -> rnf_practice_phase {
+        switch p {
+        case .playing: return RNF_PHASE_PLAYING
+        case .holding: return RNF_PHASE_HOLDING
+        case .rewinding: return RNF_PHASE_REWINDING
+        case .countdown: return RNF_PHASE_COUNTDOWN
+        }
+    }
+}
+
 // MARK: - the practice run's reel (pictures for the sweep back to A)
 
 /// Display-only pictures of the practice run, evenly spread from A (rnf_reel: at most

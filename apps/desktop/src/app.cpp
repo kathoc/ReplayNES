@@ -130,6 +130,7 @@ void App::applySettings() {
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
   emu_->setVtrEffect(settings_.vtrEffect);
   emu_->setPracticeCountdown(settings_.practiceCountdown);
+  emu_->setResumeCountdown(settings_.resumeCountdown);
   audio_.setVolume(settings_.volume);
   DisplayPostProcess pp = renderer_->postProcess();
   pp.crt = opt_.crt >= 0 ? opt_.crt == 1 : settings_.crt;

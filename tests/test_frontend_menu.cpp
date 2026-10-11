@@ -1,5 +1,6 @@
 // Frontend core: the L+R chord detector, the Quick Menu binding (hk.menu, layout 4 -> 5) and the
 // quick menu model (docs/design/UI_REDESIGN.md): tree, features, navigation, no-scroll invariant.
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -409,6 +410,16 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
         std::vector<std::string>{"display.size", "display.flash", "display.vtr", "display.shape"}));
   CHECK((itemIds(m, "settings.system") == std::vector<std::string>{"system.language", "system.about", "system.detail"}));
   rnf_menu_free(m);
+  // Resume Countdown: System > More (Controls and Controls > More are full on Linux).
+  for (uint32_t f : {0u, kDesktopLinux, kAll}) {
+    rnf_menu* d = rnf_menu_new(f);
+    std::vector<std::string> ids = itemIds(d, "system.detail");
+    CHECK(std::count(ids.begin(), ids.end(), std::string("system.resume_countdown")) == 1);
+    CHECK(ids.size() <= size_t(RNF_MENU_MAX_ITEMS));
+    std::vector<std::string> controls = itemIds(d, "settings.controls");
+    CHECK(std::count(controls.begin(), controls.end(), std::string("system.resume_countdown")) == 0);
+    rnf_menu_free(d);
+  }
   m = rnf_menu_new(RNF_MENU_FEATURE_STREAM | RNF_MENU_FEATURE_SLOW_AUDIO | RNF_MENU_FEATURE_LOW_LATENCY);
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.stream"}));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume", "sound.slow", "sound.low_latency"}));

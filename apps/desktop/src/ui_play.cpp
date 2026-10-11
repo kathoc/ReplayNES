@@ -519,8 +519,8 @@ void UI::buildPracticePill() {
   dl->AddText(ImGui::GetFont(), fs, ImVec2(p.x + S(14), p.y + S(8)), IM_COL32(255, 170, 60, 255), text.c_str());
 }
 
-// The practice countdown (3, 2, 1) over the paused picture at A: a large numeral on a soft dark
-// disc with a thin ring running down the second; the look (fade / scale) is the core's
+// The countdown (3, 2, 1) over the paused picture - at A (practice) or before play resumes from a
+// pause (the resume countdown): a large numeral on a soft dark disc with a thin ring running down the second; the look (fade / scale) is the core's
 // (rnf_practice_countdown_visual), the same on macOS.
 void UI::buildCountdown() {
   const EmuStatus& st = d_.emu->status();
