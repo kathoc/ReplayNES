@@ -46,7 +46,8 @@ if(REPLAYNES_BUILD_TESTS)
   add_custom_command(TARGET test_crt_d3d11 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RNW_ROOT}/tests/fixtures/crt/reference.json $<TARGET_FILE_DIR:test_crt_d3d11>/crt_reference.json)
   add_test(NAME crt_conformance_d3d11 COMMAND test_crt_d3d11)
-  set_tests_properties(crt_conformance_d3d11 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+  # WARP (software D3D11) on the CI runners: 450-890 s, more on arm64 with the display recovery cases.
+  set_tests_properties(crt_conformance_d3d11 PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 endif()
 
 if(NOT EXISTS ${RNW_ROOT}/third_party/SDL/CMakeLists.txt)
