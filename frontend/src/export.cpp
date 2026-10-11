@@ -253,7 +253,7 @@ char* rnf_flash_level_detail(rn_flash_level level) {
     case RN_FLASH_STANDARD:
       return dup(tr(RNF_L("Detects earlier than the thresholds and limits flashes of 20% or more of the screen to 2 per second (recommended).")));
     case RN_FLASH_HIGH:
-      return dup(tr(RNF_L("Limits flashes of 15% or more of the screen to 1 per second and also softens the remaining small flicker.")));
+      return dup(tr(RNF_L("Like Standard, limits flashes to 2 per second, but also reacts to smaller areas (15% or more of the screen) and smaller changes, and softens the remaining small flicker.")));
   }
   return dup("");
 }

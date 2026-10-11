@@ -119,6 +119,7 @@ FlashParams FlashFilter::params(FlashLevel level) {
       p.redRequireSaturation = true;
       p.budget = 6;  // 3 flashes
       p.areaPermille = 250;
+      p.pairFrames = 10;  // alternation slower than 3 flashes/s is not a flash
       p.lumHold = lin(0.06);
       p.lumRate = lin(0.02);
       p.redHold = red(12);
@@ -130,16 +131,18 @@ FlashParams FlashFilter::params(FlashLevel level) {
       p.redThreshold = red(16);
       p.budget = 4;
       p.areaPermille = 200;
+      p.pairFrames = 15;  // slower than 2 flashes/s
       p.lumHold = lin(0.04);
       p.lumRate = lin(0.01);
       p.redHold = red(10);
       p.redRate = red(2);
       p.stickyFrames = 12;
       break;
-    case FlashLevel::High:  // 1 flash/s, smaller areas
+    case FlashLevel::High:  // 2 flashes/s like Standard, but more sensitive: smaller areas and changes
       p.lumThreshold = lin(0.06);
       p.redThreshold = red(12);
-      p.budget = 2;
+      p.budget = 4;
+      p.pairFrames = 15;
       p.areaPermille = 150;
       p.lumHold = lin(0.02);
       p.lumRate = lin(0.005);
@@ -160,6 +163,8 @@ FlashFilter::FlashFilter(FlashLevel level)
       prevM_(inM_),
       refM_(inM_),
       pairCache_(size_t(1) << kPairCacheBits),
+      codeColour_(512),
+      codeCache_(4096),
       blend_(1) {
   luts();
 }
@@ -538,18 +543,104 @@ int FlashFilter::opposingDistance(const Tracker& t, int v) const {
 int FlashFilter::transitionsInWindow(const Block& b) const {
   int n = 0;
   for (int i = 0; i < b.histCount; ++i)
-    if (b.hist[size_t(i)] > frame_ - kWindow) ++n;
+    if ((b.histCounted >> i & 1u) && b.hist[size_t(i)] > frame_ - kWindow) ++n;
   return n;
 }
 
-FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
+int64_t FlashFilter::lastHistFrame(const Block& b, bool* counted) const {
+  if (b.histCount == 0) {
+    *counted = false;
+    return -1000000;
+  }
+  const int k = (b.histHead + kHistory - 1) % kHistory;
+  *counted = (b.histCounted >> k & 1u) != 0;
+  return b.hist[size_t(k)];
+}
+
+namespace {
+// 16x16 ordered-dither (Bayer) matrix, values 0..255 each once: a pixel takes the brighter code when
+// its value is below the weight w (0..256), so exactly w of every 256 pixels do.
+struct Bayer16 {
+  uint8_t v[16][16];
+  Bayer16() {
+    for (int y = 0; y < 16; ++y)
+      for (int x = 0; x < 16; ++x) {
+        int r = 0;
+        for (int bit = 0; bit < 4; ++bit) {
+          const int xb = x >> bit & 1, yb = y >> bit & 1;
+          r |= ((xb ^ yb) << (7 - 2 * bit)) | (yb << (6 - 2 * bit));
+        }
+        v[y][x] = uint8_t(r);
+      }
+  }
+};
+const Bayer16& bayer() {
+  static const Bayer16 b;
+  return b;
+}
+}  // namespace
+
+void FlashFilter::learnCodes(const uint32_t* in, const uint16_t* codes) {
+  const Luts& t = luts();
+  const size_t npx = size_t(kWidth) * kHeight;
+  for (size_t k = 0; k < npx; ++k) {
+    const uint32_t rgb = in[k] & 0xFFFFFFu;
+    CodeColour& cc = codeColour_[codes[k] & 511];
+    if (cc.known && cc.rgb == rgb) continue;
+    if (!cc.known) knownCodes_.push_back(uint16_t(codes[k] & 511));
+    cc.known = true;
+    cc.rgb = rgb;
+    cc.r = t.lin[chR(rgb)];
+    cc.g = t.lin[chG(rgb)];
+    cc.b = t.lin[chB(rgb)];
+    cc.lum = int(lumOf(uint32_t(cc.r), uint32_t(cc.g), uint32_t(cc.b)));
+    ++codeGen_;
+  }
+}
+
+bool FlashFilter::encodePixel(uint32_t px, int x, int y, uint16_t* code) {
+  const uint32_t rgb = px & 0xFFFFFFu;
+  CodeChoice& e = codeCache_[((rgb * 0x9E3779B1u) >> 20) & 4095];
+  if (e.gen != codeGen_ || e.rgb != rgb) {
+    const Luts& t = luts();
+    const int r = t.lin[chR(rgb)], g = t.lin[chG(rgb)], b = t.lin[chB(rgb)];
+    const int lum = int(lumOf(uint32_t(r), uint32_t(g), uint32_t(b)));
+    // Nearest learned colour (luminance-weighted distance in linear light) at or below and at or
+    // above the pixel's luminance.
+    int64_t bestLo = -1, bestHi = -1;
+    uint16_t lo = 0, hi = 0;
+    for (uint16_t c : knownCodes_) {
+      const CodeColour& cc = codeColour_[c];
+      const int64_t dr = cc.r - r, dg = cc.g - g, db = cc.b - b;
+      const int64_t d = 2126 * dr * dr + 7152 * dg * dg + 722 * db * db;
+      if (cc.lum <= lum && (bestLo < 0 || d < bestLo)) bestLo = d, lo = c;
+      if (cc.lum >= lum && (bestHi < 0 || d < bestHi)) bestHi = d, hi = c;
+    }
+    if (bestLo < 0 && bestHi < 0) return false;
+    if (bestLo < 0) lo = hi;
+    if (bestHi < 0) hi = lo;
+    const int ll = codeColour_[lo].lum, lh = codeColour_[hi].lum;
+    e.rgb = rgb;
+    e.gen = codeGen_;
+    e.lo = lo;
+    e.hi = hi;
+    e.w = lh > ll ? int((int64_t(lum - ll) * 256 + (lh - ll) / 2) / (lh - ll)) : 0;
+  }
+  *code = bayer().v[y & 15][x & 15] < e.w ? e.hi : e.lo;
+  return true;
+}
+
+FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uint16_t* inCodes, uint16_t* outCodes) {
   FlashFrameInfo info;
   const size_t npx = size_t(kWidth) * kHeight;
+  const bool codes = inCodes && outCodes;
   if (level_ == FlashLevel::Off) {
     if (in != out) std::memcpy(out, in, npx * sizeof(uint32_t));
+    if (codes && inCodes != outCodes) std::memcpy(outCodes, inCodes, npx * sizeof(uint16_t));
     return info;
   }
 
+  if (codes) learnCodes(in, inCodes);
   for (int by = 0; by < kRows; ++by) {
     // The input is read block by block; fetch the next 16 scanlines (contiguous) ahead of time.
     if (by + 1 < kRows) prefetchRange(in + size_t(by + 1) * kBlock * kWidth, size_t(kBlock) * kWidth * sizeof(uint32_t));
@@ -561,6 +652,7 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
     // First frame after a reset: shown as is; it is the reference for the trackers.
     if (in != out) std::memcpy(out, in, npx * sizeof(uint32_t));
     std::memcpy(prev_.data(), out, npx * sizeof(uint32_t));
+    if (codes && inCodes != outCodes) std::memcpy(outCodes, inCodes, npx * sizeof(uint16_t));
     prevM_ = inM_;
     refM_ = inM_;
     prevIsLastIn_.fill(1);
@@ -572,6 +664,8 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
       b.red.ext = b.red.lo = b.red.hi = s.red;
       b.lum.extSat = b.lum.loSat = b.lum.hiSat = s.sat;
       b.red.extSat = b.red.loSat = b.red.hiSat = s.sat;
+      b.srcLum = b.lum;
+      b.srcRed = b.red;
       b.shown = s;
     }
     primed_ = true;
@@ -585,13 +679,35 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
   // The area of a flash is measured in pixels that really change (a block only partly covered by
   // a blinking object counts only that part), summed per direction over the new transitions and
   // those of the last kRecent-1 frames.
+  // A transition is part of a flash (and counts toward the budget) when opposing transitions pair up
+  // within pairFrames: in the input (the game is flashing now) or against the block's previous
+  // displayed transition. Isolated changes (a scene cut, a fade that rests on its new level) and
+  // alternation slower than the level's limit are not flashes and are never held.
   std::array<int, kBlocks> want{}, changed{};
+  std::array<char, kBlocks> flashLike{};
   int64_t up = 0, down = 0;
   for (int by = 0; by < kRows; ++by) {
     for (int bx = 0; bx < kCols; ++bx) {
       const size_t i = size_t(by * kCols + bx);
-      const Block& b = blocks_[i];
+      Block& b = blocks_[i];
       const Stats& s = inS[i];
+      {
+        const bool sl = update(b.srcLum, s.lum, s.sat, false);
+        const int sLumDir = b.srcLum.dir;
+        const bool sr = update(b.srcRed, s.red, s.sat, true);
+        if (sl || sr) {
+          const int dir = sl ? sLumDir : b.srcRed.dir;
+          if (dir != b.srcDir) {
+            b.srcPrev = b.srcLast;
+            b.srcLast = f;
+            b.srcDir = dir;
+          }
+        }
+        bool lastCounted = false;
+        const int64_t lastShown = lastHistFrame(b, &lastCounted);
+        flashLike[i] = (b.srcLast - b.srcPrev <= p_.pairFrames && f - b.srcLast <= p_.pairFrames) ||
+                       f - lastShown <= p_.pairFrames;
+      }
       int cl = classify(b.lum, s.lum, s.sat, false);
       int cr = classify(b.red, s.red, s.sat, true);
       want[i] = cl != 0 ? cl : cr;
@@ -620,10 +736,16 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
     int64_t heldPx = 0, allowedPx = 0;
     int exhausted = 0, heldOnly = 0;
     for (int i = 0; i < kBlocks; ++i) {
-      int n = transitionsInWindow(blocks_[size_t(i)]);
+      const Block& b = blocks_[size_t(i)];
+      int n = transitionsInWindow(b);
       if (n >= p_.budget) ++exhausted;
       if (want[size_t(i)] == 0) continue;
-      const Block& b = blocks_[size_t(i)];
+      // A transition that is not part of a flash passes. One that is also makes the previous
+      // (uncounted) transition it pairs with count.
+      if (!flashLike[size_t(i)]) continue;
+      bool lastCounted = false;
+      const int64_t lastShown = lastHistFrame(b, &lastCounted);
+      if (!lastCounted && lastShown > f - kWindow && f - lastShown <= p_.pairFrames) ++n;
       int remaining = p_.budget - n;
       // The same swing seen by the other metric (e.g. luminance then red rising one frame later)
       // is not a new transition; otherwise one unit per transition, plus the darker reserve.
@@ -692,6 +814,23 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
       if (a == 256) std::memcpy(prevM_.data() + o, inM_.data() + o, kBlockPx * sizeof(uint32_t));
       else ++info.alteredBlocks;
       prevIsLastIn_[i] = a == 256;
+      if (codes) {
+        for (int y = 0; y < kBlock; ++y) {
+          const size_t off = size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+          if (a == 256) {
+            if (outCodes != inCodes) std::memcpy(outCodes + off, inCodes + off, kBlock * sizeof(uint16_t));
+            continue;
+          }
+          for (int x = 0; x < kBlock; ++x) {
+            const uint16_t c = inCodes[off + size_t(x)];
+            const uint32_t px = out[off + size_t(x)];
+            // Unchanged pixels keep their code; changed ones are encoded from their colour.
+            const CodeColour& cc = codeColour_[c & 511];
+            if (cc.known && cc.rgb == (px & 0xFFFFFFu)) outCodes[off + size_t(x)] = c;
+            else if (!encodePixel(px, bx * kBlock + x, by * kBlock + y, outCodes + off + size_t(x))) info.codesOk = false;
+          }
+        }
+      }
 
       const Tracker before = b.lum;
       bool tl = update(b.lum, shown.lum, shown.sat, false);
@@ -706,6 +845,14 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
         // Only a change of direction is a new transition of the block (a flash = two of them);
         // the other metric confirming the same swing is not counted twice.
         if (b.histCount == 0 || dir != b.lastDir) {
+          if (flashLike[i]) {
+            bool lastCounted = false;
+            const int64_t lastShown = lastHistFrame(b, &lastCounted);
+            if (!lastCounted && f - lastShown <= p_.pairFrames)
+              b.histCounted |= 1u << ((b.histHead + kHistory - 1) % kHistory);
+          }
+          const uint32_t bit = 1u << b.histHead;
+          b.histCounted = flashLike[i] ? (b.histCounted | bit) : (b.histCounted & ~bit);
           b.hist[size_t(b.histHead)] = f;
           b.histHead = (b.histHead + 1) % kHistory;
           b.histCount = std::min(b.histCount + 1, kHistory);

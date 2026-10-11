@@ -14,9 +14,10 @@
 //                                           given frames; btn = a b select start up down left right,
 //                                           held for D frames (default 6) starting at frame F
 //                                           (--press2: controller 2); --ram prints CPU RAM too
-//   bench-flash <rom> [frames=600] [level=2] [--reps R] [--warmup W]
+//   bench-flash <rom> [frames=600] [level=2] [--reps R] [--warmup W] [--codes]
 //                                           emulate `frames` frames from power-on (no input) into
 //                                           memory, then time only rn_flash_filter_process per frame
+//                                           (--codes: rn_flash_filter_process_codes, PPU codes too)
 //                                           (W untimed passes, then R timed passes; filter reset
 //                                           before each); prints mean/p50/p99 ms per frame and a
 //                                           hash of all outputs + infos
@@ -417,7 +418,9 @@ int cmdBenchFlash(const Args& a) {
     return 2;
   }
   const size_t npx = size_t(kVideoWidth) * kVideoHeight;
+  const bool withCodes = a.has("--codes");
   std::vector<uint32_t> in(npx * size_t(frames)), out(npx);
+  std::vector<uint16_t> codes(withCodes ? npx * size_t(frames) : 0), outCodes(npx);
   for (int f = 0; f < frames; ++f) {
     if (rn_step(s, 0, 0, 0, nullptr) != RN_OK) {
       std::fprintf(stderr, "%s\n", rn_last_error());
@@ -425,7 +428,23 @@ int cmdBenchFlash(const Args& a) {
       return 2;
     }
     std::memcpy(in.data() + npx * size_t(f), rn_video(s), npx * sizeof(uint32_t));
+    rn_video_indices_info vi{};
+    if (withCodes) {
+      if (rn_video_indices(s, &vi) != RN_OK || !vi.codes) {
+        std::fprintf(stderr, "no PPU codes\n");
+        rn_session_close(s);
+        return 2;
+      }
+      std::memcpy(codes.data() + npx * size_t(f), vi.codes, npx * sizeof(uint16_t));
+    }
   }
+  auto process = [&](rn_flash_filter* ff, int f, rn_flash_info* info) {
+    if (withCodes)
+      rn_flash_filter_process_codes(ff, in.data() + npx * size_t(f), out.data(), codes.data() + npx * size_t(f), outCodes.data(), info,
+                                    nullptr);
+    else
+      rn_flash_filter_process(ff, in.data() + npx * size_t(f), out.data(), info);
+  };
   rn_session_close(s);
   rn_flash_filter* ff = rn_flash_filter_new(rn_flash_level(level));
   if (!ff) {
@@ -434,7 +453,7 @@ int cmdBenchFlash(const Args& a) {
   }
   for (int r = 0; r < warmup; ++r) {  // untimed: lets the CPU clock ramp up (powersave governors)
     rn_flash_filter_reset(ff);
-    for (int f = 0; f < frames; ++f) rn_flash_filter_process(ff, in.data() + npx * size_t(f), out.data(), nullptr);
+    for (int f = 0; f < frames; ++f) process(ff, f, nullptr);
   }
   std::vector<double> ms;
   ms.reserve(size_t(frames) * size_t(reps));
@@ -447,9 +466,10 @@ int cmdBenchFlash(const Args& a) {
     for (int f = 0; f < frames; ++f) {
       rn_flash_info info;
       auto t0 = std::chrono::steady_clock::now();
-      rn_flash_filter_process(ff, in.data() + npx * size_t(f), out.data(), &info);
+      process(ff, f, &info);
       ms.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
       h.update(out.data(), npx * sizeof(uint32_t));
+      if (withCodes) h.update(outCodes.data(), npx * sizeof(uint16_t));
       h.u64(uint64_t(info.altered) | uint64_t(info.altered_blocks) << 8 | uint64_t(info.event_area_permille) << 24 |
             uint64_t(info.large_area) << 48);
       altered += info.altered != 0;
@@ -483,7 +503,7 @@ int main(int argc, char** argv) {
     std::string s = argv[i];
     if (s.size() > 2 && s[0] == '-' && s[1] == '-') {
       a.flags.push_back(s);
-      if (s != "--mock" && s != "--cartridge" && i + 1 < argc) a.flags.push_back(argv[++i]);
+      if (s != "--mock" && s != "--cartridge" && s != "--codes" && i + 1 < argc) a.flags.push_back(argv[++i]);
     } else {
       a.pos.push_back(s);
     }

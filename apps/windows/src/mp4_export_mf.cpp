@@ -532,6 +532,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     return false;
   }
   std::vector<uint32_t> filtered(flash ? size_t(kFrameW) * kFrameH : 0);
+  std::vector<uint16_t> filteredCodes(flash ? size_t(kFrameW) * kFrameH : 0);
 
   // ---- Media Foundation
   MfScope mf;
@@ -618,11 +619,19 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
 
     // Flash reduction: frames strictly in order through one filter (display only).
     const uint32_t* pixels = video;
-    bool altered = false;
+    bool altered = false, codesOk = false;
     if (flash) {
       rn_flash_info info{};
-      if (rn_flash_filter_process(flash.get(), video, filtered.data(), &info) != RN_OK)
+      // With a CRT processor the PPU codes go through the filter too (the RF path stays in use).
+      rn_video_indices_info vi{};
+      if (processor && rn_renderer_video_indices(rend.get(), &vi) == RN_OK && vi.codes) {
+        int ok = 0;
+        if (rn_flash_filter_process_codes(flash.get(), video, filtered.data(), vi.codes, filteredCodes.data(), &info, &ok) != RN_OK)
+          return fail(std::string("flash filter: ") + rn_last_error());
+        codesOk = ok != 0;
+      } else if (rn_flash_filter_process(flash.get(), video, filtered.data(), &info) != RN_OK) {
         return fail(std::string("flash filter: ") + rn_last_error());
+      }
       pixels = filtered.data();
       altered = info.altered != 0;
     }
@@ -630,13 +639,13 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       rn_video_indices_info info{};
       ExportFrameSignal sig;
       if (rn_renderer_video_indices(rend.get(), &info) == RN_OK && info.codes) {
-        sig.codes = info.codes;
+        sig.codes = codesOk ? filteredCodes.data() : info.codes;
         sig.burstPhase = info.burst_phase;
         sig.ordinal = info.frame;
       } else {
         sig.ordinal = f;
       }
-      sig.flashAltered = altered;
+      sig.flashAltered = altered && !codesOk;  // the codes do not describe the filtered picture
       std::string perr;
       if (!processor->render(sig, pixels, canvas.data(), canvasStride, &perr))
         return fail(perr.empty() ? "The video effect failed" : perr);

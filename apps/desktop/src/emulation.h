@@ -139,9 +139,10 @@ class EmulationController {
   void afterFrame(double slack);
 
   const uint32_t* picture() const { return display_.data(); }
-  /// CRT side channel of picture() (display only): rn_video_indices of the same frame + whether
-  /// the flash filter changed it. codes == nullptr when there are none (mock core, a picture from
-  /// the practice rewind animation, a picture with the VTR effect).
+  /// CRT side channel of picture() (display only): the PPU codes of the same picture (flash
+  /// filtered like it) + flashAltered = the flash filter changed the picture and the codes do not
+  /// describe it (the CRT then takes the RGB picture). codes == nullptr when there are none (mock
+  /// core, a picture from the practice rewind animation, a picture with the VTR effect).
   struct Signal {
     const uint16_t* codes = nullptr;
     uint32_t burstPhase = 0;
@@ -266,6 +267,7 @@ class EmulationController {
   rn_flash_filter* flash_ = nullptr;
   rn_flash_level flashLevel_ = RN_FLASH_STANDARD;
   std::vector<uint32_t> display_;
+  std::vector<uint16_t> displayCodes_ = std::vector<uint16_t>(size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT, 0x0F);  // filtered PPU codes of display_
   Signal signal_;
   uint64_t pictureOrdinal_ = 0;
   bool pictureDirty_ = false;

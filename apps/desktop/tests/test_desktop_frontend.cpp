@@ -1028,6 +1028,61 @@ TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward
   rn_input_free(in);
 }
 
+TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which follow the reduced picture") {
+  // The legacy test ROM flashes large areas: at Standard most frames are reduced. The CRT signal
+  // must stay on the codes (RF path) and the codes must show what the picture shows (block means
+  // in linear light), not the unreduced flash.
+  std::string d = tmpDir("flash-crt");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  REQUIRE(emu.flashLevel() == RN_FLASH_STANDARD);
+  auto lin = [](uint32_t c) {
+    double v = c / 255.0;
+    return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+  };
+  auto lum = [&](uint32_t p) { return 0.2126 * lin(p >> 16 & 255) + 0.7152 * lin(p >> 8 & 255) + 0.0722 * lin(p & 255); };
+  std::vector<int64_t> colour(512, -1);  // code -> RGB, learned from the unfiltered frames
+  int reducedOnCodes = 0;
+  double worst = 0;
+  for (int t = 0; t < 400; ++t) {
+    emu.tick();
+    rn_video_indices_info vi{};
+    const uint32_t* v = rn_video(s);
+    if (rn_video_indices(s, &vi) == RN_OK && vi.codes)
+      for (int k = 0; k < RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT; ++k) colour[vi.codes[k] & 511] = v[k];
+    const auto& sig = emu.signal();
+    const uint32_t* pic = emu.picture();
+    if (!sig.codes || sig.flashAltered) continue;
+    bool reduced = std::memcmp(pic, v, size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT * 4) != 0;
+    if (!reduced) continue;
+    ++reducedOnCodes;
+    for (int by = 0; by < 15; ++by)
+      for (int bx = 0; bx < 16; ++bx) {
+        double a = 0, b = 0;
+        bool known = true;
+        for (int y = 0; y < 16 && known; ++y)
+          for (int x = 0; x < 16; ++x) {
+            const int k = (by * 16 + y) * RN_VIDEO_WIDTH + bx * 16 + x;
+            const int64_t c = colour[sig.codes[k] & 511];
+            if (c < 0) { known = false; break; }
+            a += lum(uint32_t(c));
+            b += lum(pic[k]);
+          }
+        if (known) worst = std::max(worst, std::abs(a - b) / 256);
+      }
+  }
+  MESSAGE("reduced frames on the codes: " << reducedOnCodes << ", worst block mean difference " << worst);
+  CHECK(reducedOnCodes > 50);
+  CHECK(worst < 0.02);
+  emu.closeSession();
+  rn_input_free(in);
+}
+
 TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing emulated, aborts back to paused") {
   std::string d = tmpDir("resume-countdown");
   std::string rom = testRom(d);

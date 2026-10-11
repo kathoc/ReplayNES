@@ -15,7 +15,11 @@
 //     the "large area" share of the screen (counted in changed pixels, not whole blocks) is a
 //     large-area flash candidate. Smaller areas (sprite
 //     blinking, scrolling details) are always passed through unchanged.
-//   * In a large-area event a block may make the transition only if its window still has budget;
+//   * Only transitions that pair up count toward the budget: the same tracker on the *input* made
+//     opposing transitions at most pairFrames apart (the game is flashing), or the block's previous
+//     displayed transition is at most pairFrames ago. Isolated changes (scene cuts, fades that rest
+//     on their new level) and alternation slower than the level's limit always pass.
+//   * In a large-area event a block may make a paired transition only if its window still has budget;
 //     the last unit of budget is reserved for a transition towards *darker* so a suppressed screen
 //     settles on the darker state. Otherwise the block is suppressed: it is blended in linear light
 //     between the previously displayed frame and the new one with the largest weight that keeps
@@ -50,6 +54,7 @@ struct FlashParams {
   int lumHold = 0, redHold = 0;  // max opposing move from the extremum while suppressed
   int lumRate = 0, redRate = 0;  // max change per frame while suppressed / sticky
   int stickyFrames = 0;          // frames a suppressed block stays rate-limited
+  int pairFrames = 0;            // opposing transitions at most this many frames apart pair up as a flash
 };
 
 struct FlashFrameInfo {
@@ -57,6 +62,7 @@ struct FlashFrameInfo {
   int alteredBlocks = 0;
   int eventAreaPermille = 0;     // largest same-direction transition area this frame
   bool largeArea = false;        // a large-area flash candidate was detected
+  bool codesOk = true;           // process() with codes: outCodes describe the output picture
 };
 
 class FlashFilter {
@@ -72,7 +78,15 @@ class FlashFilter {
   FlashLevel level() const { return level_; }
   void reset();
   // in/out: 256x240 BGRA8 (0xAARRGGBB little-endian). in may equal out.
-  FlashFrameInfo process(const uint32_t* in, uint32_t* out);
+  // inCodes/outCodes (optional, both or neither; may be the same buffer): the PPU codes of `in`
+  // (rn_video_indices) and a code picture of the output for the CRT signal path. Pixels passed
+  // through keep their codes. A pixel the filter changed is encoded back into codes: the colour of
+  // every code is learned from the frames given with codes, and the pixel takes, by a fixed 16x16
+  // ordered dither, the nearest learned colour below or above its luminance, weighted so that the
+  // mean light of the block matches the RGB output. info.codesOk = false when no code colour is
+  // known for a changed pixel (outCodes are then not usable for this frame).
+  FlashFrameInfo process(const uint32_t* in, uint32_t* out, const uint16_t* inCodes = nullptr,
+                         uint16_t* outCodes = nullptr);
 
   static FlashParams params(FlashLevel level);
   static uint16_t toLinear(uint8_t srgb);
@@ -95,7 +109,13 @@ class FlashFilter {
     Tracker lum, red;
     Stats shown;  // stats of the last displayed block
     std::array<int64_t, kHistory> hist{};
+    uint32_t histCounted = 0;  // per hist slot: the transition belongs to a flash (counts toward the budget)
     int histCount = 0, histHead = 0;
+    // The same tracking on the input (what the game shows): when its opposing transitions follow
+    // each other within pairFrames, the block is flashing.
+    Tracker srcLum, srcRed;
+    int64_t srcLast = -1000000, srcPrev = -1000000;
+    int srcDir = 0;
     int64_t lastTransition = -1000000;
     int lastDir = 0;
     int lastChanged = 0;  // changed pixels of the last transition (area accounting)
@@ -107,7 +127,10 @@ class FlashFilter {
   int classify(const Tracker& t, int v, bool sat, bool isRed) const;  // +1/-1 transition, 0 none
   bool update(Tracker& t, int v, bool sat, bool isRed) const;          // true if a transition
   int opposingDistance(const Tracker& t, int v) const;
+  // Transitions of the window that count toward the budget (members of a flash).
   int transitionsInWindow(const Block& b) const;
+  // The newest transition of the block's history (frame; -1000000 when none) and whether it counts.
+  int64_t lastHistFrame(const Block& b, bool* counted) const;
   // Stats of one block of `in` (inS_) plus its per-pixel luminance / red metric (inM_). A block
   // equal to the previous input reuses what was measured then.
   void measureBlock(const uint32_t* in, int bx, int by);
@@ -137,6 +160,25 @@ class FlashFilter {
   bool primed_ = false;
   int64_t frame_ = 0;
   std::vector<uint32_t> prev_;  // last displayed frame
+  // Code picture of the output (process with codes): the colour of each 9-bit PPU code as last seen
+  // in an input frame, and a cache of the encoding of output colours (keyed by colour, valid for
+  // codeGen_: the learned colours at the time).
+  struct CodeColour {
+    uint32_t rgb = 0;
+    int r = 0, g = 0, b = 0, lum = 0;  // linear light
+    bool known = false;
+  };
+  struct CodeChoice {
+    uint32_t rgb = 0, gen = 0;
+    uint16_t lo = 0, hi = 0;
+    int w = 0;  // 0..256: share of `hi` in the ordered dither
+  };
+  void learnCodes(const uint32_t* in, const uint16_t* codes);
+  bool encodePixel(uint32_t px, int x, int y, uint16_t* code);
+  std::vector<CodeColour> codeColour_;
+  std::vector<uint16_t> knownCodes_;
+  uint32_t codeGen_ = 1;
+  std::vector<CodeChoice> codeCache_;
   std::array<Block, kBlocks> blocks_;
 
   // Per-pixel luminance | red metric << 16, block-major (block i = [i*kBlockPx, (i+1)*kBlockPx)),

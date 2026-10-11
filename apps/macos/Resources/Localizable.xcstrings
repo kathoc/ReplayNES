@@ -3508,12 +3508,12 @@
         }
       }
     },
-    "Limits flashes of 15% or more of the screen to 1 per second and also softens the remaining small flicker.": {
+    "Like Standard, limits flashes to 2 per second, but also reacts to smaller areas (15% or more of the screen) and smaller changes, and softens the remaining small flicker.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "画面の 15% 以上の明滅を 1 秒に 1 回までに抑え、残る小さなちらつきも弱めます。"
+            "value": "標準と同じく明滅を 1 秒に 2 回までに抑えますが、より狭い範囲（画面の 15% 以上）や弱い変化にも反応し、残る小さなちらつきも弱めます。"
           }
         }
       }

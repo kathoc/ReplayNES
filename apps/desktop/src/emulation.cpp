@@ -175,16 +175,25 @@ void EmulationController::show(const uint32_t* v) {
   } else {
     signal_.ordinal = ++pictureOrdinal_;
   }
+  int codesOk = 0;
   if (flashLevel_ == RN_FLASH_OFF) {
     std::memcpy(display_.data(), v, display_.size() * 4);
     flashAltered_ = false;
   } else {
     rn_flash_info info{};
-    rn_flash_filter_process(flash_, v, display_.data(), &info);
+    if (signal_.codes) {
+      // The PPU codes go through the filter too, so a reduced picture keeps the CRT's RF path (no
+      // switch to the RGB input and back while flashes are reduced).
+      rn_flash_filter_process_codes(flash_, v, display_.data(), signal_.codes, displayCodes_.data(), &info, &codesOk);
+      if (codesOk) signal_.codes = displayCodes_.data();
+    } else {
+      rn_flash_filter_process(flash_, v, display_.data(), &info);
+    }
     flashAltered_ = info.altered != 0;
     if (flashAltered_) lastFlashTick_ = tickCount_;
   }
-  signal_.flashAltered = flashAltered_;
+  // The CRT takes the RGB picture only when the codes do not describe it.
+  signal_.flashAltered = flashAltered_ && !codesOk;
   pictureDirty_ = true;
 }
 

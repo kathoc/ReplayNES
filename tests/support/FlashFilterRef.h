@@ -46,6 +46,7 @@ struct FlashParams {
   int lumHold = 0, redHold = 0;  // max opposing move from the extremum while suppressed
   int lumRate = 0, redRate = 0;  // max change per frame while suppressed / sticky
   int stickyFrames = 0;          // frames a suppressed block stays rate-limited
+  int pairFrames = 0;            // opposing transitions at most this many frames apart pair up as a flash
 };
 
 struct FlashFrameInfo {
@@ -91,7 +92,11 @@ class FlashFilter {
     Tracker lum, red;
     Stats shown;  // stats of the last displayed block
     std::array<int64_t, kHistory> hist{};
+    std::array<bool, kHistory> counted{};  // the transition belongs to a flash
     int histCount = 0, histHead = 0;
+    Tracker srcLum, srcRed;  // the same tracking on the input
+    int64_t srcLast = -1000000, srcPrev = -1000000;
+    int srcDir = 0;
     int64_t lastTransition = -1000000;
     int lastDir = 0;
     int lastChanged = 0;  // changed pixels of the last transition (area accounting)
@@ -102,6 +107,7 @@ class FlashFilter {
   bool update(Tracker& t, int v, bool sat, bool isRed) const;          // true if a transition
   int opposingDistance(const Tracker& t, int v) const;
   int transitionsInWindow(const Block& b) const;
+  int64_t lastHistFrame(const Block& b, bool* counted) const;
   static Stats blockStats(const uint32_t* frame, int bx, int by);
   // Pixels of the block whose luminance / red metric changes by at least the thresholds.
   int changedPixels(const uint32_t* in, const uint32_t* ref, int bx, int by) const;

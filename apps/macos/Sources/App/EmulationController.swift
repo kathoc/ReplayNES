@@ -201,6 +201,7 @@ final class EmulationController {
     // Photosensitive flash reduction (display only: filters the copy that is shown).
     private let flashFilter = FlashFilter(level: .standard)
     private var displayFrame = [UInt32](repeating: 0xFF00_0000, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+    private var displayCodes = [UInt16](repeating: 0x0F, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
     private var flashAltered = false        // last shown frame differs from the emulated one
     private var lastFlashTick: UInt64 = 0   // tick of the last altered frame
     private var flashActiveShown = false
@@ -391,11 +392,27 @@ final class EmulationController {
             if vtrOn { keepVTRBase(v, meta) }
             return
         }
-        let altered = displayFrame.withUnsafeMutableBufferPointer { flashFilter.process(v, into: $0.baseAddress!) }
+        // The PPU codes go through the filter too, so a reduced picture keeps the CRT's RF path (no
+        // switch to the RGB input and back while flashes are reduced).
+        var altered = false, codesOk = false
+        if let c = signal?.codes {
+            (altered, codesOk) = displayFrame.withUnsafeMutableBufferPointer { px in
+                displayCodes.withUnsafeMutableBufferPointer { flashFilter.process(v, into: px.baseAddress!, codes: c, codesOut: $0.baseAddress!) }
+            }
+        } else {
+            altered = displayFrame.withUnsafeMutableBufferPointer { flashFilter.process(v, into: $0.baseAddress!) }
+        }
         flashAltered = altered
         if altered { lastFlashTick = tickCount }
-        meta.flashAltered = altered
-        displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta, codes: signal?.codes) }
+        meta.flashFiltered = altered
+        meta.flashAltered = altered && !codesOk
+        if codesOk {
+            displayFrame.withUnsafeBufferPointer { px in
+                displayCodes.withUnsafeBufferPointer { frames.publish(px.baseAddress!, meta: meta, codes: $0.baseAddress!) }
+            }
+        } else {
+            displayFrame.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: meta, codes: signal?.codes) }
+        }
         if vtrOn { displayFrame.withUnsafeBufferPointer { keepVTRBase($0.baseAddress!, meta) } }
     }
 
@@ -1072,7 +1089,8 @@ final class EmulationController {
             m.countdownFraction = countdownFraction
             // The clean picture again, with its PPU codes while they still describe it (a still after
             // a rewind then takes the CRT's RF path like every other frame, not the RGB input).
-            let signal = m.hasCodes ? session?.videoIndices : nil
+            // (Not the session's codes for a picture the flash filter changed: the RGB path then.)
+            let signal = m.hasCodes && !m.flashFiltered ? session?.videoIndices : nil
             let codes = signal.flatMap { $0.frame == m.signalFrame ? $0.codes : nil }
             if codes == nil { m.hasCodes = false }
             vtrBase.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: codes) }

@@ -1,6 +1,9 @@
 // FROZEN reference copy of engine/src/video/FlashFilter.{h,cpp} as of commit 499f42f (before the
 // speed optimisation), in namespace rnref. Used only by tests/test_flash_filter_exact.cpp to prove
 // that the optimised engine filter is bit-exact. Do not change its behaviour.
+// Rebased once on purpose: the flash pairing rule (pairFrames, input trackers, counted transitions;
+// High budget 4) changed the filter's semantics, so the same rule was added here in its
+// straightforward form. The per-pixel measuring / blending this file exists to check is unchanged.
 // Photosensitive flash reduction - see FlashFilter.h and docs/FLASH_REDUCTION.md.
 #include "support/FlashFilterRef.h"
 
@@ -72,6 +75,7 @@ FlashParams FlashFilter::params(FlashLevel level) {
       p.redThreshold = red(20);
       p.redRequireSaturation = true;
       p.budget = 6;  // 3 flashes
+      p.pairFrames = 10;
       p.areaPermille = 250;
       p.lumHold = lin(0.06);
       p.lumRate = lin(0.02);
@@ -83,6 +87,7 @@ FlashParams FlashFilter::params(FlashLevel level) {
       p.lumThreshold = lin(0.08);
       p.redThreshold = red(16);
       p.budget = 4;
+      p.pairFrames = 15;
       p.areaPermille = 200;
       p.lumHold = lin(0.04);
       p.lumRate = lin(0.01);
@@ -93,7 +98,8 @@ FlashParams FlashFilter::params(FlashLevel level) {
     case FlashLevel::High:  // 1 flash/s, smaller areas
       p.lumThreshold = lin(0.06);
       p.redThreshold = red(12);
-      p.budget = 2;
+      p.budget = 4;
+      p.pairFrames = 15;
       p.areaPermille = 150;
       p.lumHold = lin(0.02);
       p.lumRate = lin(0.005);
@@ -241,8 +247,18 @@ int FlashFilter::opposingDistance(const Tracker& t, int v) const {
 int FlashFilter::transitionsInWindow(const Block& b) const {
   int n = 0;
   for (int i = 0; i < b.histCount; ++i)
-    if (b.hist[size_t(i)] > frame_ - kWindow) ++n;
+    if (b.counted[size_t(i)] && b.hist[size_t(i)] > frame_ - kWindow) ++n;
   return n;
+}
+
+int64_t FlashFilter::lastHistFrame(const Block& b, bool* counted) const {
+  if (b.histCount == 0) {
+    *counted = false;
+    return -1000000;
+  }
+  const int k = (b.histHead + kHistory - 1) % kHistory;
+  *counted = b.counted[size_t(k)];
+  return b.hist[size_t(k)];
 }
 
 FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
@@ -270,6 +286,8 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
       b.red.ext = b.red.lo = b.red.hi = s.red;
       b.lum.extSat = b.lum.loSat = b.lum.hiSat = s.sat;
       b.red.extSat = b.red.loSat = b.red.hiSat = s.sat;
+      b.srcLum = b.lum;
+      b.srcRed = b.red;
       b.shown = s;
     }
     primed_ = true;
@@ -284,12 +302,29 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
   // a blinking object counts only that part), summed per direction over the new transitions and
   // those of the last kRecent-1 frames.
   std::array<int, kBlocks> want{}, changed{};
+  std::array<bool, kBlocks> flashLike{};
   int64_t up = 0, down = 0;
   for (int by = 0; by < kRows; ++by) {
     for (int bx = 0; bx < kCols; ++bx) {
       const size_t i = size_t(by * kCols + bx);
-      const Block& b = blocks_[i];
+      Block& b = blocks_[i];
       const Stats& s = inS[i];
+      // Pairing: opposing transitions within pairFrames in the input or against the last shown one.
+      bool sl = update(b.srcLum, s.lum, s.sat, false);
+      int sLumDir = b.srcLum.dir;
+      bool sr = update(b.srcRed, s.red, s.sat, true);
+      if (sl || sr) {
+        int dir = sl ? sLumDir : b.srcRed.dir;
+        if (dir != b.srcDir) {
+          b.srcPrev = b.srcLast;
+          b.srcLast = f;
+          b.srcDir = dir;
+        }
+      }
+      bool lc = false;
+      int64_t lastShown = lastHistFrame(b, &lc);
+      flashLike[i] = (b.srcLast - b.srcPrev <= p_.pairFrames && f - b.srcLast <= p_.pairFrames) ||
+                     f - lastShown <= p_.pairFrames;
       int cl = classify(b.lum, s.lum, s.sat, false);
       int cr = classify(b.red, s.red, s.sat, true);
       want[i] = cl != 0 ? cl : cr;
@@ -320,6 +355,10 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
       if (n >= p_.budget) ++exhausted;
       if (want[size_t(i)] == 0) continue;
       const Block& b = blocks_[size_t(i)];
+      if (!flashLike[size_t(i)]) continue;  // not part of a flash: passes
+      bool lc = false;
+      int64_t lastShown = lastHistFrame(b, &lc);
+      if (!lc && lastShown > f - kWindow && f - lastShown <= p_.pairFrames) ++n;  // pairs with it
       int remaining = p_.budget - n;
       // The same swing seen by the other metric (e.g. luminance then red rising one frame later)
       // is not a new transition; otherwise one unit per transition, plus the darker reserve.
@@ -403,6 +442,12 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out) {
         // Only a change of direction is a new transition of the block (a flash = two of them);
         // the other metric confirming the same swing is not counted twice.
         if (b.histCount == 0 || dir != b.lastDir) {
+          if (flashLike[i]) {
+            bool lc = false;
+            int64_t lastShown = lastHistFrame(b, &lc);
+            if (!lc && f - lastShown <= p_.pairFrames) b.counted[size_t((b.histHead + kHistory - 1) % kHistory)] = true;
+          }
+          b.counted[size_t(b.histHead)] = flashLike[i];
           b.hist[size_t(b.histHead)] = f;
           b.histHead = (b.histHead + 1) % kHistory;
           b.histCount = std::min(b.histCount + 1, kHistory);

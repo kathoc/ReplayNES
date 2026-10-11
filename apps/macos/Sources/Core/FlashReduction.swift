@@ -44,4 +44,18 @@ final class FlashFilter {
         }
         return info.altered != 0
     }
+
+    /// Also filters the frame's PPU codes for the CRT signal path (rn_flash_filter_process_codes):
+    /// `codesOk` = codesOut describe the filtered picture (otherwise the CRT takes the RGB picture).
+    func process(_ src: UnsafePointer<UInt32>, into dst: UnsafeMutablePointer<UInt32>, codes: UnsafePointer<UInt16>,
+                 codesOut: UnsafeMutablePointer<UInt16>) -> (altered: Bool, codesOk: Bool) {
+        var info = rn_flash_info()
+        var ok: Int32 = 0
+        guard rn_flash_filter_process_codes(handle, src, dst, codes, codesOut, &info, &ok) == RN_OK else {
+            dst.update(from: src, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+            codesOut.update(from: codes, count: Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT))
+            return (false, true)
+        }
+        return (info.altered != 0, ok != 0)
+    }
 }

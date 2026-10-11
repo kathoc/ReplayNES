@@ -14,6 +14,7 @@
 #include "replaynes/replaynes.h"
 #include "support/TestUtil.h"
 #include "support/rn_test.h"
+#include "testrom/TestCartridge.h"
 #include "video/FlashFilter.h"
 
 using namespace rn;
@@ -195,7 +196,7 @@ TEST_CASE("flash filter: full-screen black/white at 30 Hz is limited to <= 3 fla
     MESSAGE("level " << int(lv) << ": flashes " << w.generalFlashes << ", altered frames " << r.alteredFrames);
     CHECK(w.generalFlashes <= 3);
     if (lv == FlashLevel::Standard) CHECK(w.generalFlashes <= 2);
-    if (lv == FlashLevel::High) CHECK(w.generalFlashes <= 1);
+    if (lv == FlashLevel::High) CHECK(w.generalFlashes <= 2);
     CHECK(r.alteredFrames > 60);
   }
   // Slower flashing (every 4 frames = 7.5 Hz) and a mid-grey pair are limited too.
@@ -324,6 +325,193 @@ TEST_CASE("flash filter: deterministic, reset restarts, in-place processing") {
     f.process(o.data(), o.data());  // in == out
     CHECK(o == a.out[i]);
   }
+}
+
+// ---------------------------------------------------------------- pairing: what is not a flash
+namespace {
+// Frames (from `from` on) whose output differs from the input.
+int heldFrames(FlashLevel lv, const std::vector<Frame>& in, size_t from = 0) {
+  FlashFilter f(lv);
+  Frame o(NPX);
+  int n = 0;
+  for (size_t i = 0; i < in.size(); ++i)
+    if ((f.process(in[i].data(), o.data()).altered || o != in[i]) && i >= from) ++n;
+  return n;
+}
+Frame tinted(const Frame& s, int num, int den, int rAdd = 0) {  // NES-like palette step of a scene
+  Frame f = s;
+  for (auto& p : f)
+    p = rgb(std::min(255, int(p >> 16 & 255) * num / den + rAdd), int(p >> 8 & 255) * num / den, int(p & 255) * num / den);
+  return f;
+}
+void add(std::vector<Frame>& v, const Frame& f, int n) {
+  for (int i = 0; i < n; ++i) v.push_back(f);
+}
+}  // namespace
+
+// The old rule (every transition counts, High: 2 per second) held 49 / 161 / 72 frames of these at
+// High and 4 of `cuts` at Standard, and 70 frames of the test cartridge case below at High.
+TEST_CASE("flash filter: ordinary screen changes and fades are not held") {
+  const Frame title = solid(rgb(252, 216, 168)), mapScene = scene(100), menuA = scene(0), menuB = scene(300);
+  // 1. Super Mario Bros. 3 world map: bright title -> dark map (cut) -> 4-frame fade steps up whose
+  //    hue goes orange then pale (red metric up, then down) - three transitions within 12 frames.
+  std::vector<Frame> map;
+  add(map, title, 90);
+  add(map, tinted(mapScene, 1, 6, 30), 4);
+  add(map, tinted(mapScene, 2, 6, 60), 4);
+  add(map, tinted(mapScene, 4, 6, 90), 4);
+  add(map, mapScene, 120);
+  // 2. Tetris 2 menus: fade in, screen shown for half a second, fade out, 18 frames black, next
+  //    screen (a person going through menus): about 3 transitions per second, none paired.
+  std::vector<Frame> menus;
+  for (int k = 0; k < 6; ++k) {
+    const Frame& m = k % 2 ? menuB : menuA;
+    add(menus, tinted(m, 1, 3), 3);
+    add(menus, m, 30);
+    add(menus, tinted(m, 1, 3), 3);
+    add(menus, solid(rgb(0, 0, 0)), 18);
+  }
+  // 3. Two screens alternating slower than the level limits (a cut every 20 frames = 1.5 flashes/s).
+  std::vector<Frame> cuts;
+  for (int k = 0; k < 12; ++k) add(cuts, k % 2 ? scene(0) : solid(rgb(0, 0, 0)), 20);
+  for (FlashLevel lv : {FlashLevel::Low, FlashLevel::Standard, FlashLevel::High}) {
+    CHECK_EQ(heldFrames(lv, map), 0);
+    CHECK_EQ(heldFrames(lv, menus), 0);
+    CHECK_EQ(heldFrames(lv, cuts), 0);
+  }
+  CHECK(wcagCount(cuts).generalFlashes <= 2);
+}
+
+TEST_CASE("flash filter: test cartridge palette chart, greyscale / emphasis toggled by hand, is not held") {
+  // Palette chart; B (greyscale) and A (emphasis) pressed in turn, one press every 20 frames (3 per
+  // second, as a person tries them out): every press changes most of the screen, but successive
+  // changes are further apart than the pairing window, so they are not flashes.
+  auto rom = buildTestCartridge();
+  auto core = createCore(CoreKind::Nestopia);
+  REQUIRE(core->loadROM(rom.data(), rom.size()).ok());
+  std::vector<Frame> frames;
+  auto step = [&](uint8_t b, int n) {
+    for (int i = 0; i < n; ++i) {
+      REQUIRE(core->stepFrame(b, 0, true).ok());
+      frames.emplace_back(core->video(), core->video() + NPX);
+    }
+  };
+  step(0, 30);
+  for (unsigned i = 1; i < testcart::SCR_PALETTE; ++i) step(RN_BTN_DOWN, 2), step(0, 4);
+  step(RN_BTN_A, 2);
+  step(0, 60);
+  REQUIRE_EQ(unsigned(core->cpuRam()[testcart::screen]), testcart::SCR_PALETTE);
+  // (Boot: grey -> green -> black -> title within 5 frames, then title -> 2 black frames -> chart: two
+  // real flashes within a second, so at Standard / High the chart may appear a few frames late.)
+  const size_t from = frames.size();
+  for (int f = 0; f < 900; ++f) step(f % 20 < 2 ? (f % 40 < 20 ? RN_BTN_B : RN_BTN_A) : 0, 1);
+  CHECK(wcagCount(frames).generalFlashes + wcagCount(frames).redFlashes > 0);  // it really changes
+  for (FlashLevel lv : {FlashLevel::Low, FlashLevel::Standard, FlashLevel::High}) CHECK_EQ(heldFrames(lv, frames, from), 0);
+}
+
+TEST_CASE("flash filter: once the flashing stops the output is the input again (bit-exact)") {
+  // Strobe bursts of varied length / colours, then a static or scrolling scene: from pairFrames
+  // (+ the sticky smoothing after a hold) after the last input change of the strobe on, every
+  // output frame equals its input.
+  uint32_t seed = 7;
+  auto rnd = [&] { return seed = seed * 1664525u + 1013904223u; };
+  for (FlashLevel lv : {FlashLevel::Low, FlashLevel::Standard, FlashLevel::High}) {
+    const FlashParams p = FlashFilter::params(lv);
+    for (int trial = 0; trial < 6; ++trial) {
+      FlashFilter f(lv);
+      Frame o(NPX);
+      const int burst = 20 + int(rnd() % 100), period = 1 + int(rnd() % 3);
+      const uint32_t a = trial % 2 ? rgb(255, 0, 0) : rgb(255, 255, 255), b = rgb(0, 0, 0);
+      int lastChange = 0, altered = 0;
+      bool exactAfter = true;
+      for (int i = 0; i < burst + 150; ++i) {
+        Frame in = i < burst ? solid((i / period) % 2 ? a : b) : scene(trial % 3 == 0 ? 0 : i - burst);
+        if (i < burst + 1) lastChange = i;
+        FlashFrameInfo fi = f.process(in.data(), o.data());
+        if (fi.altered) ++altered;
+        // Static scene: pairFrames + sticky. Scrolling: a block whose content changes right after the
+        // strobe pairs with it (that is alternation within pairFrames), so one more pairFrames.
+        const int settle = p.pairFrames + p.stickyFrames + (trial % 3 == 0 ? 0 : p.pairFrames);
+        if (i > lastChange + settle && o != in) {
+          if (exactAfter) MESSAGE("level " << int(lv) << " trial " << trial << " burst " << burst << " period " << period << ": differs at " << i);
+          exactAfter = false;
+        }
+      }
+      CHECK(altered > 0);
+      CHECK(exactAfter);
+    }
+  }
+}
+
+TEST_CASE("flash filter: PPU codes for the CRT follow the reduced picture") {
+  // Black (code $0F) / white ($30) full-screen strobe: per block, the share of white codes in the
+  // output codes matches the linear luminance of the reduced RGB block.
+  FlashFilter withCodes(FlashLevel::Standard), plain(FlashLevel::Standard);
+  std::vector<uint16_t> inC(NPX), outC(NPX);
+  Frame o(NPX), o2(NPX);
+  int alteredFrames = 0, worst = 0;
+  for (int i = 0; i < 180; ++i) {
+    const bool white = i % 2 != 0;
+    Frame in = solid(white ? rgb(255, 255, 255) : rgb(0, 0, 0));
+    std::fill(inC.begin(), inC.end(), uint16_t(white ? 0x30 : 0x0F));
+    FlashFrameInfo r = withCodes.process(in.data(), o.data(), inC.data(), outC.data());
+    plain.process(in.data(), o2.data());
+    REQUIRE(o == o2);  // the codes never change the RGB output
+    CHECK(r.codesOk);
+    if (!r.altered) CHECK(outC == inC);
+    if (r.altered) ++alteredFrames;
+    for (int by = 0; by < 15; ++by)
+      for (int bx = 0; bx < 16; ++bx) {
+        int64_t lum = 0, whiteCodes = 0;
+        for (int y = 0; y < 16; ++y)
+          for (int x = 0; x < 16; ++x) {
+            const size_t k = size_t((by * 16 + y) * W + bx * 16 + x);
+            lum += FlashFilter::luminance(o[k]);
+            whiteCodes += outC[k] == 0x30;
+            REQUIRE((outC[k] == 0x30 || outC[k] == 0x0F));
+          }
+        // white share in 1/256 vs mean luminance in 1/256 (quantisation of the blend: <= 2/256)
+        worst = std::max(worst, int(std::abs(whiteCodes - (lum / 256 * 256 + 32767) / 65535)));
+      }
+  }
+  CHECK(alteredFrames > 60);
+  CHECK(worst <= 3);
+  // In place (in == out, codes in == codes out) gives the same pictures and codes.
+  {
+    FlashFilter x(FlashLevel::High), y(FlashLevel::High);
+    std::vector<uint16_t> c1(NPX), c2(NPX), c3(NPX);
+    for (int i = 0; i < 90; ++i) {
+      const bool w = (i / 2) % 2 != 0;
+      Frame a = solid(w ? rgb(255, 255, 255) : rgb(0, 0, 0)), b = a, ob(NPX);
+      std::fill(c1.begin(), c1.end(), uint16_t(w ? 0x30 : 0x0F));
+      c2 = c1;
+      x.process(a.data(), a.data(), c1.data(), c1.data());
+      y.process(b.data(), ob.data(), c2.data(), c3.data());
+      REQUIRE(a == ob);
+      REQUIRE(c1 == c3);
+    }
+  }
+  // A frame without codes in between: the code colours are learned, so the codes stay usable.
+  FlashFilter f(FlashLevel::High);
+  Frame black = solid(rgb(0, 0, 0)), white = solid(rgb(255, 255, 255));
+  std::vector<uint16_t> cb(NPX, 0x0F), cw(NPX, 0x30);
+  for (int i = 0; i < 40; ++i) {
+    const Frame& in = i % 2 ? white : black;
+    if (i == 20) {
+      f.process(in.data(), o.data());  // no codes
+      continue;
+    }
+    FlashFrameInfo r = f.process(in.data(), o.data(), (i % 2 ? cw : cb).data(), outC.data());
+    CHECK(r.codesOk);
+  }
+  // C API.
+  rn_flash_filter* ff = rn_flash_filter_new(RN_FLASH_STANDARD);
+  int ok = -1;
+  CHECK(rn_flash_filter_process_codes(ff, black.data(), o.data(), nullptr, outC.data(), nullptr, &ok) == RN_ERR_INVALID_ARG);
+  CHECK(rn_flash_filter_process_codes(ff, black.data(), o.data(), cb.data(), outC.data(), nullptr, &ok) == RN_OK);
+  CHECK_EQ(ok, 1);
+  CHECK(outC == cb);
+  rn_flash_filter_free(ff);
 }
 
 TEST_CASE("flash filter: C API and session hashes are unaffected") {

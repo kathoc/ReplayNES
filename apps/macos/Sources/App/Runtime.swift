@@ -34,7 +34,8 @@ struct FrameMeta {
     var hasCodes = false            // raw PPU codes published with this frame
     var burstPhase: UInt32 = 0      // core colour-burst phase of the frame (0..2)
     var signalFrame: UInt64 = 0     // machine frame ordinal (CRT persistence / RF noise key)
-    var flashAltered = false        // the flash filter changed this picture (CRT then uses the RGB path)
+    var flashAltered = false        // the flash filter changed this picture and the codes do not describe it (CRT: RGB path)
+    var flashFiltered = false       // the flash filter changed this picture (the published codes are its filtered codes)
     // The practice countdown drawn over this picture (MetalView; 0 = none): 3, 2, 1 and how far into it.
     var countdown = 0
     var countdownFraction = 0.0

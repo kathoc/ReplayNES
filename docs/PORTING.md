@@ -210,6 +210,10 @@ rn_flash_filter_reset(ff);   // on seek, scrub, bookmark/take jump, load, new se
 Feed one processed frame per *displayed* frame (fast-forward: only the shown one), and while
 paused re-process the current frame each display tick while `info.altered` so a held picture
 settles. For export use a fresh filter per export and process every rendered frame in order.
+A CRT / composite effect that draws from the PPU codes (`rn_video_indices`) filters them along
+with the picture, so it can stay on the codes while flashes are reduced:
+`rn_flash_filter_process_codes(ff, video, display_copy, vi.codes, display_codes, &info, &codes_ok)`;
+draw from `display_codes` when `codes_ok`, otherwise (rare) from the RGB `display_copy`.
 Algorithm and limits: [FLASH_REDUCTION.md](FLASH_REDUCTION.md).
 
 ## Streaming output (optional)

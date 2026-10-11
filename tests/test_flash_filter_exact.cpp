@@ -203,7 +203,7 @@ TEST_CASE("flash filter exact: static luts and per-pixel metrics") {
     CHECK(a.lumThreshold == b.lumThreshold && a.lumRequireDark == b.lumRequireDark && a.redThreshold == b.redThreshold &&
           a.redRequireSaturation == b.redRequireSaturation && a.budget == b.budget && a.areaPermille == b.areaPermille &&
           a.lumHold == b.lumHold && a.redHold == b.redHold && a.lumRate == b.lumRate && a.redRate == b.redRate &&
-          a.stickyFrames == b.stickyFrames);
+          a.stickyFrames == b.stickyFrames && a.pairFrames == b.pairFrames);
   }
 }
 

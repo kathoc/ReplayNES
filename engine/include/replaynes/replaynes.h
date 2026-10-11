@@ -388,7 +388,7 @@ typedef enum rn_flash_level {
   RN_FLASH_OFF = 0,      /* output == input */
   RN_FLASH_LOW = 1,      /* "Low": WCAG thresholds as written, <= 3 flashes/s on >= 25% of the screen */
   RN_FLASH_STANDARD = 2, /* "Standard" (recommended default): earlier detection, <= 2 flashes/s, >= 20% */
-  RN_FLASH_HIGH = 3      /* "High": <= 1 flash/s, >= 15% of the screen, smaller residual flicker */
+  RN_FLASH_HIGH = 3      /* "High": <= 2 flashes/s, >= 15% of the screen, smaller changes, smaller residual flicker */
 } rn_flash_level;
 
 typedef struct rn_flash_info {
@@ -405,6 +405,15 @@ rn_status rn_flash_filter_set_level(rn_flash_filter* f, rn_flash_level level); /
 rn_flash_level rn_flash_filter_get_level(const rn_flash_filter* f);
 /* in/out: 256x240 BGRA8 like rn_video (in == out allowed). info may be NULL. */
 rn_status rn_flash_filter_process(rn_flash_filter* f, const uint32_t* in, uint32_t* out, rn_flash_info* info);
+/* Same, also producing the PPU codes of the shown picture for a CRT signal path (RF / composite):
+ * codes_in = rn_video_indices(...).codes of `in`, codes_out = 256x240 codes (codes_in == codes_out
+ * allowed). Blocks passed through keep their codes; a reduced block is an ordered dither of the new
+ * codes and the codes shown before whose mean light matches the reduced RGB picture, so the CRT keeps
+ * its signal path while flashes are reduced. *codes_ok = 0 when codes_out cannot describe this frame
+ * (a reduced block whose previous codes are unknown: a frame without codes came in between); the
+ * frontend then uses the RGB picture for this frame. codes_ok may be NULL. */
+rn_status rn_flash_filter_process_codes(rn_flash_filter* f, const uint32_t* in, uint32_t* out, const uint16_t* codes_in,
+                                        uint16_t* codes_out, rn_flash_info* info, int* codes_ok);
 
 #ifdef __cplusplus
 }

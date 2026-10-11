@@ -33,7 +33,7 @@ struct ExportFrameSignal {
   const uint16_t* codes = nullptr;  // rn_video_indices codes (nullptr: core has none)
   uint32_t burstPhase = 0;
   uint64_t ordinal = 0;             // machine frame ordinal (info.frame; the take frame when the core has no codes)
-  bool flashAltered = false;        // the flash filter changed this frame (use the RGB picture, not the codes)
+  bool flashAltered = false;        // the flash filter changed this frame and `codes` do not describe it (use the RGB picture)
 };
 
 /// Optional offline post-process (CRT), implemented elsewhere. Called on the export thread, frames

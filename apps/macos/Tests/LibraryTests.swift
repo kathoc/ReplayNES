@@ -131,6 +131,39 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(out, white)
     }
 
+    /// The CRT keeps its RF path while flashes are reduced: the PPU codes are filtered along with the
+    /// picture (black $0F / white $30 strobe: the white share of each reduced block's codes follows
+    /// the block's mean luminance).
+    func testFlashFilterCodesFollowReducedPicture() {
+        let n = Int(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT)
+        let black = [UInt32](repeating: 0xFF00_0000, count: n), white = [UInt32](repeating: 0xFFFF_FFFF, count: n)
+        let cBlack = [UInt16](repeating: 0x0F, count: n), cWhite = [UInt16](repeating: 0x30, count: n)
+        var out = [UInt32](repeating: 0, count: n)
+        var codes = [UInt16](repeating: 0, count: n)
+        let f = FlashFilter(level: .standard)
+        var reduced = 0
+        for i in 0..<60 {
+            let (src, c) = i % 2 == 0 ? (black, cBlack) : (white, cWhite)
+            let r = src.withUnsafeBufferPointer { s in
+                c.withUnsafeBufferPointer { cs in
+                    out.withUnsafeMutableBufferPointer { o in
+                        codes.withUnsafeMutableBufferPointer { f.process(s.baseAddress!, into: o.baseAddress!, codes: cs.baseAddress!, codesOut: $0.baseAddress!) }
+                    }
+                }
+            }
+            XCTAssertTrue(r.codesOk)
+            if !r.altered { XCTAssertEqual(codes, c); continue }
+            reduced += 1
+            // Block (0, 0): white code share vs the output's grey level (sRGB -> linear).
+            var whiteCodes = 0
+            for y in 0..<16 { for x in 0..<16 where codes[y * 256 + x] == 0x30 { whiteCodes += 1 } }
+            let v = Double(out[0] & 0xFF) / 255
+            let lin = v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            XCTAssertEqual(Double(whiteCodes) / 256, lin, accuracy: 3.0 / 256)
+        }
+        XCTAssertGreaterThan(reduced, 20)
+    }
+
     func testExportWithFlashReductionKeepsRendererHash() throws {
         let rom = tmp.appendingPathComponent("t.nes")
         try Engine.writeTestROM(to: rom)

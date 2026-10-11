@@ -322,8 +322,19 @@ final class MP4Exporter {
             }
             var picture: [UInt32]
             if let flash {
-                let altered = filtered.withUnsafeMutableBufferPointer { flash.process(video, into: $0.baseAddress!) }
-                signal?.flashAltered = altered
+                if let codes = signal?.codes {
+                    // The codes go through the filter too: a reduced picture keeps the RF path.
+                    var out = codes
+                    let r = filtered.withUnsafeMutableBufferPointer { px in
+                        codes.withUnsafeBufferPointer { c in
+                            out.withUnsafeMutableBufferPointer { flash.process(video, into: px.baseAddress!, codes: c.baseAddress!, codesOut: $0.baseAddress!) }
+                        }
+                    }
+                    signal?.codes = out
+                    signal?.flashAltered = r.altered && !r.codesOk
+                } else {
+                    signal?.flashAltered = filtered.withUnsafeMutableBufferPointer { flash.process(video, into: $0.baseAddress!) }
+                }
                 picture = filtered
             } else {
                 picture = Array(UnsafeBufferPointer(start: video, count: frameBytes))
@@ -517,7 +528,7 @@ struct CRTExportFrame {
     var codes: [UInt16]?
     var burstPhase: UInt32
     var ordinal: UInt64
-    var flashAltered: Bool
+    var flashAltered: Bool  // the flash filter changed the picture and `codes` do not describe it: RGB path
 }
 
 /// Offline CRT rendering for the exporter: the live pipeline (CRTRenderer) at reference quality
@@ -554,8 +565,8 @@ final class CRTExportRenderer {
 
     var destination: CGRect { dst }
 
-    /// Same input rule as the live view: RF path from the PPU codes, or the (flash-filtered) RGB
-    /// picture when the filter altered the frame / the core has no codes.
+    /// Same input rule as the live view: RF path from the (flash-filtered) PPU codes, or the RGB
+    /// picture when the core has no codes / the filtered codes are not available.
     func render(pixels: [UInt32], signal: CRTExportFrame, into pb: CVPixelBuffer) -> Bool {
         guard let cb = queue.makeCommandBuffer() else { return false }
         let ok: Bool

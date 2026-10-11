@@ -33,7 +33,8 @@ struct FrameSignal {
   const uint16_t* codes = nullptr;  // rn_video_indices codes of the same picture (nullptr: none)
   uint32_t burstPhase = 0;
   uint64_t ordinal = 0;             // machine frame ordinal (the take frame when there are no codes)
-  bool flashAltered = false;        // the flash filter changed the picture: the CRT takes its RGB
+  bool flashAltered = false;        // the flash filter changed the picture and `codes` (its filtered codes
+                                    // otherwise) do not describe it: the CRT takes its RGB
 };
 
 struct PostProcessStatus {
