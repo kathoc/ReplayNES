@@ -228,6 +228,16 @@ TEST_CASE("settings round trip and tolerant parsing") {
     CHECK_EQ(Settings::parse(p.serialize()).pauseAfterRewind, on);
   }
   CHECK(Settings::parse("pauseAfterRewind=0\npauseAfterRewind2=1\n").pauseAfterRewind);
+  // Resume countdown: on by default, round-trips, independent of the practice countdown.
+  CHECK(d.resumeCountdown);
+  for (bool on : {true, false}) {
+    Settings r;
+    r.resumeCountdown = on;
+    r.practiceCountdown = !on;
+    Settings back = Settings::parse(r.serialize());
+    CHECK_EQ(back.resumeCountdown, on);
+    CHECK_EQ(back.practiceCountdown, !on);
+  }
 }
 
 // ------------------------------------------------------------------ on-screen keyboard
@@ -964,6 +974,168 @@ TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward
   rn_input_free(in);
 }
 
+TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing emulated, aborts back to paused") {
+  std::string d = tmpDir("resume-countdown");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  // A fresh recording runs at once (no countdown).
+  tickN(emu, 120);
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, uint64_t(120));
+  emu.togglePause();
+  REQUIRE(emu.paused());
+  // Resume: unpaused, 3 over the paused picture, nothing emulated.
+  emu.togglePause();
+  CHECK_FALSE(emu.paused());
+  tickN(emu, 10);
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK(emu.status().countdownFraction >= 0);
+  CHECK_EQ(emu.status().frame, uint64_t(120));
+  CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  // The cancel tap: back to paused, the numeral goes.
+  emu.abortCountdown();
+  CHECK(emu.paused());
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  // The pause hotkey / the menu (togglePause / setPaused(true)) during it: back to paused.
+  emu.togglePause();
+  tickN(emu, 2);
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.togglePause();
+  CHECK(emu.paused());
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, uint64_t(120));
+  // A frame step during it: paused, one frame.
+  emu.togglePause();
+  emu.tick();
+  emu.step(1);
+  emu.tick();
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, uint64_t(121));
+  // Rewind held during it: back to paused, it rewinds; released: still paused, no countdown.
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.setRewindHeld(true);
+  tickN(emu, 3);
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK(emu.status().frame < uint64_t(121));
+  emu.setRewindHeld(false);
+  tickN(emu, 5);
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  uint64_t f = emu.status().frame;
+  // A rewind hold while paused and its release never start a countdown either.
+  emu.setRewindHeld(true);
+  tickN(emu, 2);
+  emu.setRewindHeld(false);
+  tickN(emu, 3);
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  f = emu.status().frame;
+  // The setting switched off during it: plays on at once.
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.setResumeCountdown(false);
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, f + 1);
+  // Off: a resume plays at once.
+  emu.togglePause();
+  REQUIRE(emu.paused());
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, f + 2);
+  // On again; replay (watching the take): no countdown.
+  emu.setResumeCountdown(true);
+  emu.setPaused(true);
+  emu.setRecording(false);
+  emu.seek(10);
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_EQ(emu.status().frame, uint64_t(11));
+  // setPaused(false) (scripts, practice start) resumes at once.
+  emu.setRecording(true);
+  emu.setPaused(true);
+  emu.setPaused(false);
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  // Re-record from here is live play: the countdown first.
+  emu.setPaused(true);
+  emu.rerecordHere();
+  emu.tick();
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.closeSession();
+  rn_input_free(in);
+}
+
+TEST_CASE("emulation: resume countdown in practice - only while the run plays, never on top of its own countdown") {
+  std::string d = tmpDir("resume-countdown-practice");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  tickN(emu, 300);
+  emu.setPaused(true);
+  emu.seek(60);
+  emu.timelineMarkA(1);
+  emu.seek(200);
+  emu.timelineMarkB(1);
+  // Paused in the practice countdown and resumed: its own countdown goes on (not stacked): the
+  // cancel tap then ends practice as before.
+  emu.startPractice(1);
+  tickN(emu, 3);
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 3);
+  emu.abortCountdown();
+  CHECK_FALSE(emu.status().practicing);
+  // The run playing (practice countdown off: independent settings): a resume counts down; the
+  // cancel tap goes back to paused, still practicing.
+  emu.setPracticeCountdown(false);
+  emu.startPractice(1);
+  tickN(emu, 20);
+  CHECK_EQ(emu.status().practiceFrame, uint64_t(20));
+  emu.togglePause();
+  emu.tick();
+  emu.togglePause();
+  tickN(emu, 5);
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK_EQ(emu.status().practiceFrame, uint64_t(20));  // nothing emulated
+  emu.abortCountdown();
+  CHECK(emu.paused());
+  CHECK(emu.status().practicing);
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  // Off: the run plays on at once.
+  emu.setResumeCountdown(false);
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().practiceFrame, uint64_t(21));
+  emu.closeSession();
+  rn_input_free(in);
+}
+
 TEST_CASE("emulation: practice A/B on the timeline, loop, stop restores the take") {
   std::string d = tmpDir("practice");
   std::string rom = testRom(d);
@@ -1089,6 +1261,7 @@ TEST_CASE("emulation: bookmarks, takes, undo, reset with backup") {
   emu.renameBookmark(bm, "boss");
   CHECK_EQ(emu.structure().bookmarks[0].name, std::string("boss"));
   emu.seek(30);
+  emu.setResumeCountdown(false);  // re-record from here plays at once (the countdown: "resume countdown")
   emu.rerecordHere();
   tickN(emu, 10);  // branches: a second take
   CHECK_EQ(emu.structure().takes.size(), size_t(2));

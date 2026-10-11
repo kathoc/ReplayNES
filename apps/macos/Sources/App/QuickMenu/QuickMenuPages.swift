@@ -372,6 +372,9 @@ enum QuickMenuPages {
             slider("duty", "timer", String(localized: "Turbo Press Length"), String(localized: "Frames each turbo press is held"),
                    Double(c.turboDuty), 1...Double(max(2, c.turboPeriod - 1)), step: 1,
                    text: String(localized: "\(c.turboDuty) f")) { m.input.setTurbo(period: c.turboPeriod, duty: Int($0)) },
+            // Here: Controls is full (six rows); its sibling Pause After Rewind is on Controls.
+            toggle("resumeCountdown", "play.circle", String(localized: "Resume Countdown"),
+                   String(localized: "3, 2, 1 before play resumes after a pause"), m.resumeCountdown) { m.resumeCountdown = $0 },
             QMItem(id: "resetBindings", icon: "arrow.counterclockwise", title: String(localized: "Default Buttons"),
                    detail: String(localized: "Restore the default keys and buttons"),
                    confirm: {

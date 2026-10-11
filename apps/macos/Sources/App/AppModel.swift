@@ -99,6 +99,9 @@ final class AppModel: ObservableObject {
     @AppStorage("vtrEffect") var vtrEffect = true { didSet { pushPrefs(); objectWillChange.send() } }
     /// 3, 2, 1 after a practice run arrives at A (the Practice page, Options button).
     @AppStorage("practiceCountdown") var practiceCountdown = true { didSet { pushPrefs(); objectWillChange.send() } }
+    /// 3, 2, 1 before play resumes from a pause (Settings › Controls › Controls Details); independent
+    /// of practiceCountdown.
+    @AppStorage("resumeCountdown") var resumeCountdown = true { didSet { pushPrefs(); objectWillChange.send() } }
     @AppStorage("volume") var volume = 0.8 { didSet { emu.audio.volume = Float(volume); objectWillChange.send() } }
     /// Menus confirm with the south face button (default false: east confirms, south goes back).
     @AppStorage("southConfirm") var southConfirm = false { didSet { input.setSouthConfirm(southConfirm); objectWillChange.send() } }
@@ -243,9 +246,10 @@ final class AppModel: ObservableObject {
 
     private func pushPrefs() {
         let par = pauseAfterRewind, auto = autosaveInterval, flash = flashLevel, vtr = vtrEffect, count = practiceCountdown
+        let resumeCount = resumeCountdown
         emu.perform { e in
             e.pauseAfterRewind = par; e.autosaveInterval = auto; e.setFlashLevel(flash)
-            e.setVTREffect(vtr); e.setPracticeCountdown(count)
+            e.setVTREffect(vtr); e.setPracticeCountdown(count); e.setResumeCountdown(resumeCount)
         }
     }
 
@@ -285,7 +289,8 @@ final class AppModel: ObservableObject {
     // MARK: transport (all forwarded to the emulation thread)
 
     func togglePause() { emu.perform { e in e.togglePause() } }
-    func setPaused(_ p: Bool) { emu.perform { e in e.paused = p } }
+    /// false = the user resumes (the resume countdown first, EmulationController.resume()).
+    func setPaused(_ p: Bool) { emu.perform { e in if p { e.paused = true } else { e.resume() } } }
     func frameAdvance(_ n: Int = 1) { emu.perform { e in e.paused = true; e.advanceRemaining += max(0, n) } }
     func stepBack(_ n: UInt64 = 1) {
         emu.perform { e in
@@ -492,7 +497,7 @@ final class AppModel: ObservableObject {
                 let s = try EngineSession.create(rom: rom, projectDir: projectDir)
                 DispatchQueue.main.async {
                     self.install(s, recovered: false)
-                    if autoplay { self.setPaused(false) }
+                    if autoplay { self.emu.perform { e in e.paused = false } }   // a new run: no resume countdown
                     if projectDir != nil && !isTemp { self.library.refresh() }
                 }
             } catch let e as RNError {

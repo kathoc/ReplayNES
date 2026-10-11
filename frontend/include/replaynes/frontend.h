@@ -1206,6 +1206,40 @@ rnf_countdown_visual rnf_practice_countdown_visual(int count, double fraction);
 /* Index (0 = newest) into a history of count frames for animation progress back. */
 int rnf_practice_history_index(double back, int count);
 
+/* Resume countdown (docs/design/UI_REDESIGN.md, "Resume countdown"): resuming play from a pause (the
+ * pause hotkey / Space, the seek bar's cancel tap, the menu's Resume / closing it, the pill) first
+ * shows 3, 2, 1 over the paused picture (RNF_PRACTICE_COUNTDOWN_SECONDS, one number per second, the
+ * practice countdown's look: rnf_practice_countdown_visual), then plays. The frontend keeps the game
+ * unpaused meanwhile but emulates nothing (the game input is sampled and dropped every tick, audio
+ * stays muted); a pause (hotkey, menu, dialog, frame step) or the cancel tap aborts it back to paused
+ * (rnf_resume_countdown_cancel). Setting "Resume Countdown" (default on), independent of the practice
+ * countdown (rnf_practice_loop_set_countdown). Only for live play: RECORD, or PRACTICE while its loop
+ * is playing (a pending return / its own countdown is never stacked with this one); never REPLAY. */
+typedef struct rnf_resume_countdown rnf_resume_countdown;
+typedef struct rnf_resume_countdown_state {
+  int count;       /* 3, 2, 1 while counting; 0 otherwise */
+  double fraction; /* 0...1 within that number's second (rnf_practice_countdown_visual) */
+  int done;        /* 1 on the tick it ends: play from this tick on (reported once) */
+} rnf_resume_countdown_state;
+rnf_resume_countdown* rnf_resume_countdown_new(void);
+rnf_resume_countdown* rnf_resume_countdown_clone(const rnf_resume_countdown* c);
+void rnf_resume_countdown_free(rnf_resume_countdown* c);
+/* The setting (default on). Off ends a countdown in progress (play at once). */
+void rnf_resume_countdown_set_enabled(rnf_resume_countdown* c, int on);
+int rnf_resume_countdown_enabled(const rnf_resume_countdown* c);
+/* Whether resuming in this state counts down: enabled, and mode RECORD, or PRACTICE with the
+ * practice loop's phase PLAYING. Pure (c may be NULL = enabled). */
+int rnf_resume_countdown_wanted(const rnf_resume_countdown* c, rn_mode mode, rnf_practice_phase practice_phase);
+/* A resume from pause at `now` (seconds): starts (or restarts) the countdown when wanted (returns 1);
+ * 0 = play at once. */
+int rnf_resume_countdown_start(rnf_resume_countdown* c, double now, rn_mode mode, rnf_practice_phase practice_phase);
+/* Every unpaused tick while active. Inactive: {0, 0, 0}. */
+rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, double now);
+/* A modal UI is up while counting: it waits at its start (restarted from `now`, nothing shown yet). */
+void rnf_resume_countdown_hold(rnf_resume_countdown* c, double now);
+void rnf_resume_countdown_cancel(rnf_resume_countdown* c); /* back to paused (the frontend pauses) */
+int rnf_resume_countdown_active(const rnf_resume_countdown* c);
+
 /* Ring of the most recent 256x240 BGRA frames (allocated on first append). */
 typedef struct rnf_frame_history rnf_frame_history;
 rnf_frame_history* rnf_frame_history_new(int capacity);

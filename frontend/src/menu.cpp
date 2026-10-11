@@ -208,6 +208,9 @@ const std::vector<ItemDef>& items() {
        F_UI_SCALE, {}},
       {"system.detail", "system.autosave", RNF_L("Autosave"), RNF_L("How often the recording is saved"), "device-floppy",
        CHOICE, "", 0, {RNF_L("2 s"), RNF_L("3 s"), RNF_L("5 s"), RNF_L("10 s"), RNF_L("30 s")}},
+      // Here, not under Controls: Controls and Controls > More are full on Linux (docs/design/UI_REDESIGN.md).
+      {"system.detail", "system.resume_countdown", RNF_L("Resume Countdown"), RNF_L("3, 2, 1 before play resumes after a pause"),
+       "player-play", TOGGLE, "", 0, {}},
       {"system.detail", "system.flash_badge", RNF_L("Flash Badge"), RNF_L("Show a badge while flashes are reduced"), "bolt-off",
        TOGGLE, "", 0, {}},
       {"system.detail", "system.stats", RNF_L("Latency Stats"), RNF_L("Measured latency and timing (F3)"), "chart-line", TOGGLE,

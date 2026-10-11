@@ -37,6 +37,8 @@ struct Settings {
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
   bool practiceCountdown = true;  // 3, 2, 1 after the practice run returned to A (Practice page, View)
+  // 3, 2, 1 before play resumes from a pause (System > More); independent of practiceCountdown.
+  bool resumeCountdown = true;
   // UI confirm / cancel (rnf_ui_confirm_element): false = east confirms, south goes back (default).
   bool southConfirm = false;
   // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),

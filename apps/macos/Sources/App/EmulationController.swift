@@ -102,7 +102,7 @@ struct EmuStatus: Equatable {
     var practiceLength: UInt64 = 0   // slot length A->B (0 = no B: no loop)
     var practiceLooping = false      // hold / rewind animation in progress
     var practiceLoops = 0            // completed A->B loops since entering
-    var countdown = 0                // the countdown after returning to A: 3, 2, 1 (0 = none)
+    var countdown = 0                // the countdown at A (practice) or before play resumes: 3, 2, 1 (0 = none)
 }
 
 /// Bookmarks, takes and practice slots (published when they change).
@@ -136,6 +136,7 @@ final class EmulationController {
     var paused = true {
         didSet {
             if paused != oldValue { statusDirty = true; if !paused { pauseHintShown = false; stepRepeater.reset() } }
+            if paused { resumeCountdown.cancel() }   // a pause (hotkey, menu, dialog, step, cancel tap) aborts it
             if paused && !oldValue { autosaveSoon = true } // pausing persists right away (resume)
             input.setPausedStepMode(paused)
         }
@@ -186,6 +187,8 @@ final class EmulationController {
         didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0) } }
     }
     private var countdownFraction = 0.0
+    /// 3, 2, 1 over the paused picture before play resumes from a pause (resume()).
+    private var resumeCountdown = ResumeCountdown()
     /// A modal UI (menu, dialog) is up: a practice run waits (hold, sweep, countdown too).
     var modalHold = false
     // VTR effect (display only): while active, the shown picture is vtrBase through the effect.
@@ -322,6 +325,7 @@ final class EmulationController {
         practiceLength = 0
         practiceLoop.reset()
         reel.release()
+        resumeCountdown.cancel()   // a fresh recording runs at once
         countdown = 0
         vtr.reset()
         vtrOn = false
@@ -351,6 +355,9 @@ final class EmulationController {
     }
 
     func setPracticeCountdown(_ on: Bool) { practiceLoop.countdownEnabled = on }
+
+    /// The resume countdown setting (independent of the practice countdown).
+    func setResumeCountdown(_ on: Bool) { resumeCountdown.enabled = on }
 
     func setFlashLevel(_ l: FlashLevel) {
         guard l != flashFilter.level else { return }
@@ -692,8 +699,9 @@ final class EmulationController {
     /// session when the housekeeping (autosave) may run afterwards.
     private func tickFrame() -> (EngineSession?, autosave: Bool) {
         let r = tickFrameCore()
-        if paused && countdown != 0, let s = session, isPracticing {
-            // Paused in the countdown (the seek bar, the menu): the numeral goes; it comes back on resume.
+        if paused && countdown != 0, let s = session {
+            // Paused in the countdown (the seek bar, the menu): the numeral goes; practice's comes back
+            // on resume (the resume countdown starts over).
             countdown = 0
             if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }
             statusDirty = true
@@ -725,6 +733,9 @@ final class EmulationController {
         let practicing = s.mode == RN_MODE_PRACTICE
         let rewindHeld = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
         let ffHeld = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
+        // Rewind / fast-forward held during the resume countdown: back to paused (they then act as
+        // when paused; releasing them never starts a countdown).
+        if resumeCountdown.active && (rewindHeld || ffHeld) { paused = true }
         var wantRewind = rewindHeld
         if practicing {
             // L2 + R2 together: back to A at once (the return of B). Only while playing: paused (the
@@ -776,12 +787,15 @@ final class EmulationController {
             return (s, false)
         }
 
+        let resumeCounting = !paused && tickResumeCountdown(s)
         if paused {
             let d = stepRepeater.tick()
             if d != 0 { stepFrame(d, s) }
         }
 
-        if fastForward {
+        if resumeCounting {
+            // 3, 2, 1 over the paused picture (tickResumeCountdown): nothing is emulated.
+        } else if fastForward {
             tickFastForward(s)
         } else if practicing && !paused && modalHold {
             audio.setMuted(true)   // waits for the dialog (the loop does not count the time)
@@ -954,10 +968,62 @@ final class EmulationController {
         practiceSeq &+= 1
     }
 
-    /// The UI's cancel tapped during the countdown: practice ends (back to the take, paused).
+    /// The UI's cancel tapped during the countdown: the resume countdown goes back to paused; the
+    /// practice countdown ends practice (back to the take, paused).
     func abortCountdown() {
+        if resumeCountdown.active { paused = true; return }
         guard isPracticing, practiceLoop.inCountdown else { return }
         stopPractice()
+    }
+
+    // MARK: resume countdown (emulation thread)
+
+    /// The user resumes play from a pause (the pause hotkey / Space, the seek bar's cancel tap, the
+    /// menu's Resume / closing it, Re-record from Here): 3, 2, 1 over the paused picture first when
+    /// the resume countdown applies (ResumeCountdown). `paused = false` resumes at once (a fresh
+    /// recording, practice start).
+    func resume() {
+        guard paused else { return }
+        paused = false
+        if let s = session {
+            resumeCountdown.start(now: HostClock.seconds(HostClock.now()), mode: s.mode, practicePhase: practiceLoop.phase)
+        }
+    }
+
+    /// The resume countdown's tick (unpaused): true = counting (nothing is emulated; the game input is
+    /// sampled and dropped, so a tap is not latched into the first frame and a button held through
+    /// counts from it); false = not counting or it just ended (play on in this same tick).
+    private func tickResumeCountdown(_ s: EngineSession) -> Bool {
+        guard resumeCountdown.active else {
+            // Ended / cancelled / switched off: outside practice no other countdown is shown.
+            if countdown != 0 && !isPracticing { countdown = 0; statusDirty = true }
+            return false
+        }
+        let now = HostClock.seconds(HostClock.now())
+        if modalHold {
+            resumeCountdown.hold(now: now)   // waits at its start behind a dialog
+            if countdown != 0 { countdown = 0; statusDirty = true }
+        } else {
+            let st = resumeCountdown.tick(now: now)
+            if st.done {
+                countdown = 0
+                statusDirty = true
+                return false
+            }
+            if st.count != countdown { statusDirty = true }
+            countdown = st.count
+            countdownFraction = st.fraction
+        }
+        audio.setMuted(true)
+        if isPracticing {
+            dropInput()
+        } else {
+            var p1: UInt8 = 0, p2: UInt8 = 0
+            rn_input_sample_game(input.handle, s.frame, &p1, &p2)
+        }
+        // The paused picture stays (shown again every tick: the viewport draws the numeral over it).
+        if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }
+        return true
     }
 
     // MARK: VTR effect (emulation thread)
@@ -1152,7 +1218,7 @@ final class EmulationController {
                                                      frame: s.frame, takeLength: s.takeLength) {
             seekCommand(0) // replay at the take end: play from the beginning
         }
-        paused.toggle()
+        if paused { resume() } else { paused = true }
     }
 
     /// Emulates exactly one frame. Returns false if nothing was emulated (end of take / error).
@@ -1275,7 +1341,7 @@ final class EmulationController {
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice() }
         setRecording(true)
-        if s.mode == RN_MODE_RECORD { paused = false; slow = .normal }
+        if s.mode == RN_MODE_RECORD { resume(); slow = .normal }   // live play: the resume countdown first
     }
 
     func addBookmark(name: String?) {
@@ -1408,8 +1474,8 @@ final class EmulationController {
                 st.practiceLength = practiceSlot != nil ? practiceLength : 0
                 st.practiceLooping = practiceLoop.isLooping
                 st.practiceLoops = practiceLoop.loops
-                st.countdown = countdown
             }
+            st.countdown = countdown   // the practice countdown, or the resume countdown
         }
         statusDirty = false
         var structure: SessionStructure?

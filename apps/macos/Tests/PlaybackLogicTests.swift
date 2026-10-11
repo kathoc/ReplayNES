@@ -256,4 +256,54 @@ final class PlaybackLogicTests: XCTestCase {
         vtr.configure(enabled: true, level: .high)
         XCTAssertGreaterThan(vtr.tick(now: 0.05, want: RNF_VTR_RETURN).strength, 0)
     }
+
+    /// The resume countdown (EmulationController.resume): 3, 2, 1 then play; live play only; cancel /
+    /// hold / the setting; independent of the practice countdown; value semantics (copy on write).
+    func testResumeCountdownWrapper() {
+        var c = ResumeCountdown()
+        XCTAssertTrue(c.enabled)
+        XCTAssertFalse(c.active)
+        XCTAssertTrue(c.wanted(mode: RN_MODE_RECORD, practicePhase: .playing))
+        XCTAssertFalse(c.wanted(mode: RN_MODE_REPLAY, practicePhase: .playing))
+        XCTAssertTrue(c.wanted(mode: RN_MODE_PRACTICE, practicePhase: .playing))
+        XCTAssertFalse(c.wanted(mode: RN_MODE_PRACTICE, practicePhase: .countdown(since: 0)))
+        XCTAssertFalse(c.wanted(mode: RN_MODE_PRACTICE, practicePhase: .rewinding(since: 0)))
+        XCTAssertFalse(c.start(now: 0, mode: RN_MODE_REPLAY, practicePhase: .playing))
+        XCTAssertTrue(c.start(now: 10, mode: RN_MODE_RECORD, practicePhase: .playing))
+        var counts: [Int] = []
+        var now = 10.0
+        var done = false
+        for _ in 0..<400 {
+            let st = c.tick(now: now)
+            if st.done { done = true; break }
+            if counts.last != st.count { counts.append(st.count) }
+            XCTAssertTrue((0...1).contains(st.fraction))
+            now += 1.0 / 60
+        }
+        XCTAssertTrue(done)
+        XCTAssertEqual(counts, [3, 2, 1])
+        XCTAssertEqual(now - 10, RNF_PRACTICE_COUNTDOWN_SECONDS, accuracy: 2.0 / 60)
+        XCTAssertFalse(c.active)
+        XCTAssertEqual(c.tick(now: now + 1), ResumeCountdown.State(count: 0, fraction: 0, done: false))
+        // Cancel (a pause, the menu, the cancel tap): never "done"; the copy keeps its own state.
+        c.start(now: 0, mode: RN_MODE_RECORD, practicePhase: .playing)
+        let copy = c
+        c.cancel()
+        XCTAssertFalse(c.active)
+        XCTAssertTrue(copy.active)
+        XCTAssertFalse(c.tick(now: 5).done)
+        // Held by a modal UI: starts over at 3 afterwards.
+        c.start(now: 0, mode: RN_MODE_RECORD, practicePhase: .playing)
+        c.hold(now: 20)
+        XCTAssertEqual(c.tick(now: 20.5).count, 3)
+        // The setting: off plays at once (also mid-countdown); independent of the practice countdown.
+        c.enabled = false
+        XCTAssertFalse(c.active)
+        XCTAssertFalse(c.start(now: 30, mode: RN_MODE_RECORD, practicePhase: .playing))
+        var loop = PracticeLoop()
+        loop.countdownEnabled = false
+        c.enabled = true
+        XCTAssertFalse(loop.countdownEnabled)
+        XCTAssertTrue(c.start(now: 30, mode: RN_MODE_PRACTICE, practicePhase: loop.phase))
+    }
 }

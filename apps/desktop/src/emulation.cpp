@@ -34,6 +34,7 @@ EmulationController::EmulationController(rn_input* input, AudioSink* audio) : in
   ff_ = rnf_fast_forward_new();
   stepRepeater_ = rnf_step_repeater_new();
   practiceLoop_ = rnf_practice_loop_new();
+  resumeCountdown_ = rnf_resume_countdown_new();
   reel_ = rnf_reel_new(RNF_REEL_CAPACITY);
   vtr_ = rnf_vtr_new();
   rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, flashLevel_);
@@ -46,6 +47,7 @@ EmulationController::~EmulationController() {
   rnf_fast_forward_free(ff_);
   rnf_step_repeater_free(stepRepeater_);
   rnf_practice_loop_free(practiceLoop_);
+  rnf_resume_countdown_free(resumeCountdown_);
   rnf_reel_free(reel_);
   rnf_vtr_free(vtr_);
 }
@@ -67,6 +69,7 @@ void EmulationController::setMuted(bool m) {
 void EmulationController::setPaused(bool p) {
   bool old = paused_;
   paused_ = p;
+  if (p) rnf_resume_countdown_cancel(resumeCountdown_);  // a pause (hotkey, menu, step, cancel) aborts it
   if (p == old) return;
   if (!p) {
     pauseHintShown_ = false;
@@ -109,6 +112,7 @@ void EmulationController::install(rn_session* s) {
   practiceLength_ = 0;
   rnf_practice_loop_reset(practiceLoop_);
   rnf_reel_release(reel_);
+  rnf_resume_countdown_cancel(resumeCountdown_);  // a fresh recording runs at once
   countdown_ = 0;
   rnf_vtr_reset(vtr_);
   vtrOn_ = false;
@@ -144,6 +148,8 @@ void EmulationController::setVtrEffect(bool on) {
 }
 
 void EmulationController::setPracticeCountdown(bool on) { rnf_practice_loop_set_countdown(practiceLoop_, on ? 1 : 0); }
+
+void EmulationController::setResumeCountdown(bool on) { rnf_resume_countdown_set_enabled(resumeCountdown_, on ? 1 : 0); }
 
 void EmulationController::setFlashLevel(rn_flash_level l) {
   if (l == flashLevel_) return;
@@ -281,7 +287,16 @@ void EmulationController::togglePause() {
   if (paused_ && rnf_record_toggle_restarts_on_play(m == RN_MODE_RECORD, m == RN_MODE_PRACTICE, rn_frame(session_),
                                                     rn_take_length(session_)))
     seekCommand(0);  // replay at the take end: play from the beginning
-  setPaused(!paused_);
+  if (paused_) resume();
+  else setPaused(true);
+}
+
+void EmulationController::resume() {
+  if (!paused_) return;
+  setPaused(false);
+  if (session_)
+    rnf_resume_countdown_start(resumeCountdown_, nowSeconds(), rn_get_mode(session_),
+                               rnf_practice_loop_phase(practiceLoop_, nullptr));
 }
 
 void EmulationController::toggleSlow() {
@@ -321,6 +336,9 @@ EmulationController::Tick EmulationController::tick() {
   bool rewindHeld = uiRewindHeld_ || (held & RN_HK_REWIND) != 0;
   bool ffHeld = uiFastForwardHeld_ || (held & RN_HK_FAST_FORWARD) != 0;
   bool wantRewind = rewindHeld;
+  // Rewind / fast-forward held during the resume countdown: back to paused (they then act as when
+  // paused; releasing them never starts a countdown).
+  if ((rewindHeld || ffHeld) && rnf_resume_countdown_active(resumeCountdown_)) setPaused(true);
   if (practicing) {
     // L2 + R2 together: back to A at once (the same return as at B). While that chord is held and
     // during the return, L2 does not rewind the run.
@@ -382,11 +400,14 @@ EmulationController::Tick EmulationController::tick() {
       rewindTicks_ = 0;
       if (pauseAfterRewind) setPaused(true);
     }
+    bool resumeCounting = !paused_ && tickResumeCountdown();
     if (paused_) {
       int d = rnf_step_repeater_tick(stepRepeater_);
       if (d != 0) stepFrame(d);
     }
-    if (fastForward_) {
+    if (resumeCounting) {
+      // 3, 2, 1 over the paused picture (tickResumeCountdown): nothing is emulated.
+    } else if (fastForward_) {
       tickFastForward();
     } else if (practicing && !paused_ && modalHold_) {
       setMuted(true);  // waits for the dialog (the loop does not count the time)
@@ -631,7 +652,43 @@ void EmulationController::dropInput() {
   rn_input_sample_game(input_, practiceSeq_++, &p1, &p2);
 }
 
+bool EmulationController::tickResumeCountdown() {
+  rn_session* s = session_;
+  if (!s) return false;
+  if (!rnf_resume_countdown_active(resumeCountdown_)) {
+    // Not counting (ended, cancelled, switched off): outside practice no other countdown is shown.
+    if (rn_get_mode(s) != RN_MODE_PRACTICE) countdown_ = 0;
+    return false;
+  }
+  if (modalHold_) {
+    rnf_resume_countdown_hold(resumeCountdown_, nowSeconds());  // waits at its start behind a dialog
+    countdown_ = 0;
+  } else {
+    rnf_resume_countdown_state st = rnf_resume_countdown_tick(resumeCountdown_, nowSeconds());
+    if (st.done) {
+      countdown_ = 0;
+      return false;  // play on in this same tick: "1" is followed by the first frame at once
+    }
+    countdown_ = st.count;
+    countdownFraction_ = st.fraction;
+  }
+  setMuted(true);
+  // The game input is sampled and dropped (no tap latched into the first frame; a button held
+  // through counts from the first frame).
+  if (rn_get_mode(s) == RN_MODE_PRACTICE) {
+    dropInput();
+  } else {
+    uint8_t p1 = 0, p2 = 0;
+    rn_input_sample_game(input_, rn_frame(s), &p1, &p2);
+  }
+  return true;
+}
+
 void EmulationController::abortCountdown() {
+  if (session_ && rnf_resume_countdown_active(resumeCountdown_)) {
+    setPaused(true);  // the resume countdown: back to paused
+    return;
+  }
   if (!session_ || rn_get_mode(session_) != RN_MODE_PRACTICE) return;
   if (rnf_practice_loop_phase(practiceLoop_, nullptr) != RNF_PHASE_COUNTDOWN) return;
   stopPractice();
@@ -976,7 +1033,7 @@ void EmulationController::rerecordHere() {
   if (rn_get_mode(s) == RN_MODE_PRACTICE) stopPractice();
   setRecording(true);
   if (rn_get_mode(s) == RN_MODE_RECORD) {
-    setPaused(false);
+    resume();  // the resume countdown first (recording again from here is live play)
     slow_ = 1;
     notice(TR("Record mode: recording continues from here with your next input"));
   }
@@ -1205,6 +1262,9 @@ void EmulationController::updateStatus() {
   st.advancePending = advanceRemaining_;
   st.flashActive = flashActiveShown_;
   st.practicing = rn_get_mode(s) == RN_MODE_PRACTICE;
+  // The practice countdown, or the resume countdown (in any mode it applies in).
+  st.countdown = countdown_;
+  st.countdownFraction = countdownFraction_;
   if (st.practicing) {
     st.practiceSlot = practiceSlot_;
     st.practiceFrame = rn_practice_frame(s);
@@ -1212,11 +1272,7 @@ void EmulationController::updateStatus() {
     double since = 0;
     st.practiceLooping = rnf_practice_loop_phase(practiceLoop_, &since) != RNF_PHASE_PLAYING;
     st.practiceLoops = rnf_practice_loop_loops(practiceLoop_);
-    st.countdown = countdown_;
-    st.countdownFraction = countdownFraction_;
   } else {
-    st.countdown = 0;
-    st.countdownFraction = 0;
     st.practiceSlot = -1;
     st.practiceFrame = st.practiceLength = 0;
     st.practiceLooping = false;

@@ -47,7 +47,8 @@ struct EmuStatus {
   uint64_t practiceLength = 0;
   bool practiceLooping = false;
   int practiceLoops = 0;
-  // The countdown after returning to A: 3, 2, 1 (0 = none) and how far into that number (0...1).
+  // The countdown: after returning to A (practice) or before play resumes from a pause (the resume
+  // countdown): 3, 2, 1 (0 = none) and how far into that number (0...1).
   int countdown = 0;
   double countdownFraction = 0;
 };
@@ -117,6 +118,8 @@ class EmulationController {
   void setVtrEffect(bool on);
   /// 3, 2, 1 after the practice run arrives at A.
   void setPracticeCountdown(bool on);
+  /// 3, 2, 1 before play resumes from a pause (rnf_resume_countdown; independent of the above).
+  void setResumeCountdown(bool on);
 
   /// Takes ownership. A fresh recording (empty take at frame 0) runs at once, an opened project
   /// stays paused at its cursor. nullptr closes the current one (without saving).
@@ -149,7 +152,12 @@ class EmulationController {
   uint64_t emulatedFrames() const { return emulatedFrames_; }
 
   // ---- commands (UI, hotkeys) ----
+  /// Paused: resume() (the resume countdown first); playing: pause (also aborts a resume countdown).
   void togglePause();
+  /// The user resumes play from a pause: 3, 2, 1 over the paused picture first when the resume
+  /// countdown applies (rnf_resume_countdown_start), else at once. setPaused(false) resumes at once
+  /// (fresh recording, practice start, scripts); setPaused(true) aborts a resume countdown.
+  void resume();
   void setPaused(bool p);
   bool paused() const { return paused_; }
   void frameAdvance(int n = 1);
@@ -189,7 +197,8 @@ class EmulationController {
   // Practice (A/B repeat).
   void startPractice(int slot);
   void stopPractice();
-  /// The UI's cancel tapped during the countdown: practice ends (back to the take, paused).
+  /// The UI's cancel tapped during the countdown: the resume countdown goes back to paused; the
+  /// practice countdown ends practice (back to the take, paused).
   void abortCountdown();
   void practiceSetA(int slot);
   void practiceSetB(int slot);
@@ -237,6 +246,9 @@ class EmulationController {
   /// The game input of a tick that emulates nothing (hold, rewind sweep, countdown): sampled and
   /// dropped, so a tap there is not latched into the first frame afterwards.
   void dropInput();
+  /// The resume countdown's tick (unpaused): true = counting (nothing is emulated this tick; the game
+  /// input is sampled and dropped); false = not counting or it just ended (play on in this tick).
+  bool tickResumeCountdown();
   void tickVtr();
   void refreshPracticeLength(int slot);
   bool practiceSetBFromTake(int slot);
@@ -290,6 +302,7 @@ class EmulationController {
   bool practiceRewindStarted_ = false;
   int countdown_ = 0;
   double countdownFraction_ = 0;
+  rnf_resume_countdown* resumeCountdown_ = nullptr;
   // VTR effect: display_ shows vtrBase_ (the clean picture) through rnf_vtr_apply while active.
   rnf_vtr* vtr_ = nullptr;
   bool vtrEnabled_ = true;
