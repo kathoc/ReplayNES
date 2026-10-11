@@ -69,8 +69,19 @@ class CrtRenderer {
   /// history + RF noise key); a non-increasing ordinal is a discontinuity: receiver, supply and
   /// persistence state are reset. Returns false when no tube plan is ready yet (nothing recorded).
   /// Must be outside a render pass. At most kInputSlots-1 encodes may be in flight on the GPU.
+  /// A frame that could not be encoded (no plan yet, stage buffers not allocatable, no input)
+  /// clears hasOutput(): the caller shows the plain picture instead of the last tube output.
   bool encode(VkCommandBuffer cmd, const Input& input, uint64_t ordinal);
   bool hasOutput() const { return hasOutput_; }
+  /// After a failed submit / present (display watchdog, device errors): the output and the temporal
+  /// state (AGC, supply, persistence ring) may be half written. The next encode starts a new
+  /// history; nothing is shown until it has produced a picture.
+  void discardOutput();
+  /// Lines of the tube in use (the stages follow it, not settings().lines while a plan for a new
+  /// line count is still being built); 0 before the first plan was adopted.
+  int renderedLines() const { return tube_ ? tube_->key.lines : 0; }
+  /// Times the AGC / supply state was found non-finite (NaN / inf) and reset.
+  int stateResets() const { return stateResets_; }
   /// Tube output size in use (0x0 before the first plan).
   int outputWidth() const;
   int outputHeight() const;
@@ -101,6 +112,10 @@ class CrtRenderer {
   bool useFastFFT = true;      // shared-memory FFT (same butterflies)
   bool noiseEnabled = true;    // RF noise off: the CPU reference receiver has none
   bool disableSpotH = false;   // tube-only growth
+  /// The next encodes fail as if their stage buffers could not be allocated.
+  int debugFailEncodes = 0;
+  /// Poisons the AGC and supply state with NaN (waits for the device; see stateResets()).
+  void debugPoisonState();
   /// Per-pass GPU timing (benchmark): timestamps after every dispatch of the next encodes;
   /// profileTimes() returns (kernel, seconds) of the last profiled encode (after it completed).
   bool profile = false;
@@ -158,7 +173,8 @@ class CrtRenderer {
   void destroyTube(std::unique_ptr<Tube> t);
   void retire(std::unique_ptr<Tube> t);
   void collectRetired();
-  bool ensureStages();
+  bool ensureStages(int rows);
+  void sanitizeState();
   void buildLoop();
   std::vector<float> persistenceWeights() const;
   uint32_t findMemory(uint32_t typeBits, VkMemoryPropertyFlags props, VkMemoryPropertyFlags avoid = 0);
@@ -224,6 +240,7 @@ class CrtRenderer {
   int64_t lastOrdinal_ = 0;
   bool hasOutput_ = false;
   bool usedCodes_ = false;
+  int stateResets_ = 0;
   const Buffer* lastDrive_ = nullptr;
   bool ready_ = false;
 };

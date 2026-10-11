@@ -69,8 +69,19 @@ class CrtRendererD3D11 {
   /// One emulated frame's compute passes into the immediate context. `ordinal` = machine frame
   /// ordinal (persistence history + RF noise key); a non-increasing ordinal is a discontinuity
   /// (receiver, supply and persistence state are reset). False when no tube plan is ready yet.
+  /// A frame that could not be encoded (no plan yet, stage buffers not allocatable, no input)
+  /// clears hasOutput(): the caller shows the plain picture instead of the last tube output.
   bool encode(const Input& input, uint64_t ordinal);
   bool hasOutput() const { return hasOutput_; }
+  /// After a failed present / device error (display watchdog): the output and the temporal state
+  /// (AGC, supply, persistence ring) may be half written. The next encode starts a new history;
+  /// nothing is shown until it has produced a picture.
+  void discardOutput();
+  /// Lines of the tube in use (the stages follow it, not settings().lines while a plan for a new
+  /// line count is still being built); 0 before the first plan was adopted.
+  int renderedLines() const { return tube_ ? tube_->key.lines : 0; }
+  /// Times the AGC / supply state was found non-finite (NaN / inf) and reset.
+  int stateResets() const { return stateResets_; }
   int outputWidth() const;
   int outputHeight() const;
   bool usedCodes() const { return usedCodes_; }
@@ -97,6 +108,10 @@ class CrtRendererD3D11 {
   bool useFastFFT = true;
   bool noiseEnabled = true;
   bool disableSpotH = false;
+  /// The next encodes fail as if their stage buffers could not be allocated.
+  int debugFailEncodes = 0;
+  /// Poisons the AGC and supply state with NaN (waits for the GPU; see stateResets()).
+  void debugPoisonState();
   /// Per-pass GPU timing of the next encodes (benchmark); profileTimes() after the encode.
   bool profile = false;
   std::vector<std::pair<std::string, double>> profileTimes();
@@ -154,7 +169,11 @@ class CrtRendererD3D11 {
   static void destroyBuffer(Buffer* b);
   std::unique_ptr<Tube> makeTube(const TubeKey& k);
   static void destroyTube(Tube* t);
-  bool ensureStages();
+  bool ensureStages(int rows);
+  /// NaN / inf check of the AGC and supply state (fed back frame to frame) from a non-blocking
+  /// staging copy of a recent frame: reset before the next passes when found.
+  void sanitizeState();
+  void copyStateForCheck();
   void buildLoop();
   std::vector<float> persistenceWeights() const;
   void upload(const Buffer& b, const void* data);
@@ -221,6 +240,9 @@ class CrtRendererD3D11 {
   int64_t lastOrdinal_ = 0;
   bool hasOutput_ = false;
   bool usedCodes_ = false;
+  ID3D11Buffer* stateStaging_ = nullptr;  // agc state, supply state 0 and 1 (16 bytes each)
+  bool stateReadPending_ = false;
+  int stateResets_ = 0;
   const Buffer* lastDrive_ = nullptr;
   bool ready_ = false;
 };

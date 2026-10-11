@@ -26,6 +26,7 @@
 #include "cadence.h"
 #include "display_scheduler.h"
 #include "dialogs.h"
+#include "display_health.h"
 #include "emulation.h"
 #include "export/export_frame.h"
 #include "ui_layout.h"
@@ -870,6 +871,59 @@ TEST_CASE("scheduler: leaving the locked cadence does not emulate a catch-up fra
   CHECK(s.cadence().kind == Cadence::Kind::free);
   double next = s.nextTarget(0, 0.004);
   CHECK(next - last > 1.5 * r);
+}
+
+TEST_CASE("display watchdog: failed presents -> RECOVER, RESTART, back-off; hidden or paused never") {
+  using A = DisplayWatchdog::Action;
+  const double f = 1.0 / 60;
+  // Pictures published every frame, none confirmed (present or CRT build failing).
+  DisplayWatchdog w;
+  std::vector<std::pair<double, A>> actions;
+  for (int i = 0; i < 300; ++i) {
+    A a = w.frame(i * f, true, true, false);
+    if (a != A::none) actions.push_back({i * f, a});
+  }
+  REQUIRE(actions.size() >= 3);
+  CHECK(actions[0].second == A::recover);
+  CHECK(actions[0].first > RNF_DISPLAY_WATCHDOG_STALL && actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * f);
+  CHECK(actions[1].second == A::restart);
+  CHECK(actions[1].first - actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
+  CHECK(actions[2].second == A::recover);
+  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_BACKOFF);  // backed off
+  CHECK_EQ(w.actions(), int(actions.size()));
+  // Confirmed presents: nothing to do.
+  DisplayWatchdog ok;
+  bool any = false;
+  for (int i = 0; i < 300; ++i) any = any || ok.frame(i * f, true, true, true) != A::none;
+  CHECK_FALSE(any);
+  // Minimised / occluded window: nothing is expected on screen.
+  DisplayWatchdog hidden;
+  for (int i = 0; i < 300; ++i) any = any || hidden.frame(i * f, false, true, false) != A::none;
+  CHECK_FALSE(any);
+  CHECK_EQ(hidden.waiting(300 * f), 0.0);
+  // Paused (nothing published after the last confirmed picture): no action.
+  DisplayWatchdog paused;
+  paused.frame(0, true, true, true);
+  for (int i = 1; i < 300; ++i) any = any || paused.frame(i * f, true, false, false) != A::none;
+  CHECK_FALSE(any);
+  // One failed present among confirmed ones is not a stall.
+  DisplayWatchdog glitch;
+  for (int i = 0; i < 300; ++i) any = any || glitch.frame(i * f, true, true, i % 10 != 3) != A::none;
+  CHECK_FALSE(any);
+}
+
+TEST_CASE("display failure log: first 5, then every 300th") {
+  CHECK(displayLogDue(1));
+  CHECK(displayLogDue(5));
+  CHECK_FALSE(displayLogDue(6));
+  CHECK_FALSE(displayLogDue(299));
+  CHECK(displayLogDue(300));
+  CHECK(displayLogDue(600));
+  DisplayErrors e;
+  CHECK_EQ(e.summary(), std::string("no display failures"));
+  e.note("vkQueuePresentKHR", -1000000000, "VK_ERROR_SURFACE_LOST_KHR");
+  CHECK_EQ(e.count(), 1);
+  CHECK(e.summary().find("VK_ERROR_SURFACE_LOST_KHR") != std::string::npos);
 }
 
 TEST_CASE("manifest fields for the open-error dialogs") {

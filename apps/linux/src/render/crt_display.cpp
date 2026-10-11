@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "render/crt_display.h"
 
+#include <cstdio>
+
 namespace rnl {
 
 CrtDisplay::~CrtDisplay() { release(); }
@@ -42,6 +44,15 @@ void CrtDisplay::show(VkCommandBuffer cmd, int targetWidth, int targetHeight, co
 void CrtDisplay::update(double budget, bool allowBuildAhead, bool adaptive) {
   if (!renderer_) return;
   policy_.update(renderer_->takeGpuTimes(), budget, allowBuildAhead, adaptive, renderer_->outputWidth());
+}
+
+std::string CrtDisplay::state() const {
+  if (!renderer_) return "CRT off";
+  char b[160];
+  std::snprintf(b, sizeof b, "CRT tube %dx%d %d lines, output %s%s, state resets %d", renderer_->outputWidth(), renderer_->outputHeight(),
+                renderer_->renderedLines(), renderer_->hasOutput() ? "yes" : "no", renderer_->planPending() ? ", plan pending" : "",
+                renderer_->stateResets());
+  return b;
 }
 
 void CrtDisplay::fillStatus(PostProcessStatus* s) const {

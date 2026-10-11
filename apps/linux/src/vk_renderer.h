@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "display_health.h"
 #include "render/crt_display.h"
 #include "render/post_process.h"
 #include "renderer.h"
@@ -67,6 +68,13 @@ class VkRenderer final : public Renderer {
   /// Seconds the last drawAndPresent spent waiting for its slot fence + the swapchain image.
   double lastAcquireWait() const override { return lastAcquireWait_; }
 
+  // Display watchdog (renderer.h). Failed acquires / submits / presents / fence waits are logged
+  // with their VkResult (DisplayErrors); a lost surface is recreated with its swapchain, a lost
+  // device with every device resource (the ImGui renderer backend included).
+  bool lastPresentHealthy() const override { return lastHealthy_; }
+  void recoverDisplay(bool restart) override;
+  std::string displayHealth() const override;
+
   // ---- UI resources (vk_ui_resources.cpp) ----
   void beginUIFrame() override { uiFrame_ += 1; }
   bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
@@ -74,6 +82,19 @@ class VkRenderer final : public Renderer {
 
  private:
   void waiterLoop();
+  /// Everything on the logical device (init(): after the instance and surface).
+  bool initDevice(std::string* error);
+  /// Frees everything on the logical device (waits for it; the ImGui renderer backend too).
+  void releaseDevice();
+  /// After VK_ERROR_DEVICE_LOST: a new logical device with all its resources (rate-limited retry).
+  bool recreateDevice();
+  /// After VK_ERROR_SURFACE_LOST_KHR: a new surface and swapchain.
+  bool recreateSurface();
+  bool initImGuiBackend();
+  /// A display call failed: logged (rate-limited); DEVICE_LOST / SURFACE_LOST / others flag their recovery.
+  void fail(const char* what, VkResult r);
+  /// A slot whose submit failed: its fence (never signalled) and semaphore (signalled, never waited) anew.
+  void resetSlotSync(int slot);
   bool createDevice(std::string* error);
   bool createSwapchain();
   void destroySwapchain();
@@ -155,7 +176,17 @@ class VkRenderer final : public Renderer {
   VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
   VkPipeline pipeline_ = VK_NULL_HANDLE;
   bool imguiReady_ = false;
+  bool imguiWanted_ = false;  // initImGui() was called (the backend comes back with a new device)
   double lastAcquireWait_ = 0;
+  // Display health (display watchdog).
+  DisplayErrors errors_;
+  bool deviceLost_ = false, surfaceLost_ = false;
+  double nextDeviceRetry_ = 0;
+  bool lastHealthy_ = true;
+  bool plainNext_ = false;      // RECOVER: the next present shows the plain picture
+  int crtFailStreak_ = 0;       // consecutive CRT builds that failed (a plan in use)
+  int crtFailedRestarts_ = 0;   // RESTARTs while CRT builds kept failing
+  bool crtGaveUp_ = false;      // CRT shown plain until it is switched off and on again
   // Thumbnail atlas.
   VkImage atlasImage_ = VK_NULL_HANDLE;
   VkDeviceMemory atlasMem_ = VK_NULL_HANDLE;

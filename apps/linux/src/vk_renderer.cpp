@@ -33,6 +33,30 @@ bool hasExtension(const std::vector<VkExtensionProperties>& list, const char* na
     if (std::strcmp(e.extensionName, name) == 0) return true;
   return false;
 }
+
+const char* resultName(VkResult r) {
+  switch (r) {
+    case VK_SUCCESS: return "VK_SUCCESS";
+    case VK_NOT_READY: return "VK_NOT_READY";
+    case VK_TIMEOUT: return "VK_TIMEOUT";
+    case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
+    case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+    case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+    case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+    case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+    case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
+    case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
+    case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+    case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT: return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT";
+    case VK_ERROR_UNKNOWN: return "VK_ERROR_UNKNOWN";
+    default: return "VkResult";
+  }
+}
+
+// A frame slot's fence / an image that does not come within this time is a display failure (the
+// frame loop goes on - emulation and audio never wait for the display - and the display watchdog
+// sees the pictures not reaching the screen) instead of blocking the loop forever.
+constexpr uint64_t kDisplayTimeoutNs = 1'000'000'000ull;
 }  // namespace
 
 bool VkRenderer::init(SDL_Window* window, std::string* error) {
@@ -68,6 +92,10 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
     *error = std::string("SDL_Vulkan_CreateSurface: ") + SDL_GetError();
     return false;
   }
+  return initDevice(error);
+}
+
+bool VkRenderer::initDevice(std::string* error) {
   if (!createDevice(error)) return false;
 
   VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -470,6 +498,11 @@ bool VkRenderer::createPipeline() {
 
 bool VkRenderer::initImGui() {
   ImGui_ImplSDL3_InitForVulkan(window_);
+  imguiWanted_ = true;
+  return initImGuiBackend();
+}
+
+bool VkRenderer::initImGuiBackend() {
   ImGui_ImplVulkan_InitInfo ii{};
   ii.ApiVersion = apiVersion_;
   ii.Instance = instance_;
@@ -488,11 +521,25 @@ bool VkRenderer::initImGui() {
   return imguiReady_;
 }
 
-void VkRenderer::newImGuiFrame() { ImGui_ImplVulkan_NewFrame(); }
+void VkRenderer::newImGuiFrame() {
+  if (imguiReady_) ImGui_ImplVulkan_NewFrame();
+}
 
 uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
+  lastHealthy_ = false;
+  // A lost device / surface (seen by an earlier call): recreated before anything else.
+  if (deviceLost_ || !device_) {
+    if (!recreateDevice()) return 0;
+    ui = nullptr;  // built against the old device's textures; the next frame's UI uses the new ones
+  }
+  if (surfaceLost_ && !recreateSurface()) return 0;
   // CRT Display on / off (created on first use, freed when switched off).
-  bool crtOn = post_.crt && crtSupported_;
+  if (!post_.crt && crtGaveUp_) {  // switched off: the next switch on tries again
+    crtGaveUp_ = false;
+    crtFailedRestarts_ = 0;
+    status_.crtError.clear();
+  }
+  bool crtOn = post_.crt && crtSupported_ && !crtGaveUp_;
   if (crtOn && !crt_.active()) {
     std::string e;
     if (!crt_.ensure(CrtVulkanContext{phys_, device_, queueFamily_, queue_}, renderPass_, &e)) {
@@ -510,19 +557,27 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
       (w > 0 && h > 0 && (uint32_t(w) != extent_.width || uint32_t(h) != extent_.height))) {
     vkDeviceWaitIdle(device_);
     needRecreate_ = false;
-    if (!createSwapchain()) return 0;
+    if (!createSwapchain()) {
+      errors_.note("vkCreateSwapchainKHR", 0);
+      needRecreate_ = true;  // tried again next frame
+      return 0;
+    }
   }
   if (extent_.width == 0 || swapchain_ == VK_NULL_HANDLE) return 0;
 
   Slot& s = slots_[slot_];
   double t0 = nowSeconds();
-  vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
+  if (VkResult fr = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, kDisplayTimeoutNs); fr != VK_SUCCESS) {
+    lastAcquireWait_ = nowSeconds() - t0;
+    fail("vkWaitForFences (frame slot)", fr);
+    return 0;
+  }
   uint32_t idx = 0;
-  VkResult ar = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, s.acquired, VK_NULL_HANDLE, &idx);
+  VkResult ar = vkAcquireNextImageKHR(device_, swapchain_, kDisplayTimeoutNs, s.acquired, VK_NULL_HANDLE, &idx);
   lastAcquireWait_ = nowSeconds() - t0;
   if (ar == VK_ERROR_OUT_OF_DATE_KHR) { needRecreate_ = true; return 0; }
   if (ar == VK_SUBOPTIMAL_KHR) needRecreate_ = true;
-  else if (ar != VK_SUCCESS) return 0;
+  else if (ar != VK_SUCCESS) { fail("vkAcquireNextImageKHR", ar); return 0; }
   vkResetFences(device_, 1, &s.fence);
 
   VkCommandBuffer cmd = s.cmd;
@@ -559,15 +614,18 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
   // here before the show pass (or, built ahead, after this present: the next one shows it).
   bool crtBuildAfter = false;
+  bool crtFailed = false;  // a CRT build with a plan in use recorded nothing (its output was cleared)
+  const bool plain = plainNext_;  // display watchdog RECOVER: the plain picture for this present
+  plainNext_ = false;
   if (crtOn) {
     crt_.update(gpuBudget_, post_.allowBuildAhead, post_.adaptiveResolution);
     if (newPicture) crt_.store(newPicture, signal);
     if (rect.visible) crt_.configure(post_, rect.crt, rect.crtCrop);
     bool changed = shownPost_ != post_ || shownCrt_.w != rect.crt.w || shownCrt_.h != rect.crt.h;
-    bool needBuild = crt_.hasFrame() && (newPicture || changed || !crt_.canShow() || crt_.planPending());
+    bool needBuild = !plain && crt_.hasFrame() && (newPicture || changed || !crt_.canShow() || crt_.planPending());
     if (needBuild) {
       if (crt_.pipelined() && crt_.canShow()) crtBuildAfter = true;
-      else crt_.build(cmd);
+      else if (!crt_.build(cmd) && crt_.hasPlan()) crtFailed = true;
     }
     shownPost_ = post_;
     shownCrt_ = rect.crt;
@@ -581,7 +639,7 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   rbi.clearValueCount = 1;
   rbi.pClearValues = &clear;
   vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
-  if (crtOn && rect.visible && crt_.canShow()) {
+  if (crtOn && rect.visible && crt_.canShow() && !plain) {
     crt_.show(cmd, int(extent_.width), int(extent_.height), rect.crt, rect.crtCrop);
     status_.crtShown = true;
   } else if (rect.visible && hasPicture_) {
@@ -619,15 +677,30 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
     // run after it (same queue, ordered by the CRT's barriers) and the next present shows it.
     vkResetCommandBuffer(bcmd, 0);
     vkBeginCommandBuffer(bcmd, &bi);
-    crt_.build(bcmd);
+    if (!crt_.build(bcmd) && crt_.hasPlan()) crtFailed = true;
     vkEndCommandBuffer(bcmd);
     si[1].commandBufferCount = 1;
     si[1].pCommandBuffers = &bcmd;
     submits = 2;
   }
-  vkQueueSubmit(queue_, submits, si, s.fence);
+  if (VkResult sr = vkQueueSubmit(queue_, submits, si, s.fence); sr != VK_SUCCESS) {
+    // Nothing of this frame runs: the CRT state it advanced is dropped, the slot's fence (never
+    // signalled) and semaphore (signalled, never waited) are made anew, the swapchain too (the
+    // acquired image is never presented) - unless the device is lost (recreated next frame).
+    fail("vkQueueSubmit", sr);
+    crt_.discard();
+    if (sr != VK_ERROR_DEVICE_LOST) resetSlotSync(slot_);
+    slot_ = (slot_ + 1) % kSlots;
+    return 0;
+  }
   finishScreenshot(slot_);
   if (crtOn) crt_.fillStatus(&status_);
+  if (crtFailed) {
+    crtFailStreak_ += 1;
+  } else if (crtOn && crt_.canShow()) {
+    crtFailStreak_ = 0;
+    crtFailedRestarts_ = 0;
+  }
 
   uint64_t id = ++presentId_;
   VkPresentIdKHR pid{VK_STRUCTURE_TYPE_PRESENT_ID_KHR};
@@ -644,7 +717,8 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   slot_ = (slot_ + 1) % kSlots;
   if (pr == VK_ERROR_OUT_OF_DATE_KHR) { needRecreate_ = true; return 0; }
   if (pr == VK_SUBOPTIMAL_KHR) needRecreate_ = true;
-  else if (pr != VK_SUCCESS) return 0;
+  else if (pr != VK_SUCCESS) { fail("vkQueuePresentKHR", pr); return 0; }
+  lastHealthy_ = !crtFailed;
   if (presentWait_) {
     std::lock_guard<std::mutex> lk(queueMutex_);
     toWait_.push_back({id, swapGen_});
@@ -693,6 +767,15 @@ void VkRenderer::waitLastSubmit() {
 }
 
 void VkRenderer::shutdown() {
+  if (!device_ && !instance_) return;
+  releaseDevice();
+  if (surface_) SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
+  surface_ = VK_NULL_HANDLE;
+  if (instance_) vkDestroyInstance(instance_, nullptr);
+  instance_ = VK_NULL_HANDLE;
+}
+
+void VkRenderer::releaseDevice() {
   if (!device_) return;
   {
     std::lock_guard<std::mutex> lk(queueMutex_);
@@ -700,13 +783,22 @@ void VkRenderer::shutdown() {
     queueCv_.notify_all();
   }
   if (waiter_.joinable()) waiter_.join();
-  vkDeviceWaitIdle(device_);
+  {
+    std::lock_guard<std::mutex> lk(queueMutex_);
+    stopWaiter_ = false;
+    toWait_.clear();  // never confirmed (the frame loop settles them as not shown)
+  }
+  vkDeviceWaitIdle(device_);  // returns at once on a lost device
   if (imguiReady_) ImGui_ImplVulkan_Shutdown();
   imguiReady_ = false;
   crt_.release();
   destroyAtlas();
   destroyScreenshotBuffer();
-  destroySwapchain();
+  {
+    std::lock_guard<std::mutex> lk(swapMutex_);
+    destroySwapchain();
+    swapGen_ += 1;
+  }
   if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
   if (pipeLayout_) vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);
   if (descPool_) vkDestroyDescriptorPool(device_, descPool_, nullptr);
@@ -721,13 +813,148 @@ void VkRenderer::shutdown() {
     if (s.staging) vkDestroyBuffer(device_, s.staging, nullptr);
     if (s.fence) vkDestroyFence(device_, s.fence, nullptr);
     if (s.acquired) vkDestroySemaphore(device_, s.acquired, nullptr);
+    s = Slot();
   }
-  if (pool_) vkDestroyCommandPool(device_, pool_, nullptr);
+  if (pool_) vkDestroyCommandPool(device_, pool_, nullptr);  // frees the command buffers
   vkDestroyDevice(device_, nullptr);
   device_ = VK_NULL_HANDLE;
+  queue_ = VK_NULL_HANDLE;
+  phys_ = VK_NULL_HANDLE;
+  pool_ = VK_NULL_HANDLE;
+  for (VkCommandBuffer& c : buildCmds_) c = VK_NULL_HANDLE;
+  pipeline_ = VK_NULL_HANDLE;
+  pipeLayout_ = VK_NULL_HANDLE;
+  descPool_ = VK_NULL_HANDLE;
+  set_ = VK_NULL_HANDLE;
+  setLayout_ = VK_NULL_HANDLE;
+  renderPass_ = VK_NULL_HANDLE;
+  sampler_ = VK_NULL_HANDLE;
+  gameView_ = VK_NULL_HANDLE;
+  gameImage_ = VK_NULL_HANDLE;
+  gameMem_ = VK_NULL_HANDLE;
+  hasPicture_ = false;
+  extent_ = {0, 0};
+  slot_ = 0;
+  needRecreate_ = false;
+  // Thumbnails are uploaded again into the new atlas.
+  atlasInitialized_ = false;
+  cellKey_.fill(0);
+  cellUsed_.fill(0);
+  keyCell_.clear();
+  pendingThumbs_.clear();
+}
+
+bool VkRenderer::recreateDevice() {
+  double now = nowSeconds();
+  if (now < nextDeviceRetry_) return false;
+  nextDeviceRetry_ = now + 1.0;
+  // The ImGui renderer backend goes with the old device (it was up unless a re-creation failed).
+  bool imgui = imguiReady_ || imguiWanted_;
+  std::fprintf(stderr, "ReplayNES: display: recreating the Vulkan device (%s)\n", errors_.summary().c_str());
+  releaseDevice();
+  std::string err;
+  if (!initDevice(&err)) {
+    errors_.note("Vulkan device re-creation (" + err + ")", 0);
+    releaseDevice();
+    return false;
+  }
+  if (imgui && !initImGuiBackend()) errors_.note("ImGui_ImplVulkan_Init after device re-creation", 0);
+  deviceLost_ = false;
+  surfaceLost_ = false;
+  std::fprintf(stderr, "ReplayNES: display: Vulkan device recreated (%s)\n", description_.c_str());
+  return true;
+}
+
+bool VkRenderer::recreateSurface() {
+  if (!device_) return false;
+  vkDeviceWaitIdle(device_);
+  {
+    std::lock_guard<std::mutex> lk(swapMutex_);
+    destroySwapchain();  // the surface's swapchain goes first
+    swapGen_ += 1;
+  }
+  extent_ = {0, 0};
   if (surface_) SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
-  if (instance_) vkDestroyInstance(instance_, nullptr);
-  instance_ = VK_NULL_HANDLE;
+  surface_ = VK_NULL_HANDLE;
+  if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
+    errors_.note(std::string("SDL_Vulkan_CreateSurface (") + SDL_GetError() + ")", 0);
+    surface_ = VK_NULL_HANDLE;
+    return false;
+  }
+  VkBool32 present = VK_FALSE;
+  vkGetPhysicalDeviceSurfaceSupportKHR(phys_, queueFamily_, surface_, &present);
+  if (!present) {
+    // Not presentable from this device's queue: start over with a new device for it.
+    deviceLost_ = true;
+    return false;
+  }
+  surfaceLost_ = false;
+  needRecreate_ = false;
+  std::fprintf(stderr, "ReplayNES: display: Vulkan surface recreated\n");
+  return createSwapchain();
+}
+
+void VkRenderer::fail(const char* what, VkResult r) {
+  errors_.note(what, long(r), resultName(r));
+  if (r == VK_ERROR_DEVICE_LOST) deviceLost_ = true;
+  else if (r == VK_ERROR_SURFACE_LOST_KHR) surfaceLost_ = true;
+  // A timeout is retried as it is (recreating the swapchain would wait for the stuck GPU work);
+  // the display watchdog restarts the display path if it persists.
+  else if (r != VK_TIMEOUT && r != VK_NOT_READY) needRecreate_ = true;  // out of memory, exclusive mode lost ...
+}
+
+void VkRenderer::resetSlotSync(int slot) {
+  Slot& s = slots_[slot];
+  vkDeviceWaitIdle(device_);
+  if (s.fence) vkDestroyFence(device_, s.fence, nullptr);
+  if (s.acquired) vkDestroySemaphore(device_, s.acquired, nullptr);
+  s.fence = VK_NULL_HANDLE;
+  s.acquired = VK_NULL_HANDLE;
+  VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+  fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  vkCreateFence(device_, &fci, nullptr, &s.fence);
+  VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  vkCreateSemaphore(device_, &sci, nullptr, &s.acquired);
+}
+
+void VkRenderer::recoverDisplay(bool restart) {
+  if (!restart) {
+    // RECOVER: whatever the CRT output and its fed-back state hold is dropped; the next present
+    // shows the plain picture, the one after it builds the CRT picture anew.
+    crt_.discard();
+    plainNext_ = true;
+    return;
+  }
+  // RESTART: the CRT renderer (created again by the next draw) and the swapchain from scratch -
+  // the device too when it was lost. CRT builds that keep failing across a restart: shown plain.
+  if (crtFailStreak_ > 0 && ++crtFailedRestarts_ >= 2 && !crtGaveUp_) {
+    crtGaveUp_ = true;
+    status_.crtError = "CRT stopped after repeated GPU errors (switch it off and on to retry)";
+    std::fprintf(stderr, "ReplayNES: display: CRT builds keep failing after a restart: plain picture\n");
+  }
+  plainNext_ = true;
+  if (deviceLost_ || !device_) {
+    nextDeviceRetry_ = 0;
+    recreateDevice();
+    return;
+  }
+  vkDeviceWaitIdle(device_);
+  crt_.release();
+  if (surfaceLost_) {
+    recreateSurface();
+    return;
+  }
+  // Fences / semaphores of the frame slots anew too (a submit that never ran leaves them stuck).
+  for (int i = 0; i < kSlots; ++i) resetSlotSync(i);
+  needRecreate_ = true;
+}
+
+std::string VkRenderer::displayHealth() const {
+  char b[224];
+  std::snprintf(b, sizeof b, "Vulkan device %s, surface %s, swapchain %ux%u%s, CRT builds failing %d%s",
+                device_ ? (deviceLost_ ? "lost" : "ok") : "none", surfaceLost_ ? "lost" : "ok", extent_.width, extent_.height,
+                needRecreate_ ? " (to recreate)" : "", crtFailStreak_, crtGaveUp_ ? " (CRT given up)" : "");
+  return errors_.summary() + "; " + b + "; " + crt_.state();
 }
 
 }  // namespace rnl

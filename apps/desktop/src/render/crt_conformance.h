@@ -5,8 +5,12 @@
 // tools/crt-reference/generate-fixtures.mjs) with the same inputs and tolerances as the macOS
 // CRTConformance / CRTTests, plus determinism, the fast kernels == direct port bit identity, the
 // setup model, and the fast display path (CrtQuality::fast) against the reference path (PSNR of the
-// displayed picture on moving input, a still after a seek, determinism). A Backend provides:
-//   using Renderer = ...;  (flags noiseEnabled, disableSpotH, useFastFFT, useFastScatter)
+// displayed picture on moving input, a still after a seek, determinism), and the display recovery
+// paths (docs/FRAME_PACING.md "Display watchdog": a new line count while its plan is built, a failed
+// encode, discardOutput, non-finite temporal state). A Backend provides:
+//   using Renderer = ...;  (flags noiseEnabled, disableSpotH, useFastFFT, useFastScatter,
+//                           debugFailEncodes; configure, planPending, renderedLines, hasOutput,
+//                           discardOutput, debugPoisonState, stateResets)
 //   std::unique_ptr<Renderer> make(const CrtSettings&, int ow, int oh, CrtQuality);  // plan built synchronously
 //   bool run(Renderer&, const CrtInput&, uint64_t ordinal);              // encode + wait
 //   std::vector<float> read(Renderer&, CrtStage);                        // stage buffer, RGBA floats
@@ -15,6 +19,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +29,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "render/crt_model.h"
@@ -416,6 +422,74 @@ class Conformance {
     }
     return q;
   }
+  // ---------------------------------------------------------------- display recovery
+  static bool finite(const std::vector<float>& v) {
+    if (v.empty()) return false;
+    for (float x : v)
+      if (!std::isfinite(x)) return false;
+    return true;
+  }
+  /// A new line count is planned in the background while frames keep rendering: every frame renders
+  /// with the tube in use and stages of its line count (the stages once followed the new setting at
+  /// once and the old tube read / wrote past them), and the new count starts with its plan.
+  bool linesFollowTube(CrtQuality q) {
+    CrtSettings s;
+    auto r = renderer(s, 256, 192, q);
+    if (!r) return false;
+    r->noiseEnabled = false;
+    bool ok = run(*r, codes(0), 1) && r->renderedLines() == 240;
+    CrtSettings s2 = s;
+    s2.lines = 160;
+    r->configure(s2, 256, 192);  // built in the background, adopted by a later encode
+    bool sawNew = false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    for (uint64_t ord = 2; ok && !sawNew && std::chrono::steady_clock::now() < deadline; ++ord) {
+      bool encoded = run(*r, codes(uint32_t(ord % 3)), ord);
+      int lines = r->renderedLines();
+      ok = encoded && (lines == 240 || lines == 160) && read(*r, CrtStage::tubeInput).size() == size_t(512) * size_t(lines) * 4 &&
+           finite(read(*r, CrtStage::output));
+      sawNew = lines == 160;
+      if (!sawNew) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return ok && sawNew && !r->planPending();
+  }
+  /// A frame that could not be encoded leaves no output (the plain picture is shown, not the last
+  /// tube picture); the next encoded frame shows again.
+  bool failedEncodeClearsOutput(CrtQuality q) {
+    auto r = renderer(CrtSettings(), 256, 192, q);
+    if (!r) return false;
+    r->noiseEnabled = false;
+    bool ok = run(*r, codes(0), 1) && r->hasOutput();
+    r->debugFailEncodes = 1;
+    ok = ok && !run(*r, codes(1), 2) && !r->hasOutput() && read(*r, CrtStage::output).empty();
+    return ok && run(*r, codes(2), 3) && r->hasOutput() && finite(read(*r, CrtStage::output));
+  }
+  /// discardOutput(): nothing shown until the next encode, which starts a new history (the same
+  /// picture as a fresh renderer's first frame).
+  bool discardRestartsHistory(CrtQuality q) {
+    auto r = renderer(CrtSettings(), 256, 192, q), fresh = renderer(CrtSettings(), 256, 192, q);
+    if (!r || !fresh) return false;
+    r->noiseEnabled = fresh->noiseEnabled = false;
+    bool ok = true;
+    for (uint64_t f = 1; f <= 4; ++f) ok = ok && run(*r, codes(uint32_t(f % 3)), f);
+    r->discardOutput();
+    ok = ok && !r->hasOutput() && read(*r, CrtStage::output).empty();
+    ok = ok && run(*r, codes(2), 5) && run(*fresh, codes(2), 5);
+    auto a = read(*r, CrtStage::output), b = read(*fresh, CrtStage::output);
+    return ok && !a.empty() && a.size() == b.size() && std::memcmp(a.data(), b.data(), a.size() * 4) == 0;
+  }
+  /// NaN in the AGC / supply state (fed back every frame) is reset before the next frame instead of
+  /// blanking the picture from then on.
+  bool nonFiniteStateReset(CrtQuality q) {
+    auto r = renderer(CrtSettings(), 256, 192, q);
+    if (!r) return false;
+    r->noiseEnabled = false;
+    bool ok = run(*r, codes(0), 1) && run(*r, codes(1), 2) && r->stateResets() == 0;
+    r->debugPoisonState();
+    ok = ok && run(*r, codes(2), 3) && r->stateResets() == 1 && finite(read(*r, CrtStage::output));
+    return ok && run(*r, codes(0), 4) && r->stateResets() == 1 && finite(read(*r, CrtStage::output));
+  }
+
   const Case* find(const std::string& n) const {
     auto it = cases_.find(n);
     return it == cases_.end() ? nullptr : &it->second;
@@ -562,6 +636,13 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
     checker.check(st.maxAbs < 3e-3, b);
   }
   checker.check(c.deterministic(CrtQuality::fast), "fast path: same frame sequence is bit-identical");
+  for (CrtQuality q : {CrtQuality::reference, CrtQuality::fast}) {
+    const std::string qn = q == CrtQuality::fast ? "fast path: " : "";
+    checker.check(c.linesFollowTube(q), qn + "a new line count renders with its own plan (stages follow the tube in use)");
+    checker.check(c.failedEncodeClearsOutput(q), qn + "a failed encode clears the output (no stale picture)");
+    checker.check(c.discardRestartsHistory(q), qn + "discardOutput: no output, then a fresh history");
+    checker.check(c.nonFiniteStateReset(q), qn + "NaN in the AGC / supply state is reset");
+  }
   std::printf(checker.failures ? "%d FAILED\n" : "all passed\n", checker.failures);
   return checker.failures;
 }

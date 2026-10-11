@@ -310,6 +310,25 @@ callback age, last confirmed frame vs latest, GPU errors and the last one, CRT /
 and counted (`gpuErrors`, `watchdogActions` in the stats log). Pause, the menu and seeks never
 trigger it. Test hook: `-crtInjectGPUError N` reports every N-th CRT build as failed.
 
+**Desktop (Linux Vulkan, Windows Direct3D 11).** The CRT renderers (`CrtRenderer`,
+`CrtRendererD3D11`) have the same fixes: stages and rows follow the tube in use (`key.lines`), a
+failed encode clears the output (the plain picture is shown), `discardOutput()` drops the output and
+the temporal state, and the AGC / supply state is checked for NaN / inf before each frame (Vulkan:
+small host-visible buffers; Direct3D 11: a staging copy of a recent frame read without waiting) -
+covered by the shared conformance checks (`crt_conformance.h`, "display recovery"). The presenters
+log every failed fence wait / acquire / submit / present / resize with its `VkResult` / `HRESULT`
+(`display_health.h`: the first 5, then every 300th) and recover what they can see: a lost Vulkan
+surface or device is recreated (the device with every resource, the ImGui backend included), a
+failed submit renews its frame slot's fence and semaphore, frame-slot fence and image waits time out
+after 1 s instead of blocking the loop; Direct3D 11 recreates the device on
+`DXGI_ERROR_DEVICE_REMOVED` / `RESET` / `HUNG` and the swap chain after other present / resize
+failures. The frame loop (`app.cpp`) runs the watchdog over each published picture and each
+successful present whose CRT build did not fail, reset while the window is minimised, hidden or
+occluded: RECOVER = CRT output discarded + plain picture for one present, RESTART = CRT renderer and
+swap chain recreated (the device after a loss); CRT builds still failing after two restarts are shown
+plain until the CRT is switched off and on. Logged as `ReplayNES: display watchdog: ...` with the
+wait, the last present and `Renderer::displayHealth()` (failures, device / swap chain / CRT state).
+
 ## 6. Mapping to other platforms
 
 | Platform | Display-locked tick + deadline | Present for a given refresh | Low-latency path |

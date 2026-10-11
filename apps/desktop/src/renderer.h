@@ -87,6 +87,18 @@ class Renderer {
   /// GPU time a new picture's build adds before it can be shown (part of the sample -> screen work).
   virtual double gpuLeadExtra() const { return 0; }
 
+  /// Display watchdog (display_health.h, docs/FRAME_PACING.md "Display watchdog"). The last
+  /// drawAndPresent presented and the CRT build of its picture (CRT on) did not fail.
+  virtual bool lastPresentHealthy() const { return true; }
+  /// The window is covered (e.g. DXGI_STATUS_OCCLUDED): nothing is expected on screen.
+  virtual bool occluded() const { return false; }
+  /// restart = false (RECOVER): the CRT output and temporal state are discarded and the next present
+  /// shows the plain picture. restart = true (RESTART): the CRT resources and the swap chain are
+  /// recreated (the device too after a device loss).
+  virtual void recoverDisplay(bool restart) { (void)restart; }
+  /// One line for the log: display failures and the last one, device / swap chain and CRT state.
+  virtual std::string displayHealth() const { return std::string(); }
+
   /// Once per UI frame, before thumbTexture() calls.
   virtual void beginUIFrame() = 0;
   /// Filmstrip thumbnails: a 128x120 BGRA picture identified by `key` in the thumbnail atlas
