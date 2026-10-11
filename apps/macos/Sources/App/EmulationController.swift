@@ -226,6 +226,9 @@ final class EmulationController {
     private var watchdog = DisplayWatchdog()
     private var watchedSeq: UInt64 = 0          // FrameBuffer sequence last seen published
     private var watchedConfirmed: UInt64 = 0    // DisplayHealth.confirmedSequence last seen
+    private var linkStartedAt = 0.0             // host seconds the display link was (re)created
+    private var linkCallbackSinceStart = false
+    private var watchdogRestarted = false       // the current link was created by the watchdog
     private var runLoop: CFRunLoop?             // the emulation thread's (targetLock)
     /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
     private var workgroup: OpaquePointer?
@@ -508,6 +511,9 @@ final class EmulationController {
         linkTarget = t
         linkActive = false
         watchdog.reset()
+        linkStartedAt = HostClock.seconds(HostClock.now())
+        linkCallbackSinceStart = false
+        watchdogRestarted = false
         guard let t else { return }
         let l = CAMetalDisplayLink(metalLayer: t.layer)
         let proxy = DisplayLinkProxy(owner: self)
@@ -546,6 +552,7 @@ final class EmulationController {
         let cb = HostClock.now()
         lastLinkCallback = cb
         linkActive = true
+        linkCallbackSinceStart = true
         guard let target = linkTarget else { return }
         let present = update.targetPresentationTimestamp
         let newFrame = cadence.refresh(presentation: present)
@@ -648,7 +655,14 @@ final class EmulationController {
         let now = HostClock.seconds(HostClock.now())
         let seq = frames.sequence
         if seq != watchedSeq { watchedSeq = seq; watchdog.emulated(at: now) }
+        // Nothing is expected on screen while the viewport is hidden, nor in the first second of a new
+        // display link (a window appearing; a new link may take a few hundred ms to settle) - longer
+        // until it first called back (a link that never starts counts after 2 s).
+        // After a watchdog restart the escalation (and its back-off) carries on once the new link runs.
+        let sinceStart = now - linkStartedAt
+        let starting = sinceStart < 1 || (!linkCallbackSinceStart && sinceStart < 2)
         guard let target = linkTarget, target.visible else { watchdog.reset(); return }
+        if starting { if !watchdogRestarted { watchdog.reset() }; return }
         let health = target.renderer.health.snapshot
         if health.confirmedSequence != watchedConfirmed {
             watchedConfirmed = health.confirmedSequence
@@ -684,6 +698,7 @@ final class EmulationController {
         let wd = watchdog
         startLink(t)
         watchdog = wd   // keep the escalation state across the new link
+        watchdogRestarted = true
         nextDeadline = HostClock.now()
     }
 

@@ -299,9 +299,11 @@ classes in the Vulkan / D3D11 CRT paths:
 The watchdog (`rnf_display_watchdog`, shared core) covers what is left, including a display link
 that stops calling back while the view is visible (the emulation thread then silently falls back to
 the host clock, which exists for hidden windows): the frontend reports each published picture and
-each picture **confirmed on screen** (presented, and the GPU work that built it completed without
-error - so a stale CRT output does not count). While the viewport is visible (macOS: window
-occlusion state), a picture waiting more than 250 ms with emulation still advancing triggers
+each picture **confirmed** (its present's command buffer completed without error and the GPU work
+that built it did not fail - so a stale CRT output does not count; not `presentedTime`, which is 0
+for a replaced drawable and always 0 in the Parallels VM; a recovery's plain stand-in does not
+count either). While the viewport is visible (macOS: window occlusion state) and the display link
+has run for a second (a new link settles first), a picture waiting more than 250 ms with emulation still advancing triggers
 RECOVER: fresh command queue, nothing pending, CRT output and temporal state discarded, plain
 picture for one present - or, when the display link stopped calling back, only a new display link.
 If the next 250 ms still show nothing: RESTART (the CRT renderer rebuilt from scratch and the

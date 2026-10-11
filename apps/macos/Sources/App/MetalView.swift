@@ -236,27 +236,24 @@ final class GameRenderer {
         let shown = encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
         let commit = HostClock.now()
         // The present's own command buffer: its failure means the drawable showed nothing new.
-        let presentWork = PictureWork()
+        // Confirmed: the present's command buffer completed without error (the drawable went to the
+        // display) and the GPU work that built its picture (the CRT passes, committed before it on
+        // the same queue) did not fail. Not presentedTime: it is 0 for a drawable that a later one
+        // replaced, and always 0 in some environments (virtual machines).
         let health = self.health
         cb.addCompletedHandler { b in
-            let failure = DisplayHealth.failure(status: b.status, error: b.error)
-            presentWork.complete(ok: failure == nil)
-            if let failure, health.commandBufferFailed(failure, build: false, at: HostClock.seconds(HostClock.now())) {
-                NSLog("ReplayNES: display: present command buffer failed: \(failure)")
+            let now = HostClock.seconds(HostClock.now())
+            if let failure = DisplayHealth.failure(status: b.status, error: b.error) {
+                if health.commandBufferFailed(failure, build: false, at: now) { NSLog("ReplayNES: display: present command buffer failed: \(failure)") }
+            } else if !(shown.work?.failed ?? false) {
+                health.confirmed(sequence: shown.seq, frame: shown.frame, at: now)
             }
-        }
-        // Confirmed on screen: shown (presentedTime > 0), and the GPU work that made the picture -
-        // the CRT build, the present itself - completed without error.
-        let confirm: (Double) -> Void = { t in
-            guard t > 0, presentWork.completed, shown.work?.completed ?? true else { return }
-            health.confirmed(sequence: shown.seq, frame: shown.frame, at: HostClock.seconds(HostClock.now()))
         }
         if let m = build ?? revealed, m.emulatedTime != 0 {
             if let span, build != nil { cb.addCompletedHandler { b in span.extend(b.gpuStartTime, b.gpuEndTime) } }
-            drawable.addPresentedHandler { d in confirm(d.presentedTime); onPresented(commit, d.presentedTime) }   // 0: never shown (dropped)
+            drawable.addPresentedHandler { d in onPresented(commit, d.presentedTime) }   // 0: never shown (dropped)
         } else {
             drawable.addPresentedHandler { d in
-                confirm(d.presentedTime)
                 if d.presentedTime > 0 { onRepeatPresented(pictureFrame, d.presentedTime) }
             }
         }
@@ -418,6 +415,9 @@ final class GameRenderer {
             }
         }
         if crtShown { return crtOutput.map { ($0.seq, $0.frame, $0.work) } ?? (0, 0, Self.unconfirmed) }
+        // A recovery's plain stand-in is not the picture the user chose: it does not end the stall
+        // (the watchdog escalates if the CRT keeps failing).
+        if plainOnce && crtOn { return (0, 0, Self.unconfirmed) }
         return (textureSeq, textureFrame, nil)
     }
 
@@ -428,9 +428,10 @@ final class GameRenderer {
         let resets = crt.stateResets
         guard crtFrame.encode(into: crt, cb: cb) else {
             crtOutput = nil
+            guard crt.renderedLines != nil else { return }   // the first tube plan is still being built
             buildFailures += 1
             if buildFailures <= DisplayHealth.logFirst || buildFailures % DisplayHealth.logEvery == 0 {
-                NSLog("ReplayNES: display: CRT build not encoded (no tube plan or stage buffers yet; \(buildFailures) so far)")
+                NSLog("ReplayNES: display: CRT build not encoded (stage buffers unavailable; \(buildFailures) so far)")
             }
             return
         }
