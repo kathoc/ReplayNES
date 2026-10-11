@@ -303,9 +303,10 @@ each picture **confirmed on screen** (presented, and the GPU work that built it 
 error - so a stale CRT output does not count). While the viewport is visible (macOS: window
 occlusion state), a picture waiting more than 250 ms with emulation still advancing triggers
 RECOVER: fresh command queue, nothing pending, CRT output and temporal state discarded, plain
-picture for one present, and a new display link if its callbacks stopped. If the next 250 ms still
-show nothing: RESTART (the CRT renderer rebuilt from scratch, the display link recreated), then a
-2 s back-off. Every action is logged with why (`ReplayNES: display watchdog: ...`: wait, link
+picture for one present - or, when the display link stopped calling back, only a new display link.
+If the next 250 ms still show nothing: RESTART (the CRT renderer rebuilt from scratch and the
+display link recreated), then a 2 s back-off. GPU errors that persist across a rebuild switch the
+CRT model to the plain picture until the CRT settings change. Every action is logged with why (`ReplayNES: display watchdog: ...`: wait, link
 callback age, last confirmed frame vs latest, GPU errors and the last one, CRT / build-ahead state)
 and counted (`gpuErrors`, `watchdogActions` in the stats log). Pause, the menu and seeks never
 trigger it. Test hook: `-crtInjectGPUError N` reports every N-th CRT build as failed.

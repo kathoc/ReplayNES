@@ -659,17 +659,17 @@ final class EmulationController {
                           (now - health.lastErrorAt) * 1000, health.lastError)
         }
         why += "; " + target.renderer.stateDescription
-        NSLog("ReplayNES: display watchdog: \(action == .recover ? "recover renderer" : "rebuild renderer + restart display link") (\(watchdog.actions)) - \(why)")
-        latency.recordWatchdog(gpuErrors: health.gpuErrors)
-        switch action {
-        case .recover:
-            target.renderer.recover(rebuild: false)
-            if linkStalled { restartLink() }
-        case .restart:
-            target.renderer.recover(rebuild: true)
-            restartLink()
-        case .none: break
+        // No callbacks: the display link is what stopped (the renderer is not touched); callbacks
+        // but nothing new on screen: the renderer first, then the renderer rebuilt + a new link.
+        let what: String
+        switch (action, linkStalled) {
+        case (.recover, true): what = "restart display link"; restartLink()
+        case (.recover, false): what = "recover renderer"; target.renderer.recover(rebuild: false)
+        case (_, true): what = "restart display link, recover renderer"; target.renderer.recover(rebuild: false); restartLink()
+        default: what = "rebuild renderer, restart display link"; target.renderer.recover(rebuild: true); restartLink()
         }
+        NSLog("ReplayNES: display watchdog: \(what) (action \(watchdog.actions)) - \(why)")
+        latency.recordWatchdog(gpuErrors: health.gpuErrors)
     }
 
     private func restartLink() {
