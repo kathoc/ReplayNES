@@ -19,23 +19,19 @@
 #include "render/crt_export.h"
 #include "settings.h"
 #include "ui.h"
+#include "ui_theme.h"
 
 namespace fs = std::filesystem;
 
 namespace rnl {
+
+using namespace theme;
 
 namespace {
 std::string str(char* p) {
   std::string s = p ? p : "";
   rnf_string_free(p);
   return s;
-}
-void wrappedDisabled(const char* text) {
-  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  ImGui::PushTextWrapPos(0);
-  ImGui::TextUnformatted(text);
-  ImGui::PopTextWrapPos();
-  ImGui::PopStyleColor();
 }
 }  // namespace
 
