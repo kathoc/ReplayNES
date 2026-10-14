@@ -96,6 +96,15 @@ enum InputCatalog {
     /// Layout 5 -> 6: HOME / guide (the system's button) is never assignable: its bindings are dropped.
     static func homeMigration(_ c: Config) -> Plan { plan(c) { rnf_input_home_migration($0, $1, $2, $3) } }
 
+    /// Layout 6 -> 7: pad 1's L3 = "hk.undo_take" (Undo of a retry, docs/design/VTR_UX.md) unless L3
+    /// is taken or the action already has a pad 1 button.
+    static func undoMigration(_ c: Config) -> Plan { plan(c) { rnf_input_undo_migration($0, $1, $2, $3) } }
+
+    /// The pad 1 control bound to `action` ("gc0:<element>"), or the first keyboard key.
+    static func boundInput(_ c: Config, action: String, pad: Bool) -> String? {
+        c.bindings.first { $0.action == action && !isCombo($0.input) && $0.input.hasPrefix(pad ? "gc0:" : "kb:") }?.input
+    }
+
     /// HOME / guide ("home"): never assignable, captured or routed.
     static func isIgnoredElement(_ element: String) -> Bool { rnf_input_element_ignored(element) != 0 }
 

@@ -8,7 +8,7 @@ import Foundation
 
 enum QMPage: String, CaseIterable, Hashable {
     case top
-    case retry, takes, bookmarks
+    case retry, bookmarks
     case practice
     case share, stream
     case display, displayShape, crtDetail
@@ -24,6 +24,9 @@ enum QMPage: String, CaseIterable, Hashable {
     /// (frontend/src/menu.cpp, rnf_menu_*), which the Linux / Windows frontends draw.
     static let topTileIDs = ["resume", "retry", "practice", "share", "settings", "game"]
 
+    /// The Retry page's items (the core's "retry.<id>"; docs/design/VTR_UX.md: no takes, no REC).
+    static let retryItemIDs = ["rerecord", "bookmarks", "playback", "restart"]
+
     /// The shared core's page this one draws (rnf_menu_page_find), nil for pages only macOS has:
     /// Share › Stream Output (the core's Share has a Stream on / off toggle; macOS adds the Syphon
     /// picture options) and Game › Reset (the core's Game › Reset opens a dialog). The core's
@@ -34,7 +37,6 @@ enum QMPage: String, CaseIterable, Hashable {
         switch self {
         case .top: return "quick"
         case .retry: return "retry"
-        case .takes: return "takes"
         case .bookmarks: return "bookmarks"
         case .practice: return "practice"
         case .share: return "share"
@@ -60,7 +62,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .top: return nil
         case .retry, .practice, .share, .game: return .top
         case .display, .controls, .sound, .system: return .top
-        case .takes, .bookmarks: return .retry
+        case .bookmarks: return .retry
         case .stream: return .share
         case .crtDetail, .displayShape: return .display
         case .controller, .bindings, .controlsDetail: return .controls
@@ -88,7 +90,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case tiles(columns: Int)   // top level: one row of large tiles
         case actions               // sub-level: up to 6 medium tiles (3 x 2)
         case rows                  // settings: up to 6 rows of label | value
-        case cards(columns: Int, rows: Int)   // thumbnails (practice slots, takes, bookmarks)
+        case cards(columns: Int, rows: Int)   // thumbnails (practice slots, bookmarks)
         case custom                // controller diagram
     }
 
@@ -97,7 +99,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .top: return .tiles(columns: 6)
         case .retry, .share, .game, .reset: return .actions
         case .practice: return .cards(columns: 4, rows: 2)
-        case .takes, .bookmarks: return .cards(columns: 3, rows: 2)
+        case .bookmarks: return .cards(columns: 3, rows: 2)
         case .controller: return .custom
         default: return .rows
         }
@@ -122,14 +124,14 @@ enum QMPage: String, CaseIterable, Hashable {
         }
     }
 
-    /// Long lists (takes, bookmarks, bindings, the action picker) are paged; L / R switch pages
+    /// Long lists (bookmarks, bindings, the action picker) are paged; L / R switch pages
     /// (the controller page: the pad).
-    var paged: Bool { self == .takes || self == .bookmarks || self == .bindings || self == .assign || self == .controller }
+    var paged: Bool { self == .bookmarks || self == .bindings || self == .assign || self == .controller }
 
     var icon: String {
         switch self {
         case .top: return "line.3.horizontal"
-        case .retry, .takes, .bookmarks: return "clock.arrow.circlepath"
+        case .retry, .bookmarks: return "clock.arrow.circlepath"
         case .practice: return "target"
         case .share, .stream: return "square.and.arrow.up"
         case .display, .displayShape, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .updates, .about:
@@ -142,7 +144,6 @@ enum QMPage: String, CaseIterable, Hashable {
         switch self {
         case .top: return String(localized: "Menu")
         case .retry: return String(localized: "Retry")
-        case .takes: return String(localized: "Takes")
         case .bookmarks: return String(localized: "Bookmarks")
         case .practice: return String(localized: "Practice")
         case .share: return String(localized: "Share")

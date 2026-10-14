@@ -12,6 +12,9 @@ final class SeekMarkers: ObservableObject {
     @Published private(set) var focus = -1          // -1: the bar; else the marker (left to right)
     @Published private(set) var editing = false
     @Published private(set) var active = false      // paused on the seek bar, not practicing, no menu
+    /// ↑ entered the marker lane: the hints show the A/B buttons (docs/design/VTR_UX.md: the bar
+    /// itself shows at most 4). UI only; the buttons work the same either way.
+    @Published private(set) var lane = false
     /// "Two markers already (X deletes one)" / "A marker is already here", for a moment.
     @Published private(set) var hint: String?
 
@@ -48,6 +51,7 @@ final class SeekMarkers: ObservableObject {
             if r.seek != 0 && st.hasSession && st.paused && !st.practicing { m.scrub(to: r.seek_frame) }
             holdDir = 0
             repeater.reset()
+            if lane { lane = false }
         } else if writeSent.map({ m.practiceSlots != $0.slots || Date().timeIntervalSince($0.at) > 1 }) ?? true {
             writeSent = nil
             let st = m.status
@@ -137,7 +141,11 @@ final class SeekMarkers: ObservableObject {
             } else if down {
                 apply(rnf_markers_move(handle, Int32(dir), 0, head))
             }
-        case .up: if down { apply(rnf_markers_move(handle, 0, -1, head)) }
+        case .up:
+            if down {
+                if !lane { lane = true }
+                apply(rnf_markers_move(handle, 0, -1, head))
+            }
         case .down: if down { apply(rnf_markers_move(handle, 0, 1, head)) }
         case .ok: if down { apply(rnf_markers_confirm(handle, head)) }
         case .cancel: if down { apply(rnf_markers_cancel(handle)) }

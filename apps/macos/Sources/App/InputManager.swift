@@ -164,6 +164,7 @@ final class InputManager {
     /// layout 4: untouched trigger hotkeys swap to L2 rewind / R2 fast-forward.
     /// layout 5: the Quick Menu ("hk.menu"): pad 1's L+R and Esc (unless Esc is taken).
     /// layout 6: bindings to HOME / guide (never assignable) are dropped.
+    /// layout 7: pad 1's L3 = "hk.undo_take" (Undo of a retry) unless L3 is taken.
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
         let from = d.integer(forKey: "controllerLayoutVersion")
@@ -175,6 +176,7 @@ final class InputManager {
         if from < 4 { changed = apply(InputCatalog.triggerSwapMigration(config)) || changed }
         if from < 5 { changed = apply(InputCatalog.menuMigration(config)) || changed }
         if from < 6 { changed = apply(InputCatalog.homeMigration(config)) || changed }
+        if from < 7 { changed = apply(InputCatalog.undoMigration(config)) || changed }
         guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
@@ -624,9 +626,16 @@ final class InputManager {
     /// notice "a button was pressed while paused" without sampling (sampling consumes latches).
     var pressSequence: UInt64 { eventLock.lock(); defer { eventLock.unlock() }; return pressSeq }
 
-    private func setPressed(_ id: String, _ down: Bool, at: Double? = nil) {
+    private var takeoverSeq: UInt64 = 0 // guarded by eventLock
+
+    /// Count of presses that may take over Playback (docs/design/VTR_UX.md: a game button while
+    /// watching plays from there): every press except the paused seek bar's own taps (cancel,
+    /// confirm, up, X, Y), which still reach the game. Any thread.
+    var takeoverSequence: UInt64 { eventLock.lock(); defer { eventLock.unlock() }; return takeoverSeq }
+
+    private func setPressed(_ id: String, _ down: Bool, at: Double? = nil, takeover: Bool = true) {
         rn_input_set_pressed(handle, id, down ? 1 : 0)
-        if down { eventLock.lock(); pressSeq &+= 1; eventLock.unlock() }
+        if down { eventLock.lock(); pressSeq &+= 1; if takeover { takeoverSeq &+= 1 }; eventLock.unlock() }
         noteEvent(at: at)
     }
 
@@ -865,7 +874,9 @@ final class InputManager {
         if routePausedStep(id, down) { return }
         let tap = trackPausedTap(id, name, down)
         trackCountdownTap(id, name, down)
-        setPressed(id, down, at: gcEventTime)
+        // The seek bar's taps (cancel / confirm / up / X / Y while paused) never take over Playback.
+        let seekTap = down && isPausedInPlay && [cancelElement, confirmElement, "dpad.up", "face.north", "face.west"].contains(name)
+        setPressed(id, down, at: gcEventTime, takeover: !seekTap)
         switch tap {
         case .resume: onMain { $0.onPausedResume?() }
         case .seek(let input): onMain { $0.onSeekInput?(input, true) }

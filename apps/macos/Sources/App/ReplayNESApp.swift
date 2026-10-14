@@ -223,13 +223,10 @@ struct AppCommands: Commands {
             let st = menu.v
             let has = st.hasSession
             Button(st.paused ? String(localized: "Resume") : String(localized: "Pause")) { model.togglePause() }.keyboardShortcut("p").disabled(!has)
-            Button("Record from Here") { model.rerecordHere() }.disabled(!has)
-            Button("Previous Attempt") { model.undoTake() }.keyboardShortcut("z", modifiers: [.command, .option])
+            Button("Play from Here") { model.rerecordHere() }.disabled(!has)
+            // The "↶ Undo" chip's command (10 s after a retry; docs/design/VTR_UX.md).
+            Button("Undo Retry") { model.undoRetry() }.keyboardShortcut("z", modifiers: [.command, .option])
                 .disabled(!has || !st.undoAvailable || st.practicing)
-            Toggle("Watch Replay", isOn: Binding(get: { !st.recording && !st.practicing }, set: { _ in model.toggleRecord() }))
-                .keyboardShortcut("m", modifiers: [.command, .shift]).disabled(!has || st.practicing)
-            Button("Takes…") { model.quickMenu.open(at: .takes) }.keyboardShortcut("t", modifiers: [.command, .shift])
-                .disabled(!has || st.practicing)
             Divider()
             Button("Add Bookmark") { model.addBookmark() }.keyboardShortcut("d").disabled(!has || st.practicing)
             Button("Bookmarks…") { model.quickMenu.open(at: .bookmarks) }.disabled(!has || st.practicing)
@@ -258,7 +255,7 @@ struct AppCommands: Commands {
         }
 
         CommandMenu("Share") {
-            Button("Export MP4…") { model.showExport = true }.keyboardShortcut("e")
+            Button("Make Video…") { model.showExport = true }.keyboardShortcut("e")
                 .disabled(!menu.v.hasSession || menu.v.takeEmpty)
             Toggle("Stream Output (Syphon)", isOn: Binding(get: { menu.v.streamOn }, set: { stream.setOn($0) }))
         }

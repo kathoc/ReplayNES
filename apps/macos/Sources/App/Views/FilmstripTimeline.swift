@@ -202,7 +202,16 @@ struct FilmstripTimeline: View {
                          with: .color(.orange.opacity(0.9)))
             }
         } else if g.length > 0 {
-            head = (g.x(forFrame: scrubFrame ?? st.frame), st.recording ? .red : .white)
+            // One tape (docs/design/VTR_UX.md): a neutral playhead (never the red of recording), and
+            // the recorded part ahead of it dimmed.
+            let x = g.x(forFrame: scrubFrame ?? st.frame)
+            if x < g.width {
+                var dim = ctx
+                dim.clip(to: stripPath)
+                dim.fill(Path(CGRect(x: x, y: Double(lane), width: g.width - x, height: Double(Self.stripHeight))),
+                         with: .color(.black.opacity(0.45)))
+            }
+            head = (x, .white)
         }
         if let h = head {
             // Whole backing pixels: while recording the playhead advances in clean 1-dot steps.

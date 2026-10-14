@@ -315,6 +315,7 @@ final class GameRenderer {
             texture.replace(region: MTLRegionMake2D(0, 0, w, Int(RN_VIDEO_HEIGHT)), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
             newMeta = meta
             countdownShown = (meta.countdown, meta.countdownFraction)
+            countdownNote = meta.countdownNote
             if refetch { newMeta?.emulatedTime = 0 }   // not a newly emulated frame: no latency sample
             if crtOn { store.store(px, codes, meta) }
             read = true
@@ -506,6 +507,10 @@ final class GameRenderer {
     /// The countdown of the latest picture (FrameMeta.countdown; 0 = none).
     private var countdownShown: (Int, Double) = (0, 0)
     private var countdownTexture: MTLTexture?
+    /// "Retrying from here" under the numeral (the resume countdown starts an overwrite).
+    private var countdownNote = false
+    private var noteTexture: MTLTexture?
+    private var noteTextureKey = ""
 
     /// Draws the countdown numeral centred on the picture, inside the game's own pass (so full
     /// screen stays direct-to-display): a texture drawn by CoreGraphics, premultiplied alpha.
@@ -533,6 +538,40 @@ final class GameRenderer {
         enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
         enc.setFragmentTexture(tex, index: 0)
         enc.setFragmentBytes(&alpha, length: MemoryLayout<Float>.size, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        if countdownNote { drawCountdownNote(enc, size: size, under: r, alpha: Float(v.alpha)) }
+    }
+
+    /// The overwrite notice, one line under the countdown's disc (same pass, same blend).
+    private func drawCountdownNote(_ enc: MTLRenderCommandEncoder, size: CGSize, under disc: CGRect, alpha: Float) {
+        let text = String(localized: "Retrying from here")
+        let height = max(12, Int((disc.height * 0.2).rounded()))
+        let key = "\(height)|\(text)"
+        if noteTextureKey != key {
+            noteTexture = nil
+            noteTextureKey = key
+            if let (px, w, h) = CountdownOverlay.renderNote(text, height: height) {
+                let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+                td.usage = .shaderRead
+                td.storageMode = .shared
+                if let t = device.makeTexture(descriptor: td) {
+                    t.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
+                    noteTexture = t
+                }
+            }
+        }
+        guard let tex = noteTexture else { return }
+        let w = CGFloat(tex.width), h = CGFloat(tex.height)
+        let r = CGRect(x: disc.midX - w / 2, y: disc.maxY + h * 0.35, width: w, height: h)
+        var rect = SIMD4<Float>(Float(r.minX / size.width * 2 - 1), Float((size.height - r.maxY) / size.height * 2 - 1),
+                                Float(r.width / size.width * 2), Float(r.height / size.height * 2))
+        var uvr = SIMD4<Float>(0, 0, 1, 1)
+        var a = alpha
+        enc.setRenderPipelineState(pillPipeline)
+        enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+        enc.setFragmentTexture(tex, index: 0)
+        enc.setFragmentBytes(&a, length: MemoryLayout<Float>.size, index: 0)
         enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
     }
 

@@ -10,11 +10,13 @@ struct SeekBarOverlay: View {
     @ObservedObject private var markers = AppModel.shared.markers
     @ObservedObject private var monitor = AppModel.shared.input.controllerMonitor
     @ObservedObject private var strip = FilmstripModel.shared
+    /// Rewind / fast-forward held during play: the bar only (no hints, no input).
+    var readOnly = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            bar
-            hints
+            bar.allowsHitTesting(!readOnly)
+            if !readOnly { hints }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: QMStyle.radius).fill(QMStyle.panel))
@@ -26,6 +28,7 @@ struct SeekBarOverlay: View {
 
     private var bar: some View {
         HStack(spacing: 12) {
+            TapeStatusLabel()   // the status label at the bar's left (non-default states only)
             ClockView { st in
                 Text(verbatim: st.practicing ? Engine.timecode(forFrame: st.practiceFrame) : Engine.timecode(forFrame: st.frame))
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
@@ -38,11 +41,16 @@ struct SeekBarOverlay: View {
         }
     }
 
-    /// The buttons of the state: the bar (cancel Resume · L R Step · confirm Marker · ↑ Markers ·
-    /// Y Practice · X A/B n), a marker (←→ Select · confirm Move · X Delete · cancel Back) or editing one
-    /// (←→ ±1 · L R Move · confirm Done · cancel Undo). Keyboard only: Space resumes.
+    /// The buttons of the state (docs/design/VTR_UX.md, at most 4 on the bar): cancel Play (Continue
+    /// at the end of the tape) · L R Step · L2 R2 Rewind / Fast-forward · ↑ Practice sections. After ↑
+    /// (the marker lane): cancel Play · confirm Marker · ↑ Markers · Y Practice · X A/B n; a marker
+    /// (←→ Select · confirm Move · X Delete · cancel Back) or editing one (←→ ±1 · L R Move · confirm
+    /// Done · cancel Undo). The buttons themselves are unchanged. Keyboard only: Space plays.
+    /// The Undo / Make Video chips sit at the row's right end.
     private var hints: some View {
         let g = HintGlyphs.current(monitor.controllers)
+        let st = model.status
+        let play = st.endOfTape ? String(localized: "Continue (tape)") : String(localized: "Play")
         var items: [([PadGlyph.Kind], String)] = []
         if g.controller {
             let on = markers.active
@@ -52,15 +60,20 @@ struct SeekBarOverlay: View {
             } else if on && markers.focus >= 0 {
                 items = [([.dpadLR], "A ⇄ B"), ([.key(g.confirm)], String(localized: "Move")),
                          ([.key(g.x)], String(localized: "Delete")), ([.key(g.back)], String(localized: "Back"))]
+            } else if on && markers.lane {
+                items = [([.key(g.back)], play)]
+                if markers.frames.count < 2 { items.append(([.key(g.confirm)], String(localized: "Marker"))) }
+                if !markers.frames.isEmpty { items.append(([.dpadUp], String(localized: "Markers"))) }
+                if !markers.frames.isEmpty { items.append(([.key(g.y)], String(localized: "Practice"))) }
+                items.append(([.key(g.x)], "A/B \(min(7, max(0, strip.selectedSlot)) + 1)"))
             } else {
-                items = [([.key(g.back)], String(localized: "Resume")), ([.key(g.l), .key(g.r)], String(localized: "Step"))]
-                if on && markers.frames.count < 2 { items.append(([.key(g.confirm)], String(localized: "Marker"))) }
-                if on && !markers.frames.isEmpty { items.append(([.dpadUp], String(localized: "Markers"))) }
-                if on && !markers.frames.isEmpty { items.append(([.key(g.y)], String(localized: "Practice"))) }
-                if on { items.append(([.key(g.x)], "A/B \(min(7, max(0, strip.selectedSlot)) + 1)")) }
+                let rw = model.controlName(for: "hk.rewind") ?? "L2", ff = model.controlName(for: "hk.fast_forward") ?? "R2"
+                items = [([.key(g.back)], play), ([.key(g.l), .key(g.r)], String(localized: "Step")),
+                         ([.key(rw), .key(ff)], String(localized: "Rewind") + " / " + String(localized: "Fast-forward"))]
+                if on { items.append(([.dpadUp], Self.withoutArrow(String(localized: "↑ Practice sections")))) }
             }
         } else {
-            items = [([.key(String(localized: "Space"))], String(localized: "Resume"))]
+            items = [([.key(String(localized: "Space"))], play)]
         }
         return HStack(spacing: 18) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -73,8 +86,15 @@ struct SeekBarOverlay: View {
             if markers.active, let h = markers.hint {
                 Text(verbatim: h).font(QMStyle.hint).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
             }
+            if st.canUndo { UndoChip() }
+            if st.endOfTape && !st.practicing { MakeVideoChip() }
         }
-        .frame(height: 20)
+        .frame(height: 28)
+    }
+
+    /// "↑ Practice sections" after the D-pad glyph (which is the ↑).
+    private static func withoutArrow(_ s: String) -> String {
+        s.hasPrefix("↑") ? String(s.dropFirst()).trimmingCharacters(in: .whitespaces) : s
     }
 
     private func rightTime(_ st: EmuStatus) -> String {

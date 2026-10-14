@@ -6,6 +6,33 @@
 import AppKit
 
 enum CountdownOverlay {
+    /// One line of text on a dark capsule, `height` px tall: (premultiplied BGRA, width, height).
+    static func renderNote(_ text: String, height: Int) -> ([UInt8], Int, Int)? {
+        let h = max(8, height)
+        let font = NSFont.systemFont(ofSize: CGFloat(h) * 0.55, weight: .semibold)
+        let attr = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white])
+        let w = Int((attr.size().width + CGFloat(h) * 1.1).rounded(.up))
+        guard w > 0 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let ok = bytes.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+            else { return false }
+            let r = CGFloat(h) / 2
+            ctx.setFillColor(CGColor(srgbRed: 20 / 255, green: 20 / 255, blue: 22 / 255, alpha: 0.7))
+            ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerWidth: r, cornerHeight: r, transform: nil))
+            ctx.fillPath()
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            let ts = attr.size()
+            attr.draw(at: CGPoint(x: (CGFloat(w) - ts.width) / 2, y: (CGFloat(h) - ts.height) / 2))
+            NSGraphicsContext.restoreGraphicsState()
+            return true
+        }
+        return ok ? (bytes, w, h) : nil
+    }
+
     /// side x side premultiplied BGRA (top row first), or nil.
     static func render(_ v: rnf_countdown_visual, side: Int) -> [UInt8]? {
         var bytes = [UInt8](repeating: 0, count: side * side * 4)

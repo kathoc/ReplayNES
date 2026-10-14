@@ -39,6 +39,8 @@ struct FrameMeta {
     // The practice countdown drawn over this picture (MetalView; 0 = none): 3, 2, 1 and how far into it.
     var countdown = 0
     var countdownFraction = 0.0
+    /// The resume countdown starts an overwrite: "Retrying from here" under the numeral.
+    var countdownNote = false
 }
 
 /// Latest-frame mailbox between the emulation thread (writer) and the Metal view (reader).

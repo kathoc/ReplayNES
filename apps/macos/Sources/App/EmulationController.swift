@@ -103,6 +103,17 @@ struct EmuStatus: Equatable {
     var practiceLooping = false      // hold / rewind animation in progress
     var practiceLoops = 0            // completed A->B loops since entering
     var countdown = 0                // the countdown at A (practice) or before play resumes: 3, 2, 1 (0 = none)
+    // VTR transport (docs/design/VTR_UX.md).
+    var canUndo = false              // the Undo chip: a retry started less than 10 s ago
+    var endOfTape = false            // paused at the end of the tape (length > 0, not practicing)
+
+    var mode: rn_mode { practicing ? RN_MODE_PRACTICE : recording ? RN_MODE_RECORD : RN_MODE_REPLAY }
+    /// The bottom-left status label ("" in normal play; "End of tape" when playback / fast-forward
+    /// stopped there).
+    var tapeLabel: String {
+        Tape.statusLabel(mode: mode, rewinding: rewinding, fastForward: fastForward, slow: slow,
+                         endOfTape: endOfTake && !practicing)
+    }
 }
 
 /// Bookmarks, takes and practice slots (published when they change).
@@ -191,6 +202,19 @@ final class EmulationController {
     private var resumeCountdown = ResumeCountdown()
     /// A modal UI (menu, dialog) is up: a practice run waits (hold, sweep, countdown too).
     var modalHold = false
+    // VTR transport (docs/design/VTR_UX.md).
+    /// Retry undo (10 s) and burst collapse: live play steps go through it.
+    private let retry = RetryTracker()
+    /// The running resume countdown starts an overwrite: "Retrying from here" under the numeral.
+    private var resumeOverwrite = false
+    private var countdownNoteShown: Bool { resumeOverwrite && countdown > 0 && resumeCountdown.active }
+    private var canUndoShown = false
+    private var rewindStartedPaused = true      // the current L2 hold began while paused
+    private var rewindStoppedTick = false        // a tape rewind ended this tick (coach)
+    private var lastTakeoverSeq: UInt64 = 0      // InputManager.takeoverSequence seen (Playback -> play)
+    /// First-run coach lines (nil: off, e.g. scripted runs). Shown bits go to onCoach.
+    private var coach: CoachTips?
+    var onCoach: ((rnf_coach_tip, UInt32) -> Void)?
     // VTR effect (display only): while active, the shown picture is vtrBase through the effect.
     private let vtr = VTREffect()
     private var vtrEnabled = true
@@ -330,6 +354,10 @@ final class EmulationController {
         practiceLoop.reset()
         reel.release()
         resumeCountdown.cancel()   // a fresh recording runs at once
+        resumeOverwrite = false
+        retry.reset()
+        canUndoShown = false
+        lastTakeoverSeq = input.takeoverSequence
         countdown = 0
         vtr.reset()
         vtrOn = false
@@ -384,6 +412,7 @@ final class EmulationController {
         meta.tickStart = tickStart
         meta.countdown = countdown
         meta.countdownFraction = countdownFraction
+        meta.countdownNote = countdownNoteShown
         // Only the session's own frame has PPU codes (not a reel picture of the sweep).
         let signal = v == session?.video ? session?.videoIndices : nil
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
@@ -738,8 +767,29 @@ final class EmulationController {
             if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }
             statusDirty = true
         }
-        if session != nil { tickVTR() }
+        if let s = session {
+            tickVTR()
+            tickTapeUX(s)
+        }
         return r
+    }
+
+    /// The Undo chip's window and the first-run coach lines (cheap: a few comparisons a tick).
+    private func tickTapeUX(_ s: EngineSession) {
+        let now = HostClock.seconds(HostClock.now())
+        let mode = s.mode
+        let cu = retry.canUndo(now: now, activeTake: s.activeTake, mode: mode)
+        if cu != canUndoShown { canUndoShown = cu; statusDirty = true }
+        defer { rewindStoppedTick = false }
+        guard let c = coach else { return }
+        let len = s.takeLength
+        let playing = !paused && !modalHold && countdown == 0 && !rewinding && !fastForward && mode != RN_MODE_REPLAY
+        let atEnd = paused && mode != RN_MODE_PRACTICE && len > 0 && s.frame >= len && !rewinding
+        let tip = c.tick(now: now, playing: playing, rewindStopped: rewindStoppedTick, pausedAtEnd: atEnd, takeLength: len)
+        if tip != RNF_COACH_NONE {
+            let bits = c.shown
+            onMain { [weak self] in self?.onCoach?(tip, bits) }
+        }
     }
 
     private func tickFrameCore() -> (EngineSession?, autosave: Bool) {
@@ -753,6 +803,18 @@ final class EmulationController {
         rn_input_poll_hotkeys(input.handle, &edges, &held)
         let wasPaused = paused
         if edges != 0 { handleHotkeys(edges, s) }
+        // Playback (docs/design/VTR_UX.md): a game button pressed while watching (playing or paused
+        // on the seek bar; not behind a menu / dialog, not while winding the tape) plays from here.
+        let takeover = input.takeoverSequence
+        if takeover != lastTakeoverSeq {
+            lastTakeoverSeq = takeover
+            let winding = uiRewindHeld || uiFastForwardHeld || held & UInt32(RN_HK_REWIND | RN_HK_FAST_FORWARD) != 0
+            if s.mode == RN_MODE_REPLAY && !ff.active && !modalHold && !winding {
+                var p1: UInt8 = 0, p2: UInt8 = 0
+                rn_input_sample_game(input.handle, s.frame, &p1, &p2)
+                if p1 | p2 != 0 { playFromHere(s) }
+            }
+        }
         if pressSeq != lastPressSeq {
             lastPressSeq = pressSeq
             // Game input is not emulated while paused; say so once instead of silently ignoring it.
@@ -767,7 +829,9 @@ final class EmulationController {
         let ffHeld = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
         // Rewind / fast-forward held during the resume countdown: back to paused (they then act as
         // when paused; releasing them never starts a countdown).
-        if resumeCountdown.active && (rewindHeld || ffHeld) { paused = true }
+        // A retry interrupted by another rewind counts as play (its release counts down again).
+        let interruptedCountdown = resumeCountdown.active && (rewindHeld || ffHeld)
+        if interruptedCountdown { paused = true }
         var wantRewind = rewindHeld
         if practicing {
             // L2 + R2 together: back to A at once (the return of B). Only while playing: paused (the
@@ -786,11 +850,14 @@ final class EmulationController {
         let wantFF = !wantRewind && !practicing && ffHeld
         if wantRewind != rewinding || wantFF != fastForward { statusDirty = true }
         if wantFF && !fastForward { beginFastForward(s) }
-        if !wantFF && fastForward { endFastForward(s) }
+        if !wantFF && fastForward { endFastForward(s, release: true) }
         fastForward = wantFF
 
         if wantRewind {
-            if !rewinding { resetFlashFilter() } // rewind start: a new continuous (backwards) sequence
+            if !rewinding {
+                resetFlashFilter() // rewind start: a new continuous (backwards) sequence
+                rewindStartedPaused = paused && !interruptedCountdown
+            }
             rewinding = true
             if practicing { practiceLoop.interrupt() }
             audio.setMuted(true)
@@ -810,7 +877,15 @@ final class EmulationController {
         if rewinding {
             rewinding = false
             rewindTicks = 0
-            if pauseAfterRewind { paused = true }
+            if !practicing { rewindStoppedTick = true }
+            if pauseAfterRewind {
+                paused = true
+            } else if !rewindStartedPaused && !practicing {
+                // A rewind during play: the resume countdown (with "Retrying from here" before the
+                // end of the tape), then play. A hold started while paused ends paused.
+                paused = true
+                resume()
+            }
         }
 
         if let t = scrubTarget {
@@ -879,21 +954,26 @@ final class EmulationController {
         ffTicks = 0
         ffBlocked = s.frame >= s.takeLength
         if ffBlocked {
-            notice(s.takeLength == 0 ? String(localized: "Nothing has been recorded yet, so there is nothing to fast-forward") : String(localized: "End of the recording (fast-forward stops here)"))
+            // At the end of the tape: the status label says so.
+            if s.takeLength == 0 { notice(String(localized: "Nothing has been recorded yet, so there is nothing to fast-forward")) }
+            else { endOfTake = true; statusDirty = true }
             return
         }
         do { try ff.begin(s) } catch { reportError(String(localized: "Couldn’t fast-forward"), error); ffBlocked = true }
         endOfTake = false
     }
 
-    func endFastForward(_ s: EngineSession) {
+    /// `release`: R2 let go (otherwise another command ends it and decides what follows).
+    func endFastForward(_ s: EngineSession, release: Bool = false) {
         let wasActive = ff.active
         do { try ff.end(s) } catch { reportError(String(localized: "Couldn’t return to record mode"), error) }
         fastForward = false
         statusDirty = true
         if wasActive {
-            // Like rewind: optionally stop where the user let go, so recording never resumes by surprise.
-            paused = pauseAfterRewind ? true : (pausedBeforeFF || s.frame >= s.takeLength)
+            // Like rewind: a hold started during play counts down and plays on from where the user
+            // let go (not at the end of the tape: paused there); pauseAfterRewind stops there.
+            paused = true
+            if release && !pausedBeforeFF && !pauseAfterRewind && s.frame < s.takeLength { resume() }
         }
         ffBlocked = false
     }
@@ -907,9 +987,11 @@ final class EmulationController {
             let (n, atEnd) = try ff.step(s, frames: Int(rnf_hold_speed(Int32(ffTicks))))
             if n > 0 { publishVideo(continuous: true) }
             if atEnd {
+                // Paused at the end of the tape; the status label says so (no notice).
                 ffBlocked = true
                 paused = true
-                notice(String(localized: "Reached the end of the recording (paused here)"))
+                endOfTake = true
+                statusDirty = true
             }
         } catch {
             ffBlocked = true
@@ -1014,12 +1096,32 @@ final class EmulationController {
     /// menu's Resume / closing it, Re-record from Here): 3, 2, 1 over the paused picture first when
     /// the resume countdown applies (ResumeCountdown). `paused = false` resumes at once (a fresh
     /// recording, practice start).
+    /// Paused at the end of the tape in Playback, play continues the tape (record mode).
+    /// Resuming before the end of the tape in record mode overwrites it: "Retrying from here" under
+    /// the countdown (a toast when the countdown is off).
     func resume() {
         guard paused else { return }
-        paused = false
-        if let s = session {
-            resumeCountdown.start(now: HostClock.seconds(HostClock.now()), mode: s.mode, practicePhase: practiceLoop.phase)
+        guard let s = session else { paused = false; return }
+        if s.mode == RN_MODE_REPLAY && !ff.active && s.takeLength > 0 && s.frame >= s.takeLength {
+            do { try s.setMode(RN_MODE_RECORD) } catch { reportError(String(localized: "Couldn’t switch modes"), error) }
         }
+        endOfTake = false
+        paused = false
+        let overwrite = Tape.overwrites(mode: s.mode, frame: s.frame, length: s.takeLength)
+        let counting = resumeCountdown.start(now: HostClock.seconds(HostClock.now()), mode: s.mode, practicePhase: practiceLoop.phase)
+        resumeOverwrite = overwrite && counting
+        if overwrite && !counting { notice(String(localized: "Retrying from here")) }
+        statusDirty = true
+    }
+
+    /// Playback: a game button switches to play (record mode) at the cursor, with the resume
+    /// countdown (and "Retrying from here" before the end of the tape).
+    private func playFromHere(_ s: EngineSession) {
+        do { try s.setMode(RN_MODE_RECORD) } catch { reportError(String(localized: "Couldn’t switch modes"), error); return }
+        endOfTake = false
+        advanceRemaining = 0
+        paused = true
+        resume()
     }
 
     /// The resume countdown's tick (unpaused): true = counting (nothing is emulated; the game input is
@@ -1080,6 +1182,7 @@ final class EmulationController {
             var m = vtrBaseMeta
             m.countdown = countdown
             m.countdownFraction = countdownFraction
+            m.countdownNote = countdownNoteShown
             vtrBaseMeta.emulatedTime = 0   // shown again next tick: not a newly emulated frame
             vtrOut.withUnsafeBufferPointer { frames.publish($0.baseAddress!, meta: m, codes: nil) }
         } else if vtrOn {
@@ -1087,6 +1190,7 @@ final class EmulationController {
             var m = vtrBaseMeta
             m.countdown = countdown
             m.countdownFraction = countdownFraction
+            m.countdownNote = countdownNoteShown
             // The clean picture again, with its PPU codes while they still describe it (a still after
             // a rewind then takes the CRT's RF path like every other frame, not the RGB input).
             // (Not the session's codes for a picture the flash filter changed: the RGB path then.)
@@ -1246,11 +1350,8 @@ final class EmulationController {
 
     func togglePause() {
         advanceRemaining = 0
-        guard let s = session else { paused.toggle(); return }
-        if paused, RecordToggle.shouldRestartOnPlay(recording: s.mode == RN_MODE_RECORD, practicing: s.mode == RN_MODE_PRACTICE,
-                                                     frame: s.frame, takeLength: s.takeLength) {
-            seekCommand(0) // replay at the take end: play from the beginning
-        }
+        guard session != nil else { paused.toggle(); return }
+        // Paused at the end of the tape: play continues it (resume(); no restart from the beginning).
         if paused { resume() } else { paused = true }
     }
 
@@ -1274,9 +1375,12 @@ final class EmulationController {
         let ev = live ? pendingEvents : 0
         pendingEvents = 0
         let before = s.frame
+        let takeBefore = s.activeTake
         let info: rn_step_info
         do {
-            info = try frameStep ? s.transportStep(p1: p1, p2: p2, events: ev) : s.step(p1: p1, p2: p2, events: ev)
+            // Live play goes through the retry tracker (undo window, burst collapse).
+            info = try frameStep ? s.transportStep(p1: p1, p2: p2, events: ev)
+                                 : retry.step(s, now: HostClock.seconds(tSample), p1: p1, p2: p2, events: ev)
         } catch {
             paused = true
             advanceRemaining = 0
@@ -1284,7 +1388,7 @@ final class EmulationController {
             return false
         }
         if mode != RN_MODE_PRACTICE && info.end_of_take != 0 && info.frame == before {
-            if !endOfTake { notice(String(localized: "End of the take (press “Record” to continue recording from here)")) }
+            // Playback reached the end of the tape: paused there (the status label says so).
             endOfTake = true
             paused = true
             advanceRemaining = 0
@@ -1292,9 +1396,10 @@ final class EmulationController {
             return false
         }
         endOfTake = false
-        if info.branched != 0 {
+        if info.branched != 0 || info.take_id != takeBefore {
+            // A retry (branch, or a cut / dropped attempt): the frames up to the cursor are the same.
             structureDirty = true
-            notice(String(localized: "Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it"))
+            thumbnails.rebase(toTake: info.take_id, keepThrough: before)
         }
         let tEmu = HostClock.now()
         if let v = s.video {
@@ -1322,7 +1427,7 @@ final class EmulationController {
         if on(RN_HK_POWER_CYCLE) { requestEvent(UInt8(RN_EV_POWER_CYCLE)) }
         if on(RN_HK_TOGGLE_MODE) { toggleRecord() }
         if on(RN_HK_SAVE) { save(nil) }
-        if on(RN_HK_UNDO_TAKE) { undoTake() }
+        if on(RN_HK_UNDO_TAKE) { undoRetry() }
     }
 
     // MARK: operations (emulation thread)
@@ -1366,7 +1471,7 @@ final class EmulationController {
         advanceRemaining = 0
         paused = !plan.play
         if plan.play { audio.setMuted(true) } // unmuted by the next audible step
-        notice(plan.record ? String(localized: "Record mode: recording continues from here with your next input") : String(localized: "Playback mode: plays the recorded take (nothing is recorded)"))
+        // No notice: the status label shows Playback (docs/design/VTR_UX.md).
     }
 
     /// "Re-record from Here": record from the current frame (branches if before the take end).
@@ -1384,20 +1489,34 @@ final class EmulationController {
         do { try s.addBookmark(name: n); structureDirty = true } catch { reportError(String(localized: "Couldn’t add the bookmark"), error) }
     }
 
-    func undoTake() {
-        guard let s = session else { return }
-        if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
-        if s.undoDepth == 0 { notice(String(localized: "There is no previous take to go back to")); return }
+    /// "↶ Undo" (the chip, hk.undo_take, the menu) within 10 s of a retry: back to the continuation
+    /// from before it (the attempt is dropped), paused there with the seek bar.
+    func undoRetry() {
+        guard let s = session, s.mode != RN_MODE_PRACTICE else { return }
+        if fastForward { endFastForward(s); uiFastForwardHeld = false }
+        let takesBefore = s.takes(), old = s.activeTake
         do {
-            try s.undoTakeSwitch()
-            paused = true
-            endOfTake = false
-            audio.setMuted(true)
-            publishVideo()
-            structureDirty = true
-            notice(String(localized: "Went back to the previous take"))
-        } catch { reportError(String(localized: "Couldn’t go back to the previous take"), error) }
+            try retry.applyUndo(s, now: HostClock.seconds(HostClock.now()))
+        } catch let e as RNError where e.status == RN_ERR_NOT_FOUND {
+            return   // the window closed meanwhile
+        } catch {
+            reportError(String(localized: "Couldn’t undo the retry"), error)
+            return
+        }
+        paused = true
+        endOfTake = false
+        advanceRemaining = 0
+        audio.setMuted(true)
+        thumbnails.rebase(toTake: s.activeTake, keepThrough: TakeLineage.sharedPrefix(takesBefore, old, s.activeTake))
+        publishVideo()
+        captureThumbnail(s, frame: s.frame)
+        structureDirty = true
+        canUndoShown = false
+        notice(String(localized: "Back to before the retry"))
     }
+
+    /// The first-run coach lines (nil: never shown, e.g. a scripted run); `shown` = the bits so far.
+    func setCoach(shown: UInt32?) { coach = shown.map { CoachTips(shown: $0) } }
 
     func save(_ done: ((Bool) -> Void)?) {
         guard let s = session else { done.map { f in onMain { f(false) } }; return }
@@ -1509,6 +1628,8 @@ final class EmulationController {
                 st.practiceLoops = practiceLoop.loops
             }
             st.countdown = countdown   // the practice countdown, or the resume countdown
+            st.canUndo = canUndoShown
+            st.endOfTape = paused && s.mode != RN_MODE_PRACTICE && s.takeLength > 0 && s.frame >= s.takeLength
         }
         statusDirty = false
         var structure: SessionStructure?

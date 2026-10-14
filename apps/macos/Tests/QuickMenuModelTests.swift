@@ -121,13 +121,30 @@ final class MenuMigrationTests: XCTestCase {
         XCTAssertTrue(plan.unbind.isEmpty)
         XCTAssertEqual(Set(plan.bind.map { "\($0.0)=\($0.1)" }),
                        ["gc0:leftShoulder+gc0:rightShoulder=hk.menu", "kb:53=hk.menu"])
-        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 6)
+        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 7)
         XCTAssertTrue(InputCatalog.isCombo("gc0:leftShoulder+gc0:rightShoulder"))
         XCTAssertFalse(InputCatalog.isCombo("kb:53"))
         // Esc already bound to something else: kept, only the pad chord is added.
         let esc = InputCatalog.menuMigration(InputCatalog.Config(bindings: old + [(input: "kb:53", action: "hk.pause")],
                                                                  turboPeriod: 4, turboDuty: 2, socd: "neutral", analogThreshold: 0.5))
         XCTAssertEqual(esc.bind.map(\.0), ["gc0:leftShoulder+gc0:rightShoulder"])
+    }
+
+    /// Layout 6 -> 7 (InputManager.migrateControllerLayout): pad 1's L3 = Undo Retry, unless L3 is taken.
+    func testLayout6FileGetsUndoOnL3() {
+        let defaults = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
+        XCTAssertEqual(InputCatalog.boundInput(defaults, action: "hk.undo_take", pad: true), "gc0:leftThumb")
+        let old = defaults.bindings.filter { $0.action != "hk.undo_take" || !$0.input.hasPrefix("gc0:") }
+        func config(_ b: [(input: String, action: String)]) -> InputCatalog.Config {
+            InputCatalog.Config(bindings: b, turboPeriod: defaults.turboPeriod, turboDuty: defaults.turboDuty,
+                                socd: defaults.socd, analogThreshold: defaults.analogThreshold)
+        }
+        let plan = InputCatalog.undoMigration(config(old))
+        XCTAssertTrue(plan.unbind.isEmpty)
+        XCTAssertEqual(plan.bind.map { "\($0.0)=\($0.1)" }, ["gc0:leftThumb=hk.undo_take"])
+        // L3 already used: kept.
+        let taken = InputCatalog.undoMigration(config(old + [(input: "gc0:leftThumb", action: "hk.bookmark")]))
+        XCTAssertTrue(taken.bind.isEmpty)
     }
 }
 
@@ -165,6 +182,14 @@ final class CoreMenuTreeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(quick, 0)
         XCTAssertEqual(items(quick).map { String(cString: $0.id) }, QMPage.topTileIDs)
         XCTAssertEqual(QMPage.top.capacity, QMPage.topTileIDs.count)
+    }
+
+    /// docs/design/VTR_UX.md: Retry = Play from Here, Bookmarks, Playback, Start Over (no takes page).
+    func testRetryPageMatches() {
+        let retry = Int(rnf_menu_page_find(menu, "retry"))
+        XCTAssertGreaterThanOrEqual(retry, 0)
+        XCTAssertEqual(items(retry).map { String(cString: $0.id) }, QMPage.retryItemIDs.map { "retry." + $0 })
+        XCTAssertLessThan(rnf_menu_page_find(menu, "takes"), 0)
     }
 
     func testEveryCorePageHasASwiftPageAndBack() {
@@ -253,7 +278,7 @@ final class QuickMenuModelTests: XCTestCase {
         XCTAssertTrue(QMPage.assign.paged)
         XCTAssertEqual(QMPage.assign.layout, .rows)
         XCTAssertTrue(QMPage.crtDetail.isSettings)
-        XCTAssertFalse(QMPage.takes.isSettings)
+        XCTAssertFalse(QMPage.bookmarks.isSettings)
     }
 
     func testGridMovement() {

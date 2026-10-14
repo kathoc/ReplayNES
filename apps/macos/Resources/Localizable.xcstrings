@@ -41,16 +41,6 @@
         }
       }
     },
-    "%@ (%llu frames, 60.0988 fps, AAC 48 kHz)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@（%2$llu フレーム, 60.0988 fps, AAC 48 kHz）"
-          }
-        }
-      }
-    },
     "%@ (4:3, with black bars)": {
       "localizations": {
         "ja": {
@@ -530,16 +520,6 @@
         }
       }
     },
-    "A: switch to this take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A：このテイクに切り替え"
-          }
-        }
-      }
-    },
     "About": {
       "localizations": {
         "ja": {
@@ -692,16 +672,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "コマ送り"
-          }
-        }
-      }
-    },
-    "Advanced": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "詳細設定"
           }
         }
       }
@@ -1016,26 +986,6 @@
         }
       }
     },
-    "Back to Previous Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行へ戻す"
-          }
-        }
-      }
-    },
-    "Back to Recording": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画に戻る"
-          }
-        }
-      }
-    },
     "Back to the game": {
       "localizations": {
         "ja": {
@@ -1052,16 +1002,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゲーム一覧に戻る"
-          }
-        }
-      }
-    },
-    "Back to the take before the last re-recording": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最後に録り直す前のテイクへ"
           }
         }
       }
@@ -1142,16 +1082,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "下ボタン"
-          }
-        }
-      }
-    },
-    "Branched from #%llu at %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "#%1$lluの%2$@から分岐"
           }
         }
       }
@@ -1400,16 +1330,6 @@
         }
       }
     },
-    "Continue recording from this point as a new take (the old one is kept)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この位置から新しいテイクで録画を続けます（前のテイクは残ります）"
-          }
-        }
-      }
-    },
     "Controls Details": {
       "localizations": {
         "ja": {
@@ -1430,12 +1350,13 @@
         }
       }
     },
-    "Continue recording from this point (the old continuation is kept)": {
+    "Couldn’t make the video": {
+      "comment": "Error title after Make Video failed",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ここから録画を続けます（元の続きは残ります）"
+            "value": "動画にできませんでした"
           }
         }
       }
@@ -1446,6 +1367,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "前回の続きから再開できませんでした（何も削除されていません）。ライブラリからもう一度試してください"
+          }
+        }
+      }
+    },
+    "Couldn’t undo the retry": {
+      "comment": "Error title",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり直しを取り消せませんでした"
           }
         }
       }
@@ -1466,16 +1398,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ブラウン管の詳細"
-          }
-        }
-      }
-    },
-    "CRT Display settings, 4:3 (best with 1280×960). Slower.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CRT表示の設定で描画（4:3、1280×960向き）。書き出しは遅くなります。"
           }
         }
       }
@@ -1740,16 +1662,6 @@
         }
       }
     },
-    "Couldn’t go back to the previous take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行へ戻せませんでした"
-          }
-        }
-      }
-    },
     "Couldn’t jump to the bookmark": {
       "localizations": {
         "ja": {
@@ -1980,16 +1892,6 @@
         }
       }
     },
-    "Current": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在"
-          }
-        }
-      }
-    },
     "D-pad": {
       "localizations": {
         "ja": {
@@ -2076,16 +1978,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "削除"
-          }
-        }
-      }
-    },
-    "Delete every take and record again from power-on": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全テイクを消して電源投入から録り直します"
           }
         }
       }
@@ -2343,26 +2235,6 @@
         }
       }
     },
-    "End Frame": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "終了フレーム"
-          }
-        }
-      }
-    },
-    "End of Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク終端"
-          }
-        }
-      }
-    },
     "End of tape": {
       "comment": "Status label: stopped at the end of the recording",
       "localizations": {
@@ -2384,32 +2256,12 @@
         }
       }
     },
-    "End of the take (press “Record” to continue recording from here)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイクの終端です（「録画」ボタンで、ここから続きを録画できます）"
-          }
-        }
-      }
-    },
     "Erase the tape and play again from power-on": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "テープを消して電源投入からやり直します"
-          }
-        }
-      }
-    },
-    "Every take of this project; switch to another one": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このプロジェクトの全テイク。別のテイクに切り替えます"
           }
         }
       }
@@ -2424,82 +2276,12 @@
         }
       }
     },
-    "Every try of this recording": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この録画のすべての試行"
-          }
-        }
-      }
-    },
     "Export": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "書き出す"
-          }
-        }
-      }
-    },
-    "Export a video or stream the picture": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "動画に書き出す・配信に映す"
-          }
-        }
-      }
-    },
-    "Export a video or send the picture to other apps": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "動画に書き出す・他のアプリに映像を送る"
-          }
-        }
-      }
-    },
-    "Export MP4": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "MP4に書き出す"
-          }
-        }
-      }
-    },
-    "Export MP4…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "MP4に書き出す…"
-          }
-        }
-      }
-    },
-    "Export finished": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "書き出しが完了しました"
-          }
-        }
-      }
-    },
-    "Export to MP4": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "MP4に書き出す"
           }
         }
       }
@@ -2524,12 +2306,13 @@
         }
       }
     },
-    "Export…": {
+    "Fast-forward": {
+      "comment": "Paused seek bar hint (L2 / R2: Rewind / Fast-forward)",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "書き出す…"
+            "value": "早送り"
           }
         }
       }
@@ -2650,16 +2433,6 @@
         }
       }
     },
-    "First take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最初のテイク"
-          }
-        }
-      }
-    },
     "Flash Notice": {
       "localizations": {
         "ja": {
@@ -2770,16 +2543,6 @@
         }
       }
     },
-    "from #%llu at %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "#%1$llu の %2$@ から"
-          }
-        }
-      }
-    },
     "Full Screen": {
       "localizations": {
         "ja": {
@@ -2826,16 +2589,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ジャンル"
-          }
-        }
-      }
-    },
-    "Go back to the take before your last retry": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "直前の録り直しの前のテイクに戻ります"
           }
         }
       }
@@ -3634,6 +3387,17 @@
         }
       }
     },
+    "Make Video…": {
+      "comment": "Menu bar: Share > Make Video…",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画にする…"
+          }
+        }
+      }
+    },
     "Making video… %lld%%": {
       "comment": "Status label while an export runs",
       "localizations": {
@@ -3832,16 +3596,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "長さ"
-          }
-        }
-      }
-    },
-    "Level: %@ (Settings → Display). Off: exactly as recorded.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "強さ: %@（設定 → 表示）。オフなら記録どおりの映像です。"
           }
         }
       }
@@ -4382,16 +4136,6 @@
         }
       }
     },
-    "No takes yet": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイクはまだありません"
-          }
-        }
-      }
-    },
     "None": {
       "localizations": {
         "ja": {
@@ -4678,16 +4422,6 @@
         }
       }
     },
-    "other take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "別テイク"
-          }
-        }
-      }
-    },
     "Output": {
       "localizations": {
         "ja": {
@@ -4918,52 +4652,12 @@
         }
       }
     },
-    "PLAY": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生"
-          }
-        }
-      }
-    },
-    "Play the recorded take without recording": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画したテイクを再生します（録画しません）"
-          }
-        }
-      }
-    },
     "Play the sound at half speed in slow motion": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "スロー中も半分の速さで音を鳴らす"
-          }
-        }
-      }
-    },
-    "Playback mode: plays the recorded take (nothing is recorded)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生モード：録画したテイクを再生します（録画はされません）"
-          }
-        }
-      }
-    },
-    "Playback mode: plays the recording without changing it": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生モード：録画を変えずに再生します"
           }
         }
       }
@@ -4984,16 +4678,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "プレイヤー2"
-          }
-        }
-      }
-    },
-    "Playing": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用中"
           }
         }
       }
@@ -5178,16 +4862,6 @@
         }
       }
     },
-    "Practicing (not recording)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習中（録画しない）"
-          }
-        }
-      }
-    },
     "Press a key…": {
       "localizations": {
         "ja": {
@@ -5224,46 +4898,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "連射A・Bの1秒あたりの回数"
-          }
-        }
-      }
-    },
-    "Prev Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行"
-          }
-        }
-      }
-    },
-    "Previous Attempt": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行へ"
-          }
-        }
-      }
-    },
-    "Previous Try": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行へ"
-          }
-        }
-      }
-    },
-    "Processing": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加工"
           }
         }
       }
@@ -5490,46 +5124,6 @@
         }
       }
     },
-    "Record again from here or go back to an earlier attempt": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから録り直す・前の試行に戻る"
-          }
-        }
-      }
-    },
-    "REC": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画"
-          }
-        }
-      }
-    },
-    "Record again from here, go back to an earlier try": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから録り直す・前の試行へ戻る"
-          }
-        }
-      }
-    },
-    "Record from Here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから録り直す"
-          }
-        }
-      }
-    },
     "Reduce Flashing": {
       "localizations": {
         "ja": {
@@ -5640,16 +5234,6 @@
         }
       }
     },
-    "Restart Recording": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "記録を最初からやり直す"
-          }
-        }
-      }
-    },
     "Restore": {
       "localizations": {
         "ja": {
@@ -5670,16 +5254,6 @@
         }
       }
     },
-    "Return to record mode and continue from here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画モードに戻り、ここから続けます"
-          }
-        }
-      }
-    },
     "Retry (menu)": {
       "comment": "Quick Menu tile / page (start over from an earlier point); not the error retry button",
       "localizations": {
@@ -5693,16 +5267,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "やり直す"
-          }
-        }
-      }
-    },
-    "Rewinding": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "巻き戻し中"
           }
         }
       }
@@ -5743,56 +5307,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "範囲"
-          }
-        }
-      }
-    },
-    "Reached the end of the recording (paused here)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画済みの終端に着きました（ここで一時停止）"
-          }
-        }
-      }
-    },
-    "Rec/Play": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画/再生"
-          }
-        }
-      }
-    },
-    "Record / playback (ends practice)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画 / 再生 切替（練習中は練習をやめる）"
-          }
-        }
-      }
-    },
-    "Record mode: recording continues from here with your next input": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録画モード：次の入力から、この位置の続きを録画します"
-          }
-        }
-      }
-    },
-    "Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここから新しいテイクで録画しています。元の続きは消えずに残っています（「前の試行へ戻す」で戻せます）"
           }
         }
       }
@@ -6139,16 +5653,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "今すぐプロジェクトを保存"
-          }
-        }
-      }
-    },
-    "Save the take as one continuous video": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイクをひと続きの動画に保存"
           }
         }
       }
@@ -6729,16 +6233,6 @@
         }
       }
     },
-    "Slow %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スロー %@"
-          }
-        }
-      }
-    },
     "Slow 1/2": {
       "localizations": {
         "ja": {
@@ -6901,16 +6395,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "電源投入から新しいプロジェクトを始めます"
-          }
-        }
-      }
-    },
-    "Start Frame": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開始フレーム"
           }
         }
       }
@@ -7177,36 +6661,6 @@
         }
       }
     },
-    "Take #%llu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク #%llu"
-          }
-        }
-      }
-    },
-    "Takes": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク一覧"
-          }
-        }
-      }
-    },
-    "Takes…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク一覧…"
-          }
-        }
-      }
-    },
     "The current project has unsaved changes": {
       "localizations": {
         "ja": {
@@ -7317,16 +6771,6 @@
         }
       }
     },
-    "The take you are on": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今のテイク"
-          }
-        }
-      }
-    },
     "The update failed.": {
       "localizations": {
         "ja": {
@@ -7363,16 +6807,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "書き出すフレームがありません (テイクが空です)"
-          }
-        }
-      }
-    },
-    "There is no previous take to go back to": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "戻せる試行はありません"
           }
         }
       }
@@ -7677,22 +7111,23 @@
         }
       }
     },
+    "Undo Retry": {
+      "comment": "Menu bar: Retry > Undo Retry (within 10 s of a retry)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり直しを取り消す"
+          }
+        }
+      }
+    },
     "Undo Retry (for 10 s after a retry)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "やり直しの取り消し（やり直してから10秒間）"
-          }
-        }
-      }
-    },
-    "Undo steps available: %lld": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "取り消せる操作: %lld"
           }
         }
       }
@@ -7904,16 +7339,6 @@
         }
       }
     },
-    "Watch Replay": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "見返す"
-          }
-        }
-      }
-    },
     "Watch the tape without changing it (a game button plays from there)": {
       "localizations": {
         "ja": {
@@ -7930,26 +7355,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Webサイト"
-          }
-        }
-      }
-    },
-    "Watch": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再生モード"
-          }
-        }
-      }
-    },
-    "Went back to the previous take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "前の試行へ戻しました"
           }
         }
       }
@@ -7990,16 +7395,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "メニューで決定に使うボタン（もう一方は戻る）"
-          }
-        }
-      }
-    },
-    "Whole Take": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テイク全体"
           }
         }
       }
@@ -8197,16 +7592,6 @@
         }
       }
     },
-    "▶▶ Fast-Forward": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "▶▶ 早送り"
-          }
-        }
-      }
-    },
     "▶▶ Fast-forward": {
       "comment": "Status label (bottom left) while the tape fast-forwards",
       "localizations": {
@@ -8218,16 +7603,6 @@
         }
       }
     },
-    "▶︎ Replay": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "▶︎ 再生中"
-          }
-        }
-      }
-    },
     "◀◀ Rewind": {
       "comment": "Status label (bottom left) while the tape rewinds",
       "localizations": {
@@ -8235,16 +7610,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "◀◀ 巻き戻し"
-          }
-        }
-      }
-    },
-    "◀◀ Rewinding": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "◀◀ 巻き戻し中"
           }
         }
       }

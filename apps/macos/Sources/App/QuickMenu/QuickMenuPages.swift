@@ -61,7 +61,6 @@ enum QuickMenuPages {
         switch p {
         case .top: return QMContent(items: top(m, menu))
         case .retry: return QMContent(items: retry(m, menu))
-        case .takes: return takes(m, menu)
         case .bookmarks: return bookmarks(m, menu)
         case .practice:
             // The countdown after returning to A (3, 2, 1): toggled on this page (Options / ⧉).
@@ -98,11 +97,11 @@ enum QuickMenuPages {
                    detail: String(localized: "Close the menu and keep playing"), enabled: has,
                    confirm: { menu.close(resume: true) }),
             QMItem(id: "retry", icon: "clock.arrow.circlepath", title: String(localized: "Retry"),
-                   detail: String(localized: "Record again from here or go back to an earlier attempt"), enabled: has, page: .retry),
+                   detail: String(localized: "Play again from here, watch the tape, start over"), enabled: has, page: .retry),
             QMItem(id: "practice", icon: "target", title: String(localized: "Practice"),
                    detail: String(localized: "Repeat a section from A to B (nothing is recorded)"), enabled: has, page: .practice),
             QMItem(id: "share", icon: "square.and.arrow.up", title: String(localized: "Share"),
-                   detail: String(localized: "Export a video or stream the picture"), page: .share),
+                   detail: String(localized: "Make a video or send the picture to other apps"), page: .share),
             QMItem(id: "settings", icon: "gearshape.fill", title: String(localized: "Settings"),
                    detail: String(localized: "Display, controls, sound and system"), page: .display),
             QMItem(id: "game", icon: "gamecontroller.fill", title: String(localized: "Game"),
@@ -116,51 +115,26 @@ enum QuickMenuPages {
 
     private static func retry(_ m: AppModel, _ menu: QuickMenuController) -> [QMItem] {
         let st = m.status
-        let replay = !st.recording && !st.practicing
-        return [
-            QMItem(id: "rerecord", icon: "record.circle", title: String(localized: "Record from Here"),
-                   detail: String(localized: "Continue recording from this point as a new take (the old one is kept)"),
+        let playback = !st.recording && !st.practicing
+        let items = [
+            QMItem(id: "rerecord", icon: "play.fill", title: String(localized: "Play from Here"),
+                   detail: String(localized: "Play on from this point (the tape continues from here)"),
                    confirm: { menu.close(resume: false); m.rerecordHere() }),
-            QMItem(id: "undo", icon: "arrow.uturn.backward", title: String(localized: "Previous Attempt"),
-                   detail: String(localized: "Go back to the take before your last retry"),
-                   enabled: st.undoDepth > 0 && !st.practicing, confirm: { m.undoTake() }),
-            QMItem(id: "watch", icon: replay ? "record.circle.fill" : "play.rectangle", title: replay ? String(localized: "Back to Recording") : String(localized: "Watch Replay"),
-                   detail: replay ? String(localized: "Return to record mode and continue from here")
-                                  : String(localized: "Play the recorded take without recording"),
-                   enabled: st.takeLength > 0 && !st.practicing,
-                   confirm: { menu.close(resume: false); m.toggleRecord() }),
-            QMItem(id: "takes", icon: "square.stack.3d.up", title: String(localized: "Takes"),
-                   detail: String(localized: "Every take of this project; switch to another one"),
-                   enabled: !st.practicing, subtitle: "\(st.takeCount)", page: .takes),
             QMItem(id: "bookmarks", icon: "bookmark", title: String(localized: "Bookmarks"),
                    detail: String(localized: "Jump to a marked point, or mark this one"),
                    enabled: !st.practicing, subtitle: "\(m.bookmarks.count)", page: .bookmarks),
+            QMItem(id: "playback", icon: "play.rectangle", title: String(localized: "Playback (menu)"),
+                   detail: String(localized: "Watch the tape without changing it (a game button plays from there)"),
+                   enabled: st.takeLength > 0 && !st.practicing,
+                   subtitle: playback ? String(localized: "On") : String(localized: "Off"),
+                   confirm: { menu.close(resume: false); m.toggleRecord() }),
             // The Reset Project confirmation (as Game › Reset › Start Over): keep A/B, backup.
-            QMItem(id: "restart", icon: "backward.end", title: String(localized: "Restart Recording"),
-                   detail: String(localized: "Delete every take and record again from power-on"),
+            QMItem(id: "restart", icon: "backward.end", title: String(localized: "Start Over"),
+                   detail: String(localized: "Erase the tape and play again from power-on"),
                    confirm: { m.resetProjectPrompt() }),
         ]
-    }
-
-    private static func takes(_ m: AppModel, _ menu: QuickMenuController) -> QMContent {
-        // The active take first, then the newest.
-        let all = m.takes.sorted { a, b in
-            if a.isActive != b.isActive { return a.isActive }
-            return a.createdSeq > b.createdSeq
-        }
-        let per = QMPage.takes.capacity
-        let pages = QuickMenuNav.pageCount(items: all.count, perPage: per)
-        let range = QuickMenuNav.pageRange(items: all.count, perPage: per, page: menu.listPageIndex(.takes))
-        let items = all[range].map { t in
-            QMItem(id: "take\(t.id)", icon: "square.stack.3d.up", title: String(localized: "Take #\(t.id)"),
-                   detail: t.parentID == 0 ? String(localized: "First take")
-                                           : String(localized: "Branched from #\(t.parentID) at \(Engine.timecode(forFrame: t.branchFrame))"),
-                   subtitle: Engine.timecode(forFrame: t.length),
-                   badge: t.isActive ? String(localized: "Playing") : nil,
-                   confirm: t.isActive ? { menu.close(resume: false) } : { m.activateTake(t.id); menu.close(resume: false) },
-                   verb: String(localized: "Switch"))
-        }
-        return QMContent(items: items, pageCount: pages, caption: pages > 1 ? "\(menu.listPageIndex(.takes) + 1) / \(pages)" : nil)
+        assert(items.map(\.id) == QMPage.retryItemIDs, "the shared core's Retry page")
+        return items
     }
 
     private static func bookmarks(_ m: AppModel, _ menu: QuickMenuController) -> QMContent {
@@ -234,8 +208,8 @@ enum QuickMenuPages {
     private static func share(_ m: AppModel, _ menu: QuickMenuController) -> [QMItem] {
         let stream = StreamOutputModel.shared
         return [
-            QMItem(id: "export", icon: "film", title: String(localized: "Export MP4"),
-                   detail: String(localized: "Save the take as one continuous video"),
+            QMItem(id: "export", icon: "film", title: String(localized: "Make Video"),
+                   detail: String(localized: "Turn the tape into a video file"),
                    enabled: m.status.hasSession && m.status.takeLength > 0,
                    confirm: { menu.close(resume: false); m.showExport = true }),
             QMItem(id: "stream", icon: "dot.radiowaves.left.and.right", title: String(localized: "Stream Output"),
@@ -589,7 +563,7 @@ enum QuickMenuPages {
                    detail: String(localized: "Turn the console off and on again (recorded)"), enabled: live,
                    confirm: { menu.close(resume: true); m.powerCycle() }),
             QMItem(id: "startOver", icon: "trash", title: String(localized: "Start Over"),
-                   detail: String(localized: "Delete every take and record again from power-on"),
+                   detail: String(localized: "Erase the tape and play again from power-on"),
                    confirm: { m.resetProjectPrompt() }),
         ]
     }

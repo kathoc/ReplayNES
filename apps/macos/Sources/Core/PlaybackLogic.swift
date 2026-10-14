@@ -288,3 +288,122 @@ struct FastForwardSession {
     /// Record mode as the user sees it (record mode is only suspended during the hold).
     func showsRecording(_ s: EngineSession) -> Bool { rnf_fast_forward_shows_recording(box.ptr, s.handle) != 0 }
 }
+
+// MARK: - VTR transport (docs/design/VTR_UX.md)
+
+/// One tape, always running: the overwrite rule, the status label, the play position.
+enum Tape {
+    /// Resuming live play at `frame` overwrites the tape (a new attempt: "Retrying from here").
+    /// A game button in Playback switches to record first: pass RN_MODE_RECORD for that resume.
+    static func overwrites(mode: rn_mode, frame: UInt64, length: UInt64) -> Bool {
+        rnf_tape_overwrites(mode, frame, length) != 0
+    }
+
+    /// The bottom-left label: only non-default states ("" in normal play; never REC).
+    static func statusLabel(mode: rn_mode, rewinding: Bool, fastForward: Bool, slow: SlowRate, endOfTape: Bool) -> String {
+        var st = rnf_tape_status(mode: mode, rewinding: rewinding ? 1 : 0, fast_forward: fastForward ? 1 : 0,
+                                 slow_rate: Int32(slow.rawValue), end_of_tape: endOfTape ? 1 : 0)
+        return rnfString(rnf_tape_status_label(&st))
+    }
+
+    static func timeLabel(_ frames: UInt64) -> String { rnfString(rnf_tape_time_label(frames)) }
+}
+
+/// Retry undo (RNF_RETRY_UNDO_SECONDS) and burst collapse (rnf_retry): one per emulation
+/// controller, used on its thread only. Live play steps go through `step` instead of rn_step.
+final class RetryTracker {
+    static let undoSeconds = RNF_RETRY_UNDO_SECONDS
+    private let handle: OpaquePointer
+
+    init() { handle = rnf_retry_new()! }
+    deinit { rnf_retry_free(handle) }
+
+    /// A new / opened / reset / closed session: forgets everything.
+    func reset() { rnf_retry_reset(handle) }
+
+    /// The Undo chip is offered.
+    func canUndo(now: Double, activeTake: UInt64, mode: rn_mode) -> Bool {
+        rnf_retry_can_undo(handle, now, activeTake, mode) != 0
+    }
+
+    func undoLeft(now: Double) -> Double { rnf_retry_undo_left(handle, now) }
+
+    /// rn_step for live play (not frame steps / fast-forward): an overwrite is begun, cut or
+    /// dropped as planned. The active take may change (truncate, branch).
+    @discardableResult
+    func step(_ s: EngineSession, now: Double, p1: UInt8, p2: UInt8, events: UInt8) throws -> rn_step_info {
+        var info = rn_step_info()
+        try rnCheck(rnf_retry_step(handle, s.handle, now, p1, p2, events, &info))
+        return info
+    }
+
+    /// Undo pressed: back to the continuation from before the retry (RN_ERR_NOT_FOUND: nothing to undo).
+    func applyUndo(_ s: EngineSession, now: Double) throws { try rnCheck(rnf_retry_apply_undo(handle, s.handle, now)) }
+}
+
+/// The three first-run coach lines (rnf_coach): each shown once ever; the shown bits persist
+/// (UserDefaults "coachShown").
+final class CoachTips {
+    private let handle: OpaquePointer
+
+    init(shown: UInt32) { handle = rnf_coach_new(shown)! }
+    deinit { rnf_coach_free(handle) }
+
+    var shown: UInt32 { rnf_coach_shown(handle) }
+
+    /// Once per tick: the tip to show now (marked shown), or RNF_COACH_NONE.
+    func tick(now: Double, playing: Bool, rewindStopped: Bool, pausedAtEnd: Bool, takeLength: UInt64) -> rnf_coach_tip {
+        var i = rnf_coach_input(playing: playing ? 1 : 0, rewind_stopped: rewindStopped ? 1 : 0,
+                                paused_at_end: pausedAtEnd ? 1 : 0, take_length: takeLength)
+        return rnf_coach_tick(handle, now, &i)
+    }
+
+    /// The tip's line; `rewindControl` = the control bound to rewind ("L2", a key name).
+    static func text(_ tip: rnf_coach_tip, rewindControl: String?) -> String {
+        rnfString(rnf_coach_text(tip, rewindControl))
+    }
+}
+
+/// The Make Video dialog's choices (rnf_video_*): range, quality presets, the length · size line.
+enum MakeVideo {
+    enum Range: Hashable {
+        case all, toHere
+        case section(Int)   // A/B slot index
+    }
+
+    /// [start, end) cursor frames, nil when empty. `section`: the slot as visible on the active take.
+    static func frames(_ r: Range, cursor: UInt64, takeLength: UInt64, section: TimelineRange?) -> (start: UInt64, end: UInt64)? {
+        var a: UInt64 = 0, b: UInt64 = 0
+        let ok: Int32
+        switch r {
+        case .all: ok = rnf_video_range(RNF_VIDEO_RANGE_ALL, cursor, takeLength, nil, &a, &b)
+        case .toHere: ok = rnf_video_range(RNF_VIDEO_RANGE_TO_HERE, cursor, takeLength, nil, &a, &b)
+        case .section:
+            if var c = section?.cValue {
+                ok = rnf_video_range(RNF_VIDEO_RANGE_SECTION, cursor, takeLength, &c, &a, &b)
+            } else {
+                ok = 0
+            }
+        }
+        return ok != 0 ? (a, b) : nil
+    }
+
+    static let qualityPresets = Int(RNF_VIDEO_QUALITY_PRESETS)
+
+    /// Preset 0 Standard (YouTube), 1 High, 2 Small.
+    static func quality(_ preset: Int) -> ExportSettings.Quality {
+        ExportSettings.Quality(rawValue: Int(rnf_video_quality(Int32(preset)).rawValue)) ?? .standard
+    }
+
+    static func preset(for q: ExportSettings.Quality) -> Int {
+        Int(rnf_video_quality_preset(rnf_export_quality(rawValue: UInt32(q.rawValue))))
+    }
+
+    /// The preset's label (a catalog key from the core).
+    static func qualityLabel(_ preset: Int) -> String {
+        String(cString: rnf_l10n_lookup(rnf_video_quality_label(Int32(preset))))
+    }
+
+    /// "15:02 · approx. 91 MB" (an estimate).
+    static func summary(frames: UInt64, bytes: Int64) -> String { rnfString(rnf_video_summary(frames, bytes)) }
+}

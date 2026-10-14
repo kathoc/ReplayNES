@@ -65,16 +65,30 @@ struct ContentView: View {
                 // Full-screen play hides everything drawn over the game (FullScreenChrome.swift):
                 // any view above the layer forces a compositor pass.
                 if !model.immersive && !menu.isOpen && !model.showLibrary {
+                    // No REC / mode badge during play (docs/design/VTR_UX.md): only the display ones.
                     if !st.paused { StatusBadges().padding(12) }
                     if model.showLatency {
-                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, st.paused ? 126 : 0)
+                        VStack { Spacer(); HStack { LatencyOverlay(); Spacer() } }.padding(12).padding(.bottom, seekBarShown ? 126 : 0)
                     }
-                    if st.practicing && !st.paused {
-                        VStack { Spacer(); HStack { PracticeOverlay(); Spacer() } }
-                            .padding(.leading, 12).padding(.bottom, 12)
+                    if !seekBarShown {
+                        // Playing: the status label (non-default states only) at the bottom left, the
+                        // Undo chip at the bottom right for 10 s after a retry.
+                        VStack {
+                            Spacer()
+                            HStack(alignment: .bottom) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    TapeStatusLabel()
+                                    if st.practicing { PracticeOverlay() }
+                                }
+                                Spacer()
+                                if st.canUndo { UndoChip() }
+                            }
+                        }
+                        .padding(12)
                     }
-                    if st.paused {
-                        VStack { Spacer(); SeekBarOverlay() }
+                    if seekBarShown {
+                        // Paused: the seek bar; rewind / fast-forward held: the same bar, read-only.
+                        VStack { Spacer(); SeekBarOverlay(readOnly: !st.paused) }
                             .transition(.opacity)
                     }
                 }
@@ -118,9 +132,24 @@ struct ContentView: View {
                 .transition(.opacity)
                 .allowsHitTesting(false)
             }
+            if let t = model.actionToast, model.notice == nil {
+                VStack {
+                    Spacer()
+                    ActionToastView(toast: t)
+                        .padding(.bottom, st.paused && st.hasSession && !menu.isOpen ? 140 : 16)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.opacity)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(QMStyle.anim, value: st.paused)
+    }
+
+    /// The seek bar: paused, or (read-only) while the tape is rewound / fast-forwarded.
+    private var seekBarShown: Bool {
+        let st = model.status
+        return st.paused || st.rewinding || st.fastForward
     }
 
     private var showSwiftUIPill: Bool {
@@ -130,18 +159,13 @@ struct ContentView: View {
     }
 }
 
-/// Transient states only (record mode is the default and shows nothing).
+/// Display states only (flash reduction, stream output). The tape's state (Playback, Rewind,
+/// Slow, End of tape, Practice) is the bottom-left status label (TapeStatusLabel).
 struct StatusBadges: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         let st = model.status
         HStack(spacing: 6) {
-            if st.practicing { badge(String(localized: "Practicing (not recording)"), .orange) }
-            else if !st.recording { badge(String(localized: "▶︎ Replay"), .green) }
-            if st.rewinding { badge(String(localized: "◀◀ Rewinding"), .orange) }
-            else if st.fastForward { badge(String(localized: "▶▶ Fast-Forward"), .blue) }
-            else if st.slow != .normal { badge(String(localized: "Slow \(st.slow.label)"), .purple) }
-            if st.endOfTake && !st.practicing { badge(String(localized: "End of Take"), .yellow) }
             if st.flashActive && model.showFlashIndicator { badge(String(localized: "Flash Reduction Active"), .teal) }
             StreamOutputBadge()
         }

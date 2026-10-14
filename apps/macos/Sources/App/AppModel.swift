@@ -38,7 +38,8 @@ final class AppModel: ObservableObject {
     var status = EmuStatus() {
         willSet { if newValue.coarse != status.coarse { objectWillChange.send() } }
         didSet {
-            if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession {
+            if status.paused != oldValue.paused || status.hasSession != oldValue.hasSession
+                || status.rewinding != oldValue.rewinding || status.fastForward != oldValue.fastForward {
                 updateImmersive()
                 updateUIMode()
             } else if status.coarse != oldValue.coarse {
@@ -62,7 +63,7 @@ final class AppModel: ObservableObject {
     /// Menu pill label after "Menu": the connected controller's chord, or Esc.
     @Published var pillGlyph = "Esc"
     /// Launched by a script (--snapshot, --inject-*, ...): no first-run effects are remembered.
-    var scripted = false
+    var scripted = false { didSet { if scripted != oldValue { configureCoach() } } }
     /// Full-screen play with the window chrome hidden (FullScreenChrome.swift).
     @Published var immersive = false
     let chrome = FullScreenChrome()
@@ -73,6 +74,9 @@ final class AppModel: ObservableObject {
     @Published var inputConfig: InputCatalog.Config
     @Published var stats = LatencyMeter.Snapshot()
     @Published var notice: String?
+    /// A toast with buttons ("Video saved" · Open · Share): clickable, gone after a while.
+    @Published var actionToast: ActionToast?
+    private var actionToastWork: DispatchWorkItem?
     @Published var showExport = false { didSet { markers.sync(); if showExport != oldValue { updateUIMode() } } }
     @Published var exportJob: ExportJob? { didSet { updateUIMode() } }
     /// The export sheet takes the controller's navigation (its buttons) except while an export
@@ -169,6 +173,7 @@ final class AppModel: ObservableObject {
         }
         emu.onError = { [weak self] title, msg in self?.showError(title, msg) }
         emu.onNotice = { [weak self] text in self?.flash(text) }
+        emu.onCoach = { [weak self] tip, shown in self?.showCoach(tip, shown: shown) }
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
         input.onControllersChanged = { [weak self] c in self?.controllers = c; self?.updateUIMode() }
         input.onNav = { [weak self] n in self?.handleNav(n) }
@@ -215,7 +220,7 @@ final class AppModel: ObservableObject {
         let st = status
         menu.set(MenuValues(hasSession: st.hasSession, paused: st.paused, recording: st.recording,
                             practicing: st.practicing, slowOn: st.slow != .normal, takeEmpty: st.takeLength == 0,
-                            undoAvailable: st.undoDepth > 0, integerScale: integerScale,
+                            undoAvailable: st.canUndo, integerScale: integerScale,
                             showLatency: showLatency, streamOn: StreamOutputModel.shared.isOn))
     }
 
@@ -233,6 +238,7 @@ final class AppModel: ObservableObject {
             .store(in: &menuSubs)
         emu.audio.volume = Float(volume)
         pushPrefs()
+        configureCoach()
         emu.start()
         input.startKeyboard()
         input.startControllers()
@@ -262,6 +268,37 @@ final class AppModel: ObservableObject {
         let w = DispatchWorkItem { [weak self] in self?.notice = nil }
         noticeWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + max(4, seconds), execute: w)
+    }
+
+    /// A toast with buttons (clickable; the pad reaches the same things through the menu).
+    func flashActions(_ text: String, actions: [ActionToast.Action], seconds: Double = 10) {
+        actionToast = ActionToast(text: text, actions: actions)
+        actionToastWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.actionToast = nil }
+        actionToastWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: w)
+    }
+
+    /// First-run coach lines (docs/design/VTR_UX.md): off for scripted runs.
+    private func configureCoach() {
+        let shown: UInt32? = scripted ? nil : UInt32(truncatingIfNeeded: UserDefaults.standard.integer(forKey: "coachShown"))
+        emu.perform { e in e.setCoach(shown: shown) }
+    }
+
+    private func showCoach(_ tip: rnf_coach_tip, shown: UInt32) {
+        UserDefaults.standard.set(Int(shown), forKey: "coachShown")
+        flash(CoachTips.text(tip, rewindControl: controlName(for: "hk.rewind")), seconds: 5)
+    }
+
+    /// The name of the control bound to `action` for the device in use: pad 1's button as printed
+    /// on the connected controller, else the keyboard key (nil: unbound).
+    func controlName(for action: String) -> String? {
+        let config = inputConfig
+        if let c = input.controllerMonitor.controllers.min(by: { $0.slot < $1.slot }),
+           let id = InputCatalog.boundInput(config, action: action, pad: true), let colon = id.firstIndex(of: ":") {
+            return c.label(String(id[id.index(after: colon)...]))
+        }
+        return InputCatalog.boundInput(config, action: action, pad: false).map { InputCatalog.displayName($0) }
     }
 
     /// An error the user has to acknowledge: an in-window dialog with OK (`then` runs after it).
@@ -347,7 +384,8 @@ final class AppModel: ObservableObject {
     func powerCycle() { emu.perform { e in e.requestEvent(UInt8(RN_EV_POWER_CYCLE)) } }
     func setRecording(_ r: Bool) { emu.perform { e in e.setRecording(r) } }
     func rerecordHere() { emu.perform { e in e.rerecordHere() } }
-    func undoTake() { emu.perform { e in e.undoTake() } }
+    /// "↶ Undo": back to before the last retry (10 s window; EmulationController.undoRetry).
+    func undoRetry() { emu.perform { e in e.undoRetry() } }
     func addBookmark() { emu.perform { e in e.addBookmark(name: nil) } }
 
     func gotoBookmark(_ id: UInt64) {
@@ -1134,7 +1172,8 @@ final class AppModel: ObservableObject {
                 }
                 return
             }
-            // The renderer is an independent snapshot: encode off the emulation thread.
+            // The renderer is an independent snapshot: encode off the emulation thread (play goes on;
+            // the status label shows the progress).
             DispatchQueue.global(qos: .utility).async {
                 let exporter = MP4Exporter(renderer: renderer, settings: settings, url: url)
                 var lastUI = 0.0
@@ -1146,14 +1185,46 @@ final class AppModel: ObservableObject {
                             DispatchQueue.main.async { job.done = d; job.total = t }
                         }
                     }, isCancelled: { job.isCancelled })
-                    DispatchQueue.main.async { job.result = r; job.finished = true; self.updateUIMode() }
+                    DispatchQueue.main.async { job.result = r; job.finished = true; self.exportFinished(job) }
                 } catch {
                     let msg = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                    DispatchQueue.main.async { job.error = msg; job.finished = true; self.updateUIMode() }
+                    DispatchQueue.main.async { job.error = msg; job.finished = true; self.exportFinished(job) }
                 }
             }
         }
     }
+
+    /// The video is done: "Video saved" with Open / Share (a failure is a dialog; a cancel says
+    /// nothing). The Make Video dialog, if open, shows the result too.
+    private func exportFinished(_ job: ExportJob) {
+        if !showExport && exportJob === job { exportJob = nil }
+        updateUIMode()
+        if let r = job.result {
+            let url = r.url
+            flashActions(String(localized: "Video saved"), actions: [
+                ActionToast.Action(label: String(localized: "Open")) { NSWorkspace.shared.open(url) },
+                ActionToast.Action(label: String(localized: "Share"), share: url),
+            ])
+        } else if !job.isCancelled, let e = job.error {
+            showError(String(localized: "Couldn’t make the video"), e)
+        }
+    }
+}
+
+/// A toast with buttons (AppModel.flashActions).
+struct ActionToast: Identifiable {
+    struct Action: Identifiable {
+        let id = UUID()
+        let label: String
+        var share: URL?
+        var run: () -> Void = {}
+        init(label: String, run: @escaping () -> Void) { self.label = label; self.run = run }
+        /// A share button for the file (the system's share menu).
+        init(label: String, share: URL) { self.label = label; self.share = share }
+    }
+    let id = UUID()
+    let text: String
+    let actions: [Action]
 }
 
 /// The status for views that show frame counters (timecodes, timeline playhead, progress):

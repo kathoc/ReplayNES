@@ -17,11 +17,12 @@
 //                                                toggleRecord, togglePause, panel, fill, integer,
 //                                                quit (the ⌘Q path: persist + resume record),
 //                                                fullscreen, crtOn, crtOff, export (sheet), latency,
-//                                                open:<library|takes|guide|settings>, menu:<page> (Quick Menu
+//                                                open:<library|guide|settings>, menu:<page> (Quick Menu
 //                                                at a QMPage raw value, e.g. menu:display), menuClose,
 //                                                nav:<up|down|left|right|confirm|back|x|y|pagePrev|pageNext|menu|escape>,
 //                                                libraryClose, windowSize:<w>x<h> (content size, points),
-//                                                seek:<frame>, bookmark, undoTake,
+//                                                seek:<frame>, bookmark, undoRetry (undoTake), rewind:<tenths of a second held>,
+//                                                makeVideo (the Make Video dialog),
 //                                                resetProject:<keep A/B 0|1> (no dialog), resetPrompt, windowWidth:<pt>,
 //                                                libraryPlay:<ROM name> (A on that game in the library: save
 //                                                question first), closeGame, dumpDialog (logs the in-window
@@ -117,12 +118,14 @@ extension AppModel {
                 case "fullscreen": self.mainWindow?.toggleFullScreen(nil)
                 case "crtOn": CRTSettingsModel.shared.launchOverride = true
                 case "crtOff": CRTSettingsModel.shared.enabled = false
-                case "export": self.showExport = true
+                case "export", "makeVideo": self.showExport = true
+                case "rewind":   // hold Rewind for n tenths of a second (as L2)
+                    self.setRewindHeld(true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(1, n)) / 10) { self.setRewindHeld(false) }
                 case "latency": self.showLatency.toggle()
                 case "open" where parts.count > 2:
                     switch parts[2] {
                     case "library": self.showLibraryScreen()
-                    case "takes": self.quickMenu.open(at: .takes)
                     case "guide": self.quickMenu.open(at: .controller)
                     default: self.quickMenu.open(at: .display)
                     }
@@ -140,7 +143,7 @@ extension AppModel {
                     if wh.count == 2, let w = self.mainWindow { w.setContentSize(NSSize(width: wh[0], height: wh[1])) }
                 case "seek": self.seek(to: UInt64(max(0, n)))
                 case "bookmark": self.addBookmark()
-                case "undoTake": self.undoTake()
+                case "undoTake", "undoRetry": self.undoRetry()
                 case "resetProject":  // n = 1: keep the A/B sections; a saved project is backed up (resetBackupFolder)
                     let saved = self.current.map { !$0.isTemp && !$0.projectPath.isEmpty } ?? false
                     self.performProjectReset(keepPracticeSlots: n != 0, backup: saved)
