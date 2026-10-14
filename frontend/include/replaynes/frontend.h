@@ -316,7 +316,7 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 6
+#define RNF_CONTROLLER_LAYOUT_VERSION 7
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
@@ -372,6 +372,9 @@ void rnf_input_menu_migration(const rnf_binding* bindings, size_t count, rnf_key
 int rnf_input_element_ignored(const char* element);
 /* Layout 5 -> 6: drops every binding whose input is (or a combo containing) an ignored element. */
 void rnf_input_home_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
+/* Layout 6 -> 7: pad 1's L3 (left stick press) = "hk.undo_take" (Undo of a retry, docs/design/VTR_UX.md)
+ * unless L3 is taken or the action already has a pad 1 button. */
+void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Two-input combo ids "<a>+<b>" (both held: e.g. the Quick Menu's L+R). rnf_input_combo_id: NULL for an empty
  * part. rnf_input_combo_split: 1 and the parts (free with rnf_string_free) when id is a combo. */
 char* rnf_input_combo_id(const char* a, const char* b);
@@ -568,7 +571,7 @@ int rnf_hold_speed(int tick);
  * one row), the pages behind them, the four Settings pages and their detail pages, and the navigation
  * state (back stack with each level's focus, breadcrumb, L / R page switching). No page scrolls: a page
  * holds at most RNF_MENU_MAX_ITEMS items (the Practice page's A/B slots: RNF_MENU_MAX_CARDS cards, 4 x 2);
- * user data (takes, bookmarks, key bindings, projects) are LIST pages whose rows the frontend counts
+ * user data (bookmarks, key bindings, projects) are LIST pages whose rows the frontend counts
  * (rnf_menu_set_count) and that show RNF_MENU_MAX_ITEMS rows per sheet (L / R or moving past the end
  * switch sheets). Labels / descriptions are localization keys (rnf_menu_text); icons are Tabler Icons
  * names (SF Symbols on macOS are the frontend's mapping). Values and enabled states are the frontend's.
@@ -1393,6 +1396,122 @@ typedef struct rnf_stream_layout {
 rnf_stream_layout rnf_stream_output_layout(rnf_stream_size size, int par87);
 int rnf_stream_output_multiple(rnf_stream_size size); /* 0 for the fixed 4:3 canvases */
 char* rnf_stream_output_label(rnf_stream_size size, int par87);
+
+/* ================================================================== VTR transport UX
+ * docs/design/VTR_UX.md: one tape, always running. Playing IS recording; the UI speaks video-deck
+ * words (Play, Rewind, Fast-forward, Pause, Make Video) and never shows takes. Takes stay in the data
+ * (and the .nesrec): a retry still branches, but a rapid retry drops the attempt it abandons
+ * (rn_take_truncate / rn_take_discard) and a retry can be undone for RNF_RETRY_UNDO_SECONDS. */
+
+/* Resuming live play now overwrites the tape (a new attempt from the cursor; the overwrite notice
+ * "Retrying from here" goes under the resume countdown): RECORD at a cursor before the end. A game
+ * button in REPLAY switches to RECORD first, so pass RN_MODE_RECORD for that resume. */
+int rnf_tape_overwrites(rn_mode mode, uint64_t frame, uint64_t take_length);
+
+/* Retry undo + burst collapse. The undo target is the continuation from before the retry (the take
+ * and the position the tape was last played to on it - normally its end). An attempt the user left
+ * within RNF_RETRY_UNDO_SECONDS of starting it (rewound / stepped back and retried) is not kept: the
+ * next retry of it cuts it at the cursor (inside its own frames) or drops it (before them), and the
+ * undo target stays the one from before the burst. Pure state + session helpers; not thread-safe. */
+#define RNF_RETRY_UNDO_SECONDS 10.0
+typedef struct rnf_retry rnf_retry;
+rnf_retry* rnf_retry_new(void);
+void rnf_retry_free(rnf_retry* r);
+/* A new / reopened / reset session (or anything that replaced the takes): forgets everything. */
+void rnf_retry_reset(rnf_retry* r);
+/* After every frame played forward in real time (RECORD or REPLAY live play; not frame steps,
+ * fast-forward or seeks): where the tape was last played to. */
+void rnf_retry_note_play(rnf_retry* r, double now, uint64_t take_id, uint64_t frame);
+typedef struct rnf_retry_plan {
+  int truncate;          /* 1: rn_take_truncate before the first step (the retry starts inside the
+                            abandoned attempt's own frames: it is cut there and continued) */
+  uint64_t discard_take; /* != 0: rn_take_discard(discard_take) after the first step (the abandoned
+                            attempt; a refusal just keeps it) */
+} rnf_retry_plan;
+/* An overwrite starts now, right before its first rn_step: the active take, its branch frame
+ * (rn_take_info.branch_frame), the cursor and the take length. Then rnf_retry_started(rn_active_take)
+ * after that step. */
+rnf_retry_plan rnf_retry_begin(rnf_retry* r, double now, uint64_t active_take, uint64_t branch_frame, uint64_t frame,
+                               uint64_t take_length);
+void rnf_retry_started(rnf_retry* r, double now, uint64_t attempt_take);
+/* The Undo chip ("↶ Undo"): available for RNF_RETRY_UNDO_SECONDS after the attempt started, while it
+ * is the active take and the session is not practicing. */
+int rnf_retry_can_undo(const rnf_retry* r, double now, uint64_t active_take, rn_mode mode);
+double rnf_retry_undo_left(const rnf_retry* r, double now); /* seconds of the window left (0: closed) */
+typedef struct rnf_retry_undo_plan {
+  uint64_t take;         /* rn_take_activate(take) */
+  uint64_t frame;        /* then rn_seek(min(frame, rn_take_length)) */
+  uint64_t discard_take; /* then rn_take_discard(discard_take): the attempt */
+} rnf_retry_undo_plan;
+/* Undo pressed: 1 + the plan when available (closes the window); 0 otherwise. */
+int rnf_retry_undo(rnf_retry* r, double now, uint64_t active_take, rn_mode mode, rnf_retry_undo_plan* out);
+/* Session helpers (they call the above and the engine):
+ * rnf_retry_step = rn_step for live play (RECORD / REPLAY / PRACTICE play, not frame steps): an
+ *   overwrite (RECORD, cursor < length) is begun / cut / dropped as planned, played frames are noted.
+ *   The active take may change (truncate, branch): refresh take-dependent state when info->take_id
+ *   differs from before or info->branched.
+ * rnf_retry_apply_undo: performs the undo (the frontend then pauses there and refreshes its take
+ *   state). RN_ERR_NOT_FOUND when not available. */
+rn_status rnf_retry_step(rnf_retry* r, rn_session* s, double now, uint8_t p1, uint8_t p2, uint8_t events,
+                         rn_step_info* info);
+rn_status rnf_retry_apply_undo(rnf_retry* r, rn_session* s, double now);
+
+/* The status label at the bottom left of the bar area: only non-default states (normal live play
+ * shows nothing; no REC / record badge anywhere), joined with " · ": transport (◀◀ Rewind,
+ * ▶▶ Fast-forward or End of tape) · Slow ½ / ¼ · Playback / Practice (not recorded). Empty string
+ * when there is nothing to show; free with rnf_string_free. */
+typedef struct rnf_tape_status {
+  rn_mode mode;
+  int rewinding, fast_forward;
+  int slow_rate;   /* 1 = normal, 2 = 1/2, 4 = 1/4 */
+  int end_of_tape; /* stopped at the end of the tape by playback / fast-forward */
+} rnf_tape_status;
+char* rnf_tape_status_label(const rnf_tape_status* st);
+/* Play position as m:ss (h:mm:ss from an hour) of a frame count (NTSC rate). */
+char* rnf_tape_time_label(uint64_t frames);
+
+/* First-run coach lines (three one-line toasts, each shown once ever; the frontend persists the
+ * shown bits): REWIND 5 s after the first game start ("Hold L2 to rewind", with the bound control),
+ * RETRY at the first stop after a rewind ("Play from here to retry"), VIDEO the first time paused at
+ * the end of the tape with >= RNF_COACH_VIDEO_MIN_FRAMES recorded. At most one tip per
+ * RNF_COACH_GAP_SECONDS (a tip that comes due meanwhile waits). */
+typedef enum rnf_coach_tip { RNF_COACH_NONE = 0, RNF_COACH_REWIND = 1, RNF_COACH_RETRY = 2, RNF_COACH_VIDEO = 4 } rnf_coach_tip;
+#define RNF_COACH_REWIND_DELAY_SECONDS 5.0
+#define RNF_COACH_GAP_SECONDS 6.0
+#define RNF_COACH_VIDEO_MIN_FRAMES 3600
+typedef struct rnf_coach rnf_coach;
+rnf_coach* rnf_coach_new(uint32_t shown); /* bits of the tips shown before (settings) */
+void rnf_coach_free(rnf_coach* c);
+uint32_t rnf_coach_shown(const rnf_coach* c); /* persist when it changes */
+typedef struct rnf_coach_input {
+  int playing;        /* live game play is running (no pause / menu / dialog / countdown) */
+  int rewind_stopped; /* this tick a rewind of the tape ended (L2 released; not practice) */
+  int paused_at_end;  /* paused at the end of the tape */
+  uint64_t take_length;
+} rnf_coach_input;
+/* Once per UI tick: the tip to show now (marked shown), or RNF_COACH_NONE. */
+rnf_coach_tip rnf_coach_tick(rnf_coach* c, double now, const rnf_coach_input* in);
+/* The tip's one line, localized. rewind_control: the bound control's name for REWIND ("L2", a key
+ * name; NULL / "" = "L2"). Free with rnf_string_free. */
+char* rnf_coach_text(rnf_coach_tip tip, const char* rewind_control);
+
+/* Make Video dialog (one screen): Range (All / Up to here / Section n), Quality (Standard (YouTube) /
+ * High / Small = rnf_export_quality STANDARD / HIGH / LIGHT), Length · approx. size (an estimate:
+ * rnf_export_predict_size), Details › (codec, size, PAR, overscan, flash, CRT, bit rate: the existing
+ * settings). */
+typedef enum rnf_video_range_kind {
+  RNF_VIDEO_RANGE_ALL = 0, RNF_VIDEO_RANGE_TO_HERE = 1, RNF_VIDEO_RANGE_SECTION = 2
+} rnf_video_range_kind;
+/* [start, end) cursor frames of a range; 0 when it is empty (nothing recorded, "Up to here" at 0, a
+ * section without B / not on this take). section: the slot as visible on the active take (NULL: none). */
+int rnf_video_range(rnf_video_range_kind kind, uint64_t cursor, uint64_t take_length,
+                    const rnf_timeline_range* section, uint64_t* start, uint64_t* end);
+#define RNF_VIDEO_QUALITY_PRESETS 3
+rnf_export_quality rnf_video_quality(int preset);        /* 0 Standard, 1 High, 2 Small */
+int rnf_video_quality_preset(rnf_export_quality quality); /* inverse */
+const char* rnf_video_quality_label(int preset);          /* localization key */
+/* "15:02 · approx. 91 MB" (the length and the estimate). Free with rnf_string_free. */
+char* rnf_video_summary(uint64_t frames, int64_t bytes);
 
 /* ================================================================== flash reduction (UI) */
 char* rnf_flash_level_label(rn_flash_level level);

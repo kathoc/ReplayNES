@@ -68,6 +68,13 @@ class Timeline {
   // Records `r` for frame f (f <= length()). Appends at the end or creates a branch.
   Status record(uint64_t frame, const InputRecord& r, bool& branched);
   Status setHead(uint64_t segId);  // 0 = empty timeline only allowed when no segments
+  // Removes a segment that is not the head and has no children (an abandoned take); undo entries
+  // naming it are dropped. Never reuses its id.
+  Status removeLeaf(uint64_t segId);
+  // Replaces the head segment by a copy (new id, same parent / start) that ends at `frame`
+  // (start < frame < end): the frames after it are dropped instead of being kept as another take.
+  // The head must have no children. Undo entries naming the old head name the copy (frames clamped).
+  Status truncateHead(uint64_t frame, uint64_t& newId);
 
   std::vector<InputRecord> flattenActive() const;  // copy of the active take
   std::vector<PathEntry> pathFor(uint64_t leaf) const;

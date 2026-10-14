@@ -49,6 +49,7 @@ Plan translation(const Pairs& c, int slot, const std::map<std::string, int>& pos
 // The defaults as saved by 0.2.0 (GameController face names).
 Pairs layout2Defaults() {
   Pairs c = defaultConfig();
+  removeIf(c, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:leftThumb"; });  // layout 7
   removeIf(c, [](const std::pair<std::string, std::string>& b) { return b.first.find(":face.") != std::string::npos; });
   for (int slot : {0, 1}) {
     auto l = listPairs(rnf_input_legacy_face_defaults(slot));
@@ -203,6 +204,7 @@ TEST_CASE("paused D-pad step directions") {
 
 TEST_CASE("controller layout migration (layout 1 -> 2)") {
   Pairs legacy = defaultConfig();
+  removeIf(legacy, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:leftThumb"; });  // layout 7
   auto hk = listPairs(rnf_input_controller_hotkeys());
   auto old = listPairs(rnf_input_legacy_controller_hotkeys());
   for (auto& p : hk) legacy.erase(std::remove(legacy.begin(), legacy.end(), p), legacy.end());
@@ -219,7 +221,9 @@ TEST_CASE("controller layout migration (layout 1 -> 2)") {
 TEST_CASE("untouched layout-2 defaults become positional defaults") {
   Plan m = plan(rnf_input_face_layout_migration, layout2Defaults());
   CHECK_EQ(m.unbind.size(), size_t(8));
-  CHECK(asSet(applying(m, layout2Defaults())) == asSet(defaultConfig()));
+  Pairs want = defaultConfig();
+  removeIf(want, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:leftThumb"; });  // layout 7
+  CHECK(asSet(applying(m, layout2Defaults())) == asSet(want));
   CHECK(plan(rnf_input_face_layout_migration, defaultConfig()).bind.empty());
 }
 
@@ -257,7 +261,7 @@ static Pairs layout3Triggers(Pairs c) {
 }
 
 TEST_CASE("trigger swap migration (layout 3 -> 4)") {
-  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 6);
+  CHECK(RNF_CONTROLLER_LAYOUT_VERSION >= 6);
   Pairs old = layout3Triggers(defaultConfig());
   Plan m = plan(rnf_input_trigger_swap_migration, old);
   CHECK_EQ(m.unbind.size(), size_t(2));
@@ -294,6 +298,7 @@ TEST_CASE("full chain from 0.1.x") {
     c = applying(Plan{listPairs(u), listPairs(n)}, c);
   }
   c = applying(plan(rnf_input_home_migration, c), c);
+  c = applying(plan(rnf_input_undo_migration, c), c);
   CHECK(asSet(c) == asSet(defaultConfig()));
   // From layout 3 (0.2.x): the triggers swap.
   Pairs l3 = layout3Triggers(defaultConfig());
@@ -302,7 +307,7 @@ TEST_CASE("full chain from 0.1.x") {
 }
 
 TEST_CASE("HOME / guide is ignored and its bindings are dropped (layout 6)") {
-  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 6);
+  CHECK(RNF_CONTROLLER_LAYOUT_VERSION >= 6);
   CHECK(rnf_input_element_ignored("home"));
   CHECK(rnf_input_element_ignored("gc1:home"));
   CHECK_FALSE(rnf_input_element_ignored("menu"));
@@ -375,11 +380,21 @@ TEST_CASE("an old (0.4.0) bindings.json loads and migrates to layout 5") {
     rnf_list_free(u);
     rnf_list_free(n);
   }
+  {  // Layout 6 -> 7: L3 = Undo of a retry.
+    Pairs mid = bindingsOf(h);
+    Bindings b{mid};
+    auto v = b.view();
+    rnf_list *u = nullptr, *n = nullptr;
+    rnf_input_undo_migration(v.data(), v.size(), &u, &n);
+    CHECK(rnf_input_apply_plan(h, u, n));
+    rnf_list_free(u);
+    rnf_list_free(n);
+  }
   Pairs after = bindingsOf(h);
   CHECK(asSet(after) == asSet(defaultConfig()));  // == a fresh install's bindings
-  // Everything the user had is still there; only the two Quick Menu bindings were added.
+  // Everything the user had is still there; only the two Quick Menu bindings and L3 were added.
   for (auto& p : before) CHECK(contains(after, p.first, p.second));
-  CHECK_EQ(after.size(), before.size() + 2);
+  CHECK_EQ(after.size(), before.size() + 3);
   // The migrated file round-trips through the engine, and migrating again changes nothing.
   char* saved = rn_input_save_json(h);
   rn_input* h2 = rn_input_new();
@@ -654,4 +669,31 @@ TEST_CASE("diagram badges show game buttons and hotkeys") {
   Pairs p2 = c;
   for (auto& e : p2) if (e.first.rfind("gc0:dpad.", 0) == 0) e.second.replace(0, 2, "p2");
   CHECK_EQ(group(p2, "dpad", 0), "movement:2P Move");
+}
+
+TEST_CASE("L3 = Undo of a retry (layout 7)") {
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 7);
+  CHECK(contains(defaultConfig(), "gc0:leftThumb", "hk.undo_take"));
+  CHECK(plan(rnf_input_undo_migration, defaultConfig()).bind.empty());  // already there
+  Pairs old = defaultConfig();
+  removeIf(old, [](const std::pair<std::string, std::string>& b) { return b.first == "gc0:leftThumb"; });
+  Plan m = plan(rnf_input_undo_migration, old);
+  CHECK(m.unbind.empty());
+  REQUIRE_EQ(m.bind.size(), size_t(1));
+  CHECK(m.bind[0] == std::make_pair(std::string("gc0:leftThumb"), std::string("hk.undo_take")));
+  CHECK(asSet(applying(m, old)) == asSet(defaultConfig()));
+  // L3 taken by the user, or Undo already on a pad 1 button: nothing.
+  Pairs taken = old;
+  taken.emplace_back("gc0:leftThumb", "p1.turbo_a");
+  CHECK(plan(rnf_input_undo_migration, taken).bind.empty());
+  Pairs combo = old;
+  combo.emplace_back("gc0:leftThumb+gc0:rightThumb", "hk.save");
+  CHECK(plan(rnf_input_undo_migration, combo).bind.empty());
+  Pairs moved = old;
+  moved.emplace_back("gc0:options", "hk.undo_take");
+  CHECK(plan(rnf_input_undo_migration, moved).bind.empty());
+  // A keyboard key for it does not count.
+  Pairs key = old;
+  key.emplace_back("kb:6", "hk.undo_take");
+  CHECK_EQ(plan(rnf_input_undo_migration, key).bind.size(), size_t(1));
 }

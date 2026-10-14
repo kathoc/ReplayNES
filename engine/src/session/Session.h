@@ -139,6 +139,16 @@ class Session {
   Status activateTake(uint64_t id);
   Status undoTakeSwitch();
   size_t undoDepth() const { return tl_.undo().size(); }
+  // Drops an abandoned take (a retry the user threw away): not the active take, no takes branching
+  // from it, no bookmark or A/B slot on it. Its checkpoints and undo entries go too. Persisted by
+  // the next full save (until then a crash may bring it back as an extra take; nothing else).
+  Status discardTake(uint64_t id);
+  // Cuts the active take at the cursor when every frame after it belongs to the active take's own
+  // segment (branch frame < cursor < length) and nothing else hangs off them (no child take, no
+  // bookmark / A/B slot on the take): playing on then continues the take instead of branching. The
+  // take gets a new id; the earlier frames, the cursor and the machine state are unchanged.
+  // WrongMode in practice; Ok without a change at the take end.
+  Status truncateTake();
 
   // --- persistence
   Status save();

@@ -91,6 +91,17 @@
         }
       }
     },
+    "%@ · approx. %@": {
+      "comment": "Make Video: length · estimated file size",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ・ 目安 %2$@"
+          }
+        }
+      }
+    },
     "%lld f": {
       "localizations": {
         "ja": {
@@ -433,30 +444,48 @@
     },
     "A/B %lld": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section %lld"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "A/B %lld"
+            "value": "区間 %lld"
           }
         }
       }
     },
     "A/B %lld: A %@": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section %1$lld: A %2$@"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "A/B %lld：A %@"
+            "value": "区間 %1$lld：A %2$@"
           }
         }
       }
     },
     "A/B %lld: A %@ → B %@": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section %1$lld: A %2$@ → B %3$@"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "A/B %lld：A %@ → B %@"
+            "value": "区間 %1$lld：A %2$@ → B %3$@"
           }
         }
       }
@@ -719,6 +748,23 @@
         }
       }
     },
+    "All (range)": {
+      "comment": "Make Video: range = the whole tape",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
     "An unsaved previous session remains": {
       "localizations": {
         "ja": {
@@ -949,6 +995,17 @@
         }
       }
     },
+    "Back to before the retry": {
+      "comment": "Notice after Undo of a retry",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり直す前に戻しました"
+          }
+        }
+      }
+    },
     "Back to nesterm’s defaults": {
       "localizations": {
         "ja": {
@@ -1159,6 +1216,23 @@
         }
       }
     },
+    "Cancel (make video)": {
+      "comment": "Make Video: close without exporting",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やめる"
+          }
+        }
+      }
+    },
     "Can’t add the Test Cartridge: %@": {
       "localizations": {
         "ja": {
@@ -1305,6 +1379,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "決定ボタン"
+          }
+        }
+      }
+    },
+    "Continue (tape)": {
+      "comment": "Paused at the end of the tape: resume play",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続きをプレイ"
           }
         }
       }
@@ -1999,6 +2090,16 @@
         }
       }
     },
+    "Details ›": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細 ›"
+          }
+        }
+      }
+    },
     "Detects earlier than the thresholds and limits flashes of 20% or more of the screen to 2 per second (recommended).": {
       "localizations": {
         "ja": {
@@ -2262,6 +2363,17 @@
         }
       }
     },
+    "End of tape": {
+      "comment": "Status label: stopped at the end of the recording",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テープの終わり"
+          }
+        }
+      }
+    },
     "End of the recording (fast-forward stops here)": {
       "localizations": {
         "ja": {
@@ -2278,6 +2390,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "テイクの終端です（「録画」ボタンで、ここから続きを録画できます）"
+          }
+        }
+      }
+    },
+    "Erase the tape and play again from power-on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テープを消して電源投入からやり直します"
           }
         }
       }
@@ -2808,6 +2930,34 @@
         }
       }
     },
+    "High (video quality)": {
+      "comment": "Make Video: quality preset",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高画質"
+          }
+        }
+      }
+    },
+    "Hold %@ to rewind": {
+      "comment": "First-run coach line; %@ = the bound control (L2, a key)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を押し続けると巻き戻せます"
+          }
+        }
+      }
+    },
     "Hotkeys": {
       "localizations": {
         "ja": {
@@ -3030,10 +3180,16 @@
     },
     "Keep A/B repeat sections": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep repeat practice sections"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "A/Bリピート区間を残す"
+            "value": "くり返し練習の区間を残す"
           }
         }
       }
@@ -3454,6 +3610,208 @@
           "stringUnit": {
             "state": "translated",
             "value": "軽量"
+          }
+        }
+      }
+    },
+    "Make a video or send the picture to other apps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画にする・他のアプリに映像を送る"
+          }
+        }
+      }
+    },
+    "Make Video": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画にする"
+          }
+        }
+      }
+    },
+    "Making video… %lld%%": {
+      "comment": "Status label while an export runs",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画にしています… %lld%%"
+          }
+        }
+      }
+    },
+    "Play again from here, watch the tape, start over": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここからもう一度・テープを見る・最初から"
+          }
+        }
+      }
+    },
+    "Play from Here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここからプレイ"
+          }
+        }
+      }
+    },
+    "Play from here to retry": {
+      "comment": "First-run coach line after the first rewind",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここからプレイするとやり直せます"
+          }
+        }
+      }
+    },
+    "Play on from this point (the tape continues from here)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この位置から続けてプレイします（テープはここから続きます）"
+          }
+        }
+      }
+    },
+    "Playback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生"
+          }
+        }
+      }
+    },
+    "Playback (menu)": {
+      "comment": "Retry page: watch the tape (replay mode) on / off",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生"
+          }
+        }
+      }
+    },
+    "Playback (status)": {
+      "comment": "Status label: watching the tape (replay mode)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生中"
+          }
+        }
+      }
+    },
+    "Playback on / off (ends practice)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生の切り替え（練習中は練習をやめる）"
+          }
+        }
+      }
+    },
+    "Practice (not recorded)": {
+      "comment": "Status label while practicing",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "練習中（記録しません）"
+          }
+        }
+      }
+    },
+    "Quality (video)": {
+      "comment": "Make Video: row title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画質"
+          }
+        }
+      }
+    },
+    "Retrying from here": {
+      "comment": "Line under the resume countdown when play resumes before the end of the tape",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここからやり直し"
+          }
+        }
+      }
+    },
+    "Slow ¼": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スロー ¼"
+          }
+        }
+      }
+    },
+    "Slow ½": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スロー ½"
+          }
+        }
+      }
+    },
+    "Small (video quality)": {
+      "comment": "Make Video: quality preset (smaller file)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小さく"
           }
         }
       }
@@ -7259,6 +7617,16 @@
         }
       }
     },
+    "Turn the tape into a video file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テープを動画ファイルにします"
+          }
+        }
+      }
+    },
     "Two markers already (X deletes one)": {
       "localizations": {
         "ja": {
@@ -7309,6 +7677,16 @@
         }
       }
     },
+    "Undo Retry (for 10 s after a retry)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり直しの取り消し（やり直してから10秒間）"
+          }
+        }
+      }
+    },
     "Undo steps available: %lld": {
       "localizations": {
         "ja": {
@@ -7335,6 +7713,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "未保存の作業を復元しました（最後の自動保存まで）。確認して保存してください"
+          }
+        }
+      }
+    },
+    "Up to here": {
+      "comment": "Make Video: range = from the start to the playhead",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここまで"
           }
         }
       }
@@ -7475,6 +7864,16 @@
         }
       }
     },
+    "Video saved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画を保存しました"
+          }
+        }
+      }
+    },
     "Videotape-style noise while rewinding (display only)": {
       "localizations": {
         "ja": {
@@ -7511,6 +7910,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "見返す"
+          }
+        }
+      }
+    },
+    "Watch the tape without changing it (a game button plays from there)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テープを変えずに見ます（ゲームのボタンでそこからプレイ）"
           }
         }
       }
@@ -7725,6 +8134,17 @@
         }
       }
     },
+    "↑ Practice sections": {
+      "comment": "Paused seek bar hint: up enters the A/B marker lane",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↑ 練習区間"
+          }
+        }
+      }
+    },
     "↑ Up": {
       "localizations": {
         "ja": {
@@ -7755,7 +8175,40 @@
         }
       }
     },
+    "↶ Undo": {
+      "comment": "Chip shown 10 s after a retry: back to the continuation before it",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↶ 取り消す"
+          }
+        }
+      }
+    },
+    "▶ Make Video": {
+      "comment": "Chip at the end of the tape while paused",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶ 動画にする"
+          }
+        }
+      }
+    },
     "▶▶ Fast-Forward": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "▶▶ 早送り"
+          }
+        }
+      }
+    },
+    "▶▶ Fast-forward": {
+      "comment": "Status label (bottom left) while the tape fast-forwards",
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -7775,12 +8228,34 @@
         }
       }
     },
+    "◀◀ Rewind": {
+      "comment": "Status label (bottom left) while the tape rewinds",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "◀◀ 巻き戻し"
+          }
+        }
+      }
+    },
     "◀◀ Rewinding": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "◀◀ 巻き戻し中"
+          }
+        }
+      }
+    },
+    "☰ › Share › Make Video turns this into a video": {
+      "comment": "First-run coach line at the end of the tape",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "☰ › 共有 › 動画にする で動画にできます"
           }
         }
       }

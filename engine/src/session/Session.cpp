@@ -262,6 +262,52 @@ Status Session::undoTakeSwitch() {
   return resync(target, true);
 }
 
+static bool takeReferenced(const std::vector<Bookmark>& bms, const std::array<PracticeSlot, kPracticeSlots>& slots,
+                           uint64_t id) {
+  for (const Bookmark& b : bms)
+    if (b.owner == id) return true;
+  for (const PracticeSlot& p : slots)
+    if (p.used && p.hasTakeFrame && p.takeId == id) return true;
+  return false;
+}
+
+Status Session::discardTake(uint64_t id) {
+  if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
+  if (takeReferenced(bookmarks_, slots_, id))
+    return Error(Err::InvalidArg, "a bookmark or an A/B section is on take " + std::to_string(id));
+  RN_TRY(tl_.removeLeaf(id));
+  std::vector<uint64_t> drop;
+  for (auto& kv : cps_.all())
+    if (kv.second.owner == id) drop.push_back(kv.first);
+  for (uint64_t c : drop) cps_.remove(c);
+  touch();
+  return Status::Ok();
+}
+
+Status Session::truncateTake() {
+  if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot cut the take while practicing");
+  if (frame_ >= tl_.length()) return Status::Ok();
+  const uint64_t oldId = tl_.head();
+  if (takeReferenced(bookmarks_, slots_, oldId))
+    return Error(Err::InvalidArg, "a bookmark or an A/B section is on the active take");
+  uint64_t newId = 0;
+  RN_TRY(tl_.truncateHead(frame_, newId));
+  // States of the kept frames are the same machine states on the copy: re-own them (as new,
+  // unpersisted checkpoints - a persisted state file names its owner); the rest go.
+  std::vector<uint64_t> drop;
+  std::vector<Checkpoint> keep;
+  for (auto& kv : cps_.all()) {
+    const Checkpoint& c = kv.second;
+    if (c.owner != oldId) continue;
+    drop.push_back(kv.first);
+    if (c.frame <= frame_ && (c.kind == CpKind::Dense || c.kind == CpKind::Sparse)) keep.push_back(c);
+  }
+  for (uint64_t c : drop) cps_.remove(c);
+  for (Checkpoint& c : keep) cps_.add(c.frame, newId, c.kind, c.compat, c.stateFormatVersion, std::move(c.data));
+  touch();
+  return Status::Ok();
+}
+
 // ------------------------------------------------------------------ practice
 Status Session::setMode(Mode m) {
   if (m == mode_) return Status::Ok();

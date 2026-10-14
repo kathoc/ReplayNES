@@ -55,7 +55,6 @@ const GroupDef kGroups[] = {
 const PageDef kPages[] = {
     {"quick", RNF_L("Quick Menu"), "menu-2", RNF_MENU_PAGE_TILES, "", 0},
     {"retry", RNF_L("Retry (menu)"), "history", RNF_MENU_PAGE_TILES, "", 0},
-    {"takes", RNF_L("Takes"), "git-branch", RNF_MENU_PAGE_LIST, "", 0},
     {"bookmarks", RNF_L("Bookmarks"), "bookmark", RNF_MENU_PAGE_LIST, "", 0},
     {"practice", RNF_L("Practice"), "target", RNF_MENU_PAGE_CARDS, "", 0},
     {"share", RNF_L("Share"), "share", RNF_MENU_PAGE_TILES, "", F_SHARE_ANY},
@@ -88,28 +87,26 @@ const std::vector<ItemDef>& items() {
   static const std::vector<ItemDef> v = {
       // Quick Menu: six tiles, one row.
       {"quick", "resume", RNF_L("Resume"), RNF_L("Back to the game"), "player-play", RESUME, "", 0, {}},
-      {"quick", "retry", RNF_L("Retry (menu)"), RNF_L("Record again from here, go back to an earlier try"), "history", PAGE, "retry", 0, {}},
+      {"quick", "retry", RNF_L("Retry (menu)"), RNF_L("Play again from here, watch the tape, start over"), "history", PAGE,
+       "retry", 0, {}},
       {"quick", "practice", RNF_L("Practice"), RNF_L("Repeat a section from A to B (nothing is recorded)"), "target", PAGE,
        "practice", 0, {}},
-      {"quick", "share", RNF_L("Share"), RNF_L("Export a video or send the picture to other apps"), "share", PAGE, "share",
+      {"quick", "share", RNF_L("Share"), RNF_L("Make a video or send the picture to other apps"), "share", PAGE, "share",
        F_SHARE_ANY, {}},
       {"quick", "settings", RNF_L("Settings"), RNF_L("Display, controls, sound and system"), "settings", PAGE,
        "settings.display", 0, {}},
       {"quick", "game", RNF_L("Game"), RNF_L("Choose a game, save, reset"), "device-gamepad-2", PAGE, "game", 0, {}},
-      // Retry.
-      {"retry", "retry.rerecord", RNF_L("Record from Here"), RNF_L("Continue recording from this point (the old continuation is kept)"),
-       "player-record", ACTION, "", 0, {}},
-      {"retry", "retry.undo", RNF_L("Previous Try"), RNF_L("Back to the take before the last re-recording"), "arrow-back-up",
-       ACTION, "", 0, {}},
-      {"retry", "retry.takes", RNF_L("Takes"), RNF_L("Every try of this recording"), "git-branch", PAGE, "takes", 0, {}},
+      // Retry (docs/design/VTR_UX.md: one tape; takes are never shown).
+      {"retry", "retry.rerecord", RNF_L("Play from Here"), RNF_L("Play on from this point (the tape continues from here)"),
+       "player-play", ACTION, "", 0, {}},
       {"retry", "retry.bookmarks", RNF_L("Bookmarks"), RNF_L("Jump to a moment you marked"), "bookmark", PAGE, "bookmarks", 0, {}},
-      {"retry", "retry.playback", RNF_L("Watch"), RNF_L("Playback mode: plays the recording without changing it"), "eye",
-       TOGGLE, "", 0, {}},
+      {"retry", "retry.playback", RNF_L("Playback (menu)"), RNF_L("Watch the tape without changing it (a game button plays from there)"),
+       "eye", TOGGLE, "", 0, {}},
       // The Reset Project confirmation (same as Game > Reset > Reset Project...): keep A/B, backup.
-      {"retry", "retry.restart", RNF_L("Restart Recording"), RNF_L("Delete every take and record again from power-on"),
+      {"retry", "retry.restart", RNF_L("Start Over"), RNF_L("Erase the tape and play again from power-on"),
        "player-skip-back", ACTION, "", 0, {}},
       // Share.
-      {"share", "share.export", RNF_L("Export MP4"), RNF_L("Save the take as one continuous video"), "movie", ACTION, "",
+      {"share", "share.export", RNF_L("Make Video"), RNF_L("Turn the tape into a video file"), "movie", ACTION, "",
        F_EXPORT, {}},
       {"share", "share.stream", RNF_L("Stream Output"), RNF_L("Send the picture to OBS and other apps"), "broadcast", TOGGLE,
        "", F_STREAM, {}},

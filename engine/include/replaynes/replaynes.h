@@ -300,6 +300,21 @@ rn_status rn_take_activate(rn_session* s, uint64_t take_id); /* keeps cursor if 
 /* "Back to Previous Take": returns to the take active before the last branch/switch, at that frame. */
 rn_status rn_undo_take_switch(rn_session* s);
 size_t rn_undo_depth(const rn_session* s);
+/* Retry bursts (docs/design/VTR_UX.md): an abandoned short attempt is dropped instead of being
+ * kept as another take. Both are timeline edits of the session (no new file format: the dropped
+ * frames simply are not in the next full save; until then a crash may bring them back as an
+ * extra take, nothing else).
+ * rn_take_discard: removes a take that is not active, has no take branching from it and has no
+ *   bookmark / A/B slot on it (RN_ERR_INVALID_ARG otherwise; RN_ERR_NOT_FOUND), with its
+ *   checkpoints and "Back to Previous Take" entries.
+ * rn_take_truncate: cuts the active take at the cursor when every frame after it belongs to the
+ *   active take's own segment (its branch frame < rn_frame() < length) and no take / bookmark /
+ *   A/B slot hangs off it (RN_ERR_INVALID_ARG otherwise): playing on from the cursor then continues
+ *   the take instead of branching. The take gets a new id (rn_active_take); its earlier frames,
+ *   the cursor and the machine state are unchanged. RN_OK without a change at the take end;
+ *   RN_ERR_WRONG_MODE in PRACTICE. */
+rn_status rn_take_discard(rn_session* s, uint64_t take_id);
+rn_status rn_take_truncate(rn_session* s);
 
 /* ------------------------------------------------------------------ input pipeline */
 typedef struct rn_input rn_input;

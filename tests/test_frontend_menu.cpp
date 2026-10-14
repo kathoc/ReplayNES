@@ -393,8 +393,8 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   rnf_menu* m = rnf_menu_new(kDesktopLinux);
   CHECK((itemIds(m, "quick") == std::vector<std::string>{"resume", "retry", "practice", "share", "settings", "game"}));
   CHECK((itemIds(m, "retry") ==
-        std::vector<std::string>{"retry.rerecord", "retry.undo", "retry.takes", "retry.bookmarks", "retry.playback",
-                                 "retry.restart"}));
+        std::vector<std::string>{"retry.rerecord", "retry.bookmarks", "retry.playback", "retry.restart"}));
+  CHECK(rnf_menu_page_find(m, "takes") < 0);  // docs/design/VTR_UX.md: takes are never shown
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.export"}));
   CHECK((itemIds(m, "game") == std::vector<std::string>{"game.library", "game.save", "game.save_as", "game.open", "game.reset"}));
   CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt", "display.flash", "display.vtr",
@@ -519,13 +519,13 @@ TEST_CASE("menu: practice cards 4 x 2, lists in sheets of six, custom pages") {
   CHECK_EQ(rnf_menu_confirm(m), RNF_MENU_EVENT_ACTIVATE);
   CHECK_EQ(crumbs(m), "Practice");
   rnf_menu_back(m);
-  // Retry > Takes: 14 takes = 3 sheets.
+  // Retry > Bookmarks: 14 bookmarks = 3 sheets.
   rnf_menu_set_focus(m, 1);
   REQUIRE_EQ(rnf_menu_confirm(m), RNF_MENU_EVENT_PUSHED);
-  rnf_menu_set_focus(m, 2);
+  rnf_menu_set_focus(m, 1);
   REQUIRE_EQ(rnf_menu_confirm(m), RNF_MENU_EVENT_PUSHED);
-  CHECK_EQ(pageId(m), "takes");
-  CHECK_EQ(crumbs(m), "Retry > Takes");
+  CHECK_EQ(pageId(m), "bookmarks");
+  CHECK_EQ(crumbs(m), "Retry > Bookmarks");
   CHECK_EQ(rnf_menu_confirm(m), RNF_MENU_EVENT_NONE);  // empty list
   rnf_menu_set_count(m, rnf_menu_current(m), 14);
   CHECK_EQ(rnf_menu_sheet_count(m), size_t(3));
@@ -540,7 +540,7 @@ TEST_CASE("menu: practice cards 4 x 2, lists in sheets of six, custom pages") {
   CHECK_EQ(rnf_menu_move(m, -1, 0, &dir), RNF_MENU_EVENT_ADJUST);
   CHECK_EQ(dir, -1);
   rnf_menu_set_focus(m, 13);
-  rnf_menu_set_count(m, rnf_menu_current(m), 3);  // takes went away: focus kept in range
+  rnf_menu_set_count(m, rnf_menu_current(m), 3);  // bookmarks went away: focus kept in range
   CHECK_EQ(rnf_menu_focus(m), size_t(2));
   CHECK_EQ(rnf_menu_sheet_count(m), size_t(1));
   CHECK_EQ(rnf_menu_switch(m, 1), RNF_MENU_EVENT_NONE);

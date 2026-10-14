@@ -396,6 +396,12 @@ rn_status rn_undo_take_switch(rn_session* s) {
   return guard([&] { return s ? ret(s->s->undoTakeSwitch()) : invalid("null session"); });
 }
 size_t rn_undo_depth(const rn_session* s) { return s ? s->s->undoDepth() : 0; }
+rn_status rn_take_discard(rn_session* s, uint64_t id) {
+  return guard([&] { return s ? ret(s->s->discardTake(id)) : invalid("null session"); });
+}
+rn_status rn_take_truncate(rn_session* s) {
+  return guard([&] { return s ? ret(s->s->truncateTake()) : invalid("null session"); });
+}
 
 // ------------------------------------------------------------------ input
 rn_input* rn_input_new(void) {

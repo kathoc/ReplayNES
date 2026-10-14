@@ -105,6 +105,41 @@ Status Timeline::setHead(uint64_t segId) {
   return Status::Ok();
 }
 
+Status Timeline::removeLeaf(uint64_t segId) {
+  if (!segment(segId)) return Error(Err::NotFound, "take " + std::to_string(segId) + " does not exist");
+  if (segId == head_) return Error(Err::InvalidArg, "the active take cannot be removed");
+  if (childCount(segId) != 0) return Error(Err::InvalidArg, "take " + std::to_string(segId) + " has other takes branching from it");
+  segs_.erase(segId);
+  undo_.erase(std::remove_if(undo_.begin(), undo_.end(), [&](const UndoEntry& u) { return u.head == segId; }), undo_.end());
+  return Status::Ok();
+}
+
+Status Timeline::truncateHead(uint64_t frame, uint64_t& newId) {
+  if (head_ == 0) return Error(Err::InvalidArg, "nothing recorded");
+  const Segment& old = segs_.at(head_);
+  if (frame <= old.start || frame >= old.end())
+    return Error(Err::InvalidArg, "the cut must lie inside the active take's own frames");
+  if (childCount(head_) != 0) return Error(Err::InvalidArg, "other takes branch from the active take");
+  Segment s;
+  s.id = nextId_++;
+  s.parent = old.parent;
+  s.start = old.start;
+  s.createdSeq = ++seq_;
+  s.records.assign(old.records.begin(), old.records.begin() + ptrdiff_t(frame - old.start));
+  const uint64_t oldId = head_;
+  newId = s.id;
+  segs_.emplace(newId, std::move(s));
+  segs_.erase(oldId);
+  for (UndoEntry& u : undo_)
+    if (u.head == oldId) {
+      u.head = newId;
+      if (u.frame > frame) u.frame = frame;
+    }
+  head_ = newId;
+  rebuildPath();
+  return Status::Ok();
+}
+
 std::vector<InputRecord> Timeline::flattenActive() const {
   std::vector<InputRecord> out;
   out.reserve(size_t(length()));

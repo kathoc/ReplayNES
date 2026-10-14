@@ -55,9 +55,9 @@ const ActionDef kActions[] = {
     {"hk.slow", RNF_L("Slow motion (normal ⇔ 1/2)"), true, RNF_GROUP_HOTKEY},
     {"hk.frame_advance", RNF_L("Frame Advance"), true, RNF_GROUP_HOTKEY},
     {"hk.step_back", RNF_L("Step Back One Frame"), true, RNF_GROUP_HOTKEY},
-    {"hk.toggle_mode", RNF_L("Record / playback (ends practice)"), true, RNF_GROUP_HOTKEY},
+    {"hk.toggle_mode", RNF_L("Playback on / off (ends practice)"), true, RNF_GROUP_HOTKEY},
     {"hk.bookmark", RNF_L("Add Bookmark"), true, RNF_GROUP_HOTKEY},
-    {"hk.undo_take", RNF_L("Back to Previous Take"), true, RNF_GROUP_HOTKEY},
+    {"hk.undo_take", RNF_L("Undo Retry (for 10 s after a retry)"), true, RNF_GROUP_HOTKEY},
     {"hk.save", RNF_L("Save"), true, RNF_GROUP_HOTKEY},
     {"hk.soft_reset", RNF_L("Soft Reset"), true, RNF_GROUP_HOTKEY},
     {"hk.power_cycle", RNF_L("Power Cycle"), true, RNF_GROUP_HOTKEY},
@@ -116,6 +116,7 @@ const Pair kController[] = {
     {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
     {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
     {"gc0:leftShoulder+gc0:rightShoulder", "hk.menu"},
+    {"gc0:leftThumb", "hk.undo_take"},  // L3: Undo of a retry (docs/design/VTR_UX.md)
     {"gc1:dpad.up", "p2.up"}, {"gc1:dpad.down", "p2.down"}, {"gc1:dpad.left", "p2.left"}, {"gc1:dpad.right", "p2.right"},
     {"gc1:lstick.up", "p2.up"}, {"gc1:lstick.down", "p2.down"}, {"gc1:lstick.left", "p2.left"}, {"gc1:lstick.right", "p2.right"},
     {"gc1:face.east", "p2.a"}, {"gc1:face.south", "p2.b"}, {"gc1:face.north", "p2.turbo_a"}, {"gc1:face.west", "p2.turbo_b"},
@@ -463,8 +464,8 @@ std::string shortLabel(const std::string& action, int slot) {
       {"hk.rewind", RNF_L("Rewind"), true}, {"hk.fast_forward", RNF_L("Fast Fwd"), true},
       {"hk.pause", RNF_L("Pause"), true}, {"hk.slow", RNF_L("Slow"), true},
       {"hk.frame_advance", RNF_L("Advance"), true}, {"hk.step_back", RNF_L("Step Back"), true},
-      {"hk.toggle_mode", RNF_L("Rec/Play"), true}, {"hk.bookmark", RNF_L("Bookmark"), true},
-      {"hk.undo_take", RNF_L("Prev Take"), true}, {"hk.save", RNF_L("Save"), true},
+      {"hk.toggle_mode", RNF_L("Playback"), true}, {"hk.bookmark", RNF_L("Bookmark"), true},
+      {"hk.undo_take", RNF_L("Undo"), true}, {"hk.save", RNF_L("Save"), true},
       {"hk.soft_reset", RNF_L("Reset"), true}, {"hk.power_cycle", RNF_L("Power"), true},
   };
   for (auto& h : hk) if (action == h.element) return tr(h.text);
@@ -729,6 +730,20 @@ void rnf_input_home_migration(const rnf_binding* bindings, size_t count, rnf_lis
                                           : hasPrefix(p.first, "gc") && rnf_input_element_ignored(p.first.c_str());
     if (drop) u.push_back(p);
   }
+  emit(u, nb, unbind, bind);
+}
+
+void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {
+  Pairs b = rnf::toPairs(bindings, count);
+  Pairs u, nb;
+  bool l3Bound = false, undoOnPad = false;
+  for (auto& p : b) {
+    std::string x, y;
+    if (p.first == "gc0:leftThumb" || (splitCombo(p.first, x, y) && (x == "gc0:leftThumb" || y == "gc0:leftThumb")))
+      l3Bound = true;
+    if (p.second == "hk.undo_take" && hasPrefix(p.first, "gc0:")) undoOnPad = true;
+  }
+  if (!l3Bound && !undoOnPad) nb.emplace_back("gc0:leftThumb", "hk.undo_take");
   emit(u, nb, unbind, bind);
 }
 
