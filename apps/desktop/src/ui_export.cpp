@@ -1,5 +1,7 @@
-// "Export…" (MP4, export/mp4_export.h: H.264 + AAC on a worker thread - FFmpeg on Linux, Media
-// Foundation on Windows - the project is never touched and play continues) and the CRT display parameters.
+// "Make Video" (docs/design/VTR_UX.md: one screen - Range, Quality, Length · approx. size, Details ›
+// with the existing settings; MP4 via export/mp4_export.h: H.264 + AAC on a worker thread - FFmpeg on
+// Linux, Media Foundation on Windows - the project is never touched and play continues), the
+// "Video saved" toast (Open / Share) and the CRT display parameters.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -13,6 +15,7 @@
 #include "l10n.h"
 #include "library.h"
 #include "paths.h"
+#include "platform/platform.h"
 #include "render/crt_export.h"
 #include "settings.h"
 #include "ui.h"
@@ -59,7 +62,10 @@ void UI::openExportDialog() {
   exportApplyFlash_ = d_.settings->flash != RN_FLASH_OFF;
   exportApplyCRT_ = d_.settings->crt;
   exportPar87_ = d_.settings->par87;
-  exportEnd_ = int(st.takeLength);
+  videoCursor_ = st.frame;
+  videoRange_ = RNF_VIDEO_RANGE_ALL;
+  videoSection_ = -1;
+  exportDetails_ = false;
   if (exportPreset_ < 0) {  // first time: the macOS default canvas (1280x960)
     rnf_export_settings def = defaultExportSettings();
     exportPreset_ = 0;
@@ -75,6 +81,22 @@ void UI::openExportDialog() {
   std::snprintf(exportName_, sizeof exportName_, "%s", base.c_str());
 }
 
+namespace {
+/// The chosen range as cursor frames [start, end); false when it is empty.
+bool videoFrames(EmulationController* emu, rnf_video_range_kind kind, int slot, uint64_t cursor, uint64_t* start, uint64_t* end) {
+  const EmuStatus& st = emu->status();
+  rnf_timeline_range section{};
+  bool has = false;
+  if (kind == RNF_VIDEO_RANGE_SECTION)
+    for (const rnf_timeline_range& r : emu->visibleRanges())
+      if (r.slot == slot) {
+        section = r;
+        has = true;
+      }
+  return rnf_video_range(kind, std::min(cursor, st.takeLength), st.takeLength, has ? &section : nullptr, start, end) != 0;
+}
+}  // namespace
+
 void UI::startExport() {
   const EmuStatus& st = d_.emu->status();
   rnf_export_settings s = defaultExportSettings();
@@ -83,13 +105,15 @@ void UI::startExport() {
   int crop = exportCropOverscan_ ? 8 : 0;
   s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
   s.pixel_aspect_87 = exportPar87_;
-  if (exportWholeTake_) {
-    s.start_frame = 0;
-    s.end_frame = 0;
-  } else {
-    s.start_frame = uint64_t(std::max(0, exportStart_));
-    s.end_frame = uint64_t(std::clamp(exportEnd_, 0, int(st.takeLength)));
+  uint64_t a = 0, b = 0;
+  if (!videoFrames(d_.emu, videoRange_, videoSection_, videoCursor_, &a, &b)) {
+    exportError_ = TR("Nothing has been recorded yet");
+    return;
   }
+  // The whole tape: "to the end" (it may still grow while the dialog is open).
+  bool all = videoRange_ == RNF_VIDEO_RANGE_ALL || (a == 0 && b >= st.takeLength);
+  s.start_frame = all ? 0 : a;
+  s.end_frame = all ? 0 : b;
   char* msg = nullptr;
   if (rnf_export_validate(&s, &msg) != RN_OK) {
     exportError_ = str(msg);
@@ -135,11 +159,11 @@ void UI::buildExportDialog() {
                              ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
                                  ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::PushFont(nullptr, metrics_.title());
-    ImGui::TextUnformatted(TR("Export to MP4"));
+    ImGui::TextUnformatted(TR("Make Video"));
     ImGui::PopFont();
     bool appearing = ImGui::IsWindowAppearing();
     if (exportStarted_) {
-      // Progress / result.
+      // Progress / result. A finished video closes the dialog: the "Video saved" toast (Open / Share).
       ImGui::TextUnformatted(Paths::display(exportJob_.outPath()).c_str());
       if (!exportJob_.finished()) {
         uint64_t done = exportJob_.framesDone(), total = exportJob_.framesTotal();
@@ -150,16 +174,7 @@ void UI::buildExportDialog() {
         ImGui::SameLine();
         if (ImGui::Button(TR("Cancel"))) exportJob_.cancel();
       } else if (exportJob_.succeeded()) {
-        ExportResult r = exportJob_.result();
-        ImGui::TextColored(ImVec4(0.3f, 0.85f, 0.4f, 1), "%s", TR("Export finished"));
-        char dur[32];
-        std::snprintf(dur, sizeof dur, "%.2f", r.duration);
-        ImGui::TextDisabled("%s", TRF("%llu frames · %@ s · %llu audio samples",
-                                      {(unsigned long long)r.frames, std::string(dur), (unsigned long long)r.audioSamples})
-                                      .c_str());
-        ImGui::TextDisabled("%s  (%s)", TRF("Replay hash %016llx", {(unsigned long long)r.rendererHash}).c_str(), r.encoder.c_str());
-        if (appearing) ImGui::SetKeyboardFocusHere();
-        if (ImGui::Button(TR("Close"))) close = true;
+        close = true;  // buildExportProgressPill shows the toast
       } else {
         ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s",
                            exportJob_.wasCancelled() ? TR("Export was cancelled") : exportJob_.error().c_str());
@@ -167,10 +182,8 @@ void UI::buildExportDialog() {
         if (ImGui::Button(TR("Close"))) close = true;
       }
     } else {
-      // Settings: two columns (picture | processing + range), the name, the result, then the
-      // collapsible advanced options, so the buttons are always on screen at 1280x800.
+      // One screen: Range, Quality, Length · approx. size, Details › (the existing settings), the buttons.
       const EmuStatus& st = d_.emu->status();
-      const float colW = S(460), gap = S(24);
       rnf_export_settings s = defaultExportSettings();
       rnf_export_preset p{};
       if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
@@ -179,93 +192,71 @@ void UI::buildExportDialog() {
       s.pixel_aspect_87 = exportPar87_;
       rnf_export_geometry g{};
       rnf_export_geometry_compute(&s, &g);
-      uint64_t frames = exportWholeTake_ ? st.takeLength : uint64_t(std::max(0, exportEnd_ - exportStart_));
-      // The options scroll (focus-driven) if they ever outgrow the screen; the buttons below stay.
+      // The body scrolls (focus-driven) only if Details ever outgrows the screen; the buttons stay.
       float maxBody = io.DisplaySize.y * 0.94f - S(40) - S(100);
       ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, maxBody));
-      ImGui::BeginChild("##exportbody", ImVec2(colW * 2 + gap + S(4), 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened,
+      ImGui::BeginChild("##exportbody", ImVec2(S(900), 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened,
                         ImGuiWindowFlags_NoBackground);
-      const float x0 = ImGui::GetCursorPosX();
-      // A section title with a rule that stays inside its column (SeparatorText spans the window).
-      auto section = [&](const char* title, float colRight) {
-        ImGui::TextUnformatted(title);
-        ImVec2 a = ImGui::GetItemRectMax(), b = ImGui::GetItemRectMin();
-        float y = (a.y + b.y) * 0.5f;
-        float right = ImGui::GetWindowPos().x + colRight - ImGui::GetScrollX();
-        if (right > a.x + S(10)) ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x + S(10), y), ImVec2(right, y), ImGui::GetColorU32(ImGuiCol_Separator));
+      const float labelW = S(140);
+      auto rowLabel = [&](const char* text) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text);
+        ImGui::SameLine(labelW);
       };
-      ImGui::BeginGroup();
-      ImGui::PushItemWidth(colW);
-      section(TR("Size"), x0 + colW);
-      for (size_t i = 0, n = rnf_export_preset_count(), col = 0; i < n; ++i) {
-        rnf_export_preset p{};
-        if (!rnf_export_preset_get(i, &p)) continue;
-        if (col % 3) ImGui::SameLine(x0 + colW * float(col % 3) / 3.0f);
-        ++col;
-        std::string l = str(rnf_export_preset_label(&p)) + "##preset" + std::to_string(i);
-        if (ImGui::RadioButton(l.c_str(), exportPreset_ == int(i))) exportPreset_ = int(i);
-      }
-      section(TR("Pixel Aspect Ratio"), x0 + colW);
-      if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
-      if (ImGui::RadioButton(TR("8:7 (as on a CRT TV)"), exportPar87_)) exportPar87_ = true;
-      ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
-      section(TR("Bit rate"), x0 + colW);
-      for (int q = 0; q < RNF_QUALITY_COUNT; ++q) {
-        const char* name = q == RNF_QUALITY_LIGHT ? TR("Light") : q == RNF_QUALITY_STANDARD ? TR("Standard (YouTube)") : TR("High quality");
-        // Estimated for exactly this range / canvas / bit rate (rnf_export_predict_size); simple
-        // pictures give smaller files.
-        const int64_t bytes = rnf_export_predict_size(&g, 0, q, frames, nullptr);
-        char mbit[16], size[24];
-        std::snprintf(mbit, sizeof mbit, "%.1f", double(rnf_export_video_bitrate(&g, 0, q)) / 1e6);
-        if (bytes >= 1000000000) std::snprintf(size, sizeof size, "%.2f GB", double(bytes) / 1e9);
-        else std::snprintf(size, sizeof size, "%.1f MB", double(bytes) / 1e6);
-        std::string l = TRF("%@ · %@ Mbit/s · ≈ %@ (estimate)", {std::string(name), std::string(mbit), std::string(size)}) + "##quality" +
-                        std::to_string(q);
-        if (ImGui::RadioButton(l.c_str(), exportQuality_ == q)) exportQuality_ = q;
-      }
-      ImGui::TextDisabled("%s", TR("Actual size depends on the picture"));
-      ImGui::PopItemWidth();
-      ImGui::Dummy(ImVec2(colW, 0));
-      ImGui::EndGroup();
-      ImGui::SameLine(x0 + colW + gap);
-      ImGui::BeginGroup();
-      ImGui::PushTextWrapPos(x0 + colW + gap + colW);
-      section(TR("Processing"), x0 + colW + gap + colW);
-      ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
-      rn_flash_level level = d_.settings->flash == RN_FLASH_OFF ? RN_FLASH_STANDARD : rn_flash_level(d_.settings->flash);
-      ImGui::TextDisabled("%s", TRF("Level: %@ (Settings → Display). Off: exactly as recorded.", {str(rnf_flash_level_label(level))}).c_str());
-      ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable);
-      ImGui::Checkbox(TR("Apply CRT Effect"), &exportApplyCRT_);
+      // Range: All / Up to here / Section n (each A/B slot with A and B on this tape).
+      rowLabel(TR("Range"));
+      if (ImGui::RadioButton(TR("All (range)"), videoRange_ == RNF_VIDEO_RANGE_ALL)) videoRange_ = RNF_VIDEO_RANGE_ALL;
+      ImGui::SameLine();
+      ImGui::BeginDisabled(videoCursor_ == 0);
+      if (ImGui::RadioButton(TR("Up to here"), videoRange_ == RNF_VIDEO_RANGE_TO_HERE)) videoRange_ = RNF_VIDEO_RANGE_TO_HERE;
       ImGui::EndDisabled();
-      ImGui::TextDisabled("%s", TR("CRT Display settings, 4:3 (best with 1280×960). Slower."));
-      section(TR("Range"), x0 + colW + gap + colW);
-      ImGui::Checkbox(TR("Whole Take"), &exportWholeTake_);
-      if (!exportWholeTake_) {
-        ImGui::SetNextItemWidth(colW * 0.5f);
-        ImGui::InputInt(TR("Start Frame"), &exportStart_);
-        ImGui::SetNextItemWidth(colW * 0.5f);
-        ImGui::InputInt(TR("End Frame"), &exportEnd_);
+      for (const rnf_timeline_range& r : d_.emu->visibleRanges()) {
+        if (!r.has_b || r.b <= r.a) continue;
+        ImGui::SameLine();
+        std::string l = TRF("Section %lld", {r.slot + 1}) + "##videosection" + std::to_string(r.slot);
+        if (ImGui::RadioButton(l.c_str(), videoRange_ == RNF_VIDEO_RANGE_SECTION && videoSection_ == r.slot)) {
+          videoRange_ = RNF_VIDEO_RANGE_SECTION;
+          videoSection_ = r.slot;
+        }
       }
-      ImGui::PopTextWrapPos();
-      ImGui::Dummy(ImVec2(colW, 0));
-      ImGui::EndGroup();
-      ImGui::Spacing();
-      // Name + result.
-      ImGui::AlignTextToFramePadding();
-      ImGui::TextUnformatted(TR("Name"));
-      ImGui::SameLine();
-      ImGui::SetNextItemWidth(S(440));
-      ImGui::InputText("##exportname", exportName_, sizeof exportName_);
-      ImGui::SameLine();
-      ImGui::TextDisabled(".mp4");
-      std::string canvas = std::to_string(g.canvas_width) + "×" + std::to_string(g.canvas_height);
-      std::string picture = std::to_string(g.dst_width) + "×" + std::to_string(g.dst_height);
-      ImGui::TextDisabled("%s: %s", TR("Output"),
-                          TRF("%@ (picture %@, vertical ×%lld, nearest neighbor)", {canvas, picture, g.vertical_scale}).c_str());
-      ImGui::TextDisabled("%s: %s", TR("Length"),
-                          TRF("%@ (%llu frames, 60.0988 fps, AAC 48 kHz)", {timecode(frames), (unsigned long long)frames}).c_str());
-      if (ImGui::CollapsingHeader(TR("Advanced"))) {
-        ImGui::TextDisabled("%s", TRF("Saved in %@", {Paths::display(d_.library->root() + "/Exports")}).c_str());
+      // Quality: the presets over the bit rates (rnf_export_quality).
+      rowLabel(TR("Quality (video)"));
+      int preset = rnf_video_quality_preset(rnf_export_quality(exportQuality_));
+      for (int q = 0; q < RNF_VIDEO_QUALITY_PRESETS; ++q) {
+        if (q) ImGui::SameLine();
+        std::string l = std::string(TR(rnf_video_quality_label(q))) + "##videoquality" + std::to_string(q);
+        if (ImGui::RadioButton(l.c_str(), preset == q)) exportQuality_ = int(rnf_video_quality(q));
+      }
+      // Length · approx. size (an estimate for exactly this range / canvas / codec / quality).
+      uint64_t a = 0, b = 0;
+      bool any = videoFrames(d_.emu, videoRange_, videoSection_, videoCursor_, &a, &b);
+      uint64_t frames = any ? b - a : 0;
+      rowLabel(TR("Length"));
+      ImGui::TextDisabled("%s", str(rnf_video_summary(frames, rnf_export_predict_size(&g, 0, exportQuality_, frames, nullptr))).c_str());
+      // Details ›: codec / size / PAR / overscan / flash / CRT (the bit rate is Quality).
+      ImGui::SetNextItemOpen(exportDetails_, ImGuiCond_Always);
+      exportDetails_ = ImGui::CollapsingHeader(TR("Details ›"));
+      if (exportDetails_) {
+        const float colW = S(430), x0 = ImGui::GetCursorPosX();
+        ImGui::TextUnformatted(TR("Size"));
+        for (size_t i = 0, n = rnf_export_preset_count(), col = 0; i < n; ++i) {
+          rnf_export_preset p{};
+          if (!rnf_export_preset_get(i, &p)) continue;
+          if (col % 3) ImGui::SameLine(x0 + colW * 2 * float(col % 3) / 3.0f);
+          ++col;
+          std::string l = str(rnf_export_preset_label(&p)) + "##preset" + std::to_string(i);
+          if (ImGui::RadioButton(l.c_str(), exportPreset_ == int(i))) exportPreset_ = int(i);
+        }
+        ImGui::TextUnformatted(TR("Pixel Aspect Ratio"));
+        if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
+        ImGui::SameLine();
+        if (ImGui::RadioButton(TR("8:7 (as on a CRT TV)"), exportPar87_)) exportPar87_ = true;
+        ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
+        ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
+        ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable);
+        ImGui::SameLine();
+        ImGui::Checkbox(TR("Apply CRT Effect"), &exportApplyCRT_);
+        ImGui::EndDisabled();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(TR("Codec"));
         ImGui::SameLine();
@@ -275,8 +266,19 @@ void UI::buildExportDialog() {
           ImGui::SameLine();
           if (ImGui::RadioButton(encoders[size_t(i)].label, exportEncoder_ == i + 1)) exportEncoder_ = i + 1;
         }
-        wrappedDisabled(TR("The export is made by re-running the recorded input from the start in a separate emulator. The "
-                           "project is not changed, and you can keep playing while it exports."));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(TR("Name"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(S(440));
+        ImGui::InputText("##exportname", exportName_, sizeof exportName_);
+        ImGui::SameLine();
+        ImGui::TextDisabled(".mp4");
+        std::string canvas = std::to_string(g.canvas_width) + "×" + std::to_string(g.canvas_height);
+        std::string picture = std::to_string(g.dst_width) + "×" + std::to_string(g.dst_height);
+        ImGui::TextDisabled("%s: %s", TR("Output"),
+                            TRF("%@ (picture %@, vertical ×%lld, nearest neighbor)", {canvas, picture, g.vertical_scale}).c_str());
+        ImGui::TextDisabled("%s", TRF("Saved in %@", {Paths::display(d_.library->root() + "/Exports")}).c_str());
+        (void)colW;
       }
       ImGui::EndChild();
       if (!exportError_.empty()) ImGui::TextColored(ImVec4(1, 0.65f, 0.3f, 1), "%s", exportError_.c_str());
@@ -285,15 +287,15 @@ void UI::buildExportDialog() {
         ImGui::SetKeyboardFocusHere();  // the main action first; the options are above it
         ImGui::SetNavCursorVisible(true);
       }
-      ImGui::BeginDisabled(st.takeLength == 0 || exportJob_.running());
+      ImGui::BeginDisabled(!any || st.takeLength == 0 || exportJob_.running());
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.85f, 1));
       if (ImGui::Button(TR("Export"), ImVec2(S(180), S(48)))) startExport();
       ImGui::PopStyleColor();
       ImGui::EndDisabled();
       ImGui::SameLine();
-      if (ImGui::Button(TR("Cancel"), ImVec2(S(160), S(48)))) close = true;
+      if (ImGui::Button(TR("Cancel (make video)"), ImVec2(S(160), S(48)))) close = true;
       ImGui::SameLine(0, S(24));
-      inlinePrompts(TR("Cancel"));
+      inlinePrompts(TR("Cancel (make video)"));
     }
     if (!appearing && !io.WantTextInput &&
         (ImGui::IsKeyPressed(cancelKey(), false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
@@ -304,28 +306,52 @@ void UI::buildExportDialog() {
   if (close) exportDialog_ = false;
 }
 
+// The export's end (dialog closed or not): "Video saved" with Open / Share, or what went wrong. Its
+// progress is in the status label ("Making video… n%").
 void UI::buildExportProgressPill() {
-  if (exportDialog_ || !exportStarted_) return;
-  ImDrawList* dl = ImGui::GetForegroundDrawList();
-  std::string text;
-  if (exportJob_.running()) {
-    char b[16];
-    std::snprintf(b, sizeof b, "%.0f%%", exportJob_.progress() * 100);
-    text = std::string(TR("Export to MP4")) + "  " + b;
-  } else if (exportJob_.finished()) {
-    // Finished in the background: say so once (notice), then the pill goes away.
-    notice(exportJob_.succeeded() ? std::string(TR("Export finished")) + ": " + Paths::display(exportJob_.outPath())
-                                  : exportJob_.wasCancelled() ? std::string(TR("Export was cancelled")) : exportJob_.error());
-    exportStarted_ = false;
-    return;
+  if (!exportStarted_ || !exportJob_.finished()) return;
+  if (exportDialog_ && !exportJob_.succeeded()) return;  // the dialog shows the error
+  if (exportJob_.succeeded()) {
+    savedVideo_ = exportJob_.outPath();
+    savedVideoAt_ = -1;  // stamped by the toast
   } else {
+    notice(exportJob_.wasCancelled() ? std::string(TR("Export was cancelled")) : exportJob_.error());
+  }
+  exportStarted_ = false;
+}
+
+void UI::buildSavedVideoToast(double now) {
+  if (savedVideo_.empty()) return;
+  if (savedVideoAt_ < 0) {
+    savedVideoAt_ = now;
+    savedVideoUntil_ = now + 8.0;
+  }
+  if (now >= savedVideoUntil_) {
+    savedVideo_.clear();
     return;
   }
-  float fs = S(16);
-  ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fs, 10000, 0, text.c_str());
-  ImVec2 p(pill_.right() - ts.x - S(16), pill_.bottom() + S(8));
-  dl->AddRectFilled(p, ImVec2(p.x + ts.x + S(16), p.y + ts.y + S(8)), IM_COL32(30, 90, 160, 210), S(6));
-  dl->AddText(nullptr, fs, ImVec2(p.x + S(8), p.y + S(4)), IM_COL32(255, 255, 255, 255), text.c_str());
+  const UiMetrics& m = metrics_;
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  ImGuiIO& io = ImGui::GetIO();
+  std::string title = TR("Video saved");
+  std::string file = fs::path(savedVideo_).filename().string();
+  float fs = m.label(), hs = m.hint(), h = m.hint() * 1.9f;
+  float chipW = measure(hs, TR("Open")).x + measure(hs, TR("Share")).x + S(12) * 4 + S(10);
+  float textW = std::max(measure(fs, title.c_str()).x, measure(hs, file.c_str()).x);
+  float w = std::min(io.DisplaySize.x - S(32), S(20) + textW + S(24) + chipW + S(16));
+  float boxH = fs + hs + S(28);
+  LRect box{(io.DisplaySize.x - w) / 2, pill_.bottom() + S(12), w, boxH};
+  dl->AddRectFilled(tl(box), br(box), IM_COL32(28, 28, 32, 240), m.tileRadius());
+  dl->AddText(ImGui::GetFont(), fs, ImVec2(box.x + S(20), box.y + S(10)), kText, title.c_str());
+  textFit(dl, hs, ImVec2(box.x + S(20), box.y + S(14) + fs), std::max(0.0f, box.w - chipW - S(56)), kTextDim, file);
+  float cy = box.y + (box.h - h) / 2;
+  bool share = false, open = false;
+  LRect r = chip(dl, box.right() - S(16), cy, h, std::string(), TR("Share"), &share);
+  chip(dl, r.x - S(10), cy, h, std::string(), TR("Open"), &open);
+  // Open = the video itself; Share = its folder (the file manager, to hand it on).
+  if (open) openFile(savedVideo_);
+  if (share) openFolder(fs::path(savedVideo_).parent_path().string());
+  if (open || share) savedVideo_.clear();
 }
 
 }  // namespace rnl

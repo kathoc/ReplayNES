@@ -87,6 +87,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 7) {  // L3 = Undo of a retry (hk.undo_take), unless L3 / the undo is already bound
+      rnf_input_undo_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }

@@ -72,7 +72,6 @@ std::string UI::focusedItemId() const {
 }
 
 size_t UI::listCount(const std::string& page) const {
-  if (page == "takes") return hasSession() ? d_.emu->structure().takes.size() : 0;
   if (page == "bookmarks") return hasSession() ? d_.emu->structure().bookmarks.size() + 1 : 1;  // + "Add Bookmark"
   if (page == "controls.keyboard") return rnf_input_action_count();
   if (page == "controls.assign") return rnf_input_assign_choices(0, nullptr, 0);
@@ -84,7 +83,7 @@ size_t UI::listCount(const std::string& page) const {
 }
 
 void UI::syncMenuCounts() {
-  for (const char* p : {"takes", "bookmarks", "controls.keyboard", "controls.assign", "library.projects"}) {
+  for (const char* p : {"bookmarks", "controls.keyboard", "controls.assign", "library.projects"}) {
     int i = rnf_menu_page_find(menu_, p);
     if (i >= 0) rnf_menu_set_count(menu_, size_t(i), listCount(p));
   }
@@ -287,7 +286,7 @@ void UI::buildMenu(double now) {
     bool sheets = rnf_menu_sheet_count(menu_) > 1;
     // A list's line on top: its sheets (L / R) and / or what the column is.
     std::string id = pi.id;
-    header = sheets || id == "controls.keyboard" || id == "controls.assign" || id == "takes" || id == "library.projects";
+    header = sheets || id == "controls.keyboard" || id == "controls.assign" || id == "library.projects";
     if (sheets) reserve = RNF_MENU_MAX_ITEMS;
   }
   PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header, reserve);
@@ -460,7 +459,6 @@ void UI::buildPageHeader(const PageGeometry& g, size_t page) {
     std::string el = assignElement_.substr(assignElement_.find(':') + 1);
     left = str(rnf_input_element_title(el.c_str(), diagramFamily(slot), nullptr));
   }
-  else if (id == "takes") left = TRF("Undo steps available: %lld", {(long long)d_.emu->status().undoDepth});
   else if (id == "library.projects" && projectsRom()) left = projectsRom()->name;
   if (!left.empty()) textFit(dl, m.hint() * 1.1f, ImVec2(g.header.x + S(6), cy - m.hint() * 0.55f), g.header.w * 0.6f, kTextDim, left);
   if (sheets > 1) {
@@ -675,7 +673,7 @@ void UI::toggleCountdown() {
   changed();
 }
 
-// Rows of user data, six per sheet: takes, bookmarks, key bindings, a game's projects.
+// Rows of user data, six per sheet: bookmarks, key bindings, a game's projects.
 void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
   ImDrawList* dl = ImGui::GetWindowDrawList();
   const UiMetrics& m = metrics_;
@@ -691,7 +689,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
   std::vector<LibraryProject> projects;
   if (id == "library.projects" && projectsRom()) projects = d_.library->projectsFor(*projectsRom());
   if (pi.count == 0) {
-    std::string empty = id == "takes" ? TR("No takes yet") : TR("Nothing here yet");
+    std::string empty = TR("Nothing here yet");
     textCentered(dl, m.label(), g.panel, g.panel.y + g.panel.h / 2 - m.label() / 2, kTextDim, empty);
   }
   for (size_t k = 0; k < g.items.size(); ++k) {
@@ -704,15 +702,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
     const char* ic = "";
     std::string label, value, sub;
     ImU32 labelCol = kText;
-    if (id == "takes" && ss && row < ss->takes.size()) {
-      const TakeInfo& t = ss->takes[row];
-      ic = "git-branch";
-      label = TRF("Take #%llu", {(unsigned long long)t.id});
-      if (t.isActive) sub = TR("Current");
-      else if (t.parentId) sub = TRF("from #%llu at %@", {(unsigned long long)t.parentId, timecode(t.branchFrame)});
-      value = timecode(t.length);
-      if (f) description_ = t.isActive ? TR("The take you are on") : TR("A: switch to this take");
-    } else if (id == "bookmarks") {
+    if (id == "bookmarks") {
       if (row == 0) {
         ic = "plus";
         label = TR("Add Bookmark");
@@ -722,7 +712,6 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
         ic = "bookmark";
         label = b.name;
         value = timecode(b.frame);
-        if (!b.onActiveTake) sub = TR("other take");
         if (f) description_ = TR("A: jump there");
       }
     } else if (id == "controls.keyboard") {
@@ -806,8 +795,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
     if (f) drawFocus(r, m.tileRadius(), now);
   }
   // Hints.
-  if (id == "takes") prompt({"ui.confirm"}, TR("Switch"));
-  else if (id == "bookmarks") {
+  if (id == "bookmarks") {
     prompt({"ui.confirm"}, focus == 0 ? TR("Add") : TR("Go"));
     if (focus > 0) {
       prompt({"face.north"}, TR("Rename"));
@@ -866,12 +854,6 @@ void UI::activateRow(const std::string& page, size_t row) {
       if (emu->paused()) emu->togglePause();
     }
     changed();
-  } else if (page == "takes") {
-    const SessionStructure& ss = emu->structure();
-    if (row < ss.takes.size() && !ss.takes[row].isActive) {
-      emu->activateTake(ss.takes[row].id);
-      setMenu(false);  // paused at the switch: the seek bar shows where
-    }
   } else if (page == "bookmarks") {
     const SessionStructure& ss = emu->structure();
     if (row == 0) {

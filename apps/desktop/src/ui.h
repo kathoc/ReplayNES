@@ -2,10 +2,11 @@
 // docs/design/UI_REDESIGN.md: minimal text, no scrolling, fully controller / mouse / touch driven.
 //
 //  * Library (no game open): a "Continue" hero card and pages of large game cards (ui_library.cpp).
-//  * Playing: only the always-visible Menu pill ("☰ Menu L+R", top right; a button too) and short
-//    notices / status badges, drawn in the game's own render pass.
-//  * Paused (R / Space): the seek bar only (filmstrip + time; A / B resume, L2 / R2 rewind /
-//    fast-forward, D-pad steps) - ui_play.cpp.
+//  * Playing: only the always-visible Menu pill ("☰ Menu L+R", top right; a button too), short
+//    notices, the status label (bottom left, non-default states only) and the Undo chip after a
+//    retry (bottom right), drawn in the game's own render pass (docs/design/VTR_UX.md).
+//  * Paused (R / Space): the seek bar only (filmstrip + time; A / B play, L2 / R2 rewind /
+//    fast-forward, D-pad steps; read-only while rewind / fast-forward are held in play) - ui_play.cpp.
 //  * Quick Menu (L+R / Esc / the pill): six tiles over the dimmed game, their pages, Settings
 //    (four pages, L / R) and detail pages - the shared core's menu model (rnf_menu) drawn by
 //    ui_menu.cpp; values in ui_settings.cpp. Emulation is paused while it is open.
@@ -120,7 +121,8 @@ class UI : public DialogHost {
   std::string shownMenuPage() const { return menuOpen_ ? menuPageId() : std::string(); }
   /// L / R in the UI (InputRouter::onUiShoulder): previous / next page.
   void shoulder(int dir);
-  /// The cancel button tapped on the seek bar (InputRouter::onPausedResume): resume.
+  /// The cancel button tapped on the seek bar (InputRouter::onPausedResume): play (in playback: a
+  /// game button, so play from here).
   void resumeFromSeekBar();
   /// The paused seek bar's markers (InputRouter::onSeekInput / onMarkerHold / onPausedShoulder).
   void seekInput(int input, bool down);  // InputRouter::SeekInput
@@ -129,9 +131,11 @@ class UI : public DialogHost {
   /// The seek bar's focus for the InputRouter: 0 the bar, 1 a marker, 2 editing.
   int seekFocus() const;
   void pointerMoved(double now) { lastPointer_ = now; }
-  /// "Export…": the MP4 export dialog; startExport() = its Export button (scripts).
+  /// "Make Video" (Share, the end-of-tape chip): the dialog; startExport() = its Export button (scripts).
   void openExportDialog();
   void startExport();
+  /// The Undo chip / hk.undo_take: back to before the retry (paused there).
+  void undoRetry();
   /// The CRT display parameters of the settings (sanitized).
   CrtSettings crtSettings() const;
   /// A controller button / stick was used (prompts follow the controller).
@@ -257,9 +261,25 @@ class UI : public DialogHost {
   std::vector<const LibraryROM*> libraryRoms() const;
   const LibraryROM* projectsRom() const;
 
-  // ---- ui_play.cpp: seek bar, timeline, practice pill, badges
+  // ---- ui_play.cpp: seek bar, timeline, practice pill, status label, chips, coach
   void buildSeekBar(double now);
-  void buildTimeline(const LRect& strip, const LRect& lane, double now);
+  /// interact: mouse / touch scrub and sections (paused); false while rewind / fast-forward are held.
+  void buildTimeline(const LRect& strip, const LRect& lane, double now, bool interact);
+  /// The seek bar is up: paused, or rewind / fast-forward held in play (read-only).
+  bool seekBarShown() const;
+  /// The bottom-left status label (rnf_tape_status_label + the video export's progress); "" = none.
+  std::string statusLabelText() const;
+  /// Status label (bottom left) and the chips (bottom right: Undo, Make Video) while playing.
+  void buildPlayOverlay(double now);
+  /// A chip (rounded, clickable: true when clicked) right-aligned at `right`; returns its rectangle.
+  LRect chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked);
+  /// The bottom-right chips of the seek bar's hints row / the play overlay; returns their left edge.
+  float buildChips(ImDrawList* dl, float right, float y, float h);
+  /// The input bound to `action`: pad 1's element ("leftThumb") or a keyboard key's name; "" if none.
+  std::string boundPadElement(const char* action) const;
+  std::string boundKeyName(const char* action) const;
+  /// The first-run coach toasts (rnf_coach; persisted in Settings::coachShown).
+  void tickCoach(double now);
   bool markersActive() const;  // paused on the seek bar, not practicing, no menu / popup
   void updateMarkers(double now);  // sync with the selected slot, D-pad repeat, L / R hold
   void applyMarkers(const rnf_markers_result& r);
@@ -400,7 +420,15 @@ class UI : public DialogHost {
   std::vector<OskKeyRect> oskKeys_;
   bool oskTapDown_ = false;
   bool oskStick_[4] = {false, false, false, false};
-  // MP4 export.
+  // VTR transport (docs/design/VTR_UX.md).
+  rnf_coach* coach_ = nullptr;
+  uint64_t lastRewindStops_ = 0;
+  bool laneHints_ = false;  // the paused seek bar: ↑ entered the marker lane (its hints)
+  // "Video saved" with Open / Share (the file / its folder).
+  std::string savedVideo_;
+  double savedVideoAt_ = -1, savedVideoUntil_ = 0;
+  void buildSavedVideoToast(double now);
+  // MP4 export ("Make Video").
   ExportJob exportJob_;
   bool exportDialog_ = false;
   bool exportOpened_ = false;
@@ -409,8 +437,10 @@ class UI : public DialogHost {
   bool exportPar87_ = false;
   bool exportApplyFlash_ = true;
   bool exportApplyCRT_ = false;
-  bool exportWholeTake_ = true;
-  int exportStart_ = 0, exportEnd_ = 0;
+  rnf_video_range_kind videoRange_ = RNF_VIDEO_RANGE_ALL;
+  int videoSection_ = -1;      // RNF_VIDEO_RANGE_SECTION: the A/B slot
+  uint64_t videoCursor_ = 0;   // "Up to here": the cursor when the dialog opened
+  bool exportDetails_ = false;  // "Details ›" expanded
   int exportPreset_ = -1;
   int exportEncoder_ = 0;
   int exportQuality_ = RNF_QUALITY_STANDARD;  // rnf_export_quality

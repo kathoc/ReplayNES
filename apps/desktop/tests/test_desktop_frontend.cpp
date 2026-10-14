@@ -1354,7 +1354,7 @@ TEST_CASE("emulation: practice return - countdown at A, L2 + R2 back to A with t
   rn_input_free(in);
 }
 
-TEST_CASE("emulation: bookmarks, takes, undo, reset with backup") {
+TEST_CASE("emulation: bookmarks, a retry and its undo, reset with backup") {
   std::string d = tmpDir("takes");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1370,13 +1370,14 @@ TEST_CASE("emulation: bookmarks, takes, undo, reset with backup") {
   emu.renameBookmark(bm, "boss");
   CHECK_EQ(emu.structure().bookmarks[0].name, std::string("boss"));
   emu.seek(30);
-  emu.setResumeCountdown(false);  // re-record from here plays at once (the countdown: "resume countdown")
+  emu.setResumeCountdown(false);  // play from here plays at once (the countdown: "resume countdown")
   emu.rerecordHere();
-  tickN(emu, 10);  // branches: a second take
+  tickN(emu, 10);  // a retry: a second take (never shown)
   CHECK_EQ(emu.structure().takes.size(), size_t(2));
-  CHECK(emu.status().undoDepth >= 1);
-  emu.undoTake();
+  CHECK(emu.status().canUndo);
+  CHECK(emu.undoRetry());
   CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  CHECK_EQ(emu.structure().takes.size(), size_t(1));  // the attempt is dropped
   emu.gotoBookmark(bm);
   CHECK_EQ(emu.status().frame, uint64_t(120));
   emu.removeBookmark(bm);
@@ -1398,6 +1399,273 @@ TEST_CASE("emulation: bookmarks, takes, undo, reset with backup") {
   CHECK_EQ(emu.status().takeLength, uint64_t(10));
   emu.closeSession();
   rn_input_free(in);
+}
+
+namespace {
+/// The default bindings (pad 1: NES A = east, B = south; L3 = Undo), so game buttons and hotkeys
+/// can be pressed through rn_input.
+void loadDefaultBindings(rn_input* in) {
+  char* def = rnf_input_default_config_json(RNF_KEYBOARD_SDL);
+  REQUIRE(rn_input_load_json(in, def) == RN_OK);
+  rnf_string_free(def);
+}
+bool contains(const std::vector<std::string>& v, const std::string& x) {
+  return std::find(v.begin(), v.end(), x) != v.end();
+}
+}  // namespace
+
+TEST_CASE("emulation: VTR - rewind released in play: the countdown (with the overwrite notice), then play") {
+  std::string d = tmpDir("vtr-rewind");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  std::vector<std::string> notices;
+  emu.onNotice = [&](const std::string& t) { notices.push_back(t); };
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  tickN(emu, 120);
+  REQUIRE(!(emu.paused()));
+  CHECK_FALSE(emu.status().canUndo);
+  // L2 held during play, released: no pause - 3, 2, 1 over the picture with "Retrying from here".
+  emu.setRewindHeld(true);
+  tickN(emu, 10);
+  CHECK(emu.status().rewinding);
+  emu.setRewindHeld(false);
+  emu.tick();
+  CHECK_FALSE(emu.status().rewinding);
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK(emu.status().retryNotice);
+  CHECK_EQ(emu.status().rewindStops, uint64_t(1));
+  uint64_t f = emu.status().frame;
+  CHECK(f < uint64_t(120));
+  tickN(emu, 5);
+  CHECK_EQ(emu.status().frame, f);  // nothing emulated while counting
+  CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  // The countdown ends (here: switched off): play on from there - a retry, undoable for 10 s.
+  emu.setResumeCountdown(false);
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 0);
+  CHECK_FALSE(emu.status().retryNotice);
+  CHECK_EQ(emu.status().frame, f + 1);
+  CHECK(emu.status().canUndo);
+  CHECK_FALSE(contains(notices, TR("Retrying from here")));
+  // Countdown off: the overwrite notice is a notice instead; play goes on at once.
+  tickN(emu, 30);
+  emu.setRewindHeld(true);
+  tickN(emu, 5);
+  emu.setRewindHeld(false);
+  uint64_t g = emu.status().frame;
+  emu.tick();
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().frame, g + 1);
+  CHECK(contains(notices, TR("Retrying from here")));
+  // "Pause when rewind is released": paused, no countdown.
+  emu.pauseAfterRewind = true;
+  emu.setResumeCountdown(true);
+  tickN(emu, 10);
+  emu.setRewindHeld(true);
+  tickN(emu, 5);
+  emu.setRewindHeld(false);
+  emu.tick();
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  // A hold started while paused ends paused (no countdown) whatever the setting.
+  emu.pauseAfterRewind = false;
+  emu.setRewindHeld(true);
+  tickN(emu, 3);
+  emu.setRewindHeld(false);
+  tickN(emu, 3);
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().countdown, 0);
+  // Live play is always at the end of the tape, so fast-forward there is blocked; while watching the
+  // tape (playback) a fast-forward released before the end keeps watching (nothing is overwritten).
+  emu.setRecording(false);
+  emu.seek(10);
+  emu.togglePause();
+  emu.tick();
+  REQUIRE(!(emu.paused()));
+  emu.setFastForwardHeld(true);
+  tickN(emu, 3);
+  CHECK(emu.status().fastForward);
+  emu.setFastForwardHeld(false);
+  emu.tick();
+  CHECK_FALSE(emu.paused());
+  CHECK_FALSE(emu.status().recording);
+  CHECK_EQ(emu.status().countdown, 0);
+  // ... and one that runs to the end of the tape: paused there, "End of tape" (no notice to press
+  // Record).
+  size_t before = notices.size();
+  emu.setFastForwardHeld(true);
+  tickN(emu, 400);
+  emu.setFastForwardHeld(false);
+  emu.tick();
+  CHECK(emu.paused());
+  CHECK(emu.status().endOfTake);
+  CHECK(emu.status().atTapeEnd);
+  CHECK_EQ(notices.size(), before);
+  emu.closeSession();
+  rn_input_free(in);
+}
+
+TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to before it; rapid retries keep one attempt") {
+  std::string d = tmpDir("vtr-undo");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  loadDefaultBindings(in);
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  std::vector<std::string> notices;
+  emu.onNotice = [&](const std::string& t) { notices.push_back(t); };
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  emu.setResumeCountdown(false);
+  tickN(emu, 120);
+  CHECK_FALSE(emu.undoRetry());  // nothing to undo
+  // Play from here at 30: the tape is overwritten from there (a hidden new take).
+  emu.seek(30);
+  emu.rerecordHere();
+  tickN(emu, 10);
+  CHECK_EQ(emu.status().frame, uint64_t(40));
+  CHECK_EQ(emu.status().takeLength, uint64_t(40));
+  CHECK(emu.status().canUndo);
+  for (const std::string& n : notices) CHECK(n.find("take") == std::string::npos);  // takes are never named
+  // Undo: back to the continuation from before the retry (where it was played to), paused there.
+  CHECK(emu.undoRetry());
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  CHECK_EQ(emu.status().frame, uint64_t(120));
+  CHECK_EQ(emu.structure().takes.size(), size_t(1));
+  CHECK_FALSE(emu.status().canUndo);
+  CHECK(contains(notices, TR("Back to before the retry")));
+  // Rapid retries (rewound and retried within 10 s): only the latest attempt is kept, and Undo still
+  // goes back to the tape from before the first one.
+  emu.seek(60);
+  emu.rerecordHere();
+  tickN(emu, 10);
+  emu.seek(50);
+  emu.rerecordHere();
+  tickN(emu, 10);
+  CHECK_EQ(emu.structure().takes.size(), size_t(2));
+  CHECK_EQ(emu.status().takeLength, uint64_t(60));
+  // L3 (hk.undo_take, the default pad binding) during play: the same Undo.
+  REQUIRE(emu.status().canUndo);
+  rn_input_set_pressed(in, "gc0:leftThumb", 1);
+  emu.tick();
+  rn_input_set_pressed(in, "gc0:leftThumb", 0);
+  emu.tick();
+  CHECK(emu.paused());
+  CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  CHECK_EQ(emu.structure().takes.size(), size_t(1));
+  // Practice never offers it; a new session forgets it.
+  emu.seek(90);
+  emu.rerecordHere();
+  tickN(emu, 5);
+  CHECK(emu.status().canUndo);
+  emu.install(s);  // reinstall = an opened session
+  CHECK_FALSE(emu.status().canUndo);
+  emu.closeSession();
+  rn_input_free(in);
+}
+
+TEST_CASE("emulation: VTR - playback: a game button plays from there (countdown + notice); the end of the tape continues") {
+  std::string d = tmpDir("vtr-playback");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  loadDefaultBindings(in);
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  tickN(emu, 120);
+  // Playback (Retry > Playback): watching from the start.
+  emu.toggleRecord();
+  REQUIRE(!(emu.status().recording));
+  tickN(emu, 20);
+  CHECK_EQ(emu.status().frame, uint64_t(20));
+  // A button held from before is no press; a new press switches to play at that frame.
+  rn_input_set_pressed(in, "gc0:face.east", 1);  // NES A
+  emu.tick();
+  CHECK(emu.status().recording);
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK(emu.status().retryNotice);
+  CHECK_EQ(emu.status().frame, uint64_t(20));
+  rn_input_set_pressed(in, "gc0:face.east", 0);
+  emu.setResumeCountdown(false);
+  emu.tick();
+  CHECK_EQ(emu.status().frame, uint64_t(21));
+  CHECK_EQ(emu.status().takeLength, uint64_t(21));  // overwritten from 20 (undoable)
+  CHECK(emu.status().canUndo);
+  CHECK(emu.undoRetry());
+  CHECK_EQ(emu.status().takeLength, uint64_t(120));
+  // Paused at the end of the tape in playback: Play continues there (no restart from the start).
+  emu.setRecording(false);
+  emu.seek(120);
+  REQUIRE(emu.paused());
+  CHECK(emu.status().atTapeEnd);
+  emu.togglePause();
+  CHECK(emu.status().recording);
+  CHECK_FALSE(emu.paused());
+  tickN(emu, 3);
+  CHECK_EQ(emu.status().frame, uint64_t(123));
+  CHECK_EQ(emu.status().takeLength, uint64_t(123));
+  CHECK_FALSE(emu.status().canUndo);  // nothing was overwritten
+  // Playback that runs to the end: paused there ("End of tape").
+  emu.setRecording(false);
+  emu.seek(110);
+  emu.togglePause();
+  tickN(emu, 30);
+  CHECK(emu.paused());
+  CHECK(emu.status().endOfTake);
+  CHECK_EQ(emu.status().frame, uint64_t(123));
+  emu.closeSession();
+  rn_input_free(in);
+}
+
+TEST_CASE("menu model: Retry = Play from Here, Bookmarks, Playback, Start Over (no takes); Share > Make Video") {
+  rnf_menu* menu = rnf_menu_new(0xffffffffu);
+  CHECK(rnf_menu_page_find(menu, "takes") < 0);
+  int retry = rnf_menu_page_find(menu, "retry");
+  REQUIRE(retry >= 0);
+  std::vector<std::string> ids;
+  rnf_menu_item_info it{};
+  for (size_t i = 0; rnf_menu_item_get(menu, size_t(retry), i, &it); ++i) ids.push_back(it.id);
+  CHECK_EQ(ids, std::vector<std::string>({"retry.rerecord", "retry.bookmarks", "retry.playback", "retry.restart"}));
+  for (size_t p = 0; p < rnf_menu_page_count(menu); ++p)
+    for (size_t i = 0; rnf_menu_item_get(menu, p, i, &it); ++i) {
+      std::string id = it.id;
+      CHECK(id != "retry.undo");
+      CHECK(id != "retry.takes");
+      if (id == "share.export") CHECK_EQ(std::string(it.label), std::string("Make Video"));
+      if (id == "retry.rerecord") CHECK_EQ(std::string(it.label), std::string("Play from Here"));
+    }
+  rnf_menu_free(menu);
+  // hk.undo_take on pad 1's L3 by default; saved layouts before 7 get it unless L3 is taken.
+  rnf_binding taken[] = {{"gc0:leftThumb", "hk.bookmark"}};
+  rnf_list *u = nullptr, *b = nullptr;
+  rnf_input_undo_migration(taken, 1, &u, &b);
+  CHECK_EQ(rnf_list_count(b), size_t(0));
+  rnf_list_free(u);
+  rnf_list_free(b);
+  rnf_binding none[] = {{"gc0:face.east", "p1.a"}};
+  rnf_input_undo_migration(none, 1, &u, &b);
+  REQUIRE_EQ(rnf_list_count(b), size_t(1));
+  CHECK_EQ(std::string(rnf_list_a(b, 0)), std::string("gc0:leftThumb"));
+  rnf_list_free(u);
+  rnf_list_free(b);
+}
+
+TEST_CASE("settings: coachShown round trip") {
+  Settings st;
+  CHECK_EQ(st.coachShown, uint32_t(0));
+  st.coachShown = RNF_COACH_REWIND | RNF_COACH_VIDEO;
+  CHECK_EQ(Settings::parse(st.serialize()).coachShown, uint32_t(RNF_COACH_REWIND | RNF_COACH_VIDEO));
+  CHECK_EQ(Settings::parse("coachShown=-1\n").coachShown, uint32_t(0));
 }
 
 // ------------------------------------------------------------------ session lifecycle

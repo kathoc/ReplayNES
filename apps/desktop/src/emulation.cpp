@@ -37,6 +37,7 @@ EmulationController::EmulationController(rn_input* input, AudioSink* audio) : in
   resumeCountdown_ = rnf_resume_countdown_new();
   reel_ = rnf_reel_new(RNF_REEL_CAPACITY);
   vtr_ = rnf_vtr_new();
+  retry_ = rnf_retry_new();
   rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, flashLevel_);
   display_.assign(size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT, 0xFF000000u);
 }
@@ -50,6 +51,7 @@ EmulationController::~EmulationController() {
   rnf_resume_countdown_free(resumeCountdown_);
   rnf_reel_free(reel_);
   rnf_vtr_free(vtr_);
+  rnf_retry_free(retry_);
 }
 
 void EmulationController::notice(const std::string& s) {
@@ -114,6 +116,10 @@ void EmulationController::install(rn_session* s) {
   rnf_reel_release(reel_);
   rnf_resume_countdown_cancel(resumeCountdown_);  // a fresh recording runs at once
   countdown_ = 0;
+  rnf_retry_reset(retry_);  // a new / opened / reset session: no retry to undo
+  retryNotice_ = false;
+  rewindFromPlay_ = false;
+  replayButtons_ = 0xFFFF;
   rnf_vtr_reset(vtr_);
   vtrOn_ = false;
   pendingThumb_ = false;
@@ -134,6 +140,7 @@ void EmulationController::closeSession() {
   rnf_fast_forward_end(ff_, session_);
   rn_session_close(session_);
   session_ = nullptr;
+  rnf_retry_reset(retry_);
   rn_input_release_all(input_);
   setMuted(true);
   if (observer) observer->sessionInstalled(nullptr);
@@ -292,10 +299,13 @@ void EmulationController::togglePause() {
     setPaused(!paused_);
     return;
   }
-  rn_mode m = rn_get_mode(session_);
-  if (paused_ && rnf_record_toggle_restarts_on_play(m == RN_MODE_RECORD, m == RN_MODE_PRACTICE, rn_frame(session_),
-                                                    rn_take_length(session_)))
-    seekCommand(0);  // replay at the take end: play from the beginning
+  rn_session* s = session_;
+  // Paused at the end of the tape in playback: play continues from there (docs/design/VTR_UX.md:
+  // one tape; no restart from the beginning).
+  if (paused_ && rn_get_mode(s) == RN_MODE_REPLAY && rn_take_length(s) > 0 && rn_frame(s) >= rn_take_length(s)) {
+    rerecordHere();
+    return;
+  }
   if (paused_) resume();
   else setPaused(true);
 }
@@ -303,9 +313,29 @@ void EmulationController::togglePause() {
 void EmulationController::resume() {
   if (!paused_) return;
   setPaused(false);
-  if (session_)
-    rnf_resume_countdown_start(resumeCountdown_, nowSeconds(), rn_get_mode(session_),
-                               rnf_practice_loop_phase(practiceLoop_, nullptr));
+  startResume();
+}
+
+void EmulationController::startResume() {
+  rn_session* s = session_;
+  retryNotice_ = false;
+  if (!s || paused_) return;
+  rn_mode m = rn_get_mode(s);
+  const bool overwrite = rnf_tape_overwrites(m, rn_frame(s), rn_take_length(s)) != 0;
+  const bool counting =
+      rnf_resume_countdown_start(resumeCountdown_, nowSeconds(), m, rnf_practice_loop_phase(practiceLoop_, nullptr)) != 0;
+  // "Retrying from here": under the numeral (the countdown's own pass), else a short notice.
+  retryNotice_ = overwrite && counting;
+  if (overwrite && !counting) notice(TR("Retrying from here"));
+}
+
+bool EmulationController::replayButtonPressed() {
+  uint8_t p1 = 0, p2 = 0;
+  rn_input_sample_game(input_, rn_frame(session_), &p1, &p2);
+  const uint16_t now = uint16_t(p1 | (p2 << 8));
+  const uint16_t pressed = uint16_t(now & ~replayButtons_);  // held since before watching: no press
+  replayButtons_ = now;
+  return pressed != 0;
 }
 
 void EmulationController::toggleSlow() {
@@ -373,12 +403,22 @@ EmulationController::Tick EmulationController::tick() {
   }
   bool wantFF = !wantRewind && !practicing && ffHeld;
   if (wantFF && !fastForward_) beginFastForward();
-  if (!wantFF && fastForward_) endFastForward();
+  if (!wantFF && fastForward_) endFastForward(!wantRewind);
   fastForward_ = wantFF;
+  // Watching the tape (playback, playing): a game button plays from here (RECORD, the countdown).
+  if (rn_get_mode(s) == RN_MODE_REPLAY && !paused_ && !modalHold_ && !wantRewind && !fastForward_ &&
+      !rnf_resume_countdown_active(resumeCountdown_)) {
+    if (replayButtonPressed()) rerecordHere();
+  } else {
+    replayButtons_ = 0xFFFF;
+  }
 
   bool emulatedLive = false;
   if (wantRewind) {
-    if (!rewinding_) resetFlashFilter();  // rewind start: a new continuous (backwards) sequence
+    if (!rewinding_) {
+      resetFlashFilter();  // rewind start: a new continuous (backwards) sequence
+      rewindFromPlay_ = !paused_ && !practicing;
+    }
     rewinding_ = true;
     if (practicing) rnf_practice_loop_interrupt(practiceLoop_);
     setMuted(true);
@@ -407,7 +447,13 @@ EmulationController::Tick EmulationController::tick() {
     if (rewinding_) {
       rewinding_ = false;
       rewindTicks_ = 0;
+      if (!practicing) rewindStops_ += 1;
+      // Released: paused (Settings), or - a hold that started during play - the resume countdown,
+      // then play (from a cursor before the end: a retry, with its notice). A hold started while
+      // paused ends paused.
       if (pauseAfterRewind) setPaused(true);
+      else if (rewindFromPlay_ && !paused_) startResume();
+      rewindFromPlay_ = false;
     }
     bool resumeCounting = !paused_ && tickResumeCountdown();
     if (paused_) {
@@ -476,8 +522,12 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   uint8_t ev = live ? pendingEvents_ : 0;
   pendingEvents_ = 0;
   uint64_t before = rn_frame(s);
+  const uint64_t takeBefore = rn_active_take(s);
+  // Live play goes through the retry bookkeeping (undo window, burst collapse); frame steps replay.
+  const bool overwrite = !frameStep && rnf_tape_overwrites(mode, before, rn_take_length(s));
   rn_step_info info{};
-  rn_status st = frameStep ? rnf_transport_step(s, p1, p2, ev, &info) : rn_step(s, p1, p2, ev, &info);
+  rn_status st = frameStep ? rnf_transport_step(s, p1, p2, ev, &info)
+                           : rnf_retry_step(retry_, s, nowSeconds(), p1, p2, ev, &info);
   if (st != RN_OK) {
     setPaused(true);
     advanceRemaining_ = 0;
@@ -485,17 +535,16 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
     return false;
   }
   if (mode != RN_MODE_PRACTICE && info.end_of_take && info.frame == before) {
-    if (!endOfTake_) notice(TR("End of the take (press “Record” to continue recording from here)"));
-    endOfTake_ = true;
+    endOfTake_ = true;  // "End of tape" (the status label); resuming there plays on
     setPaused(true);
     advanceRemaining_ = 0;
     return false;
   }
   endOfTake_ = false;
-  if (info.branched) {
-    markStructureDirty();
-    notice(TR("Recording a new take from here. The old continuation is kept: “Back to Previous Take” returns to it"));
-  }
+  // A retry: a new take, or (a rapid retry inside the attempt it abandons) the same take cut at the
+  // cursor. Takes are never shown; the structure / thumbnails follow.
+  if (info.branched || info.take_id != takeBefore) markStructureDirty();
+  else if (overwrite && observer) observer->takeCut(s, before);
   if (const uint32_t* v = rn_video(s)) {
     if (mode == RN_MODE_PRACTICE) rnf_reel_offer(reel_, rn_practice_frame(s), v);
     show(v);
@@ -524,7 +573,7 @@ void EmulationController::handleHotkeys(uint32_t e) {
   if (on(RN_HK_POWER_CYCLE)) requestEvent(RN_EV_POWER_CYCLE);
   if (on(RN_HK_TOGGLE_MODE)) toggleRecord();
   if (on(RN_HK_SAVE)) save();
-  if (on(RN_HK_UNDO_TAKE)) undoTake();
+  if (on(RN_HK_UNDO_TAKE)) undoRetry();
 }
 
 // ------------------------------------------------------------------ fast-forward
@@ -546,14 +595,21 @@ void EmulationController::beginFastForward() {
   endOfTake_ = false;
 }
 
-void EmulationController::endFastForward() {
+void EmulationController::endFastForward(bool released) {
   rn_session* s = session_;
   bool wasActive = rnf_fast_forward_active(ff_);
   if (rnf_fast_forward_end(ff_, s) != RN_OK) reportError(TR("Couldn’t return to record mode"));
   fastForward_ = false;
   if (wasActive) {
-    // Like rewind: optionally stop where the user let go, so recording never resumes by surprise.
-    setPaused(pauseAfterRewind ? true : (pausedBeforeFF_ || rn_frame(s) >= rn_take_length(s)));
+    // Like rewind: optionally stop where the user let go. A hold started during play that ends
+    // before the end of the tape resumes with the countdown (and the overwrite notice).
+    bool atEnd = rn_frame(s) >= rn_take_length(s);
+    if (released && !pauseAfterRewind && !pausedBeforeFF_ && !atEnd) {
+      setPaused(false);
+      startResume();
+    } else {
+      setPaused(pauseAfterRewind ? true : (pausedBeforeFF_ || atEnd));
+    }
   }
   ffBlocked_ = false;
 }
@@ -573,7 +629,7 @@ void EmulationController::tickFastForward() {
   if (atEnd) {
     ffBlocked_ = true;
     setPaused(true);
-    notice(TR("Reached the end of the recording (paused here)"));
+    endOfTake_ = true;  // "End of tape" (the status label)
   }
 }
 
@@ -1032,8 +1088,7 @@ void EmulationController::toggleRecord() {
   advanceRemaining_ = 0;
   setPaused(!plan.play);
   if (plan.play) setMuted(true);  // unmuted by the next audible step
-  notice(plan.record ? TR("Record mode: recording continues from here with your next input")
-                     : TR("Playback mode: plays the recorded take (nothing is recorded)"));
+  // No notice: the status label says "Playback" while watching (docs/design/VTR_UX.md).
 }
 
 void EmulationController::rerecordHere() {
@@ -1042,9 +1097,13 @@ void EmulationController::rerecordHere() {
   if (rn_get_mode(s) == RN_MODE_PRACTICE) stopPractice();
   setRecording(true);
   if (rn_get_mode(s) == RN_MODE_RECORD) {
-    resume();  // the resume countdown first (recording again from here is live play)
     slow_ = 1;
-    notice(TR("Record mode: recording continues from here with your next input"));
+    endOfTake_ = false;
+    advanceRemaining_ = 0;
+    // The resume countdown first (playing from here is live play), with "Retrying from here" before
+    // the end of the tape.
+    if (paused_) resume();
+    else startResume();
   }
 }
 
@@ -1098,48 +1157,28 @@ void EmulationController::renameBookmark(uint64_t id, const std::string& name) {
   else reportError(TR("Couldn’t rename"));
 }
 
-void EmulationController::activateTake(uint64_t id) {
+bool EmulationController::undoRetry() {
   rn_session* s = session_;
-  if (!s) return;
-  if (rn_get_mode(s) == RN_MODE_PRACTICE) {
-    notice(practiceBlockedText());
-    return;
-  }
+  if (!s) return false;
+  double now = nowSeconds();
+  if (!rnf_retry_can_undo(retry_, now, rn_active_take(s), rn_get_mode(s))) return false;
   if (rnf_fast_forward_active(ff_)) endFastForward();
-  if (rn_take_activate(s, id) != RN_OK) {
-    reportError(TR("Couldn’t switch takes"));
-    return;
-  }
+  // Back to the continuation from before the retry (the attempt is dropped), paused there.
+  rn_status st = rnf_retry_apply_undo(retry_, s, now);
   setPaused(true);
-  setMuted(true);
-  endOfTake_ = false;
-  markStructureDirty();
-  publishVideo();
-  notice(TRF("Switched to take #%llu", {(unsigned long long)id}));
-}
-
-void EmulationController::undoTake() {
-  rn_session* s = session_;
-  if (!s) return;
-  if (rn_get_mode(s) == RN_MODE_PRACTICE) {
-    notice(practiceBlockedText());
-    return;
-  }
-  if (rn_undo_depth(s) == 0) {
-    notice(TR("There is no previous take to go back to"));
-    return;
-  }
-  if (rnf_fast_forward_active(ff_)) endFastForward();
-  if (rn_undo_take_switch(s) != RN_OK) {
-    reportError(TR("Couldn’t go back to the previous take"));
-    return;
-  }
-  setPaused(true);
+  advanceRemaining_ = 0;
   endOfTake_ = false;
   setMuted(true);
   publishVideo();
   markStructureDirty();
-  notice(TR("Went back to the previous take"));
+  pendingThumb_ = true;
+  pendingThumbFrame_ = rn_frame(s);
+  if (st != RN_OK) {
+    reportError(TR("Couldn’t go back"));
+    return false;
+  }
+  notice(TR("Back to before the retry"));
+  return true;
 }
 
 bool EmulationController::save() {
@@ -1173,6 +1212,7 @@ void EmulationController::applyResume(const rnf_resume_record& r) {
   rn_session* s = session_;
   if (!s) return;
   if (rnf_resume_apply(&r, s) != RN_OK) reportError(TR("Couldn’t move to the previous position"));
+  rnf_retry_reset(retry_);
   setPaused(true);
   setMuted(true);
   endOfTake_ = false;
@@ -1274,6 +1314,9 @@ void EmulationController::updateStatus() {
   // The practice countdown, or the resume countdown (in any mode it applies in).
   st.countdown = countdown_;
   st.countdownFraction = countdownFraction_;
+  st.retryNotice = retryNotice_ && countdown_ > 0 && rnf_resume_countdown_active(resumeCountdown_);
+  st.canUndo = rnf_retry_can_undo(retry_, nowSeconds(), st.activeTake, rn_get_mode(s)) != 0;
+  st.rewindStops = rewindStops_;
   if (st.practicing) {
     st.practiceSlot = practiceSlot_;
     st.practiceFrame = rn_practice_frame(s);
@@ -1287,6 +1330,7 @@ void EmulationController::updateStatus() {
     st.practiceLooping = false;
     st.practiceLoops = 0;
   }
+  st.atTapeEnd = !st.practicing && st.takeLength > 0 && st.frame >= st.takeLength;
 }
 
 const SessionStructure& EmulationController::structure() {

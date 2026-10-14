@@ -51,6 +51,11 @@ struct EmuStatus {
   // countdown): 3, 2, 1 (0 = none) and how far into that number (0...1).
   int countdown = 0;
   double countdownFraction = 0;
+  // VTR transport (docs/design/VTR_UX.md).
+  bool retryNotice = false;  // the resume countdown starts an overwrite: "Retrying from here" under the numeral
+  bool canUndo = false;      // the Undo chip (rnf_retry_can_undo): a retry started < 10 s ago
+  bool atTapeEnd = false;    // the cursor is at the end of the tape (length > 0, not practicing)
+  uint64_t rewindStops = 0;  // count of rewinds of the tape ended (L2 released; the coach's RETRY tip)
 };
 
 struct BookmarkInfo {
@@ -90,6 +95,12 @@ class FrameObserver {
   virtual void sessionInstalled(rn_session* s) = 0;
   /// The take frame `frame` is what rn_video shows (after a step / seek), on the frame thread.
   virtual void frameShown(rn_session* s, uint64_t frame) = 0;
+  /// The active take was cut after `keepThrough` and continues from there (a rapid retry inside its
+  /// own frames, rn_take_truncate): pictures after it are stale.
+  virtual void takeCut(rn_session* s, uint64_t keepThrough) {
+    (void)s;
+    (void)keepThrough;
+  }
 };
 
 class EmulationController {
@@ -170,6 +181,9 @@ class EmulationController {
   void toggleSlow();
   void toggleRecord();
   void setRecording(bool rec);
+  /// "Play from Here" (Retry menu; a game button while watching the tape; the seek bar's Play in
+  /// playback): RECORD at the cursor, then the resume countdown (with the overwrite notice before the
+  /// end of the tape).
   void rerecordHere();
   void seek(uint64_t frame);
   /// Timeline drag: paused, silent.
@@ -185,8 +199,9 @@ class EmulationController {
   void gotoBookmark(uint64_t id);
   void removeBookmark(uint64_t id);
   void renameBookmark(uint64_t id, const std::string& name);
-  void activateTake(uint64_t id);
-  void undoTake();
+  /// The Undo chip / hk.undo_take (docs/design/VTR_UX.md): back to the continuation from before the
+  /// retry (rnf_retry_apply_undo), paused there. False (nothing happens) when it is not available.
+  bool undoRetry();
   /// Full save of a project with a folder. Returns false (and reports) on failure.
   bool save();
   /// Quit / background: full save for the temporary project, the journal for a project.
@@ -236,10 +251,17 @@ class EmulationController {
   /// frameStep: a paused frame advance (rnf_transport_step: replays inside the take, records
   /// only at its end); otherwise live play (records in record mode, branching mid-take).
   bool stepOnce(bool audible, bool frameStep = false);
+  /// Resume (unpaused): the resume countdown when it applies; an overwrite gets its notice (under the
+  /// numeral, or a notice when the countdown is off).
+  void startResume();
+  /// Watching the tape (REPLAY, playing): a game button pressed since the last tick (rising edge).
+  bool replayButtonPressed();
   void stepFrame(int dir);
   void handleHotkeys(uint32_t edges);
   void beginFastForward();
-  void endFastForward();
+  /// released: the user let go of fast-forward (a hold that started during play resumes with the
+  /// countdown unless it reached the end of the tape); otherwise (seek, mode switch ...) as before.
+  void endFastForward(bool released = false);
   void tickFastForward();
   void tickPractice();
   /// The run arrived at A (start, loop, L2 + R2): A's picture, the countdown.
@@ -305,6 +327,12 @@ class EmulationController {
   int countdown_ = 0;
   double countdownFraction_ = 0;
   rnf_resume_countdown* resumeCountdown_ = nullptr;
+  // VTR transport: retry undo / burst collapse, the overwrite notice, playback -> play.
+  rnf_retry* retry_ = nullptr;
+  bool retryNotice_ = false;
+  bool rewindFromPlay_ = false;  // the current rewind hold started during play
+  uint64_t rewindStops_ = 0;
+  uint16_t replayButtons_ = 0xFFFF;  // game buttons seen while watching (0xFFFF: not watching)
   // VTR effect: display_ shows vtrBase_ (the clean picture) through rnf_vtr_apply while active.
   rnf_vtr* vtr_ = nullptr;
   bool vtrEnabled_ = true;

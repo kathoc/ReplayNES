@@ -106,12 +106,14 @@ UI::UI(Deps d) : d_(d) {
   menu_ = rnf_menu_new(menuFeatures_);
   markers_ = rnf_markers_new();
   markerRepeat_ = rnf_step_repeater_new();
+  coach_ = rnf_coach_new(d_.settings ? d_.settings->coachShown : 0);
 }
 
 UI::~UI() {
   rnf_menu_free(menu_);
   rnf_markers_free(markers_);
   rnf_step_repeater_free(markerRepeat_);
+  rnf_coach_free(coach_);
 }
 
 bool UI::hasSession() const { return d_.emu->session() != nullptr; }
@@ -282,7 +284,15 @@ void UI::shoulder(int dir) {
 }
 
 void UI::resumeFromSeekBar() {
-  if (hasSession() && !menuOpen_ && d_.emu->paused() && !interactive()) d_.emu->togglePause();
+  if (!hasSession() || menuOpen_ || !d_.emu->paused() || interactive()) return;
+  // Watching the tape: the button is a game button, so play from here (RECORD, the countdown).
+  const EmuStatus& st = d_.emu->status();
+  if (!st.recording && !st.practicing) d_.emu->rerecordHere();
+  else d_.emu->togglePause();
+}
+
+void UI::undoRetry() {
+  if (hasSession()) d_.emu->undoRetry();
 }
 
 void UI::notice(const std::string& text, double seconds) {
@@ -418,8 +428,9 @@ void UI::build(double now) {
   if (!d_.settings->menuHintShown && pulseStart_ < 0) pulseStart_ = now;
 
   updateMarkers(now);
+  tickCoach(now);
   if (!hasSession()) buildLibrary(now);
-  else if (!menuOpen_ && paused) buildSeekBar(now);
+  else if (!menuOpen_ && seekBarShown()) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);
   buildOverlays(now);
   pollAddToSteam();
@@ -428,6 +439,7 @@ void UI::build(double now) {
   buildRename();
   buildExportDialog();
   buildExportProgressPill();
+  buildSavedVideoToast(now);
   updateTextEntry(now);  // after every text field of the frame (ui_osk.cpp)
   popupLastFrame_ = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
   layoutCheckEndFrame();
@@ -440,6 +452,7 @@ void UI::buildOverlays(double now) {
   if (session && !menuOpen_) {
     buildBadges();
     if (d_.emu->status().practicing && !d_.emu->status().paused) buildPracticePill();
+    if (!seekBarShown()) buildPlayOverlay(now);
     if (d_.emu->status().countdown > 0) buildCountdown();
   }
   buildNotice(now);
@@ -454,7 +467,7 @@ void UI::buildNotice(double now) {
   float fs = m.label(), wrap = io.DisplaySize.x * 0.7f;
   ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fs, FLT_MAX, wrap, notice_.c_str());
   float bottom = m.bottomBar().y - S(10);
-  if (hasSession() && !menuOpen_ && d_.emu->status().paused) bottom = layoutSeek(m).panel.y - S(12);
+  if (hasSession() && !menuOpen_ && seekBarShown()) bottom = layoutSeek(m).panel.y - S(12);
   ImVec2 pad(S(20), S(12));
   ImVec2 p0((io.DisplaySize.x - ts.x) * 0.5f - pad.x, bottom - ts.y - pad.y * 2);
   ImDrawList* dl = ImGui::GetForegroundDrawList();

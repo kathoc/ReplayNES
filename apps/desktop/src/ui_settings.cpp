@@ -155,9 +155,8 @@ float UI::itemFraction(const std::string& id) const {
 bool UI::itemEnabled(const std::string& id) const {
   const EmuStatus& st = d_.emu->status();
   bool crt = d_.renderer->postProcessStatus().crtAvailable;
-  if (id == "retry.undo") return st.undoDepth > 0 && !st.practicing;
   if (id == "retry.playback") return !st.practicing && st.takeLength > 0;
-  if (id == "retry.takes" || id == "retry.bookmarks" || id == "retry.restart") return hasSession();
+  if (id == "retry.rerecord" || id == "retry.bookmarks" || id == "retry.restart") return hasSession();
   if (id == "share.export") return RNL_HAVE_MP4_EXPORT && st.takeLength > 0;
   if (id == "display.crt" || id.rfind("crt.", 0) == 0 || id == "display.crt_detail") return crt;
   if (id == "updates.check")
@@ -267,10 +266,7 @@ void UI::activateItem(const std::string& id) {
   Settings& s = *d_.settings;
   if (id == "retry.rerecord") {
     setMenu(false);
-    emu->rerecordHere();  // resumes recording from here
-  } else if (id == "retry.undo") {
-    emu->undoTake();
-    setMenu(false);  // paused: the seek bar shows where it went
+    emu->rerecordHere();  // Play from Here: the countdown, then play on from this point
   } else if (id == "share.export") {
     openExportDialog();
   } else if (id == "crt.reset") {

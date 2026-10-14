@@ -73,6 +73,7 @@ class ThumbnailManager : public FrameObserver {
 
   void sessionInstalled(rn_session* s) override;
   void frameShown(rn_session* s, uint64_t frame) override;
+  void takeCut(rn_session* s, uint64_t keepThrough) override;
 
   /// The timeline was laid out (UI): picks the tile step (= thumbnail grid) and schedules the
   /// missing pictures. Returns the step.

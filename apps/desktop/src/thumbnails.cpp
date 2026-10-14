@@ -121,6 +121,17 @@ void ThumbnailManager::syncTake(rn_session* s) {
   rnf_thumb_cache_rebase(cache_, t, rnf_take_shared_prefix(takes.data(), takes.size(), old, t));
 }
 
+void ThumbnailManager::takeCut(rn_session* s, uint64_t keepThrough) {
+  // The same take id with new frames after keepThrough: drop the later pictures (a rebase through
+  // "no take" and back keeps exactly the frames up to the cut).
+  if (!s) return;
+  uint64_t t = rn_active_take(s);
+  if (rnf_thumb_cache_take(cache_) != t) return;  // syncTake rebases on the next picture anyway
+  rnf_thumb_cache_rebase(cache_, 0, keepThrough);
+  rnf_thumb_cache_rebase(cache_, t, UINT64_MAX);  // a running batch is of the old generation: dropped
+  nextReconcile_ = 0;
+}
+
 void ThumbnailManager::frameShown(rn_session* s, uint64_t frame) {
   if (!enabled || !s) return;
   syncTake(s);

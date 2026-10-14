@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace rnl {
@@ -48,6 +49,7 @@ struct Settings {
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
   std::string language = "auto";  // "auto" (the system's), "ja", "en"
   bool menuHintShown = false;     // the Menu pill pulsed on the first launch
+  uint32_t coachShown = 0;        // first-run coach toasts shown (rnf_coach_shown bits, docs/design/VTR_UX.md)
   // Input layout version of the saved bindings (RNF_CONTROLLER_LAYOUT_VERSION; 0 = never saved).
   int controllerLayoutVersion = 0;
   // UI state worth keeping

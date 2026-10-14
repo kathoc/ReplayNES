@@ -21,6 +21,8 @@ bool copyTree(const std::string& from, const std::string& to, std::string* error
 
 /// Shows a folder in the file manager (Explorer on Windows). App library only (platform/shell.cpp).
 bool openFolder(const std::string& dir);
+/// Opens a file with its default application (a made video). App library only (platform/shell.cpp).
+bool openFile(const std::string& path);
 
 /// Running inside Steam's Gaming Mode (gamescope session, Steam Deck): full screen by default,
 /// Steam's on-screen keyboard. Always false on Windows.

@@ -1,4 +1,5 @@
-// openFolder (platform.h): Explorer on Windows, the desktop's file manager through SDL elsewhere.
+// openFolder / openFile (platform.h): Explorer / the shell on Windows, the desktop's file manager or
+// default application through SDL elsewhere.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <string>
 
@@ -19,18 +20,34 @@
 
 namespace rnl {
 
-bool openFolder(const std::string& dir) {
 #ifdef _WIN32
-  int n = MultiByteToWideChar(CP_UTF8, 0, dir.c_str(), -1, nullptr, 0);
+namespace {
+bool shellExecute(const wchar_t* verb, const std::string& path) {
+  int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
   if (n <= 0) return false;
   std::wstring w(size_t(n), L'\0');
-  MultiByteToWideChar(CP_UTF8, 0, dir.c_str(), -1, w.data(), n);
+  MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, w.data(), n);
   for (wchar_t& c : w)
     if (c == L'/') c = L'\\';
-  HINSTANCE r = ShellExecuteW(nullptr, L"explore", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  HINSTANCE r = ShellExecuteW(nullptr, verb, w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
   return reinterpret_cast<INT_PTR>(r) > 32;
+}
+}  // namespace
+#endif
+
+bool openFolder(const std::string& dir) {
+#ifdef _WIN32
+  return shellExecute(L"explore", dir);
 #else
   return SDL_OpenURL(("file://" + dir).c_str());
+#endif
+}
+
+bool openFile(const std::string& path) {
+#ifdef _WIN32
+  return shellExecute(L"open", path);
+#else
+  return SDL_OpenURL(("file://" + path).c_str());
 #endif
 }
 

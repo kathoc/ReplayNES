@@ -1,12 +1,15 @@
 // While a game is open and the menu is closed: the seek bar when paused (filmstrip + time + the
-// A/B lane; the cancel button resumes, L / R and the D-pad step, L2 / R2 rewind / fast-forward -
+// A/B lane; the cancel button plays, L / R and the D-pad step, L2 / R2 rewind / fast-forward -
 // all through the InputRouter; mouse / touch scrub, select and drag sections on it; the A/B
-// markers of the selected slot from the controller: rnf_markers, docs/design/UI_REDESIGN.md), the
-// practice pill and the status badges. All in the game's render pass; nothing at all while playing
-// but the badges.
+// markers of the selected slot from the controller: rnf_markers, docs/design/UI_REDESIGN.md) and
+// read-only while rewind / fast-forward are held in play; the practice pill, the status label, the
+// Undo / Make Video chips and the first-run coach toasts (docs/design/VTR_UX.md). All in the game's
+// render pass; while playing only the status label (non-default states) and the Undo chip.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "app_model.h"
@@ -30,6 +33,11 @@ const ImU32 kSlotColors[8] = {IM_COL32(255, 149, 0, 255), IM_COL32(10, 132, 255,
                               IM_COL32(255, 55, 95, 255),  IM_COL32(191, 90, 242, 255), IM_COL32(64, 200, 224, 255),
                               IM_COL32(255, 214, 10, 255), IM_COL32(255, 69, 58, 255)};
 ImU32 slotColor(int slot, float a = 1.0f) { return alpha(kSlotColors[((slot % 8) + 8) % 8], a); }
+std::string takeStr(char* p) {
+  std::string s = p ? p : "";
+  rnf_string_free(p);
+  return s;
+}
 }  // namespace
 
 // ------------------------------------------------------------------ markers (controller A / B)
@@ -72,6 +80,7 @@ void UI::updateMarkers(double now) {
     rnf_markers_result r = rnf_markers_leave(markers_);
     const EmuStatus& st = d_.emu->status();
     if (r.seek && hasSession() && st.paused && !st.practicing) d_.emu->scrub(r.seek_frame);
+    laneHints_ = false;
     markerHoldDir_ = 0;
     rnf_step_repeater_reset(markerRepeat_);
     return;
@@ -116,7 +125,14 @@ void UI::seekInput(int input, bool down) {
       break;
     }
     case SI::up:
-      if (down) applyMarkers(rnf_markers_move(markers_, 0, -1, head));
+      if (down) {
+        // ↑ enters the marker lane: its hints (and the markers, when there are any). Without
+        // markers a second ↑ leaves it again.
+        bool onBar = !editing && rnf_markers_focus(markers_) < 0;
+        rnf_markers_result r = rnf_markers_move(markers_, 0, -1, head);
+        laneHints_ = onBar && r.outcome == RNF_MARKERS_IGNORED ? !laneHints_ : true;
+        applyMarkers(r);
+      }
       break;
     case SI::down:
       if (down) applyMarkers(rnf_markers_move(markers_, 0, 1, head));
@@ -166,11 +182,19 @@ void UI::pausedShoulder(int dir) {
 
 // ------------------------------------------------------------------ seek bar
 
+bool UI::seekBarShown() const {
+  if (!hasSession() || menuOpen_) return false;
+  const EmuStatus& st = d_.emu->status();
+  return st.paused || st.rewinding || st.fastForward;
+}
+
 void UI::buildSeekBar(double now) {
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
   SeekGeometry g = layoutSeek(m);
   const EmuStatus& st = d_.emu->status();
+  // Rewind / fast-forward held during play: the bar is read-only (the status label, no hints).
+  const bool interact = st.paused;
   ImGui::SetNextWindowPos(tl(g.panel));
   ImGui::SetNextWindowSize(ImVec2(g.panel.w, g.panel.h));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -182,34 +206,41 @@ void UI::buildSeekBar(double now) {
   ImDrawList* dl = ImGui::GetWindowDrawList();
   dl->AddRectFilled(tl(g.panel), br(g.panel), kPanel, m.panelRadius());
   layoutRecord(g.panel);
-  // Times: where we are (with the record / playback state) | the take's length.
+  // Times: where we are | the tape's length (no record / playback badge: the status label says it).
   std::string left = timecode(st.practicing ? st.practiceFrame : st.frame);
   std::string right = st.practicing ? (st.practiceLength > 0 ? timecode(st.practiceLength) : std::string("--:--.--"))
                                     : timecode(st.takeLength) + (st.unsaved ? " \xE2\x80\xA2" : "");
   float cy = g.strip.y + g.strip.h / 2;
-  ImU32 stateCol = st.practicing ? IM_COL32(255, 149, 0, 255) : st.recording ? kBrand : IM_COL32(48, 209, 88, 255);
-  const char* stateIcon = st.recording && !st.practicing ? "player-record-filled" : "player-play-filled";
-  float is = m.label();
-  dl->AddText(ImGui::GetFont(), is, ImVec2(g.timeLeft.x, cy - is * 1.1f), stateCol, icons::glyph(stateIcon));
-  const char* stateText = st.practicing ? TR("Practicing") : st.recording ? TR("REC") : TR("PLAY");
-  dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(g.timeLeft.x + is * 1.3f, cy - is * 1.0f), stateCol, stateText);
-  dl->AddText(ImGui::GetFont(), m.label(), ImVec2(g.timeLeft.x, cy + S(2)), kText, left.c_str());
+  ImVec2 ls = measure(m.label(), left.c_str());
+  dl->AddText(ImGui::GetFont(), m.label(), ImVec2(g.timeLeft.x, cy - ls.y / 2), kText, left.c_str());
   ImVec2 rs = measure(m.label(), right.c_str());
   dl->AddText(ImGui::GetFont(), m.label(), ImVec2(g.timeRight.right() - rs.x, cy - rs.y / 2), kTextDim, right.c_str());
-  buildTimeline(g.strip, g.lane, now);
-  // Hints inside the panel: A resume, L2 / R2 rewind / fast-forward, D-pad step.
+  buildTimeline(g.strip, g.lane, now, interact);
+  // The hints row: the status label at the left, at most four hints, the chips at the right.
   rnf_controller_family f = promptFamily();
   float gh = m.hint() * 1.45f, x = g.hints.x, hy = g.hints.y + (g.hints.h - gh) / 2;
-  auto hint = [&](std::initializer_list<const char*> els, const char* text) {
+  std::string label = statusLabelText();
+  if (!label.empty()) {
+    dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), kText, label.c_str());
+    x += measure(m.hint(), label.c_str()).x + S(26);
+  }
+  if (!interact) {
+    ImGui::End();
+    return;
+  }
+  float chipsLeft = buildChips(dl, g.hints.right(), hy, gh);
+  auto hint = [&](std::initializer_list<const char*> els, const std::string& text) {
     for (const char* e : els) x += glyph(dl, ImVec2(x, hy), e, f, gh) + S(4);
     x += S(4);
-    dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), kTextDim, text);
-    x += measure(m.hint(), text).x + S(22);
+    textFit(dl, m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), std::max(0.0f, chipsLeft - S(12) - x), kTextDim, text);
+    x += measure(m.hint(), text.c_str()).x + S(22);
   };
+  const std::string play = st.atTapeEnd ? TR("Continue (tape)") : TR("Play");
   if (controllerConnected()) {
     size_t count = rnf_markers_count(markers_);
     int focus = rnf_markers_focus(markers_);
     bool editing = rnf_markers_editing(markers_) != 0, markers = markersActive();
+    int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
     if (markers && editing) {
       hint({"dpad.lr"}, "\xC2\xB1" "1");
       hint({"leftShoulder", "rightShoulder"}, TR("Move"));
@@ -220,31 +251,33 @@ void UI::buildSeekBar(double now) {
       hint({"ui.confirm"}, TR("Move"));
       hint({"face.west"}, TR("Delete"));
       hint({"ui.cancel"}, TR("Back"));
+    } else if (markers && laneHints_) {
+      // The marker lane (↑): drop a marker, pick one, practice the section, the next A/B slot.
+      if (count < 2) hint({"ui.confirm"}, TR("Marker"));
+      if (count > 0) hint({"dpad.up"}, TR("Markers"));
+      if (count > 0) hint({"face.north"}, TR("Practice"));
+      hint({"face.west"}, TRF("Section %lld", {slot + 1}));
     } else {
-      hint({"ui.cancel"}, TR("Resume"));
+      // At most four: play, frame step, rewind / fast-forward, the marker lane.
+      hint({"ui.cancel"}, play);
       hint({"leftShoulder", "rightShoulder"}, TR("Step"));
-      if (markers && count < 2) hint({"ui.confirm"}, TR("Marker"));
-      if (markers && count > 0) hint({"dpad.up"}, TR("Markers"));
-      if (markers && count > 0) hint({"face.north"}, TR("Practice"));
-      if (markers) {
-        std::string ab = "A/B " + std::to_string(std::clamp(d_.settings->timelineSlot, 0, 7) + 1);
-        hint({"face.west"}, ab.c_str());
-      }
+      if (st.practicing) hint({"leftTrigger"}, TR("Rewind"));
+      else hint({"leftTrigger", "rightTrigger"}, std::string(TR("Rewind")) + " / " + TR("Fast-Forward"));
+      if (markers) hint({}, TR("↑ Practice sections"));
     }
     if (markers && now < markerHintUntil_ && !markerHint_.empty()) {
       float w = measure(m.hint(), markerHint_.c_str()).x;
-      dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(g.hints.right() - w, hy + (gh - m.hint()) / 2), kTextDim, markerHint_.c_str());
+      dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(chipsLeft - S(12) - w, hy + (gh - m.hint()) / 2), kTextDim, markerHint_.c_str());
     }
   } else {
-    float kh = gh;
-    x += keycap(dl, ImVec2(x, hy), kh, "Space", false) + S(8);
-    dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), kTextDim, TR("Resume"));
+    x += keycap(dl, ImVec2(x, hy), gh, "Space", false) + S(8);
+    dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), kTextDim, play.c_str());
   }
   ImGui::End();
   (void)io;
 }
 
-void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
+void UI::buildTimeline(const LRect& strip, const LRect& lane, double now, bool interact) {
   ImGuiIO& io = ImGui::GetIO();
   const EmuStatus& st = d_.emu->status();
   EmulationController* emu = d_.emu;
@@ -266,7 +299,8 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
   int& sel = d_.settings->timelineSlot;
 
   // ---- mouse / touch: scrub on the filmstrip, select / move sections on the lane (Shift / Alt: anywhere)
-  if (ImGui::IsItemActivated() && io.MouseDown[0] && st.hasSession && len > 0) {
+  if (!interact) drag_ = Drag::none;  // read-only (rewind / fast-forward held in play)
+  if (interact && ImGui::IsItemActivated() && io.MouseDown[0] && st.hasSession && len > 0) {
     float px = io.MousePos.x - left, py = io.MousePos.y - top;
     dragStartX_ = px;
     bool inLane = py < laneH;
@@ -304,7 +338,7 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
       }
     }
   }
-  if (drag_ != Drag::none && ImGui::IsItemActive() && io.MouseDown[0]) {
+  if (interact && drag_ != Drag::none && ImGui::IsItemActive() && io.MouseDown[0]) {
     float px = io.MousePos.x - left;
     switch (drag_) {
       case Drag::scrub: {
@@ -337,7 +371,7 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
       default: break;
     }
   }
-  if (drag_ != Drag::none && !ImGui::IsItemActive()) {
+  if (interact && drag_ != Drag::none && !ImGui::IsItemActive()) {
     float px = io.MousePos.x - left;
     switch (drag_) {
       case Drag::scrub: scrubHoldUntil_ = now + 0.15; break;
@@ -399,6 +433,12 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
     drawTiles(step, 1.0f);
     double from = d_.thumbs->fadeFrom(now);
     if (from != 0 && from != step && (from == step * 2 || from * 2 == step)) drawTiles(from, 1.0f - float(d_.thumbs->fadeProgress(now)));
+    // The recorded part ahead of the playhead is dimmed (it is what playing from here replaces).
+    if (!st.practicing) {
+      uint64_t head = scrubFrame_ ? *scrubFrame_ : st.frame;
+      float hx0 = X(std::min(head, len)), hx1 = left + float(std::min<double>(gw, w));
+      if (hx1 > hx0) dl->AddRectFilled(ImVec2(hx0, s0.y), ImVec2(hx1, s1.y), IM_COL32(0, 0, 0, 120));
+    }
   }
   std::vector<rnf_timeline_range> shown = ranges;
   if (hasPreview_) {
@@ -473,7 +513,7 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
   }
   for (const BookmarkInfo& b : emu->structure().bookmarks)
     if (b.onActiveTake) dl->AddRectFilled(ImVec2(X(b.frame) - 1, s0.y), ImVec2(X(b.frame) + 1, s0.y + S(12)), IM_COL32(255, 214, 10, 255));
-  // The playhead: red recording, white playing, orange inside the practiced section.
+  // The playhead: the neutral accent (never a red "recording" one), orange inside the practiced section.
   bool hasHead = false;
   float hx = 0;
   ImU32 hc = IM_COL32(255, 255, 255, 255);
@@ -488,7 +528,7 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now) {
   } else if (len > 0) {
     hx = X(scrubFrame_ ? *scrubFrame_ : st.frame);
     hasHead = true;
-    hc = st.recording ? kBrand : IM_COL32(255, 255, 255, 255);
+    hc = IM_COL32(255, 255, 255, 255);
   }
   if (hasHead) {
     float x = float(rnf_thumb_snap_to_pixel(std::clamp(hx, left, left + float(std::min<double>(gw, w))), 1.0));
@@ -546,25 +586,162 @@ void UI::buildCountdown() {
   float fs = r * 1.25f * v.scale;
   ImVec2 ts = measure(fs, n.c_str());
   dl->AddText(ImGui::GetFont(), fs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), alpha(IM_COL32(255, 255, 255, 255), a), n.c_str());
+  // Play resumes before the end of the tape: one line under the numeral, in the same pass.
+  if (st.retryNotice) {
+    const char* line = TR("Retrying from here");
+    float ls = std::max(metrics_.label(), r * 0.3f);
+    ImVec2 lt = measure(ls, line);
+    ImVec2 p(c.x - lt.x / 2, c.y + r + S(14));
+    ImVec2 pad(S(16), S(8));
+    dl->AddRectFilled(ImVec2(p.x - pad.x, p.y - pad.y), ImVec2(p.x + lt.x + pad.x, p.y + lt.y + pad.y),
+                      alpha(IM_COL32(20, 20, 22, 255), 0.62f * a), (lt.y + pad.y * 2) / 2);
+    dl->AddText(ImGui::GetFont(), ls, p, alpha(IM_COL32(255, 255, 255, 255), a), line);
+  }
 }
 
-// ------------------------------------------------------------------ badges
+// ------------------------------------------------------------------ badges, status label, chips
 
+// Top left: only the flash reduction indicator (no record / playback / transport badges: the status
+// label at the bottom left says those, docs/design/VTR_UX.md).
 void UI::buildBadges() {
   const EmuStatus& st = d_.emu->status();
-  bool show = st.rewinding || st.fastForward || st.slow != 1 || st.endOfTake || (st.flashActive && d_.settings->showFlashIndicator) ||
-              (st.paused && st.practicing);
-  if (!show) return;
+  if (!(st.flashActive && d_.settings->showFlashIndicator)) return;
   const UiMetrics& m = metrics_;
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   float fs = m.hint();
   ImVec2 p(m.margin(), pill_.y + (pill_.h - fs - S(8)) / 2);
-  auto pill = [&](const std::string& t, ImU32 c) { p.x += ui::Pill(dl, p, t.c_str(), c, fs) + S(6); };
-  if (st.rewinding) pill(std::string(icons::glyph("player-track-prev")) + " " + TR("Rewinding"), IM_COL32(255, 149, 0, 210));
-  else if (st.fastForward) pill(std::string(icons::glyph("player-track-next")) + " " + TR("Fast-Forward"), IM_COL32(10, 110, 230, 210));
-  else if (st.slow != 1) pill(TRF("Slow %@", {std::string("1/2")}), IM_COL32(150, 70, 200, 210));
-  if (st.endOfTake && !st.practicing) pill(TR("End of Take"), IM_COL32(200, 160, 0, 220));
-  if (st.flashActive && d_.settings->showFlashIndicator) pill(TR("Flash Reduction Active"), IM_COL32(30, 150, 150, 220));
+  ui::Pill(dl, p, TR("Flash Reduction Active"), IM_COL32(30, 150, 150, 220), fs);
+}
+
+std::string UI::statusLabelText() const {
+  if (!hasSession()) return {};
+  const EmuStatus& st = d_.emu->status();
+  rnf_tape_status ts{};
+  ts.mode = st.practicing ? RN_MODE_PRACTICE : st.recording ? RN_MODE_RECORD : RN_MODE_REPLAY;
+  ts.rewinding = st.rewinding;
+  ts.fast_forward = st.fastForward;
+  ts.slow_rate = st.slow;
+  ts.end_of_tape = st.endOfTake && !st.practicing && st.paused;
+  std::string out = takeStr(rnf_tape_status_label(&ts));
+  if (exportJob_.running()) {
+    std::string v = TRF("Making video… %lld%%", {(long long)std::lround(exportJob_.progress() * 100)});
+    out = out.empty() ? v : out + " · " + v;
+  }
+  return out;
+}
+
+std::string UI::boundPadElement(const char* action) const {
+  for (const rnf_binding& b : d_.input->bindings()) {
+    if (std::strcmp(b.action, action) != 0) continue;
+    std::string in = b.input;
+    if (in.rfind("gc0:", 0) == 0 && in.find('+') == std::string::npos) return in.substr(4);
+  }
+  return {};
+}
+
+std::string UI::boundKeyName(const char* action) const {
+  for (const rnf_binding& b : d_.input->bindings()) {
+    if (std::strcmp(b.action, action) != 0) continue;
+    std::string in = b.input;
+    if (in.rfind("kb:", 0) != 0 || in.find('+') != std::string::npos) continue;
+    const char* name = SDL_GetScancodeName(SDL_Scancode(std::atoi(in.c_str() + 3)));
+    if (name && *name) return name;
+  }
+  return {};
+}
+
+LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked) {
+  const UiMetrics& m = metrics_;
+  float fs = m.hint(), padX = S(12), gh = h * 0.78f;
+  rnf_controller_family f = promptFamily();
+  float glyphW = element.empty() ? 0 : glyph(dl, ImVec2(), element, f, gh, false) + S(6);
+  float w = padX + glyphW + measure(fs, text.c_str()).x + padX;
+  LRect r{right - w, y, w, h};
+  ImGuiIO& io = ImGui::GetIO();
+  auto inside = [&](ImVec2 p) { return p.x >= r.x && p.x < r.right() && p.y >= r.y && p.y < r.bottom(); };
+  bool hovered = inside(io.MousePos) && !popupOpen();
+  if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  if (clicked) *clicked = hovered && ImGui::IsMouseReleased(0) && inside(io.MouseClickedPos[0]);
+  dl->AddRectFilled(tl(r), br(r), hovered ? IM_COL32(64, 64, 72, 245) : IM_COL32(40, 40, 46, 235), h / 2);
+  dl->AddRect(tl(r), br(r), IM_COL32(255, 255, 255, 50), h / 2, 0, 1.0f);
+  float x = r.x + padX;
+  if (!element.empty()) x += glyph(dl, ImVec2(x, y + (h - gh) / 2), element, f, gh) + S(6);
+  dl->AddText(ImGui::GetFont(), fs, ImVec2(x, y + (h - fs) / 2), kText, text.c_str());
+  layoutRecord(r);
+  return r;
+}
+
+float UI::buildChips(ImDrawList* dl, float right, float y, float h) {
+  const EmuStatus& st = d_.emu->status();
+  // "↶ Undo" for 10 s after a retry (its button: pad 1's binding of hk.undo_take, default L3).
+  if (st.canUndo) {
+    bool clicked = false;
+    std::string el = controllerConnected() ? boundPadElement("hk.undo_take") : std::string();
+    LRect r = chip(dl, right, y, h, el, TR("↶ Undo"), &clicked);
+    right = r.x - S(10);
+    if (clicked) undoRetry();
+  }
+  // Paused at the end of the tape: "▶ Make Video" (pads reach it through the menu: Share).
+  if (st.paused && st.atTapeEnd && RNL_HAVE_MP4_EXPORT && !exportJob_.running()) {
+    bool clicked = false;
+    LRect r = chip(dl, right, y, h, std::string(), TR("▶ Make Video"), &clicked);
+    right = r.x - S(10);
+    if (clicked) openExportDialog();
+  }
+  return right;
+}
+
+// While playing (no seek bar): the status label at the bottom left (non-default states only) and
+// the Undo chip at the bottom right, where the seek bar's hints row would be.
+void UI::buildPlayOverlay(double now) {
+  (void)now;
+  const UiMetrics& m = metrics_;
+  SeekGeometry g = layoutSeek(m);
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  float gh = m.hint() * 1.45f, hy = g.hints.y + (g.hints.h - gh) / 2;
+  std::string label = statusLabelText();
+  const EmuStatus& st = d_.emu->status();
+  if (!label.empty()) {
+    float fs = m.hint();
+    ImVec2 p(g.hints.x, hy + (gh - fs - S(8)) / 2);
+    // Practicing: above the practice pill (same corner).
+    if (st.practicing) p.y -= gh + S(24);
+    ui::Pill(dl, p, label.c_str(), IM_COL32(20, 20, 22, 200), fs);
+  }
+  buildChips(dl, g.hints.right(), hy, gh);
+}
+
+// ------------------------------------------------------------------ first-run coach
+
+void UI::tickCoach(double now) {
+  if (!coach_) return;
+  rnf_coach_input in{};
+  bool rewindStopped = false;
+  if (hasSession()) {
+    const EmuStatus& st = d_.emu->status();
+    rewindStopped = st.rewindStops != lastRewindStops_;
+    lastRewindStops_ = st.rewindStops;
+    in.playing = !st.paused && !menuOpen_ && !interactive() && st.countdown == 0 && !st.practicing && !st.rewinding &&
+                 !st.fastForward;
+    in.rewind_stopped = rewindStopped && !menuOpen_;
+    in.paused_at_end = st.paused && st.atTapeEnd && !menuOpen_ && !interactive();
+    in.take_length = st.takeLength;
+  }
+  rnf_coach_tip tip = rnf_coach_tick(coach_, now, &in);
+  if (tip == RNF_COACH_NONE) return;
+  // The rewind control of the device in use: the pad's glyph (L2 of its family), else the key.
+  std::string control;
+  if (controllerConnected()) {
+    std::string el = boundPadElement("hk.rewind");
+    control = padGlyph(promptFamily(), (el.empty() ? std::string("leftTrigger") : el).c_str());
+  } else {
+    control = boundKeyName("hk.rewind");
+  }
+  notice(takeStr(rnf_coach_text(tip, control.c_str())), 5.0);
+  if (d_.settings->coachShown != rnf_coach_shown(coach_)) {
+    d_.settings->coachShown = rnf_coach_shown(coach_);
+    changed();
+  }
 }
 
 }  // namespace rnl
