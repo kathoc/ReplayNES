@@ -1,10 +1,10 @@
 # ReplayNES on Steam Deck / Linux
 
 Status 2026-10-07: **feature parity preview** (plan `docs/plans/2026-10-07-steam-deck-plan.md`,
-Step 3) on the shared frontend core (`frontend/`): ROM library start screen, record / replay /
-rewind / fast-forward / slow / step, filmstrip timeline with A/B ranges, takes, bookmarks, practice
-(A/B repeat), Reset Project, autosave + resume, Save / Save As, settings with the controller
-diagram, the CRT display (Vulkan port of the nesterm model), MP4 export, flash reduction, English /
+Step 3) on the shared frontend core (`frontend/`): ROM library start screen, play / rewind /
+retry / fast-forward / slow / step, filmstrip timeline with A/B ranges, bookmarks, practice
+(A/B sections), Start Over, autosave + resume, Save / Save As, settings with the controller
+diagram, the CRT display (Vulkan port of the nesterm model), Make Video (MP4), flash reduction, English /
 Japanese, display-locked low-latency pacing (also full speed on displays slower than 60 Hz).
 
 ## Install
@@ -28,7 +28,7 @@ Or from the release bundle (`io.github.replaynes.ReplayNES-<version>-x86_64.flat
 (remote `replaynes-origin`), so it updates the same way:
 
 ```sh
-flatpak install --user io.github.replaynes.ReplayNES-0.5.3-x86_64.flatpak   # fetches the runtime from Flathub
+flatpak install --user io.github.replaynes.ReplayNES-0.6.0-x86_64.flatpak   # fetches the runtime from Flathub
 flatpak remotes --user                                                      # replaynes-origin  https://kathoc.github.io/ReplayNES/flatpak/
 ```
 
@@ -144,16 +144,16 @@ back on a tap, a pause or the menu. On the very first start it pulses twice - th
 game and when it was played; A resumes it), then the games as large cards, four per row and eight
 per page (L / R turn the pages; each card shows the last picture of that game, or a tile made from
 its name). **A** plays the focused game (a new project `~/Documents/ReplayNES/Projects/<ROM name>
-<date time>.nesrec`, recording at once, autosaved), **X** lists its projects (New Game, Try Without
+<date time>.nesrec`, playing is recording, autosaved), **X** lists its projects (New Game, Try Without
 Saving - a temporary session you can save later -, then every project, matched by the ROM's SHA-256),
 **Y** searches (on-screen keyboard). The menu (L+R / the pill) opens Settings. ROMs go into
 `~/Documents/ReplayNES/ROM` (copy them in Desktop Mode with Dolphin; the library refreshes by itself).
 An empty library is one card with the folder, Open Folder and Reload.
 
 **Playing.** Only the Menu pill is on screen (status badges appear while rewinding, fast-forwarding,
-in slow motion, at the end of the take or while flashes are reduced).
+in slow motion, at the end of the tape or while flashes are reduced). Hold L2 to rewind and release it: a 3-2-1 countdown runs and play resumes from there ("Retrying from here" when that is before the end of the tape); for 10 s a "↶ Undo" chip (bottom right; **L3** on the pad) brings the previous continuation back, and a quick second retry keeps only the latest attempt. The first run shows three one-line hints (hold L2 to rewind, play from here to retry, Make Video).
 
-**Pause (R).** Only the seek bar: the filmstrip timeline with the time, REC / PLAY and the A/B lane.
+**Pause (R).** Only the seek bar: the filmstrip timeline with the time and the A/B lane, with hints for Play (Continue at the end of the tape), frame step L / R, L2 / R2 and ↑ Practice sections.
 A (the back button) tapped resumes; L / R (released) and the D-pad ←/→ step frames (held: repeat);
 L2 / R2 hold rewind / fast-forward. **A/B markers**: B (confirm) drops a flag at the playhead for the
 selected section ("A/B n", Y picks the next): the first is A, the second makes the range (left = A,
@@ -170,16 +170,16 @@ level, B confirms (Settings › Controls › Confirm Button swaps them). L / R s
 | Tile | What is behind it |
 |---|---|
 | Resume | back to the game (focused first) |
-| Retry | Record from Here (re-record, the old continuation is kept as a take), Previous Try, Takes (every take: A switches), Bookmarks (Add Bookmark, A jumps, Y renames, X deletes), Watch (playback mode on / off) |
+| Retry | Play from Here, Bookmarks (Add Bookmark, A jumps, Y renames, X deletes), Playback (watch the tape without changing it; a game button plays from there), Start Over |
 | Practice | the 8 A/B sections as cards (picture of A, name, length): A on an empty card sets A at the current position, then B, then practices; Y renames, X clears (or stops practicing) |
-| Share | Export MP4 (the export dialog) |
+| Share | Make Video (the one-screen dialog: Range All / Up to here / Section n, Quality Standard (YouTube) / High / Small, length and estimated size, Details ›) |
 | Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad (Steam Deck: wide body, screen, trackpads): the D-pad / stick move a red ring over the buttons, confirm opens the action picker (six per page, L / R pages, back cancels), X next pad, Y reset -, Keyboard › - confirm sets a key, X clears -, Confirm Button (B Confirm · A Back, or swapped), D-pad While Paused, On-screen Keyboard, More › with pause after rewind, turbo speed, turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Updates ›, Add to Steam, About ›, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
 | Game | Choose Game (back to the library; a temporary session asks "Do you want to save?" first), Save, Save As, Open Project, Reset (Soft Reset, Power Cycle - recorded like the console's buttons - or Reset Project…) |
 
 Save in a temporary session asks where, in a file chooser rooted at `~/Documents/ReplayNES/Projects`
 (an existing project of the same name is moved to the Trash first).
 
-**Reset Project…** starts the project over from power-on (all takes, bookmarks and the take history
+**Reset Project…** starts the project over from power-on (the whole tape and the bookmarks
 are deleted; "Keep A/B repeat sections" is on by default). A saved project is first copied and the
 copy moved to the Trash (`~/.local/share/Trash`, freedesktop.org Trash specification), where Dolphin
 can restore it.
@@ -219,7 +219,7 @@ Steam's keyboard every time. ReplayNES runs as an X11 client of gamescope's Xway
 (`DISPLAY=:1`, no `WAYLAND_DISPLAY`), so the video driver is not the cause; the Flatpak sandbox drops
 Steam's overlay (`LD_PRELOAD` of `gameoverlayrenderer.so`), which Steam's keyboard does not need
 here. **Renaming**: Retry › Bookmarks and Practice - Y on the focused row / card (the hint bar shows
-"Y Rename"). Takes have numbers only; a project's name is its file name (Save As).
+"Y Rename"). A project's name is its file name (Save As).
 
 **Language:** Settings › System › Language: Automatic (Japanese when the system's first language is
 Japanese, English otherwise), 日本語 or English; it switches at once (`--lang` / `REPLAYNES_LANG=ja|en`
@@ -239,6 +239,7 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | A (south) | NES B | tap: **resume** | **back** (on the top level: resume) |
 | Y (north) / X (west) | turbo A / turbo B | Y tap: next A/B slot · X: delete the focused marker | what the hint bar shows (rename / clear / search / projects …) |
 | Menu (≡) / View (⧉) | START / SELECT | START / SELECT | - |
+| L3 | Undo a retry (10 s, the "↶ Undo" chip) | - | - |
 | R3 | Quick Menu (reserved) | Quick Menu | close the menu |
 | Steam / Guide (HOME) | the system's (Steam overlay); ReplayNES ignores it and it cannot be assigned | - | - |
 
@@ -412,7 +413,7 @@ Or from a Steam shortcut in Gaming Mode (launch options), then read the JSON lin
 --rom "/home/deck/Documents/ReplayNES/ROM/<game>.nes" --perf-seconds 60 --stats-log /home/deck/Documents/ReplayNES/perf.jsonl
 ```
 
-## Export (MP4)
+## Make Video (MP4)
 
 The exporter (`apps/linux/src/export/`, the Linux port of the macOS `MP4Exporter`) renders the
 active take on a fresh core (`rn_renderer`, the same frames and renderer hash as the macOS export)
@@ -441,8 +442,8 @@ flatpak run --command=replaynes-export io.github.replaynes.ReplayNES \
 flatpak run --command=replaynes-export io.github.replaynes.ReplayNES --self-test /tmp/rn-export-test
 ```
 
-In the app: menu -> "Project ▾" -> **Export…** (codec / encoder, size preset, overscan crop, 1:1 or
-8:7, flash reduction, CRT effect, whole take or a frame range, file name; the MP4 goes to
+In the app: Quick Menu -> Share -> **Make Video** (Range, Quality, then Details ›: codec / encoder, size preset, overscan crop, 1:1 or
+8:7, flash reduction, CRT effect; the MP4 goes to
 `~/Documents/ReplayNES/Exports/`). The export runs on a worker thread with a progress bar and
 Cancel; "Run in Background" returns to the game (a small progress badge stays top right).
 The CRT display itself is Settings -> Display -> CRT Display (`--crt` turns it on for one run, for

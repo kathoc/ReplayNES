@@ -2,12 +2,12 @@ English | [日本語](README.ja.md)
 
 # ReplayNES
 
-**Made a mistake? Go back and record it again. What you end up with is a flawless, no-miss run.**
+**Made a mistake? Go back and play it again. What you end up with is a flawless, no-miss run.**
 
 ReplayNES is an NES / Famicom emulator for macOS. It records your play not as video but as
-a history of inputs, so you can rewind to any moment you like and re-record from there.
+a history of inputs, so you can rewind to any moment you like and play on from there.
 When you play the finished take from the beginning, the failed parts are gone and it plays as one continuous run.
-You can export it as-is to an MP4 with audio.
+You can make it into a video (MP4 with audio) as-is.
 
 ![The Quick Menu of ReplayNES (L+R or Esc; over a generated test ROM)](docs/images/screenshot.png)
 
@@ -15,14 +15,14 @@ You can export it as-is to an MP4 with audio.
 
 - **ROM Library**: ROMs placed in `~/Documents/ReplayNES/ROM` are listed by game name (a built-in database of NES / Famicom titles with maker, year and genre; Japanese titles in gojūon order in the Japanese UI), with favourites, recently played and sorting; pick one to start playing. Projects are saved automatically to `~/Documents/ReplayNES/Projects`, and "Continue" picks up the last session.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
-- **Rewind and re-record**: You can go back to any frame. If you play from there, it becomes a new take, and the previous take is kept rather than erased.
-- **Practice Mode (A/B Repeat)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
+- **Rewind and retry**: You can go back to any frame. Hold L2 to rewind and release it: after a 3-2-1 countdown play resumes from there ("Retrying from here"). For 10 seconds a "↶ Undo" chip brings the previous continuation back.
+- **Practice Mode (A/B sections)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
 - **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls; even button remapping works with the controller alone), L2 rewinds, R2 fast-forwards, R pauses, L slows down; while paused L / R and the D-pad step frame by frame and A/B practice markers are dropped and moved on the seek bar. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
 - **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
 - **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
 - **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
 - **Pick up the next day**: If you save the project (`.nesrec`), you can open it later and still rewind even further into the past. Autosave and crash recovery are supported, and even if you quit the app (including a force quit), it automatically picks up where you left off at the next launch.
-- **MP4 export**: The video is redrawn offline based on in-game time, so dropped frames during play do not affect it. Pixels are scaled up with nearest-neighbor, and you can specify overscan cropping and the pixel aspect ratio (1:1 / 8:7).
+- **Make Video**: The MP4 video is redrawn offline based on in-game time, so dropped frames during play do not affect it. Pixels are scaled up with nearest-neighbor, and you can specify overscan cropping and the pixel aspect ratio (1:1 / 8:7).
 - **Low latency**: Rendering uses Metal, and the audio buffer is kept small. There is also a latency measurement display (⌘L).
 - **Automatic updates**: New versions are checked from GitHub Releases, and the signature (EdDSA) is verified before updating (using [Sparkle](https://sparkle-project.org)). You can also check from the menu via "ReplayNES → Check for Updates…".
 
@@ -41,13 +41,13 @@ You can export it as-is to an MP4 with audio.
 
 ## Steam Deck / Linux (preview)
 
-ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and other x86_64 Linux systems as a Flatpak (`io.github.replaynes.ReplayNES`), with the same projects and features: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, MP4 export, English / Japanese. Full guide: [docs/STEAM_DECK.md](docs/STEAM_DECK.md).
+ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and other x86_64 Linux systems as a Flatpak (`io.github.replaynes.ReplayNES`), with the same projects and features: library, rewind and retry, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, Make Video (MP4), English / Japanese. Full guide: [docs/STEAM_DECK.md](docs/STEAM_DECK.md).
 
 1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library; Settings › System › Updates has Update → Restart and "Check Now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
 2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings › System › **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
 3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the last session (also after a crash), then large game cards with the game's name, maker and year - the confirm button (B) plays (a new project in `~/Documents/ReplayNES/Projects`), Y marks a favourite, X lists a game's projects, View (⧉) changes the sort; up from the cards reaches All / Favorites / Recent, the sort and the search.
-4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward**. In menus **B (east) confirms and A (south) goes back** (Settings › Controls › Confirm Button swaps them).
-5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (record from here, previous try, takes, bookmarks, watch), Practice (the 8 A/B sections as cards), Share (MP4 export), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, R = pause (the seek bar), L = slow 1/2, L2 hold = rewind, R2 hold = fast-forward, L3 = undo a retry (10 s)**. In menus **B (east) confirms and A (south) goes back** (Settings › Controls › Confirm Button swaps them).
+5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (Play from Here, Bookmarks, Playback, Start Over), Practice (the 8 A/B sections as cards), Share (Make Video), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
 
    | Button | In play | Paused (seek bar) | In menus |
    |---|---|---|---|
@@ -68,13 +68,13 @@ Japanese text uses the system's CJK font (SteamOS has one). While you play only 
 
 ## Windows (preview)
 
-ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Steam Deck / Linux version's interface: library, rewind and re-record with takes, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, MP4 export, English / Japanese, display-locked low-latency pacing (Direct3D 11). Details: [docs/WINDOWS.md](docs/WINDOWS.md).
+ReplayNES runs on Windows 10 / 11 (x64 and ARM64) as a portable app with the Steam Deck / Linux version's interface: library, rewind and retry, filmstrip timeline, practice (A/B), bookmarks, autosave and resume, flash reduction, the CRT display, Make Video (MP4), English / Japanese, display-locked low-latency pacing (Direct3D 11). Details: [docs/WINDOWS.md](docs/WINDOWS.md).
 
 1. **Install**: unzip `ReplayNES-<version>-windows-x64.zip` (`-arm64` for Windows on Arm) into a folder you can write to (e.g. under your user folder, not `Program Files`) and run `ReplayNES.exe` (no installer; `WinSparkle.dll` next to it is the updater). Not code-signed yet: SmartScreen may ask once ("More info" → "Run anyway").
 2. **ROMs**: put `.nes` files into `Documents\ReplayNES\ROM` ("Open Folder" in the library opens it in Explorer). "Play" starts a project in `Documents\ReplayNES\Projects`. The temporary session lives in `%LOCALAPPDATA%\ReplayNES\Session`, settings in `%APPDATA%\ReplayNES`. Reset Project / Save As move replaced projects to the Recycle Bin.
-3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L+R together (LB+RB, L1+R1) = Quick Menu, R = pause, L = slow, L2 / R2 hold = rewind / fast-forward); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 Quick Menu, F11 full screen. Without a controller, the "☰ Menu Esc" pill (top right) is a button too. Everything is reassignable in Settings.
+3. **Controls**: Xbox-style controllers (XInput / GameInput), PlayStation and Switch Pro controllers, with the same assignments as on the Steam Deck (A = NES B, B = NES A by position, Menu / View = START / SELECT, L+R together (LB+RB, L1+R1) = Quick Menu, R = pause, L = slow, L2 / R2 hold = rewind / fast-forward, L3 = undo a retry); keyboard: arrows, X / Z, Enter, right Shift, Space pause, Backspace rewind, Tab fast-forward, Esc / F1 Quick Menu, F11 full screen. Without a controller, the "☰ Menu Esc" pill (top right) is a button too. Everything is reassignable in Settings.
 4. **Display**: F11 / Settings › System › More › Full Screen (borderless). For G-SYNC / FreeSync displays, `ReplayNES.exe --vrr` presents with tearing allowed at the NES's own 60.0988 Hz in full screen. Settings › Display › CRT turns on the physical CRT model (Direct3D 11 compute; needs a Direct3D 11.0 GPU).
-5. **MP4 export**: Quick Menu › Share › Export MP4 (H.264 + AAC through Windows' Media Foundation; a hardware encoder when the GPU has one), saved in `Documents\ReplayNES\Exports`.
+5. **Make Video**: Quick Menu › Share › Make Video (H.264 + AAC through Windows' Media Foundation; a hardware encoder when the GPU has one), saved in `Documents\ReplayNES\Exports`.
 6. **Updates**: ReplayNES checks GitHub for a new version once a day if you agree when it asks (on the second launch), or right away with Settings › System › Updates › Check Now. The update is downloaded, its signature checked, and ReplayNES restarts into the new version (the session is saved first). "Check Automatically" turns the daily check off.
 
 ## Usage
@@ -86,20 +86,20 @@ ReplayNES has one window. While you play, only the game is on screen, plus a sma
 - **Library** (start screen, Game › Choose Game… ⇧⌘L): see "Library" below.
 - **Quick Menu**: press **L and R together** (within 0.1 s, either order), press **Esc**, or click the pill. The game pauses, dimmed behind six tiles. Press L+R / Esc again (or choose Resume) to keep playing.
 - **Paused (R / Space / ⌘P)**: only the filmstrip seek bar with the time appears at the bottom; nothing else covers the game.
-- **Menu bar**: Game (library, new / open / save, reset, close), Retry, Practice, Share, View (FILL ⌘F, Full Screen ⌃⌘F, latency ⌘L), Window (Close ⌘W) and Help › Controls (⌘?). ⌘, opens the Quick Menu's settings.
+- **Menu bar**: Game (library, new / open / save, reset, close), Retry (Pause, Play from Here, Undo Retry ⌥⌘Z, bookmarks, A/B at the playhead), Practice, Share, View (FILL ⌘F, Full Screen ⌃⌘F, latency ⌘L), Window (Close ⌘W) and Help › Controls (⌘?). ⌘, opens the Quick Menu's settings.
 
 ### The Quick Menu
 
 | Tile | What is in it |
 |---|---|
 | **Resume** | Close the menu and keep playing (focused when the menu opens) |
-| **Retry** | Record from Here · Previous Attempt (⌥⌘Z) · Watch Replay / Back to Recording (⇧⌘M) · Takes (⇧⌘T) · Bookmarks · Restart Recording (the Reset Project confirmation) |
+| **Retry** | Play from Here · Bookmarks · Playback · Start Over (the Reset Project confirmation) |
 | **Practice** | The 8 A/B sections as cards (see "Practice Mode") |
-| **Share** | Export MP4 (⌘E) · Stream Output (Syphon, for OBS) |
+| **Share** | Make Video (⌘E) · Stream Output (Syphon, for OBS) |
 | **Settings** | Four pages, L / R (or Tab) switch: **Display** (Size Integer / FILL, CRT, 8:7, Reduce Flashing, Hide Edges, CRT Details), **Controls** (Controller diagram, Keyboard, Confirm Button, D-pad While Paused, Pause After Rewind, Controls Details), **Sound** (Volume), **System** (Language, Autosave, Latency Meter, Flash Notice, Updates, About) |
 | **Game** | Choose Game · Save · Save As · Reset (Soft Reset, Power Cycle, Start Over) · Close |
 
-No page scrolls: a page shows at most six items, longer lists (takes, bookmarks, key assignments) are split into pages switched with L / R. The focused item has a red frame, one line at the bottom says what it does, and the bottom right shows the buttons of your controller (or keys). The mouse and trackpad work everywhere too.
+No page scrolls: a page shows at most six items, longer lists (bookmarks, key assignments) are split into pages switched with L / R. The focused item has a red frame, one line at the bottom says what it does, and the bottom right shows the buttons of your controller (or keys). The mouse and trackpad work everywhere too.
 
 | Button | In play | Paused (seek bar) | In menus |
 |---|---|---|---|
@@ -131,12 +131,12 @@ ReplayNES creates these folders at launch (the first time, macOS asks for access
 - Game menu: New Project… (⌘N: choose where to save), Open Project… (⌘O), Try a ROM (No Project)… (⇧⌘N: play without a project; resumes at the next launch).
 - Choosing another game while one is open asks whether to save unsaved changes (see "Resume" below).
 
-### Recording and Watching
+### Playing and Watching
 
-- ReplayNES records from the moment a game starts. **Retry › Watch Replay** (⇧⌘M) plays the recorded take without recording: from the start if you were at its end, otherwise from where you are. It pauses at the end.
-- **Retry › Back to Recording** (or Record from Here) returns to record mode at that position. The next input continues the recording; partway through, it branches into a new take and the original continuation is kept.
+- ReplayNES keeps the tape running from the moment a game starts: playing is recording, and there is no record button. **Retry › Playback** (Quick Menu) lets you watch the tape without changing it ("Playback" is shown at the bottom left); pressing a game button plays on from that point (after the 3-2-1 countdown). Watching pauses at the end of the tape (Continue, or the "▶ Make Video" chip).
+- **Retry › Play from Here** resumes play at the current position.
 - **Size**: "Integer" is the largest integer scale that fits (crisp pixels); "FILL" fills the window keeping the aspect ratio (4:3, or 8:7 pixels). Settings › Display › Size or View › FILL (⌘F); saved.
-- **Seek bar (filmstrip)**: one screenshot per 5 seconds of play at its natural size (then one per 10 s, 20 s, … as the take grows). Drag to move (silent, paused). The playhead (red recording, white playing, orange practicing), bookmarks (yellow) and A/B sections (numbered colored bands) are overlaid. Thumbnails are made apart from the game (in parallel, from the take's checkpoints), so even a one-hour take shows them shortly after it opens.
+- **Seek bar (filmstrip)**: one screenshot per 5 seconds of play at its natural size (then one per 10 s, 20 s, … as the take grows). Drag to move (silent, paused). The playhead (white playing, orange practicing), bookmarks (yellow) and A/B sections (numbered colored bands) are overlaid. Thumbnails are made apart from the game (in parallel, from the take's checkpoints), so even a one-hour take shows them shortly after it opens.
 
 ### Flash Reduction (care for flashing lights)
 
@@ -148,7 +148,7 @@ It detects scenes such as explosions and lightning where **a wide area of the sc
   - High: up to 1 time per second. It also weakens small remaining flicker
 - Small flashes (such as a character blinking) and normal scrolling are shown as they are. While it is reducing, "Flash Reduction Active" is shown at the top left (Settings › System › Flash Notice hides it).
 - It has no effect at all on recorded input, game progress, or reproducibility (hashes). It is display-only processing.
-- When exporting to MP4, "Apply Flash Reduction" applies it to the exported video as well (the initial value follows the current setting).
+- When making a video, "Apply Flash Reduction" applies it to the exported video as well (the initial value follows the current setting).
 
 > **Note**: This feature does not reliably prevent photosensitive seizures or the like. If you are sensitive to flashing, please take sufficient care, and stop playing immediately if you feel anything unusual. See [docs/FLASH_REDUCTION.md](docs/FLASH_REDUCTION.md) for how it works and its limits.
 
@@ -169,10 +169,12 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | Slow 1/2 ⇔ normal speed | **Left Shoulder** | L | LB | L1 | L |
 | Step back / frame advance while paused | **L / R** or **D-pad ← / →** (hold for continuous) | | | | `,` / `.` |
 | Bookmark | — | | | | B |
+| Undo a retry (10 s) | **L3 (left stick click)** | L3 | L3 | L3 | ⌥⌘Z |
 
 - **Settings › Controls › Controller** shows a diagram of the connected controller (Steam Deck / Nintendo / Xbox / PlayStation / other outlines) with each button's assignment; pressing a button lights it up. Everything works with the controller alone: move the red ring over a button with the D-pad or stick, confirm, and pick its action (a Famicom button, turbo, a hotkey or nothing) from pages of six (L / R turn the pages, back cancels); X switches pads, Y restores that pad's defaults. **Keyboard** lists every action with its keys (confirm, then press the new key; back / Esc cancels; X clears). **Controls Details**: opposite directions (←+→), stick threshold, turbo press length, Default Buttons.
 - Rewind, fast-forward, pause, slow, frame advance and the Quick Menu are "hotkeys" and are never recorded as game input.
 - **While paused**, L / R and the D-pad ← / → step frames (not sent to the game; Settings › Controls › D-pad While Paused turns the D-pad part off), and **a tap of the back button (A / south) resumes**. Other buttons still reach the game, so you can hold a button (say B to run) and step with → to advance frames with it held; a button held through a step never resumes or drops a marker. Frame stepping only moves along the take: before its end it plays the recorded input and never starts a new take; only at the end of the take does each step record one more frame (with the buttons you hold). To record differently from an earlier point, resume play there.
+- **Paused** (seek bar hints): Play (Continue at the end of the tape), frame step L / R, rewind / fast-forward L2 / R2, ↑ practice sections.
 - **Fast-forward** just plays the recorded take at high speed and records nothing; it stops and pauses at the end of what is recorded.
 - **Background input**: while a controller is connected, input is accepted even when ReplayNES is not in front (for example while operating OBS), and the sound keeps playing. The keyboard works only while ReplayNES is in front. If the controller is disconnected, the game pauses.
 - **Updating from older versions**: saved assignments are upgraded once, and only the parts you never changed: 0.1.x controller hotkeys → the current ones; up to 0.2.x the triggers were swapped (R2 rewind); up to 0.2.0 A / B and X / Y were swapped on Nintendo controllers (customised face buttons are carried over when that controller connects); 0.5.0 adds the Quick Menu (pad 1's L+R and Esc, unless Esc was already assigned). R keeps pausing and L keeps slowing down. Older versions cannot read the assignments file once a newer one has added the Quick Menu.
@@ -180,11 +182,11 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 ### Rewind and Re-record
 
 1. If you make a mistake, **hold L2 (or Delete) to rewind**, or drag the seek bar to go back.
-2. Play on from there and a new take is recorded from that position. The original continuation is kept.
-3. If the previous take was better, **Retry › Previous Attempt** (⌥⌘Z) brings it back. **Retry › Takes** (⇧⌘T) lists every take; choose one to switch to it.
+2. Release L2 (or play from the seek bar): a 3-2-1 countdown runs and play resumes from there. If that is before the end of the tape, the countdown says "Retrying from here" and the tape continues from this point.
+3. If the earlier continuation was better, the **↶ Undo** chip (bottom right, 10 seconds) brings it back: click it, press **L3** on a controller, or use **Retry › Undo Retry** (⌥⌘Z). Rewinding again within those 10 seconds keeps only the latest attempt, so quick retries do not pile up.
 4. **Bookmarks** (B / ⌘D, or Retry › Bookmarks › Add Here) mark a moment; choose a bookmark to jump to it (Y renames, X deletes).
 
-**Game › Reset › Start Over** (also **Retry › Restart Recording**, and the Game menu: Start Over…) starts the project over from power-on with an empty timeline: every take, bookmark and the take history are deleted; the ROM and the project location stay. "Keep A/B repeat sections" (on by default) keeps your practice sections. A saved project is first backed up to the Trash, so the old recording can still be recovered from there.
+**Game › Reset › Start Over** (also **Retry › Start Over**, and the Game menu: Start Over…) starts the project over from power-on with an empty timeline: the whole tape and the bookmarks are deleted; the ROM and the project location stay. "Keep A/B repeat sections" (on by default) keeps your practice sections. A saved project is first backed up to the Trash, so the old recording can still be recovered from there.
 
 ### Production Aids
 
@@ -204,9 +206,9 @@ Practice only the tricky section over and over without recording.
 5. **Stop Practicing** (on the active card, or ⇧⌘P) returns you exactly to the position in the take from before you started.
 
 - Nothing is recorded during practice. The take does not change.
-- Set B at a position you reached by playing on from A. If you rewound, moved on the seek bar or switched takes after A, a message says so (start over from A, or set A again).
-- Sections are saved in the project (autosave included). If a section's data is damaged, you can choose "Discard Damaged Sections and Open" when opening (takes are not affected).
-- During practice, seeking, bookmarks and switching takes are unavailable.
+- Set B at a position you reached by playing on from A. If you rewound, or moved on the seek bar after A, a message says so (start over from A, or set A again).
+- Sections are saved in the project (autosave included). If a section's data is damaged, you can choose "Discard Damaged Sections and Open" when opening (the tape is not affected).
+- During practice, seeking and bookmarks are unavailable.
 
 #### A/B on the seek bar
 
@@ -232,16 +234,16 @@ Save with **Game › Save** (⌘S) and open it later with **Open Project** (⌘O
 
 If you moved the ROM file, specify it again when opening (it is confirmed to be the same ROM by SHA-256). **The ROM itself is not stored in the project.**
 
-### Export to MP4 (⌘E)
+### Make Video (⌘E)
 
-Quick Menu › Share › Export MP4, or Share › Export MP4… in the menu bar.
+Quick Menu › Share › Make Video, or Share › Make Video… in the menu bar (at the end of the tape there is also a "▶ Make Video" chip). One screen: **Range** (All / Up to here / Section n), **Quality** (Standard (YouTube) / High / Small), the length with an estimated size, and **Details** for the settings below. The output is an MP4.
 
 - Format: H.264 or HEVC with AAC (48 kHz, 128 kbit/s mono)
-- Bit rate: Light / Standard (YouTube) / High quality. Standard is YouTube's recommended upload rate for 60 fps SDR, chosen by the output height (1080p 12 Mbit/s, 1440p 24, 720p 7.5, 480p 4; between them interpolated by height², at least 1.5 Mbit/s; HEVC uses 70% of that); Light is half of it and High twice. The encoder uses this as its average rate (peaks up to 1.5×), and every choice in the export sheet shows its rate and an **estimated** file size for exactly this range, size and codec ("≈ 91 MB (estimate)"). The estimate is not a guarantee: the actual size depends on the picture. Detailed, busy pictures come close to it; simple pixel art and still scenes give much smaller files.
+- Quality / bit rate: Small / Standard (YouTube) / High. Standard is YouTube's recommended upload rate for 60 fps SDR, chosen by the output height (1080p 12 Mbit/s, 1440p 24, 720p 7.5, 480p 4; between them interpolated by height², at least 1.5 Mbit/s; HEVC uses 70% of that); Small is half of it and High twice. The encoder uses this as its average rate (peaks up to 1.5×), and every quality choice shows its rate and an **estimated** file size for exactly this range, size and codec ("≈ 91 MB (estimate)"). The estimate is not a guarantee: the actual size depends on the picture. Detailed, busy pictures come close to it; simple pixel art and still scenes give much smaller files.
 - Size: integer multiples of 256×240, 1280×960, 1920×1440, and so on
 - You can choose overscan cropping and the pixel aspect ratio 1:1 / 8:7.
 - With "Apply Flash Reduction", you can get a video with intense flashing toned down (see "Flash Reduction" above).
-- Export recomputes everything from the beginning in a separate emulator. Exporting never changes the project, and you can keep working during export.
+- Making a video recomputes everything from the beginning in a separate emulator. It never changes the project, and you can keep working while it runs.
 
 ### Streaming (OBS)
 

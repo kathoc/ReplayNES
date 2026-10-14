@@ -2,11 +2,11 @@
 
 Status 2026-10-07: **Windows frontend preview** (`ReplayNES.exe`, CMake target `replaynes-win`):
 the shared desktop frontend of the Steam Deck / Linux version (`apps/desktop`: Dear ImGui UI,
-library, timeline / filmstrip, practice, takes, bookmarks, reset, autosave + resume, settings with
+library, timeline / filmstrip, practice, bookmarks, Start Over, autosave + resume, settings with
 the controller diagram, built-in on-screen keyboard, flash reduction, English / Japanese,
 display-locked pacing with just-in-time input) on SDL3 (window, WASAPI audio, gamepads) and a
 Direct3D 11 renderer (`apps/windows`), with the **CRT display** (the nesterm physical model on
-Direct3D 11 compute, HLSL generated from the Vulkan GLSL), **MP4 export** (Media Foundation: H.264 +
+Direct3D 11 compute, HLSL generated from the Vulkan GLSL), **Make Video** (MP4; Media Foundation: H.264 +
 AAC) and **in-app updates** (WinSparkle, the macOS appcast format and EdDSA key). "Add to Steam" is
 Linux-only. The engine, frontend core, desktop logic, their tests and `replaynes-cli` build and pass
 on Windows; the setup below lets a Mac build, run and test Windows binaries without a Windows
@@ -178,7 +178,7 @@ failed / cancelled export removes its file.
   while encoding / finishing, or its file fails the self-check, the export is redone once with the
   software encoder on a second renderer (`ExportOptions::retryRenderer`, created next to the first
   by `ExportJob` / `replaynes-export`): same picture and timing, and the result's encoder reads
-  "... - the hardware encoder failed (...)". "mf_hardware" / "mf_software" in Export -> Advanced
+  "... - the hardware encoder failed (...)". "mf_hardware" / "mf_software" in Make Video -> Details
   force one (no retry). The result line names the encoder ("(hardware)" when it is one;
   `"hardware": true` in `replaynes-export`'s JSON). The VM has no hardware MFT (Parallels on
   Apple silicon: "H264 Encoder MFT (software)" only), so the hardware path and the retry are
