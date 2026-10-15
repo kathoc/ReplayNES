@@ -236,7 +236,9 @@ final class CRTRenderer {
             lock.unlock()
             let t = try? makeTube(key)
             lock.lock()
-            if let t, pendingKey == nil { builtTube = t }
+            // Adopted even when a newer plan is already wanted: sizes that keep changing (rotation,
+            // adaptive scale, thermal steps) must not keep the CRT picture from ever appearing.
+            if let t { builtTube = t }
             inFlightKey = nil
             lock.unlock()
         }

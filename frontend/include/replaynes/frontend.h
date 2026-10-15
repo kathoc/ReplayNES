@@ -198,14 +198,26 @@ int rnf_build_ahead_p90(const rnf_build_ahead* b, double* out); /* 0 until a qua
  * While the viewport is visible, check() asks for a recovery once a published picture has waited
  * RNF_DISPLAY_WATCHDOG_STALL seconds with emulation still advancing: RECOVER (rebuild the renderer's
  * resources, plain picture for a frame); RESTART when the next stall period still shows nothing
- * (recreate the display link / swapchain / device); then RNF_DISPLAY_WATCHDOG_BACKOFF seconds before
- * the cycle repeats. Emulation that stops (pause, the menu, a long seek) never triggers it; a gap
- * longer than the stall period restarts the wait at the next picture. reset(): the viewport was
- * hidden / replaced (nothing is expected on screen until it is shown again). */
+ * (recreate the display link / swapchain / device); FALLBACK when one more stall period shows
+ * nothing (show the plain picture - no CRT model - until fallback_active() turns false, then rebuild
+ * the CRT resources and try it again); then RNF_DISPLAY_WATCHDOG_BACKOFF seconds before the cycle
+ * repeats. The fallback lasts RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD seconds, doubled for each further
+ * fallback up to RNF_DISPLAY_WATCHDOG_FALLBACK_MAX, and back to the first hold once pictures have
+ * been confirmed for RNF_DISPLAY_WATCHDOG_FALLBACK_RESET seconds after one ended. A confirmed
+ * picture ends the wait but not the escalation: only RNF_DISPLAY_WATCHDOG_SETTLE seconds without a
+ * stall after the last action do (a recovery that yields one picture before the path stalls again
+ * escalates instead of repeating RECOVER). Emulation that
+ * stops (pause, the menu, a long seek) never triggers it; a gap longer than the stall period
+ * restarts the wait at the next picture. reset(): the viewport was hidden / replaced (nothing is
+ * expected on screen until it is shown again; a fallback in progress is kept). */
 #define RNF_DISPLAY_WATCHDOG_STALL 0.25
 #define RNF_DISPLAY_WATCHDOG_BACKOFF 2.0
+#define RNF_DISPLAY_WATCHDOG_SETTLE 5.0
+#define RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD 5.0
+#define RNF_DISPLAY_WATCHDOG_FALLBACK_MAX 60.0
+#define RNF_DISPLAY_WATCHDOG_FALLBACK_RESET 30.0
 typedef enum rnf_watchdog_action {
-  RNF_WATCHDOG_NONE = 0, RNF_WATCHDOG_RECOVER = 1, RNF_WATCHDOG_RESTART = 2
+  RNF_WATCHDOG_NONE = 0, RNF_WATCHDOG_RECOVER = 1, RNF_WATCHDOG_RESTART = 2, RNF_WATCHDOG_FALLBACK = 3
 } rnf_watchdog_action;
 typedef struct rnf_display_watchdog rnf_display_watchdog;
 rnf_display_watchdog* rnf_display_watchdog_new(void);
@@ -217,7 +229,11 @@ void rnf_display_watchdog_reset(rnf_display_watchdog* w);
 rnf_watchdog_action rnf_display_watchdog_check(rnf_display_watchdog* w, double now);
 /* Seconds the oldest unshown picture has waited (0: none waiting). */
 double rnf_display_watchdog_waiting(const rnf_display_watchdog* w, double now);
-int rnf_display_watchdog_recoveries(const rnf_display_watchdog* w); /* RECOVER + RESTART actions so far */
+int rnf_display_watchdog_recoveries(const rnf_display_watchdog* w); /* RECOVER + RESTART + FALLBACK actions so far */
+/* 1 while the plain-picture fallback ordered by the last FALLBACK lasts. */
+int rnf_display_watchdog_fallback_active(const rnf_display_watchdog* w, double now);
+/* Seconds the fallback still lasts (0: none). */
+double rnf_display_watchdog_fallback_left(const rnf_display_watchdog* w, double now);
 
 /* AudioRateControl: dynamic rate control keeping the audio buffer level (|ratio-base| <= 0.5 %). */
 #define RNF_DRC_MAX_DEVIATION 0.005

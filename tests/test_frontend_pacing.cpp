@@ -480,7 +480,7 @@ TEST_CASE("a stall is not caught up in a burst") {
   rnf_frame_budget_free(b);
 }
 
-TEST_CASE("display watchdog: stall while emulating -> recover, restart, back off") {
+TEST_CASE("display watchdog: stall while emulating -> recover, restart, fallback, back off") {
   rnf_display_watchdog* w = rnf_display_watchdog_new();
   double t = 100;
   auto frame = [&](bool shown) {
@@ -492,8 +492,10 @@ TEST_CASE("display watchdog: stall while emulating -> recover, restart, back off
     frame(true);
     CHECK_EQ(rnf_display_watchdog_check(w, t), RNF_WATCHDOG_NONE);
   }
-  // Frozen display while the game plays on: RECOVER after the stall period, then RESTART one
-  // stall period later, then nothing during the back-off, then RECOVER again.
+  CHECK_EQ(rnf_display_watchdog_fallback_active(w, t), 0);
+  // Frozen display while the game plays on: RECOVER after the stall period, RESTART one stall
+  // period later, FALLBACK (plain picture) one more stall period later, then nothing during the
+  // back-off, then RECOVER again.
   std::vector<std::pair<double, int>> actions;
   double start = t;
   for (int i = 0; i < 300; ++i, t += P) {
@@ -501,21 +503,103 @@ TEST_CASE("display watchdog: stall while emulating -> recover, restart, back off
     int a = rnf_display_watchdog_check(w, t);
     if (a != RNF_WATCHDOG_NONE) actions.push_back({t - start, a});
   }
-  REQUIRE(actions.size() >= 3);
+  REQUIRE(actions.size() >= 4);
   CHECK_EQ(actions[0].second, RNF_WATCHDOG_RECOVER);
   CHECK(actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
   CHECK(actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * P);
   CHECK_EQ(actions[1].second, RNF_WATCHDOG_RESTART);
   CHECK(actions[1].first - actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
   CHECK(actions[1].first - actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * P);
-  CHECK_EQ(actions[2].second, RNF_WATCHDOG_RECOVER);
-  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_BACKOFF);
+  CHECK_EQ(actions[2].second, RNF_WATCHDOG_FALLBACK);
+  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_STALL);
+  CHECK(actions[2].first - actions[1].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * P);
+  CHECK_EQ(actions[3].second, RNF_WATCHDOG_RECOVER);
+  CHECK(actions[3].first - actions[2].first > RNF_DISPLAY_WATCHDOG_BACKOFF);
   CHECK(rnf_display_watchdog_waiting(w, t) > 4.0);
-  // A confirmed picture ends it at once.
+  // The fallback lasts at least RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD from its action (a second
+  // cycle within these 5 s extends it).
+  const double fbAt = start + actions[2].first;
+  CHECK_EQ(rnf_display_watchdog_fallback_active(w, fbAt + 0.1), 1);
+  CHECK(rnf_display_watchdog_fallback_left(w, fbAt) >= RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD - 1e-6);
+  // A confirmed picture ends the wait at once.
   frame(true);
   CHECK_EQ(rnf_display_watchdog_waiting(w, t + 0.02), 0.0);
   CHECK_EQ(rnf_display_watchdog_check(w, t + 0.02), RNF_WATCHDOG_NONE);
   CHECK_EQ(rnf_display_watchdog_recoveries(w), int(actions.size()));
+  rnf_display_watchdog_free(w);
+}
+
+// A recovery that yields a single picture before the path stalls again (a CRT output rebuilt
+// once, then stale; measured with -displayFault crtStale): the escalation must go on to RESTART
+// and FALLBACK instead of repeating RECOVER forever (an almost frozen picture).
+TEST_CASE("display watchdog: one picture after a recovery does not end the escalation") {
+  rnf_display_watchdog* w = rnf_display_watchdog_new();
+  double t = 10;
+  std::vector<int> seq;
+  for (int i = 0; i < 240; ++i, t += P) {
+    rnf_display_watchdog_emulated(w, t);
+    int a = rnf_display_watchdog_check(w, t);
+    if (a != RNF_WATCHDOG_NONE) {
+      seq.push_back(a);
+      rnf_display_watchdog_presented(w, t + P / 2);   // the recovery shows exactly one picture
+    }
+  }
+  REQUIRE(seq.size() >= 3);
+  CHECK_EQ(seq[0], RNF_WATCHDOG_RECOVER);
+  CHECK_EQ(seq[1], RNF_WATCHDOG_RESTART);
+  CHECK_EQ(seq[2], RNF_WATCHDOG_FALLBACK);
+  rnf_display_watchdog_free(w);
+}
+
+TEST_CASE("display watchdog: fallback hold doubles, is capped and starts over after a healthy period") {
+  rnf_display_watchdog* w = rnf_display_watchdog_new();
+  double t = 10;
+  auto stallUntilFallback = [&]() -> double {
+    for (int i = 0; i < 2000; ++i, t += P) {
+      rnf_display_watchdog_emulated(w, t);
+      if (rnf_display_watchdog_check(w, t) == RNF_WATCHDOG_FALLBACK) return rnf_display_watchdog_fallback_left(w, t);
+    }
+    return -1;
+  };
+  auto healthy = [&](double seconds) {
+    for (double end = t + seconds; t < end; t += P) {
+      rnf_display_watchdog_emulated(w, t);
+      rnf_display_watchdog_presented(w, t);
+      CHECK_EQ(rnf_display_watchdog_check(w, t), RNF_WATCHDOG_NONE);
+    }
+  };
+  double hold = RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD;
+  for (int k = 0; k < 6; ++k) {
+    const double left = stallUntilFallback();
+    CHECK(std::fabs(left - std::min(hold, RNF_DISPLAY_WATCHDOG_FALLBACK_MAX)) < 1e-9);
+    hold *= 2;
+    // The plain picture flows during the fallback; it ends (the CRT is tried again) and stalls.
+    healthy(left + 0.5);
+    CHECK_EQ(rnf_display_watchdog_fallback_active(w, t), 0);
+  }
+  // Healthy for longer than the reset period after the last fallback: the first hold again.
+  healthy(RNF_DISPLAY_WATCHDOG_FALLBACK_RESET + 1);
+  CHECK(std::fabs(stallUntilFallback() - RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD) < 1e-9);
+  rnf_display_watchdog_free(w);
+}
+
+TEST_CASE("display watchdog: escalation starts over after a settled period") {
+  rnf_display_watchdog* w = rnf_display_watchdog_new();
+  double t = 10;
+  auto run = [&](double seconds, bool shown) {
+    std::vector<int> out;
+    for (double end = t + seconds; t < end; t += P) {
+      rnf_display_watchdog_emulated(w, t);
+      if (shown) rnf_display_watchdog_presented(w, t);
+      int a = rnf_display_watchdog_check(w, t);
+      if (a != RNF_WATCHDOG_NONE) out.push_back(a);
+    }
+    return out;
+  };
+  CHECK(run(0.4, false) == std::vector<int>{RNF_WATCHDOG_RECOVER});
+  CHECK(run(RNF_DISPLAY_WATCHDOG_SETTLE + 0.5, true).empty());
+  // A later, unrelated stall starts with RECOVER again (not RESTART).
+  CHECK(run(0.4, false) == std::vector<int>{RNF_WATCHDOG_RECOVER});
   rnf_display_watchdog_free(w);
 }
 

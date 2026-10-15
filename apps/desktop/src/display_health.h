@@ -54,7 +54,7 @@ class DisplayErrors {
 /// The frame loop's side of rnf_display_watchdog (frontend.h).
 class DisplayWatchdog {
  public:
-  enum class Action { none, recover, restart };
+  enum class Action { none, recover, restart, fallback };
   DisplayWatchdog() : w_(rnf_display_watchdog_new()) {}
   ~DisplayWatchdog() { rnf_display_watchdog_free(w_); }
   DisplayWatchdog(const DisplayWatchdog&) = delete;
@@ -75,9 +75,12 @@ class DisplayWatchdog {
     switch (rnf_display_watchdog_check(w_, now)) {
       case RNF_WATCHDOG_RECOVER: return Action::recover;
       case RNF_WATCHDOG_RESTART: return Action::restart;
+      case RNF_WATCHDOG_FALLBACK: return Action::fallback;
       default: return Action::none;
     }
   }
+  /// Seconds the plain-picture fallback (Action::fallback) still lasts (0: none).
+  double fallbackLeft(double now) const { return rnf_display_watchdog_fallback_left(w_, now); }
   /// Seconds the oldest unshown picture has waited.
   double waiting(double now) const { return rnf_display_watchdog_waiting(w_, now); }
   int actions() const { return rnf_display_watchdog_recoveries(w_); }

@@ -299,19 +299,57 @@ classes in the Vulkan / D3D11 CRT paths:
 The watchdog (`rnf_display_watchdog`, shared core) covers what is left, including a display link
 that stops calling back while the view is visible (the emulation thread then silently falls back to
 the host clock, which exists for hidden windows): the frontend reports each published picture and
-each picture **confirmed** (its present's command buffer completed without error and the GPU work
-that built it did not fail - so a stale CRT output does not count; not `presentedTime`, which is 0
-for a replaced drawable and always 0 in the Parallels VM; a recovery's plain stand-in does not
-count either). While the viewport is visible (macOS: window occlusion state) and the display link
+each picture **confirmed** (the GPU work that built it did not fail - so a stale CRT output does
+not count - and a drawable showing it reached the screen: `presentedTime` > 0 for that drawable or a
+later repeat of the same picture; until the platform has reported any presentation time - always 0
+in the Parallels VM - its present's command buffer completing without error is taken instead; a
+recovery's plain stand-in does not count either). While the viewport is visible (macOS: window occlusion state) and the display link
 has run for a second (a new link settles first), a picture waiting more than 250 ms with emulation still advancing triggers
 RECOVER: fresh command queue, nothing pending, CRT output and temporal state discarded, plain
 picture for one present - or, when the display link stopped calling back, only a new display link.
 If the next 250 ms still show nothing: RESTART (the CRT renderer rebuilt from scratch and the
-display link recreated), then a 2 s back-off. GPU errors that persist across a rebuild switch the
-CRT model to the plain picture until the CRT settings change. Every action is logged with why (`ReplayNES: display watchdog: ...`: wait, link
-callback age, last confirmed frame vs latest, GPU errors and the last one, CRT / build-ahead state)
-and counted (`gpuErrors`, `watchdogActions` in the stats log). Pause, the menu and seeks never
-trigger it. Test hook: `-crtInjectGPUError N` reports every N-th CRT build as failed.
+display link recreated). If one more 250 ms show nothing: FALLBACK - the plain picture (CRT model
+off) for 5 s, doubled for each further fallback up to 60 s (back to 5 s after 30 s without one),
+then the CRT model is built again and retried; then a 2 s back-off. A picture confirmed right after
+an action does not end the escalation (a recovery that yields one CRT picture before it goes stale
+again used to repeat RECOVER forever: one picture every ~0.4 s); only 5 s without a stall
+after the last action do. GPU errors that persist across a rebuild switch the CRT model to the plain
+picture for 60 s (or until the CRT settings change), then it is retried. Every action is logged with
+why (`ReplayNES: display watchdog: ...`: wait, link callback age, last confirmed frame vs latest,
+GPU errors and the last one, CRT / build-ahead state) and counted (`gpuErrors`, `watchdogActions`
+in the stats log); on iOS the display log lines also go to `Library/Caches/display-log.txt`
+(`DisplayLog`, readable with `xcrun devicectl device copy from --domain-type appDataContainer`).
+Pause, the menu and seeks never trigger it.
+
+**Display link that never starts again (iPhone freeze, 2026-10-15).** When the display link does
+not call back for 100 ms (a GPU-heavy CRT frame, a rotation) the emulation thread keeps time on the
+host clock and only polled its run loop with a zero timeout between host ticks. A display link
+created in that state (the watchdog's RESTART, or the first link of a view) often never delivered a
+callback at all: measured in the iOS simulator with `-displayFault linkRestart`, 0-2 of 8-12 new links
+called back; the watchdog restarted links every 2 s forever while the game and audio played on
+behind a frozen picture. The host-clock wait now runs the run loop until the next tick instead of
+sleeping (`CFRunLoopRunInMode` with the remaining time): every new link calls back within ~5-20 ms
+(15 / 15). A link that the watchdog restarted also gets 0.5 s from its first callback before the
+wait counts again, and a stopped link is paused before it is invalidated.
+
+**Never blocked on the GPU.** `MTLCommandQueue.makeCommandBuffer` blocks once 64 command buffers
+are in flight; a GPU that stopped completing work would then stop the emulation thread and its
+watchdog with it. The display path takes at most 16 (`CommandBufferBudget`) and skips the refresh
+otherwise (logged); RECOVER replaces the queue. The emulation thread marks its phases
+(`ThreadProbe`) so a monitor on another thread can tell a blocked thread from one that presents
+nothing.
+
+**Tube plans under size churn.** A finished CRT tube plan is adopted even when a newer size is
+already wanted (sizes that changed faster than a plan is built - rotation, adaptive scale - kept the
+CRT picture from ever appearing).
+
+**Fault injection** (`DisplayFaults`; tests: `DisplayRecoveryTests`, `test_frontend_pacing`,
+`test_desktop_frontend`, and the iPhone app's end-to-end display recovery UI tests): `-crtInjectGPUError N` reports every N-th CRT build as
+failed; `-displayFault <list>` with `crtStale` (CRT builds silently stop), `noPresent` (CRT
+drawables never presented), `gpuHang` (a CRT build waits 3 s on the GPU every 10 s), `linkStall`
+(the display link paused for 0.6 s every 10 s), `linkRestart` (the link recreated every 2 s),
+`skipPresents` (updates not presented for 1.5 s every 10 s), `adaptiveFlip` (the tube size changes
+every 0.5 s).
 
 **Desktop (Linux Vulkan, Windows Direct3D 11).** The CRT renderers (`CrtRenderer`,
 `CrtRendererD3D11`) have the same fixes: stages and rows follow the tube in use (`key.lines`), a
@@ -328,7 +366,8 @@ after 1 s instead of blocking the loop; Direct3D 11 recreates the device on
 failures. The frame loop (`app.cpp`) runs the watchdog over each published picture and each
 successful present whose CRT build did not fail, reset while the window is minimised, hidden or
 occluded: RECOVER = CRT output discarded + plain picture for one present, RESTART = CRT renderer and
-swap chain recreated (the device after a loss); CRT builds still failing after two restarts are shown
+swap chain recreated (the device after a loss), FALLBACK = RESTART + the plain picture (CRT off) for
+the watchdog's hold, then the CRT model again; CRT builds still failing after two restarts are shown
 plain until the CRT is switched off and on. Logged as `ReplayNES: display watchdog: ...` with the
 wait, the last present and `Renderer::displayHealth()` (failures, device / swap chain / CRT state).
 

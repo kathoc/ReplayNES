@@ -236,6 +236,8 @@ final class EmulationController {
     private var linkTarget: DisplayTarget?
     private var linkActive = false
     private var lastLinkCallback: UInt64 = 0
+    /// The emulation thread's phase and when it entered it (read by monitors on other threads).
+    let probe = ThreadProbe()
     private var cadence = DisplayCadence()
     private var inputDeadline = InputDeadline()
     private let feedback = PresentFeedback()
@@ -253,6 +255,10 @@ final class EmulationController {
     private var watchedConfirmed: UInt64 = 0    // DisplayHealth.confirmedSequence last seen
     private var linkStartedAt = 0.0             // host seconds the display link was (re)created
     private var linkCallbackSinceStart = false
+    private var linkFirstCallback = 0.0         // host seconds of the current link's first callback
+    private var lastInjectedStall = -100.0      // DisplayFaults.linkStall
+    private var skippedUpdates = 0              // DisplayFaults.skipPresents
+    private var lastInjectedRestart = 0.0       // DisplayFaults.linkRestart
     private var watchdogRestarted = false       // the current link was created by the watchdog
     private var runLoop: CFRunLoop?             // the emulation thread's (targetLock)
     /// Deadline hint for the frame burst (rn_frame_workgroup.h); -frameWorkgroup NO disables it.
@@ -478,6 +484,7 @@ final class EmulationController {
         defer { rn_frame_workgroup_leave_free(workgroup); workgroup = nil }
         nextDeadline = HostClock.now()
         while running {
+            probe.mark("loop")
             syncDisplayTarget()
             if link != nil && linkActive {
                 // Display callbacks (displayRefresh) run the frames.
@@ -489,7 +496,11 @@ final class EmulationController {
                 }
             } else {
                 if link != nil {
-                    _ = CFRunLoopRunInMode(.defaultMode, 0, true)  // a callback takes over again
+                    // Wait for the host tick in the run loop: a display link callback (a new link
+                    // starting, a stalled one resuming) takes over as soon as it comes.
+                    let now = HostClock.now()
+                    let wait = nextDeadline > now ? HostClock.seconds(nextDeadline - now) : 0
+                    _ = CFRunLoopRunInMode(.defaultMode, wait, true)
                     if linkActive { continue }
                 }
                 hostTick()
@@ -510,6 +521,7 @@ final class EmulationController {
         latency.recordTickWake(lateTicks: woke > nextDeadline ? woke - nextDeadline : 0)
         tickStart = woke
         emulationRate = 1 / FramePacing.period
+        probe.mark("host tick")
         runCommands()
         rn_frame_workgroup_start(workgroup, HostClock.now(), nextDeadline &+ period / 2)
         let s = tickFrame()
@@ -552,13 +564,10 @@ final class EmulationController {
 
     /// (Re)creates the display link for `t` (nil: none).
     private func startLink(_ t: DisplayTarget?) {
-        link?.invalidate()
-        link = nil
+        stopLink()
         linkTarget = t
-        linkActive = false
-        watchdog.reset()
         linkStartedAt = HostClock.seconds(HostClock.now())
-        linkCallbackSinceStart = false
+        watchdog.reset()
         watchdogRestarted = false
         guard let t else { return }
         let l = CAMetalDisplayLink(metalLayer: t.layer)
@@ -592,14 +601,40 @@ final class EmulationController {
 
     /// CAMetalDisplayLink callback (emulation thread run loop): one display refresh.
     fileprivate func displayRefresh(_ update: CAMetalDisplayLink.Update) {
+        // Fault injection (linkStall): every 10 s the display link stops calling back for 0.6 s
+        // (paused, then resumed: a link starved of drawables for a moment).
+        if DisplayFaults.shared.on(.linkStall) {
+            let t = HostClock.seconds(HostClock.now())
+            if DisplayFaults.window(t, period: 10, length: 1.5), t - lastInjectedStall > 5, let l = link {
+                lastInjectedStall = t
+                l.isPaused = true
+                DisplayLog.write("fault injection: display link paused for 0.6 s")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.perform { _ in l.isPaused = false } }
+                return
+            }
+        }
         // A forwarded update can arrive after a later one: never present out of order.
         guard update.targetPresentationTimestamp > lastUpdateTarget else { return }
         lastUpdateTarget = update.targetPresentationTimestamp
         let cb = HostClock.now()
+        probe.mark("display refresh")
         lastLinkCallback = cb
         linkActive = true
+        if !linkCallbackSinceStart {
+            linkFirstCallback = HostClock.seconds(cb)
+            if watchdogRestarted {
+                DisplayLog.write(String(format: "display: restarted display link calls back after %.0f ms", (linkFirstCallback - linkStartedAt) * 1000))
+            }
+        }
         linkCallbackSinceStart = true
         guard let target = linkTarget else { return }
+        // Fault injection (skipPresents): callbacks arrive but their drawables are not presented.
+        if DisplayFaults.shared.on(.skipPresents), DisplayFaults.window(HostClock.seconds(cb), period: 10, length: 1.5) {
+            skippedUpdates += 1
+            if skippedUpdates % 30 == 1 { DisplayLog.write("fault injection: update not presented (\(skippedUpdates))") }
+            checkDisplay()
+            return
+        }
         let present = update.targetPresentationTimestamp
         let newFrame = cadence.refresh(presentation: present)
         let refresh = cadence.refresh > 0 ? cadence.refresh : 1.0 / 120
@@ -647,6 +682,7 @@ final class EmulationController {
             defer { checkDisplay() }
             let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(cb &- lastStep) < 0.5
             if drainNow { return }
+            probe.mark("present (repeat)")
             if target.renderer.present(drawable: update.drawable, targetPresentation: present,
                                        presentDelay: present - update.targetTimestamp, newFrame: false,
                                        repeatPicture: playing, onPresented: onNew, onRepeatPresented: onRepeat) != nil,
@@ -656,9 +692,12 @@ final class EmulationController {
             return
         }
         // Commands (seeks, take switches, ...) run before the wait: their cost is absorbed there.
+        probe.mark("commands")
         runCommands()
         let lead = Self.fixedLead ?? inputDeadline.lead
+        probe.mark("input wait")
         HostClock.wait(untilSeconds: update.targetTimestamp - lead)
+        probe.mark("emulate")
         rn_frame_workgroup_start(workgroup, HostClock.now(), HostClock.ticks(seconds: update.targetTimestamp))
         tickStart = cb
         emulationRate = cadence.emulationRate
@@ -666,6 +705,7 @@ final class EmulationController {
         let s = tickFrame()
         let stepped = lastStep != stepsBefore
         let playing = Self.repeatPresents && lastStep != 0 && HostClock.seconds(HostClock.now() &- lastStep) < 0.5
+        probe.mark("present")
         let commit = target.renderer.present(
             drawable: update.drawable, targetPresentation: present, presentDelay: present - update.targetTimestamp,
             newFrame: true, repeatPicture: playing,
@@ -686,6 +726,7 @@ final class EmulationController {
         latency.recordCadence(pacing: cadence.refreshesPerFrame.map { "display link \(Int((1 / refresh).rounded())) Hz / \($0)" } ?? "display link \(Int((1 / refresh).rounded())) Hz (free)",
                               refresh: refresh, expectedInterval: cadence.expectedFrameInterval, inputLead: inputDeadline.lead)
         let now = HostClock.seconds(HostClock.now())
+        probe.mark("housekeeping")
         afterTick(s, slack: update.targetTimestamp + cadence.expectedFrameInterval - inputDeadline.lead - now)
         checkDisplay()
     }
@@ -699,6 +740,13 @@ final class EmulationController {
     /// recreated. Each action is logged with what the display path was doing.
     private func checkDisplay() {
         let now = HostClock.seconds(HostClock.now())
+        // Fault injection (linkRestart): the display link is recreated every 2 s.
+        if DisplayFaults.shared.on(.linkRestart), linkTarget != nil, now - lastInjectedRestart > 2 {
+            lastInjectedRestart = now
+            DisplayLog.write("fault injection: display link recreated")
+            restartLink()
+            return
+        }
         let seq = frames.sequence
         if seq != watchedSeq { watchedSeq = seq; watchdog.emulated(at: now) }
         // Nothing is expected on screen while the viewport is hidden, nor in the first second of a new
@@ -706,7 +754,9 @@ final class EmulationController {
         // until it first called back (a link that never starts counts after 2 s).
         // After a watchdog restart the escalation (and its back-off) carries on once the new link runs.
         let sinceStart = now - linkStartedAt
+        // A link the watchdog restarted gets a moment from its first callback to show a picture.
         let starting = sinceStart < 1 || (!linkCallbackSinceStart && sinceStart < 2)
+            || (watchdogRestarted && linkCallbackSinceStart && now - linkFirstCallback < 2 * DisplayWatchdog.stall)
         guard let target = linkTarget, target.visible else { watchdog.reset(); return }
         if starting { if !watchdogRestarted { watchdog.reset() }; return }
         let health = target.renderer.health.snapshot
@@ -730,13 +780,30 @@ final class EmulationController {
         // but nothing new on screen: the renderer first, then the renderer rebuilt + a new link.
         let what: String
         switch (action, linkStalled) {
+        case (.fallback, _):
+            // Still nothing after a rebuilt renderer and a new link: the plain picture for a while
+            // (GameRenderer.fallBack), then the CRT model is built again and retried.
+            let hold = watchdog.fallbackLeft(at: now)
+            what = String(format: "plain picture for %.0f s (CRT model off), rebuild renderer%@", hold, linkStalled ? ", restart display link" : "")
+            target.renderer.recover(rebuild: true)
+            target.renderer.fallBack(until: now + hold)
+            if linkStalled { restartLink() }
         case (.recover, true): what = "restart display link"; restartLink()
         case (.recover, false): what = "recover renderer"; target.renderer.recover(rebuild: false)
         case (_, true): what = "restart display link, recover renderer"; target.renderer.recover(rebuild: false); restartLink()
         default: what = "rebuild renderer, restart display link"; target.renderer.recover(rebuild: true); restartLink()
         }
-        NSLog("ReplayNES: display watchdog: \(what) (action \(watchdog.actions)) - \(why)")
+        DisplayLog.write("display watchdog: \(what) (action \(watchdog.actions)) - \(why)")
         latency.recordWatchdog(gpuErrors: health.gpuErrors)
+    }
+
+    /// Stops the display link (paused before it is invalidated).
+    private func stopLink() {
+        link?.isPaused = true
+        link?.invalidate()
+        link = nil
+        linkActive = false
+        linkCallbackSinceStart = false
     }
 
     private func restartLink() {

@@ -84,6 +84,7 @@ class App {
   void handleEvent(const SDL_Event& e, double now);
   void applyFullscreen(bool on);
   void applySettings();
+  void applyPostProcess();
   void updateNavigation();
 
   const PlatformHooks& platform_;
@@ -118,6 +119,7 @@ class App {
   double pickedEvent_ = 0;
   std::vector<double> recentLatency_;
   size_t recentHead_ = 0;
+  double crtFallbackUntil_ = 0;  // display watchdog FALLBACK: the plain picture until then
 };
 
 void App::applyFullscreen(bool on) {
@@ -133,8 +135,12 @@ void App::applySettings() {
   emu_->setPracticeCountdown(settings_.practiceCountdown);
   emu_->setResumeCountdown(settings_.resumeCountdown);
   audio_.setVolume(settings_.volume);
+  applyPostProcess();
+}
+
+void App::applyPostProcess() {
   DisplayPostProcess pp = renderer_->postProcess();
-  pp.crt = opt_.crt >= 0 ? opt_.crt == 1 : settings_.crt;
+  pp.crt = (opt_.crt >= 0 ? opt_.crt == 1 : settings_.crt) && crtFallbackUntil_ == 0;
   pp.crtSettings = ui_->crtSettings();
   pp.maxTubeWidth = opt_.crtMaxWidth;
   pp.adaptiveResolution = opt_.crtAdaptive;
@@ -589,12 +595,29 @@ int App::run(const AppOptions& opt) {
       const double waited = watchdog.waiting(now);
       DisplayWatchdog::Action a = watchdog.frame(now, visible, newPicture, shown);
       if (a != DisplayWatchdog::Action::none) {
-        const bool restart = a == DisplayWatchdog::Action::restart;
+        const bool fallback = a == DisplayWatchdog::Action::fallback;
+        const bool restart = a == DisplayWatchdog::Action::restart || fallback;
+        char what[128];
+        if (fallback)
+          std::snprintf(what, sizeof what, "FALLBACK: plain picture (CRT off) for %.0f s, CRT renderer and swap chain recreated",
+                        watchdog.fallbackLeft(now));
         std::fprintf(stderr, "ReplayNES: display watchdog: %s (a picture waited %.0f ms with emulation advancing; last present %s; %s)\n",
-                     restart ? "RESTART: CRT renderer and swap chain recreated" : "RECOVER: CRT output discarded, plain picture for a present",
+                     fallback  ? what
+                     : restart ? "RESTART: CRT renderer and swap chain recreated"
+                               : "RECOVER: CRT output discarded, plain picture for a present",
                      std::max(waited, watchdog.waiting(now)) * 1000, id ? (shown ? "ok" : "ok, CRT build failed") : "failed or skipped",
                      renderer_->displayHealth().c_str());
         renderer_->recoverDisplay(restart);
+        if (fallback) {
+          // Never a frozen picture: the plain one until the hold ends, then the CRT model again.
+          crtFallbackUntil_ = now + watchdog.fallbackLeft(now);
+          applyPostProcess();
+        }
+      }
+      if (crtFallbackUntil_ != 0 && now >= crtFallbackUntil_) {
+        crtFallbackUntil_ = 0;
+        applyPostProcess();
+        std::fprintf(stderr, "ReplayNES: display watchdog: CRT model tried again after the plain-picture fallback\n");
       }
     }
     if (id) {

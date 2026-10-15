@@ -163,11 +163,10 @@ final class GameRenderer {
                  skipRepeat: Bool = false,
                  onPresented: @escaping (FrameMeta, UInt64, Double, GPUSpan) -> Void,
                  onRepeatPresented: @escaping (UInt64, Double) -> Void) -> UInt64? {
-        let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize)
+        let crtState = effectiveCRT(at: HostClock.seconds(HostClock.now()))
+        let (fetched, changed) = fetch(drawableSize: drawable.layer.drawableSize, crtState: crtState)
         var newMeta = newFrame ? fetched : nil
         if !newFrame, let m = fetched, m.emulatedTime == 0 { newMeta = m }  // seek / option refresh: show it
-        var crtState = CRTSettingsModel.shared.snapshot
-        if crtState == crtSuspendedFor { crtState.enabled = false }   // GPU keeps failing the CRT: plain
         updatePipelining(crtOn: crtState.enabled, presentDelay: presentDelay)
         if !pipelined, let p = pending {
             // Left the pipelined mode: show the picture that was built (unless a newer one comes).
@@ -213,7 +212,9 @@ final class GameRenderer {
     /// Pipelined: encodes and commits the passes that build the picture of `m` (CRT). Returns the
     /// commit time, nil when nothing could be encoded.
     private func build(_ m: FrameMeta, crtState: CRTSettingsModel.Snapshot, drawableSize: CGSize, span: GPUSpan) -> UInt64? {
-        guard let crt = crtRenderer(), crtFrame.valid, let cb = queue.makeCommandBuffer() else { return nil }
+        guard let crt = crtRenderer(), crtFrame.valid else { return nil }
+        if faults.on(.crtStale) && crt.hasOutput { return nil }   // fault injection: the tube output goes stale
+        guard let cb = commandBuffer() else { return nil }
         configureCRT(crt, crtState: crtState, size: drawableSize)
         encodeBuild(crt, cb: cb)
         if m.emulatedTime != 0 { latency.recordDraw(refresh: FramePacing.period) }
@@ -230,7 +231,7 @@ final class GameRenderer {
                                   crtState: CRTSettingsModel.Snapshot, span: GPUSpan?,
                                   onPresented: @escaping (UInt64, Double) -> Void,
                                   onRepeatPresented: @escaping (UInt64, Double) -> Void) -> UInt64? {
-        guard let cb = queue.makeCommandBuffer() else { return nil }
+        guard let cb = commandBuffer() else { return nil }
         if let m = build { shownFrame = m.frame }
         let pictureFrame = shownFrame
         let shown = encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
@@ -244,10 +245,17 @@ final class GameRenderer {
         cb.addCompletedHandler { b in
             let now = HostClock.seconds(HostClock.now())
             if let failure = DisplayHealth.failure(status: b.status, error: b.error) {
-                if health.commandBufferFailed(failure, build: false, at: now) { NSLog("ReplayNES: display: present command buffer failed: \(failure)") }
+                if health.commandBufferFailed(failure, build: false, at: now) { DisplayLog.write("display: present command buffer failed: \(failure)") }
             } else if !(shown.work?.failed ?? false) {
-                health.confirmed(sequence: shown.seq, frame: shown.frame, at: now)
+                health.completed(sequence: shown.seq, frame: shown.frame, at: now)
             }
+        }
+        // On screen: where the platform reports presentation times, only a drawable that was
+        // actually shown confirms its picture (DisplayHealth.presented).
+        let presents = !(faults.on(.noPresent) && shown.crt)   // fault injection: never presented
+        drawable.addPresentedHandler { d in
+            guard presents, d.presentedTime > 0, !(shown.work?.failed ?? false) else { return }
+            health.presented(sequence: shown.seq, frame: shown.frame, at: HostClock.seconds(HostClock.now()))
         }
         if let m = build ?? revealed, m.emulatedTime != 0 {
             if let span, build != nil { cb.addCompletedHandler { b in span.extend(b.gpuStartTime, b.gpuEndTime) } }
@@ -257,7 +265,8 @@ final class GameRenderer {
                 if d.presentedTime > 0 { onRepeatPresented(pictureFrame, d.presentedTime) }
             }
         }
-        cb.present(drawable)
+        // Fault injection (noPresent): with the CRT model on, the drawable never reaches the screen.
+        if presents { cb.present(drawable) }
         cb.commit()
         return commit
     }
@@ -295,7 +304,7 @@ final class GameRenderer {
 
     /// Takes a newly published frame into the texture (and the CRT store). Returns its meta and
     /// whether anything else that is shown changed since the last draw.
-    private func fetch(drawableSize wanted: CGSize) -> (FrameMeta?, Bool) {
+    private func fetch(drawableSize wanted: CGSize, crtState: CRTSettingsModel.Snapshot) -> (FrameMeta?, Bool) {
         drainBuildTimes()
         if health.takeBuildErrors() > 0 {
             // A CRT build failed on the GPU: its output and the temporal state may be half written.
@@ -305,7 +314,6 @@ final class GameRenderer {
         let options = self.options
         var newMeta: FrameMeta?
         let w = Int(RN_VIDEO_WIDTH)
-        let crtState = CRTSettingsModel.shared.snapshot
         let crtOn = crtState.enabled
         let store = crtFrame
         // CRT just switched on (e.g. while paused): fetch the current frame again for it.
@@ -334,7 +342,11 @@ final class GameRenderer {
     @discardableResult
     private func configureCRT(_ crt: CRTRenderer, crtState: CRTSettingsModel.Snapshot, size: CGSize) -> (CGRect, Double) {
         let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
-        let (tw, th) = CRTRenderer.tubeSize(forDestination: adaptiveScale.scaled(dst.size), cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
+        var tubeDst = adaptiveScale.scaled(dst.size)
+        if faults.on(.adaptiveFlip) && DisplayFaults.window(HostClock.seconds(HostClock.now()), period: 1, length: 0.5) {
+            tubeDst = CGSize(width: tubeDst.width * 0.85, height: tubeDst.height * 0.85)   // fault injection: tube size churn
+        }
+        let (tw, th) = CRTRenderer.tubeSize(forDestination: tubeDst, cropFraction: cropFraction, maxWidth: Self.crtMaxWidth)
         crt.configure(settings: crtState.settings, outputWidth: tw, outputHeight: th)
         return (dst, cropFraction)
     }
@@ -344,7 +356,7 @@ final class GameRenderer {
     /// command buffer (timed: GPUSpan / pipelining decision).
     @discardableResult
     private func encode(newMeta: FrameMeta?, drawable: CAMetalDrawable, cb: MTLCommandBuffer,
-                        crtState: CRTSettingsModel.Snapshot, span: GPUSpan?) -> (seq: UInt64, frame: UInt64, work: PictureWork?) {
+                        crtState: CRTSettingsModel.Snapshot, span: GPUSpan?) -> (seq: UInt64, frame: UInt64, work: PictureWork?, crt: Bool) {
         let options = self.options
         let crtOn = crtState.enabled
         let store = crtFrame
@@ -369,7 +381,8 @@ final class GameRenderer {
         if plainOnce { plainPresents -= 1 }
         if crtOn, !plainOnce, let crt = crtRenderer() {
             let (dst, cropFraction) = configureCRT(crt, crtState: crtState, size: size)
-            if newMeta != nil || !crt.hasOutput, store.valid, let bcb = queue.makeCommandBuffer() {
+            let stale = faults.on(.crtStale) && crt.hasOutput   // fault injection: no more builds
+            if newMeta != nil || !crt.hasOutput, store.valid, !stale, let bcb = commandBuffer() {
                 encodeBuild(crt, cb: bcb)
                 addBuildTiming(bcb, span: span ?? GPUSpan())
                 bcb.commit()
@@ -415,11 +428,11 @@ final class GameRenderer {
                 lat.recordDisplayGPU(ms: (b.gpuEndTime - b.gpuStartTime) * 1000, crtInfo: "")
             }
         }
-        if crtShown { return crtOutput.map { ($0.seq, $0.frame, $0.work) } ?? (0, 0, Self.unconfirmed) }
+        if crtShown { return crtOutput.map { ($0.seq, $0.frame, $0.work, true) } ?? (0, 0, Self.unconfirmed, true) }
         // A recovery's plain stand-in is not the picture the user chose: it does not end the stall
         // (the watchdog escalates if the CRT keeps failing).
-        if plainOnce && crtOn { return (0, 0, Self.unconfirmed) }
-        return (textureSeq, textureFrame, nil)
+        if plainOnce && crtOn { return (0, 0, Self.unconfirmed, false) }
+        return (textureSeq, textureFrame, nil, false)
     }
 
     /// Encodes the CRT passes of the stored frame into `cb` (its own command buffer). The tube
@@ -432,13 +445,14 @@ final class GameRenderer {
             guard crt.renderedLines != nil else { return }   // the first tube plan is still being built
             buildFailures += 1
             if buildFailures <= DisplayHealth.logFirst || buildFailures % DisplayHealth.logEvery == 0 {
-                NSLog("ReplayNES: display: CRT build not encoded (stage buffers unavailable; \(buildFailures) so far)")
+                DisplayLog.write("display: CRT build not encoded (stage buffers unavailable; \(buildFailures) so far)")
             }
             return
         }
-        if crt.stateResets != resets { NSLog("ReplayNES: display: CRT temporal state was not finite (NaN); reset") }
+        if crt.stateResets != resets { DisplayLog.write("display: CRT temporal state was not finite (NaN); reset") }
         let work = PictureWork()
         crtOutput = (storeSeq, storeFrame, work)
+        if faults.on(.gpuHang), let ev = hangEvent() { cb.encodeWaitForEvent(ev, value: 1) }   // fault injection: a hung GPU queue
         let health = self.health
         let inject = Self.injectBuildErrors > 0 && injectCounter % Self.injectBuildErrors == Self.injectBuildErrors - 1
         injectCounter &+= 1
@@ -446,7 +460,7 @@ final class GameRenderer {
             let failure = inject ? "injected (-crtInjectGPUError)" : DisplayHealth.failure(status: b.status, error: b.error)
             work.complete(ok: failure == nil)
             if let failure, health.commandBufferFailed(failure, build: true, at: HostClock.seconds(HostClock.now())) {
-                NSLog("ReplayNES: display: CRT build command buffer failed: \(failure)")
+                DisplayLog.write("display: CRT build command buffer failed: \(failure)")
             }
         }
     }
@@ -456,8 +470,73 @@ final class GameRenderer {
     static let injectBuildErrors = UserDefaults.standard.integer(forKey: "crtInjectGPUError")
     private var injectCounter = 0
     private var buildErrorsAtRebuild = -1
-    /// CRT settings under which the CRT model kept failing on the GPU (shown plain instead).
+    /// CRT settings under which the CRT model kept failing on the GPU (shown plain instead, for
+    /// `suspendRetry` seconds; then the model is rebuilt and tried again).
     private var crtSuspendedFor: CRTSettingsModel.Snapshot?
+    private var crtSuspendedAt = 0.0
+    static let suspendRetry = 60.0
+    /// Display watchdog FALLBACK: the plain picture until then (host seconds); afterwards the CRT
+    /// model is built from scratch and tried again.
+    private var fallbackUntil = 0.0
+    private var inFallback = false
+    func fallBack(until t: Double) { fallbackUntil = max(fallbackUntil, t) }
+
+    /// The CRT state to draw with: the user's, minus a fallback or a suspension in effect.
+    private func effectiveCRT(at now: Double) -> CRTSettingsModel.Snapshot {
+        var c = CRTSettingsModel.shared.snapshot
+        guard c.enabled else { inFallback = false; return c }
+        if let s = crtSuspendedFor {
+            if c != s {
+                crtSuspendedFor = nil          // settings changed: try the model again
+            } else if now - crtSuspendedAt < Self.suspendRetry {
+                c.enabled = false
+            } else {
+                crtSuspendedFor = nil
+                DisplayLog.write("display: CRT model tried again after its GPU-error suspension")
+            }
+        }
+        if now < fallbackUntil {
+            c.enabled = false
+            if !inFallback { inFallback = true; DisplayLog.write(String(format: "display: plain picture (CRT model off) for %.1f s", fallbackUntil - now)) }
+        } else if inFallback {
+            inFallback = false
+            DisplayLog.write("display: CRT model built again and tried after the plain-picture fallback")
+        }
+        return c
+    }
+
+    // MARK: command buffers
+
+    private var budget = CommandBufferBudget()
+    private var backlogSkips = 0
+    let faults = DisplayFaults.shared
+
+    /// A command buffer of the display queue, or nil when `CommandBufferBudget.limit` of them are
+    /// still in flight (the GPU stopped completing work): the refresh is skipped instead of
+    /// blocking the emulation thread in makeCommandBuffer.
+    private func commandBuffer() -> MTLCommandBuffer? {
+        let b = budget
+        guard b.acquire() else {
+            backlogSkips += 1
+            if backlogSkips <= DisplayHealth.logFirst || backlogSkips % DisplayHealth.logEvery == 0 {
+                DisplayLog.write("display: GPU backlog: \(b.count) command buffers still in flight; refresh not drawn (\(backlogSkips) so far)")
+            }
+            return nil
+        }
+        guard let cb = queue.makeCommandBuffer() else { b.release(); return nil }
+        cb.addCompletedHandler { _ in b.release() }
+        return cb
+    }
+
+    /// gpuHang fault: an event the GPU waits on, signalled 3 s later; one hang every 10 s.
+    private var lastHang = -100.0
+    private func hangEvent() -> MTLSharedEvent? {
+        let now = HostClock.seconds(HostClock.now())
+        guard now - lastHang >= 10, let ev = device.makeSharedEvent() else { return nil }
+        lastHang = now
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) { ev.signaledValue = 1 }
+        return ev
+    }
     /// Presents left that show the plain picture (display watchdog recovery).
     private var plainPresents = 0
 
@@ -477,7 +556,7 @@ final class GameRenderer {
     /// (tube plan, buffers, pipelines); otherwise its output and temporal state are discarded.
     /// Either way: a fresh command queue, nothing pending, the plain picture for the next present.
     func recover(rebuild: Bool) {
-        if let q = device.makeCommandQueue() { queue = q }
+        if let q = device.makeCommandQueue() { queue = q; budget = CommandBufferBudget() }
         pending = nil
         buildAhead.reset()
         plainPresents = 1
@@ -490,7 +569,8 @@ final class GameRenderer {
             let errors = health.snapshot.buildErrors
             if buildErrorsAtRebuild >= 0 && errors > buildErrorsAtRebuild && crtRenderer_ != nil {
                 crtSuspendedFor = CRTSettingsModel.shared.snapshot
-                NSLog("ReplayNES: display: CRT model suspended after repeated GPU errors (\(errors) failed builds); plain picture until the CRT settings change")
+                crtSuspendedAt = HostClock.seconds(HostClock.now())
+                DisplayLog.write(String(format: "display: CRT model suspended after repeated GPU errors (%d failed builds); plain picture for %.0f s or until the CRT settings change", errors, Self.suspendRetry))
             }
             buildErrorsAtRebuild = errors
             crtRenderer_ = nil
@@ -659,7 +739,7 @@ final class GameRenderer {
         if let r = crtRenderer_ { return r }
         if crtFailed { return nil }
         do { crtRenderer_ = try CRTRenderer(device: device, targetPixelFormat: .bgra8Unorm) } catch {
-            NSLog("ReplayNES: CRT pipeline unavailable: \(error)")
+            DisplayLog.write("CRT pipeline unavailable: \(error)")
             crtFailed = true
         }
         return crtRenderer_

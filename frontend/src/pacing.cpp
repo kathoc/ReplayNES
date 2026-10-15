@@ -114,9 +114,11 @@ struct rnf_build_ahead {
 struct rnf_display_watchdog {
   double waitingSince = -1;  // first published picture not yet confirmed on screen (-1: none)
   double lastEmulated = -1;
-  int stage = 0;             // 0 watching, 1 RECOVER issued, 2 RESTART issued (backing off)
+  int stage = 0;             // 0 watching, 1 RECOVER issued, 2 RESTART issued, 3 FALLBACK issued (backing off)
   double actionAt = 0;
   int actions = 0;
+  double fallbackUntil = -1; // plain picture until then (-1: never fell back)
+  int fallbacks = 0;         // consecutive fallbacks (the hold doubles with each)
 };
 
 struct rnf_audio_rate {
@@ -389,9 +391,12 @@ void rnf_display_watchdog_emulated(rnf_display_watchdog* w, double now) {
 }
 void rnf_display_watchdog_presented(rnf_display_watchdog* w, double now) {
   if (!w) return;
-  (void)now;
+  // The escalation is kept: a recovery that yields one picture before the display path stalls
+  // again (a CRT output rebuilt once, then stale) must lead to RESTART / FALLBACK, not to RECOVER
+  // forever. check() ends it once pictures have flowed for RNF_DISPLAY_WATCHDOG_SETTLE.
   w->waitingSince = -1;
-  w->stage = 0;
+  // Healthy for a while after the last fallback ended: the next one starts with the first hold.
+  if (w->fallbacks > 0 && now - w->fallbackUntil > RNF_DISPLAY_WATCHDOG_FALLBACK_RESET) w->fallbacks = 0;
 }
 void rnf_display_watchdog_reset(rnf_display_watchdog* w) {
   if (!w) return;
@@ -399,9 +404,12 @@ void rnf_display_watchdog_reset(rnf_display_watchdog* w) {
   w->stage = 0;
 }
 rnf_watchdog_action rnf_display_watchdog_check(rnf_display_watchdog* w, double now) {
-  if (!w || w->waitingSince < 0) return RNF_WATCHDOG_NONE;
+  if (!w) return RNF_WATCHDOG_NONE;
+  const bool stalled = w->waitingSince >= 0 && now - w->waitingSince > RNF_DISPLAY_WATCHDOG_STALL;
+  // Pictures flowing again for a while after the last action: the escalation starts over.
+  if (w->stage != 0 && !stalled && now - w->actionAt > RNF_DISPLAY_WATCHDOG_SETTLE) w->stage = 0;
+  if (!stalled) return RNF_WATCHDOG_NONE;
   if (now - w->lastEmulated > RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;  // not advancing
-  if (now - w->waitingSince <= RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;
   switch (w->stage) {
     case 0:
       w->stage = 1;
@@ -412,6 +420,20 @@ rnf_watchdog_action rnf_display_watchdog_check(rnf_display_watchdog* w, double n
       w->actionAt = now;
       w->actions += 1;
       return RNF_WATCHDOG_RESTART;
+    case 2: {
+      // A rebuilt renderer and a new display link still show nothing: the plain picture for a
+      // while (never a frozen picture), then the CRT model is tried again from scratch.
+      if (now - w->actionAt <= RNF_DISPLAY_WATCHDOG_STALL) return RNF_WATCHDOG_NONE;
+      w->stage = 3;
+      w->actionAt = now;
+      w->actions += 1;
+      double hold = RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD;
+      for (int i = 0; i < w->fallbacks && hold < RNF_DISPLAY_WATCHDOG_FALLBACK_MAX; ++i) hold *= 2;
+      hold = std::min(hold, RNF_DISPLAY_WATCHDOG_FALLBACK_MAX);
+      w->fallbackUntil = std::max(w->fallbackUntil, now + hold);
+      w->fallbacks += 1;
+      return RNF_WATCHDOG_FALLBACK;
+    }
     default:
       if (now - w->actionAt <= RNF_DISPLAY_WATCHDOG_BACKOFF) return RNF_WATCHDOG_NONE;
       w->stage = 1;
@@ -425,6 +447,10 @@ double rnf_display_watchdog_waiting(const rnf_display_watchdog* w, double now) {
   return w && w->waitingSince >= 0 ? std::max(0.0, now - w->waitingSince) : 0;
 }
 int rnf_display_watchdog_recoveries(const rnf_display_watchdog* w) { return w ? w->actions : 0; }
+int rnf_display_watchdog_fallback_active(const rnf_display_watchdog* w, double now) { return w && now < w->fallbackUntil ? 1 : 0; }
+double rnf_display_watchdog_fallback_left(const rnf_display_watchdog* w, double now) {
+  return w && now < w->fallbackUntil ? w->fallbackUntil - now : 0;
+}
 
 // ------------------------------------------------------------------ audio rate control
 rnf_audio_rate* rnf_audio_rate_new(double target_fill) {

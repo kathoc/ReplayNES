@@ -1,6 +1,8 @@
 // Display path robustness (docs/FRAME_PACING.md "Display watchdog"): CRT renderer stuck states
 // (line count vs the tube in use, a failed encode leaving a stale output, non-finite temporal
-// state), DisplayHealth bookkeeping and the DisplayWatchdog bridge.
+// state, a tube plan never adopted while sizes keep changing), DisplayHealth bookkeeping
+// (confirmation by presentation), the command buffer budget on a hung GPU queue, the fault
+// injection switches and the DisplayWatchdog bridge (RECOVER, RESTART, FALLBACK).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Metal
 import XCTest
@@ -168,11 +170,96 @@ final class DisplayRecoveryTests: XCTestCase {
             if a != .none { actions.append(a) }
             t += 1 / 60.0
         }
-        XCTAssertEqual(actions, [.recover, .restart])
+        XCTAssertEqual(actions, [.recover, .restart, .fallback])
+        XCTAssertGreaterThanOrEqual(w.fallbackLeft(at: t), DisplayWatchdog.fallbackHold - 1.1)
         XCTAssertGreaterThan(w.waiting(at: t), 0.9)
         w.presented(at: t)
         XCTAssertEqual(w.waiting(at: t), 0)
         XCTAssertEqual(w.check(at: t), .none)
-        XCTAssertEqual(w.actions, 2)
+        XCTAssertEqual(w.actions, 3)
+        XCTAssertEqual(w.fallbackLeft(at: t + DisplayWatchdog.fallbackHold + 1), 0)
+    }
+
+    /// Where presentation times are reported, a present whose command buffer completed does not
+    /// confirm its picture by itself (it may never reach the screen: dropped, replaced, a layer
+    /// that is not shown); before any was reported (virtual machines) completion is all there is.
+    func testPresentationTimesDecideConfirmation() {
+        let h = DisplayHealth()
+        h.completed(sequence: 1, frame: 10, at: 1)
+        XCTAssertEqual(h.snapshot.confirmedSequence, 1, "no presentation times yet: completion confirms")
+        XCTAssertFalse(h.presentTimesSeen)
+        h.presented(sequence: 2, frame: 11, at: 2)
+        XCTAssertTrue(h.presentTimesSeen)
+        XCTAssertEqual(h.snapshot.confirmedSequence, 2)
+        h.completed(sequence: 3, frame: 12, at: 3)
+        XCTAssertEqual(h.snapshot.confirmedSequence, 2, "completed but never shown: not confirmed")
+        XCTAssertEqual(h.snapshot.confirmedAt, 2)
+        h.presented(sequence: 3, frame: 12, at: 4)
+        XCTAssertEqual(h.snapshot.confirmedSequence, 3)
+    }
+
+    /// A GPU queue that stops completing work (fault: an event that is not signalled) must not
+    /// block the thread that encodes: makeCommandBuffer blocks once the queue's own limit is in
+    /// flight, so the display path takes at most CommandBufferBudget.limit and skips refreshes.
+    func testCommandBufferBudgetOnAHungQueue() throws {
+        guard let event = device.makeSharedEvent() else { throw XCTSkip("no shared events") }
+        let budget = CommandBufferBudget()
+        var committed = 0
+        let start = Date()
+        for _ in 0..<(CommandBufferBudget.limit * 4) {
+            guard budget.acquire() else { continue }
+            let cb = queue.makeCommandBuffer()!
+            cb.encodeWaitForEvent(event, value: 1)   // hangs until signalled
+            cb.addCompletedHandler { _ in budget.release() }
+            cb.commit()
+            committed += 1
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1, "never blocked")
+        XCTAssertEqual(committed, CommandBufferBudget.limit)
+        XCTAssertEqual(budget.count, CommandBufferBudget.limit)
+        XCTAssertFalse(budget.acquire())
+        event.signaledValue = 1
+        let deadline = Date().addingTimeInterval(10)
+        while budget.count > 0 && Date() < deadline { usleep(5000) }
+        XCTAssertEqual(budget.count, 0)
+        XCTAssertTrue(budget.acquire())
+    }
+
+    /// Sizes that change faster than a tube plan is built (rotation, adaptive scale, thermal
+    /// steps; -displayFault adaptiveFlip) used to discard every finished plan: the CRT picture
+    /// never appeared. A finished plan is adopted; the newest wanted one follows.
+    func testTubePlanAdoptedWhileSizesKeepChanging() throws {
+        let r = try CRTRenderer(device: device, targetPixelFormat: nil)
+        let sizes = [(1204, 903), (1023, 767)]
+        var i = 0
+        let deadline = Date().addingTimeInterval(20)
+        while r.outputSize == nil && Date() < deadline {
+            let (w, h) = sizes[i % 2]
+            r.configure(settings: CRTRenderer.Settings(), outputWidth: w, outputHeight: h)   // a new size every frame
+            frame(r, UInt64(i + 1))
+            i += 1
+            usleep(2000)
+        }
+        XCTAssertNotNil(r.outputSize, "a tube plan was adopted")
+        XCTAssertTrue(frame(r, UInt64(i + 1)).encoded)
+        XCTAssertTrue(allFinite(r))
+    }
+
+    func testFaultSwitchesAndProbe() {
+        let f = DisplayFaults("crtStale, gpuHang,bogus")
+        XCTAssertEqual(f.active, [.crtStale, .gpuHang])
+        XCTAssertTrue(f.on(.crtStale))
+        XCTAssertFalse(f.on(.noPresent))
+        f.active = []
+        XCTAssertFalse(f.on(.crtStale))
+        XCTAssertTrue(DisplayFaults.window(100.2, period: 10, length: 1.5))
+        XCTAssertFalse(DisplayFaults.window(101.6, period: 10, length: 1.5))
+        let p = ThreadProbe()
+        p.mark("present", at: 5)
+        XCTAssertEqual(p.snapshot.at, 5)
+        XCTAssertEqual(p.snapshot.phase, "present")
+        let before = DisplayLog.count
+        DisplayLog.write("test line")
+        XCTAssertEqual(DisplayLog.count, before + 1)
     }
 }

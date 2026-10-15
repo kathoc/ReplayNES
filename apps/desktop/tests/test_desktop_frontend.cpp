@@ -883,7 +883,7 @@ TEST_CASE("scheduler: leaving the locked cadence does not emulate a catch-up fra
   CHECK(next - last > 1.5 * r);
 }
 
-TEST_CASE("display watchdog: failed presents -> RECOVER, RESTART, back-off; hidden or paused never") {
+TEST_CASE("display watchdog: failed presents -> RECOVER, RESTART, FALLBACK, back-off; hidden or paused never") {
   using A = DisplayWatchdog::Action;
   const double f = 1.0 / 60;
   // Pictures published every frame, none confirmed (present or CRT build failing).
@@ -893,13 +893,16 @@ TEST_CASE("display watchdog: failed presents -> RECOVER, RESTART, back-off; hidd
     A a = w.frame(i * f, true, true, false);
     if (a != A::none) actions.push_back({i * f, a});
   }
-  REQUIRE(actions.size() >= 3);
+  REQUIRE(actions.size() >= 4);
   CHECK(actions[0].second == A::recover);
   CHECK(actions[0].first > RNF_DISPLAY_WATCHDOG_STALL && actions[0].first < RNF_DISPLAY_WATCHDOG_STALL + 2 * f);
   CHECK(actions[1].second == A::restart);
   CHECK(actions[1].first - actions[0].first > RNF_DISPLAY_WATCHDOG_STALL);
-  CHECK(actions[2].second == A::recover);
-  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_BACKOFF);  // backed off
+  CHECK(actions[2].second == A::fallback);
+  CHECK(actions[2].first - actions[1].first > RNF_DISPLAY_WATCHDOG_STALL);
+  CHECK(w.fallbackLeft(actions[2].first) >= RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD - 1e-6);
+  CHECK(actions[3].second == A::recover);
+  CHECK(actions[3].first - actions[2].first > RNF_DISPLAY_WATCHDOG_BACKOFF);  // backed off
   CHECK_EQ(w.actions(), int(actions.size()));
   // Confirmed presents: nothing to do.
   DisplayWatchdog ok;

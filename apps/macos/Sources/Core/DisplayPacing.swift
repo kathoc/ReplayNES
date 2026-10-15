@@ -162,11 +162,13 @@ struct AudioRateControl {
 
 /// Display watchdog (rnf_display_watchdog, docs/FRAME_PACING.md "Display watchdog"): a published
 /// picture that has not reached the screen within `stall` seconds while emulation advances asks
-/// for a renderer recovery, then a display link restart, then backs off.
+/// for a renderer recovery, then a display link restart, then the plain-picture fallback (the CRT
+/// model is rebuilt and tried again when it ends), then backs off.
 struct DisplayWatchdog {
-    enum Action: Equatable { case none, recover, restart }
+    enum Action: Equatable { case none, recover, restart, fallback }
     static let stall = RNF_DISPLAY_WATCHDOG_STALL
     static let backoff = RNF_DISPLAY_WATCHDOG_BACKOFF
+    static let fallbackHold = RNF_DISPLAY_WATCHDOG_FALLBACK_HOLD
     private var box = RNFHandle(rnf_display_watchdog_new(), free: { rnf_display_watchdog_free($0) },
                                 clone: { rnf_display_watchdog_clone($0) })
 
@@ -180,9 +182,12 @@ struct DisplayWatchdog {
         switch rnf_display_watchdog_check(RNFHandle.unique(&box), now) {
         case RNF_WATCHDOG_RECOVER: return .recover
         case RNF_WATCHDOG_RESTART: return .restart
+        case RNF_WATCHDOG_FALLBACK: return .fallback
         default: return .none
         }
     }
+    /// Seconds the plain-picture fallback still lasts (0: none).
+    func fallbackLeft(at now: Double) -> Double { rnf_display_watchdog_fallback_left(box.ptr, now) }
     func waiting(at now: Double) -> Double { rnf_display_watchdog_waiting(box.ptr, now) }
     var actions: Int { Int(rnf_display_watchdog_recoveries(box.ptr)) }
 }
