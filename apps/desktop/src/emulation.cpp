@@ -39,6 +39,8 @@ EmulationController::EmulationController(rn_input* input, AudioSink* audio) : in
   vtr_ = rnf_vtr_new();
   retry_ = rnf_retry_new();
   rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, flashLevel_);
+  power_ = rnf_crt_power_new();
+  hiss_ = rnf_crt_hiss_new();
   display_.assign(size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT, 0xFF000000u);
 }
 
@@ -52,6 +54,8 @@ EmulationController::~EmulationController() {
   rnf_reel_free(reel_);
   rnf_vtr_free(vtr_);
   rnf_retry_free(retry_);
+  rnf_crt_power_free(power_);
+  rnf_crt_hiss_free(hiss_);
 }
 
 void EmulationController::notice(const std::string& s) {
@@ -123,6 +127,9 @@ void EmulationController::install(rn_session* s) {
   rnf_vtr_reset(vtr_);
   vtrOn_ = false;
   pendingThumb_ = false;
+  rnf_crt_power_reset(power_);  // a new session: its pictures from here (frame 0 = no signal)
+  rnf_crt_hiss_reset(hiss_);
+  stepPending_ = repeatPending_ = false;
   if (s && rn_get_mode(s) == RN_MODE_PRACTICE) rn_set_mode(s, RN_MODE_RECORD);  // never persisted; defensive
   if (observer) observer->sessionInstalled(s);
   if (s) {
@@ -157,6 +164,12 @@ void EmulationController::setVtrEffect(bool on) {
 void EmulationController::setPracticeCountdown(bool on) { rnf_practice_loop_set_countdown(practiceLoop_, on ? 1 : 0); }
 
 void EmulationController::setResumeCountdown(bool on) { rnf_resume_countdown_set_enabled(resumeCountdown_, on ? 1 : 0); }
+
+void EmulationController::setCrtDisplay(bool on) {
+  if (on == crtDisplay_) return;
+  crtDisplay_ = on;
+  if (!on) rnf_crt_hiss_reset(hiss_);  // no CRT, no hiss (it fades in from 0 when it is back)
+}
 
 void EmulationController::setFlashLevel(rn_flash_level l) {
   if (l == flashLevel_) return;
@@ -201,7 +214,43 @@ void EmulationController::show(const uint32_t* v) {
   }
   // The CRT takes the RGB picture only when the codes do not describe it.
   signal_.flashAltered = flashAltered_ && !codesOk;
+  trackReception();
   pictureDirty_ = true;
+}
+
+void EmulationController::trackReception() {
+  int step;
+  if (stepPending_) {
+    step = rnf_crt_power_step(power_, stepBefore_, stepFrame_, stepEvents_);
+  } else if (repeatPending_) {
+    step = rnf_crt_power_tick(power_);
+  } else {
+    // A jump (seek, rewind, load, the practice sweep). Practice frames are never the machine's frame
+    // 0 (no signal is the take's frame 0 only).
+    const bool practicing = session_ && rn_get_mode(session_) == RN_MODE_PRACTICE;
+    step = rnf_crt_power_show(power_, practicing || !session_ ? UINT64_MAX : rn_frame(session_));
+  }
+  if (!repeatPending_) snowRepeats_ = 0;  // a new picture: the static snow is encoded again
+  stepPending_ = repeatPending_ = false;
+  signal_.receptionStep = step;
+  signal_.receptionCounter = rnf_crt_power_counter(power_);
+  signal_.flashReduced = flashLevel_ != RN_FLASH_OFF;
+}
+
+void EmulationController::republishVideo() {
+  repeatPending_ = true;
+  publishVideo(true);
+  repeatPending_ = false;
+}
+
+const int16_t* EmulationController::withHiss(const int16_t* pcm, size_t n) {
+  if (!crtDisplay_ || !pcm || n == 0) return nullptr;
+  rnf_crt_reception r{};
+  rnf_crt_reception_at(rnf_crt_power_current(power_), rnf_crt_power_counter(power_), flashLevel_ != RN_FLASH_OFF ? 1 : 0, &r);
+  if (r.hiss == 0 && rnf_crt_hiss_level(hiss_) == 0) return nullptr;
+  hissPcm_.assign(pcm, pcm + n);
+  rnf_crt_hiss_mix(hiss_, hissPcm_.data(), n, r.hiss);
+  return hissPcm_.data();
 }
 
 void EmulationController::publishVideo(bool continuous) {
@@ -494,8 +543,20 @@ EmulationController::Tick EmulationController::tick() {
       emulatedLive = stepped > 0 && rn_get_mode(s) != RN_MODE_REPLAY;
       // A frame held back by the flash filter while nothing new is emulated (pause, slow
       // motion) is re-filtered every tick, so the picture settles on the real frame.
-      if (stepped == 0 && flashAltered_ && !rewinding_) publishVideo(true);
+      if (stepped == 0 && flashAltered_ && !rewinding_) republishVideo();
     }
+  }
+  // CRT display at the machine's frame 0 (not powered: no signal): the snow animates while nothing
+  // is emulated, a picture per tick (the NES frame rate). Flash reduction: the snow is static, but
+  // the tube needs a few pictures of it before the previous picture's phosphor light is gone
+  // (kStaticSnowRepeats after the jump, then nothing).
+  constexpr int kStaticSnowRepeats = 12;
+  if (crtDisplay_ && session_ && !pictureDirty_ && !vtrOn_ && rnf_crt_power_current(power_) == RNF_CRT_RECEPTION_NO_SIGNAL &&
+      (flashLevel_ == RN_FLASH_OFF || snowRepeats_ < kStaticSnowRepeats)) {
+    snowRepeats_ += 1;
+    rnf_crt_power_tick(power_);
+    signal_.receptionCounter = rnf_crt_power_counter(power_);
+    pictureDirty_ = true;
   }
   // Paused in the countdown (the seek bar, the menu): the numeral goes; it comes back on resume.
   if (paused_ && countdown_ != 0) countdown_ = 0;
@@ -547,11 +608,17 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   else if (overwrite && observer) observer->takeCut(s, before);
   if (const uint32_t* v = rn_video(s)) {
     if (mode == RN_MODE_PRACTICE) rnf_reel_offer(reel_, rn_practice_frame(s), v);
+    // The CRT reception: a step from `before` (practice: not a take frame) with the events applied.
+    stepPending_ = true;
+    stepBefore_ = mode == RN_MODE_PRACTICE ? UINT64_MAX : before;
+    stepFrame_ = info.frame;
+    stepEvents_ = info.events;
     show(v);
   }
   if (audible && audio_) {
     size_t n = 0;
     const int16_t* pcm = rn_audio(s, &n);
+    if (const int16_t* h = withHiss(pcm, n)) pcm = h;
     if (n) audio_->push(pcm, n);
   }
   if (mode != RN_MODE_PRACTICE) {
@@ -647,7 +714,7 @@ void EmulationController::tickPractice() {
       bool audible = slow_ == 1;
       setMuted(!audible);
       if (tickCount_ % uint64_t(slow_) == 0) stepOnce(audible);
-      else if (flashAltered_) publishVideo(true);
+      else if (flashAltered_) republishVideo();
       break;
     }
     case RNF_PRACTICE_BEGIN_HOLD: {

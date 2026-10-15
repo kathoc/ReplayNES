@@ -784,10 +784,19 @@ final class CRTFrameStore {
     func encode(into crt: CRTRenderer, cb: MTLCommandBuffer) -> Bool {
         usedCodes = meta.hasCodes && !meta.flashAltered
         let ordinal = meta.hasCodes ? meta.signalFrame : meta.frame
-        if usedCodes {
-            return codes.withUnsafeBufferPointer { crt.encode(.codes($0.baseAddress!, burstPhase: meta.burstPhase), ordinal: ordinal, into: cb) }
+        // No signal / power-on (docs/CRT_PORT.md): the receiver conditions of this picture.
+        let reception = CRTRenderer.Reception(step: meta.reception, counter: meta.receptionCounter,
+                                              flashReduced: meta.receptionFlashReduced, antennaDbuv: crt.settings.antennaDbuv)
+        if meta.reception == RNF_CRT_RECEPTION_NO_SIGNAL {
+            usedCodes = true
+            return crt.encode(.noSignal, ordinal: ordinal, reception: reception, into: cb)
         }
-        return pixels.withUnsafeBufferPointer { crt.encode(.rgb($0.baseAddress!), ordinal: ordinal, into: cb) }
+        if usedCodes {
+            return codes.withUnsafeBufferPointer {
+                crt.encode(.codes($0.baseAddress!, burstPhase: meta.burstPhase), ordinal: ordinal, reception: reception, into: cb)
+            }
+        }
+        return pixels.withUnsafeBufferPointer { crt.encode(.rgb($0.baseAddress!), ordinal: ordinal, reception: reception, into: cb) }
     }
 }
 

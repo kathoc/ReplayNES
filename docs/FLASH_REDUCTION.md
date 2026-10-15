@@ -110,6 +110,30 @@ a fade through black is already one flash — for up to a second, showing stale 
 * Export sheet: "Apply Flash Reduction" (default = on when the setting is not Off) applies the
   current level (Standard if the setting is Off) to the exported video only, with a fresh filter.
 
+## CRT snow and power-on
+
+With the CRT display on, a picture without a signal (frame 0: the machine is not powered yet) is
+receiver snow, and a power-on / reset starts with about a second of snow before the picture locks
+in (docs/CRT_PORT.md "No signal and power-on"). Full-contrast snow that changes every frame, a
+rolling picture with its black blanking bar and the AGC catching up are large-area luminance
+changes, so with flash reduction at **any** level (live view and exported video alike) the CRT
+uses a toned-down version instead, decided in the shared frontend core (`rnf_crt_reception_at`,
+`flash_reduced`):
+
+* the snow is a **static, low-contrast grain** (one fixed noise field; luma sigma 0.07 instead of
+  0.32 on a dim grey instead of a mid grey): nothing in it changes from frame to frame;
+* the power-on is **one monotonic fade**: the picture level rises with a smoothstep over 0.6 s
+  while the grain (the pinned receiver gain) and the grey lift fall, both monotonically; no
+  vertical roll, no tearing, no AGC overshoot. A fade that comes to rest is a single transition,
+  never a flash pair;
+* the hiss (audio) is the same as without flash reduction.
+
+The snow is a display effect after the filter (the filter sees the game's frames, not the snow).
+`tests/test_frontend_crt.cpp` checks that the flash-reduced reception has no deflection, a static
+noise field and a monotonic picture level / gain / lift; the CRT conformance checks
+(`noSignalSnowReducedIsStatic`, Metal `CRTReceptionTests`) that the rendered grain is bit-identical
+from frame to frame and has less than half the contrast of the normal snow.
+
 ## Verification
 
 `tests/test_flash_filter.cpp` measures the output with an **independent** WCAG counter (double

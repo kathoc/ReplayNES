@@ -290,6 +290,8 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   }
   std::vector<uint32_t> filtered(flash ? size_t(kFrameW) * kFrameH : 0);
   std::vector<uint16_t> filteredCodes(flash ? size_t(kFrameW) * kFrameH : 0);
+  // The CRT effect starts with the power-on intro (and its hiss).
+  std::unique_ptr<ExportCrtIntro> intro(processor ? new ExportCrtIntro(opt.flash != RN_FLASH_OFF) : nullptr);
 
   // ---- muxer + encoders
   // Written under a temporary name and renamed once finished and checked (a failed / cancelled
@@ -442,6 +444,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
         sig.ordinal = f;
       }
       sig.flashAltered = altered && !codesOk;  // the codes do not describe the filtered picture
+      intro->frame(&sig);
       std::string perr;
       if (!processor->render(sig, pixels, canvas.data(), canvasStride, &perr))
         return fail(perr.empty() ? "The video effect failed" : perr);
@@ -489,6 +492,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     // Audio: sample position from the absolute count at 48 kHz. The renderer's PCM is contiguous;
     // a gap would be filled with silence and an overlap dropped so A/V never drift.
     if (n > 0 && audio) {
+      if (intro) audio = intro->mixAudio(audio, n);
       const uint64_t at = rn_audio_samples_before(f) - sampleBase;
       size_t skip = 0;
       if (at > samplesQueued) {

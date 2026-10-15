@@ -36,6 +36,11 @@ struct FrameMeta {
     var signalFrame: UInt64 = 0     // machine frame ordinal (CRT persistence / RF noise key)
     var flashAltered = false        // the flash filter changed this picture and the codes do not describe it (CRT: RGB path)
     var flashFiltered = false       // the flash filter changed this picture (the published codes are its filtered codes)
+    // CRT reception of this picture (display only; rnf_crt_power): a power-on step, no signal (frame
+    // 0: snow) or normal, the picture counter (snow animation) and whether flash reduction is on.
+    var reception: Int32 = RNF_CRT_RECEPTION_NORMAL
+    var receptionCounter: UInt64 = 0
+    var receptionFlashReduced = false
     // The practice countdown drawn over this picture (MetalView; 0 = none): 3, 2, 1 and how far into it.
     var countdown = 0
     var countdownFraction = 0.0

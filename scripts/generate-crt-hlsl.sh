@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/apps/linux/shaders/crt"
 OUT="$ROOT/apps/windows/shaders/crt"
 SHADERS="rf_forward_tg.comp rf_inverse_tg.comp rf_init_codes.comp rf_butterfly2.comp rf_butterfly.comp rf_multiply.comp
-  rf_extract.comp rx_reduce.comp rx_agc.comp rx_prepare.comp rx_decode.comp raster_area.comp supply_mean.comp
+  rf_extract.comp rx_reduce.comp rx_agc.comp rx_prepare.comp rx_decode.comp rx_deflect.comp raster_area.comp supply_mean.comp
   supply_row.comp supply_state.comp supply_resample.comp spot_h.comp tube_h.comp tube_v.comp tube_v_growth.comp
   tube_scatter.comp tube_scatter_x16.comp tube_scatter_y16.comp tube_mix.comp tube_lit.comp tube_persist.comp
   show_kernel.comp tube_scatter_tx.comp tube_h_rows.comp tube_lit_persist.comp show.vert show.frag

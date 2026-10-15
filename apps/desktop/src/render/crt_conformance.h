@@ -490,6 +490,153 @@ class Conformance {
     return ok && run(*r, codes(0), 4) && r->stateResets() == 1 && finite(read(*r, CrtStage::output));
   }
 
+  // ---------------------------------------------------------------- reception (no signal / power-on)
+  static bool identical(const std::vector<float>& a, const std::vector<float>& b) {
+    return !a.empty() && a.size() == b.size() && std::memcmp(a.data(), b.data(), a.size() * 4) == 0;
+  }
+  /// receptionNeutralIsIdentity: a neutral reception (CrtReception defaults: carrier 1, AGC
+  /// 1/16..16, chroma 1, lift 0, no deflection, noise frame = the ordinal) renders bit-identically
+  /// to no reception (5 moving frames: the codes scrolled 3 pixels and the burst phase advanced).
+  bool neutralReception(CrtQuality q) {
+    auto a = renderer(CrtSettings(), 256, 192, q), b = renderer(CrtSettings(), 256, 192, q);
+    if (!a || !b) return false;
+    bool ok = true;
+    std::vector<uint16_t> c(256 * 240);
+    for (uint64_t f = 1; f <= 5; ++f) {
+      for (int y = 0; y < 240; ++y)
+        for (int x = 0; x < 256; ++x) c[size_t(y * 256 + x)] = codes_[size_t(y * 256 + (x + 3 * int(f)) % 256)];
+      CrtReception r;
+      r.noiseFrame = uint32_t(f);
+      CrtInput in;
+      in.codes = c.data();
+      in.burstPhase = uint32_t(f % 3);
+      ok = ok && run(*a, in, f);
+      in.reception = &r;
+      ok = ok && run(*b, in, 1000 - f);  // ignored with a reception: the history continues
+    }
+    return ok && identical(read(*a, CrtStage::receiver), read(*b, CrtStage::receiver)) &&
+           identical(read(*a, CrtStage::output), read(*b, CrtStage::output));
+  }
+  /// n (12) no-signal pictures (noSignal input, rnf_crt_reception_at) at picture counters
+  /// counter0 .. counter0 + n - 1; the last one's receiver output and tube output.
+  struct SnowFrames { std::vector<float> receiver, output; };
+  SnowFrames snow(CrtQuality q, uint64_t counter0, bool flashReduced, int n = 12) {
+    SnowFrames s;
+    CrtSettings st;
+    auto r = renderer(st, 256, 192, q);
+    if (!r) return s;
+    for (int i = 0; i < n; ++i) {
+      CrtReception rx;
+      if (!crtReceptionAt(-2 /* RNF_CRT_RECEPTION_NO_SIGNAL */, counter0 + uint64_t(i), flashReduced, st.antennaDbuv, &rx) ||
+          !rx.noSignal)
+        return s;
+      CrtInput in;
+      in.kind = CrtInputKind::noSignal;
+      in.reception = &rx;
+      if (!run(*r, in, 0)) return s;
+    }
+    s.receiver = read(*r, CrtStage::receiver);
+    s.output = read(*r, CrtStage::output);
+    return s;
+  }
+  /// Receiver output statistics: worst |R - G| / |G - B| (colour killer), mean and standard
+  /// deviation of G (linear drive).
+  struct DriveStats { double colour = INFINITY, mean = 0, sd = 0; };
+  static DriveStats driveStats(const std::vector<float>& v) {
+    DriveStats d;
+    if (v.size() < 4) return d;
+    double c = 0, sum = 0, sq = 0;
+    const double n = double(v.size() / 4);
+    for (size_t i = 0; i + 3 < v.size(); i += 4) {
+      c = std::max(c, std::max(std::fabs(double(v[i]) - v[i + 1]), std::fabs(double(v[i + 1]) - v[i + 2])));
+      sum += v[i + 1];
+      sq += double(v[i + 1]) * v[i + 1];
+    }
+    d.colour = c;
+    d.mean = sum / n;
+    d.sd = std::sqrt(std::max(0.0, sq / n - d.mean * d.mean));
+    return d;
+  }
+  /// deflectRollAndGain (with deflectPictureGain): rx_deflect on a drive input (effects off): a roll of +1 line shows line y + 1 on row y (the
+  /// last row: the vertical blanking, black).
+  bool deflectRoll() {
+    auto r = renderer(off());
+    if (!r) return false;
+    auto d = testDrive();
+    CrtReception rx;
+    rx.roll = 1;
+    CrtInput in = drive(d);
+    in.reception = &rx;
+    if (!run(*r, in, 1)) return false;
+    auto got = read(*r, CrtStage::tubeInput);
+    if (got.size() != d.size()) return false;
+    for (int y = 0; y < 240; ++y)
+      for (int x = 0; x < 512; ++x)
+        for (int c = 0; c < 3; ++c) {
+          float want = y < 239 ? d[size_t((y + 1) * 512 + x) * 4 + size_t(c)] : 0.0f;
+          if (std::fabs(got[size_t(y * 512 + x) * 4 + size_t(c)] - want) > 1e-6f) return false;
+        }
+    return true;
+  }
+  /// The RGB input (no RF path) faded by the reception's picture gain: 0.5 halves the drive.
+  bool deflectPictureGain() {
+    auto a = renderer(off()), b = renderer(off());
+    if (!a || !b) return false;
+    std::vector<uint32_t> px(256 * 240);
+    for (size_t i = 0; i < px.size(); ++i) px[i] = 0xFF000000u | uint32_t(codes_[i] & 0x3F) * 0x00040201u;
+    CrtInput in;
+    in.kind = CrtInputKind::rgb;
+    in.rgb = px.data();
+    CrtReception rx;
+    rx.picture = 0.5f;
+    bool ok = run(*a, in, 1);
+    in.reception = &rx;
+    ok = ok && run(*b, in, 1);
+    auto x = read(*a, CrtStage::tubeInput), y = read(*b, CrtStage::tubeInput);
+    if (!ok || x.empty() || x.size() != y.size()) return false;
+    double sum = 0;
+    for (size_t i = 0; i < x.size(); ++i) {
+      if (i % 4 == 3) continue;
+      if (std::fabs(y[i] - 0.5f * x[i]) > 1e-6f) return false;
+      sum += x[i];
+    }
+    return sum > 1000;  // not a black picture
+  }
+  /// powerOnSettles: the power-on sequence (rnf_crt_reception_at steps 0 .. RNF_CRT_POWER_ON_FRAMES-1 on the
+  /// game's pictures, then normal reception): 30 normal frames later the picture is that of
+  /// continuous normal play. Max abs and mean abs difference of the last tube output.
+  StillDiff powerOn(CrtQuality q, bool flashReduced) {
+    StillDiff d;
+    CrtSettings st;
+    auto p = renderer(st, 256, 192, q), n = renderer(st, 256, 192, q);
+    if (!p || !n) return d;
+    const int kOn = 60, kAfter = 30;
+    bool ok = true;
+    for (int f = 1; ok && f <= kOn + kAfter; ++f) {
+      CrtInput in = codes(uint32_t(f % 3));
+      ok = run(*n, in, uint64_t(f));
+      CrtReception rx;
+      if (f <= kOn) {
+        ok = ok && crtReceptionAt(f - 1, uint64_t(f), flashReduced, st.antennaDbuv, &rx);
+        if (rx.noSignal) in.kind = CrtInputKind::noSignal;
+        in.reception = &rx;
+      }
+      ok = ok && run(*p, in, uint64_t(f));
+    }
+    auto a = read(*p, CrtStage::output), b = read(*n, CrtStage::output);
+    if (!ok || a.empty() || a.size() != b.size()) return d;
+    double m = 0, sum = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+      if (i % 4 == 3) continue;
+      double e = std::fabs(double(a[i]) - double(b[i]));
+      m = std::max(m, std::isnan(e) ? INFINITY : e);
+      sum += e;
+    }
+    d.maxAbs = m;
+    d.meanAbs = sum / double(a.size() / 4 * 3);
+    return d;
+  }
+
   const Case* find(const std::string& n) const {
     auto it = cases_.find(n);
     return it == cases_.end() ? nullptr : &it->second;
@@ -643,6 +790,35 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
     checker.check(c.discardRestartsHistory(q), qn + "discardOutput: no output, then a fresh history");
     checker.check(c.nonFiniteStateReset(q), qn + "NaN in the AGC / supply state is reset");
   }
+  // Reception (no signal / power-on; docs/CRT_PORT.md "No signal and power-on"), both kernel sets.
+  // The same checks as the macOS CRTReceptionTests (names in brackets).
+  using C = Conformance<Backend>;
+  for (CrtQuality q : {CrtQuality::reference, CrtQuality::fast}) {
+    const std::string qn = q == CrtQuality::fast ? "fast path: " : "";
+    char b[220];
+    checker.check(c.neutralReception(q), qn + "[receptionNeutralIsIdentity] neutral reception == no reception (bit-identical)");
+    auto s1 = c.snow(q, 0, false), s2 = c.snow(q, 0, false), s3 = c.snow(q, 1000, false);
+    auto st = C::driveStats(s1.receiver);
+    std::snprintf(b, sizeof b,
+                  "[noSignalSnow] deterministic, animates, colour killed (max |R-G|,|G-B| %.3g), G mean %.3g in 0.08..0.6, sd %.3g > 0.1",
+                  st.colour, st.mean, st.sd);
+    checker.check(C::identical(s1.output, s2.output) && C::finite(s1.output) && s1.output.size() == s3.output.size() &&
+                      !C::identical(s1.output, s3.output) && st.colour == 0 && st.mean > 0.08 && st.mean < 0.6 && st.sd > 0.1,
+                  qn + b);
+    auto r1 = c.snow(q, 5, true), r2 = c.snow(q, 900, true);
+    auto rs = C::driveStats(r1.receiver);
+    std::snprintf(b, sizeof b, "[noSignalSnowReducedIsStatic] flash-reduced snow: other counter bit-identical, sd %.3g < 0.5 x %.3g",
+                  rs.sd, st.sd);
+    checker.check(C::identical(r1.output, r2.output) && rs.sd < 0.5 * st.sd, qn + b);
+    for (bool reduced : {false, true}) {
+      auto po = c.powerOn(q, reduced);
+      std::snprintf(b, sizeof b, "[powerOnSettles]%s 60 power-on steps + 30 frames == 90 frames of play (max %.3g < 2e-2, mean %.3g < 1e-3)",
+                    reduced ? " flash-reduced:" : "", po.maxAbs, po.meanAbs);
+      checker.check(po.maxAbs < 2e-2 && po.meanAbs < 1e-3, qn + b);
+    }
+  }
+  checker.check(c.deflectRoll() && c.deflectPictureGain(),
+                "[deflectRollAndGain] rx_deflect: roll +1 line shows line y+1 on row y (row 239 black); RGB picture 0.5 halves the drive");
   std::printf(checker.failures ? "%d FAILED\n" : "all passed\n", checker.failures);
   return checker.failures;
 }

@@ -311,13 +311,17 @@ int checkFile(const char* label, const std::string& path, const ExportResult& re
 #endif
 
 /// Test processor (stands in for the CRT): greyscale from the PPU codes when present, otherwise
-/// from the RGB picture; counts calls and checks the ordinals are consecutive.
+/// from the RGB picture; counts calls and checks the ordinals are consecutive; records the CRT
+/// reception of each frame (the power-on intro) and whether every frame said flash-reduced.
 class TestProcessor : public rnl::ExportVideoProcessor {
  public:
   uint64_t* calls;
   bool* ordered;
   bool* sawCodes;
-  explicit TestProcessor(uint64_t* c, bool* o, bool* s) : calls(c), ordered(o), sawCodes(s) {}
+  std::vector<int>* steps;
+  bool* flashReduced;
+  explicit TestProcessor(uint64_t* c, bool* o, bool* s, std::vector<int>* st = nullptr, bool* fr = nullptr)
+      : calls(c), ordered(o), sawCodes(s), steps(st), flashReduced(fr) {}
   rnf_export_geometry g{};
   uint64_t last = 0;
   bool begin(const rnf_export_settings&, const rnf_export_geometry& geo, std::string*) override {
@@ -328,6 +332,8 @@ class TestProcessor : public rnl::ExportVideoProcessor {
               std::string*) override {
     if (*calls > 0 && sig.ordinal != last + 1) *ordered = false;
     last = sig.ordinal;
+    if (steps) steps->push_back(sig.receptionStep);
+    if (flashReduced && !sig.flashReduced) *flashReduced = false;
     if (sig.codes) *sawCodes = true;
     for (int y = 0; y < g.canvas_height; ++y) {
       uint32_t* row = reinterpret_cast<uint32_t*>(canvas + size_t(y) * stride);
@@ -499,8 +505,12 @@ int selfTest(const Args& a) {
   ExportOptions fx = base;
   fx.flash = RN_FLASH_HIGH;
   uint64_t calls = 0;
-  bool ordered = true, sawCodes = false;
-  fx.makeProcessor = [&](std::string*) { return std::make_unique<TestProcessor>(&calls, &ordered, &sawCodes); };
+  bool ordered = true, sawCodes = false, allReduced = true;
+  std::vector<int> steps;
+  fx.makeProcessor = [&](std::string*) {
+    steps.clear();
+    return std::make_unique<TestProcessor>(&calls, &ordered, &sawCodes, &steps, &allReduced);
+  };
   const std::string fxOut = (dir / "flash-processor.mp4").u8string();
   RunOut fxr = runExport(s, fx, fxOut, false);
   std::printf("  processor: %s\n", resultJson(fxr, fxOut).c_str());
@@ -508,6 +518,80 @@ int selfTest(const Args& a) {
   expectTrue(calls == take && ordered, "processor: one call per frame, consecutive ordinals");
   std::printf("  processor saw PPU codes: %s\n", sawCodes ? "yes" : "no (core without raw output)");
   if (fxr.ok) failures += checkFile("processor", fxOut, fxr.res, rn_audio_samples_before(take), 1280, 960);
+  {
+    // The CRT effect starts with the power-on intro: steps 0 .. RNF_CRT_POWER_ON_FRAMES-1, then
+    // normal reception (resets inside the range are not shown); the export's flash reduction.
+    bool intro = steps.size() == take && take > RNF_CRT_POWER_ON_FRAMES;
+    for (size_t i = 0; intro && i < steps.size(); ++i)
+      intro = steps[i] == (i < RNF_CRT_POWER_ON_FRAMES ? int(i) : RNF_CRT_RECEPTION_NORMAL);
+    expectTrue(intro && allReduced, "processor: power-on intro on the first 60 frames");
+    // Its hiss: deterministic, mixed into the intro's sound only.
+    rnl::ExportCrtIntro a(false), b(false);
+    std::vector<int16_t> pcm(800);
+    for (size_t i = 0; i < pcm.size(); ++i) pcm[i] = int16_t((i * 37) % 2000 - 1000);
+    bool same = true, hissed = false, clean = true;
+    for (int f = 0; f < 90; ++f) {
+      rnl::ExportFrameSignal sa, sb;
+      a.frame(&sa);
+      b.frame(&sb);
+      const int16_t* x = a.mixAudio(pcm.data(), pcm.size());
+      std::vector<int16_t> xa(x, x + pcm.size());
+      const int16_t* y = b.mixAudio(pcm.data(), pcm.size());
+      same = same && std::memcmp(xa.data(), y, pcm.size() * 2) == 0 && sa.receptionStep == sb.receptionStep &&
+             sa.receptionCounter == sb.receptionCounter;
+      const bool changed = std::memcmp(xa.data(), pcm.data(), pcm.size() * 2) != 0;
+      if (f == 0) hissed = changed;
+      if (f >= RNF_CRT_POWER_ON_FRAMES) clean = clean && !changed;
+    }
+    expectTrue(same && hissed && clean, "CRT intro hiss: deterministic, intro frames only");
+  }
+#ifdef RNL_EXPORT_CRT
+  {
+    // The real CRT effect over [0, 64) at the native size, twice: the same pictures (intro included).
+    // Needs a GPU device (skipped without one).
+    auto run = [&](uint64_t* hash, std::string* why) {
+      struct Hashing : rnl::ExportVideoProcessor {
+        std::unique_ptr<rnl::ExportVideoProcessor> inner;
+        rnf_export_geometry g{};
+        uint64_t* hash;
+        bool begin(const rnf_export_settings& st, const rnf_export_geometry& geo, std::string* e) override {
+          g = geo;
+          return inner->begin(st, geo, e);
+        }
+        bool render(const rnl::ExportFrameSignal& sig, const uint32_t* px, uint8_t* canvas, size_t stride, std::string* e) override {
+          if (!inner->render(sig, px, canvas, stride, e)) return false;
+          for (int y = 0; y < g.canvas_height; ++y)
+            for (int x = 0; x < g.canvas_width * 4; ++x) *hash = (*hash ^ canvas[size_t(y) * stride + size_t(x)]) * 1099511628211ull;
+          return true;
+        }
+      };
+      ExportOptions co = base;
+      rnf_export_preset_get(0, &co.settings.preset);
+      co.settings.end_frame = 64;
+      *hash = 1469598103934665603ull;
+      auto factory = rnl::crtExportProcessorFactory(rnl::CrtSettings());
+      co.makeProcessor = [factory, hash](std::string* e) -> std::unique_ptr<rnl::ExportVideoProcessor> {
+        auto inner = factory(e);
+        if (!inner) return nullptr;
+        auto h = std::make_unique<Hashing>();
+        h->inner = std::move(inner);
+        h->hash = hash;
+        *hash = 1469598103934665603ull;
+        return h;
+      };
+      RunOut r = runExport(s, co, (dir / "crt-intro.mp4").u8string(), false);
+      *why = r.error;
+      return r.ok;
+    };
+    uint64_t h1 = 0, h2 = 0;
+    std::string why;
+    if (run(&h1, &why)) {
+      expectTrue(run(&h2, &why) && h1 == h2, "CRT export with the intro: deterministic");
+    } else {
+      std::printf("  CRT export skipped (%s)\n", why.c_str());
+    }
+  }
+#endif
 
   // 3) sub-range [100, 250)
   ExportOptions sub = base;

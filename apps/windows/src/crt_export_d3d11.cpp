@@ -80,6 +80,12 @@ class CrtExportProcessorD3D11 : public ExportVideoProcessor {
       in.kind = CrtInputKind::rgb;
       in.rgb = pixels;
     }
+    // The power-on intro (ExportCrtIntro): its reception; no carrier = the noSignal input.
+    CrtReception rx;
+    if (crtReceptionAt(sig.receptionStep, sig.receptionCounter, sig.flashReduced, renderer_->settings().antennaDbuv, &rx)) {
+      in.reception = &rx;
+      if (rx.noSignal) in.kind = CrtInputKind::noSignal;
+    }
     if (!renderer_->encode(in, sig.ordinal) || !renderer_->showToBGRA(w_, h_, dst_, crop_, canvas, stride)) {
       if (error) *error = "CRT rendering failed";
       return false;

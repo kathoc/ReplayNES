@@ -35,6 +35,13 @@ struct FrameSignal {
   uint64_t ordinal = 0;             // machine frame ordinal (the take frame when there are no codes)
   bool flashAltered = false;        // the flash filter changed the picture and `codes` (its filtered codes
                                     // otherwise) do not describe it: the CRT takes its RGB
+  // Reception of the picture (no signal / power-on, rnf_crt_power): the step (power-on step
+  // 0..RNF_CRT_POWER_ON_FRAMES-1, RNF_CRT_RECEPTION_NO_SIGNAL (-2), else RNF_CRT_RECEPTION_NORMAL
+  // (-1)), the picture counter and the flash reduction (rnf_crt_reception_at). The CRT path only;
+  // the plain picture ignores it.
+  int receptionStep = -1;
+  uint64_t receptionCounter = 0;
+  bool flashReduced = false;
 };
 
 struct PostProcessStatus {

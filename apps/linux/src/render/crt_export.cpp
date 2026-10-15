@@ -84,6 +84,12 @@ class CrtExportProcessor : public ExportVideoProcessor {
       in.kind = CrtRenderer::InputKind::rgb;
       in.rgb = pixels;
     }
+    // The power-on intro (ExportCrtIntro): its reception; no carrier = the noSignal input.
+    CrtReception rx;
+    if (crtReceptionAt(sig.receptionStep, sig.receptionCounter, sig.flashReduced, renderer_->settings().antennaDbuv, &rx)) {
+      in.reception = &rx;
+      if (rx.noSignal) in.kind = CrtRenderer::InputKind::noSignal;
+    }
     bool encoded = false;
     bool ok = renderer_->runSync([&](VkCommandBuffer cmd) {
       encoded = renderer_->encode(cmd, in, sig.ordinal);

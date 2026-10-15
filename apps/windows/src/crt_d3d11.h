@@ -181,6 +181,10 @@ class CrtRendererD3D11 {
                 uint32_t gy = 1);
   /// The fast path of encode() after the common prologue (same stages, state and slots).
   void encodeFast(const Input& input, uint64_t ordinal, int64_t ord);
+  /// Uploads a frame's codes (nullptr: black, no signal) and its row phases.
+  void loadCodes(const uint16_t* codes, uint32_t burstPhase);
+  /// rx_deflect on the drive (rows lines) when the input's reception needs it; returns the new drive.
+  const Buffer* deflect(const Input& input, const Buffer* drive, int rows);
   bool compileKernels(bool withShow, std::string* error);
   std::vector<float> readBuffer(const Buffer& b);
 
@@ -215,6 +219,7 @@ class CrtRendererD3D11 {
   Buffer codes_, phases_, rgb_, weights_, driveIn_;
   // Raster / supply / spot (per line count).
   Buffer rasterOut_, supplyMeans_, supplyRow_, supplyOut_, spotOut_, supplyState_[2];
+  Buffer deflectOut_;  // rx_deflect output (reception)
   int supplyCurrent_ = 0;
   int stageLines_ = 0;
   bool resetReceiverPending_ = true, resetSupplyPending_ = true;

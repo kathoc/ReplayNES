@@ -99,6 +99,55 @@ CRT Display itself is off by default (the conventional crisp display).
    in continuous play (`stillAfterSeek`).
 7. **Not ported**: nesterm's "TV (legacy model)" (`web/tv-raster.mjs` / `tv-signal.mjs`) and the ASCII display are out of scope.
    Numerical precision is single precision, as in WebGL (the persistence ring is half float, as in nesterm).
+8. **No signal and power-on** (a ReplayNES addition, next section): receiver conditions nesterm does
+   not model (no carrier, an unlocked sync). Off (the default "normal" reception), every kernel runs
+   exactly as before: the conformance checks above are unchanged and `receptionNeutralIsIdentity`
+   checks it bit for bit.
+
+## No signal and power-on (ReplayNES addition)
+
+With CRT Display on, a picture without a signal is snow and a power-on / reset goes through it:
+
+- **No signal** (frame 0: the machine has not been switched on yet; e.g. a project opened or sought
+  to its start): the RF input is the receiver's thermal noise only (carrier level 0, the M3-NOISE
+  term unchanged), the gated AGC runs up to its maximum gain, the colour killer is on. The snow
+  moves (a new noise field per NES frame, also while paused).
+- **Power-on / reset** (the step from frame 0, or a step that applies a soft reset / power cycle,
+  recorded or live, also in playback): `RNF_CRT_POWER_ON_FRAMES` = 60 frames. 24 frames of snow, then
+  the carrier comes up over ~10 frames (60 dB, logarithmic) and the AGC follows it (the picture
+  emerges from the snow), the clamp keys on the back porch again, the colour killer releases, and
+  the deflection locks: a vertical roll of 1.5 screens slowing into place (the vertical blanking
+  passes as a black bar) and a bending horizontal tearing with line jitter, both decaying. Audio:
+  white noise ("hiss", low-passed, about -24 dBFS RMS) replaces the game sound and fades out as
+  the picture locks.
+- **Flash reduction** (any level): static low-contrast grain and a monotonic fade instead
+  ([FLASH_REDUCTION.md](FLASH_REDUCTION.md#crt-snow-and-power-on)).
+- **MP4 export** with the CRT effect starts with the same power-on over the first 60 frames of the
+  range (snow, then the picture locks, with its hiss), whatever the range's first frame is.
+  Deterministic: fixed noise seeds, picture counter from the export's first frame. Resets inside
+  the range are not shown in exports (the export renderer has no per-frame events).
+
+Display / audio output only: the sequence is derived from what is shown (frame numbers and the
+events a step applied, `rnf_crt_power`), never written anywhere; emulation, the input log,
+`.nesrec`, states and hashes are unchanged (`testCRTExport`: same renderer hash with and without).
+The plain picture (CRT off, or the display watchdog's FALLBACK) shows no snow.
+
+Model (shared logic in the frontend core: `rnf_crt_reception_at` / `rnf_crt_reception_receiver`,
+`frontend/src/crt_reception.cpp`; the same receiver settings on Metal, Vulkan and Direct3D 11):
+
+| Stage | Normal | No signal / power-on |
+|---|---|---|
+| RF (`rf_*`, `RFParams.signalLevel`) | carrier 1, noise key = frame ordinal | carrier 0 .. 1; noise key = picture counter (flash reduction: constant) |
+| AGC (`rx_agc*`, `AGCParams.min/maxGain`) | GatedAGC 1/16 .. 16 | maximum = the gain that brings the receiver noise (sigma 10^(-CNR/20) of the carrier) to a luma sigma of 0.32; flash reduction: min = max (pinned) |
+| decode (`rx_decode*`, `RxParams`) | chroma 1, lift 0 (branch skipped) | colour killer gain; luma lift of a detector without a keyed clamp (snow on grey) |
+| deflection (`rx_deflect`, new) | not dispatched | screen row y shows signal line y + roll (mod 262 lines, blanking black); lines displaced by tear sin(2 pi (y c / rows + phase)) + jitter hash; RGB input: picture gain (the fade) |
+
+The deflection pass runs on the drive after the receiver (and the line-count raster), before the
+supply; the temporal state continues through the sequence (its frames take the next ordinal), so
+the phosphors decay into the snow and out of it. Checks: `tests/test_frontend_crt.cpp` (sequence,
+receiver settings, tracker, hiss), `apps/macos/Tests/CRTReceptionTests.swift` and the
+`crt_conformance` harness (`receptionNeutralIsIdentity`, `noSignalSnow`,
+`noSignalSnowReducedIsStatic`, `deflectRollAndGain`, `powerOnSettles`).
 
 ## Verification
 

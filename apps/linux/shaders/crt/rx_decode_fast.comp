@@ -10,6 +10,9 @@ layout(std430, set = 0, binding = 2) readonly buffer B2 { vec4 stats[]; };
 layout(std430, set = 0, binding = 3) readonly buffer B3 { float gains[]; };
 layout(std430, set = 0, binding = 4) writeonly buffer B4 { vec4 outp[]; };
 layout(std430, set = 0, binding = 5) writeonly buffer B5 { vec4 means[]; };
+// ReplayNES reception (no signal / power-on, docs/CRT_PORT.md): colour killer gain and the luma lift
+// of a detector without a keyed clamp. (1, 0) = nesterm's decode, untouched (the branch is skipped).
+layout(push_constant) uniform RxParams { float chroma; float lift; } R;
 shared vec3 prep[682];
 shared vec3 part[256];
 void main() {
@@ -37,6 +40,7 @@ void main() {
     Y *= factor / 12.0;
     float u = (CS.x * rot.x - CS.y * rot.y) * factor * (-2.0 / 48.0);
     float cv = (CS.y * rot.x + CS.x * rot.y) * factor * (2.0 / 48.0);
+    if (R.chroma != 1.0 || R.lift != 0.0) { Y += R.lift; u *= R.chroma; cv *= R.chroma; }
     float I = 0.838670568 * cv - 0.544639035 * u, Q = 0.544639035 * cv + 0.838670568 * u;
     vec3 rgb = vec3(Y + 0.956 * I + 0.621 * Q, Y - 0.272 * I - 0.647 * Q, Y - 1.106 * I + 1.703 * Q);
     rgb = pow(clamp(rgb, 0.0, 1.0), vec3(2.2));

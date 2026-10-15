@@ -131,6 +131,10 @@ class EmulationController {
   void setPracticeCountdown(bool on);
   /// 3, 2, 1 before play resumes from a pause (rnf_resume_countdown; independent of the above).
   void setResumeCountdown(bool on);
+  /// The CRT model is what the display shows (CRT Display on and not the watchdog's plain-picture
+  /// fallback): the no-signal snow at frame 0 animates (a picture per tick, flash reduction off) and
+  /// the power-on hiss is mixed into the sound. Display / audio output only.
+  void setCrtDisplay(bool on);
 
   /// Takes ownership. A fresh recording (empty take at frame 0) runs at once, an opened project
   /// stays paused at its cursor. nullptr closes the current one (without saving).
@@ -159,6 +163,10 @@ class EmulationController {
     uint32_t burstPhase = 0;
     uint64_t ordinal = 0;
     bool flashAltered = false;
+    // CRT reception of the picture (no signal / power-on: rnf_crt_power; FrameSignal).
+    int receptionStep = RNF_CRT_RECEPTION_NORMAL;
+    uint64_t receptionCounter = 0;
+    bool flashReduced = false;
   };
   const Signal& signal() const { return signal_; }
   uint64_t emulatedFrames() const { return emulatedFrames_; }
@@ -246,6 +254,12 @@ class EmulationController {
  private:
   void publishVideo(bool continuous = false);
   void show(const uint32_t* v);
+  /// The reception of the picture show() just made (rnf_crt_power: a step, a repeat or a jump).
+  void trackReception();
+  /// The re-filtered current picture (flash filter while nothing is emulated): a repeat.
+  void republishVideo();
+  /// A copy of the frame's sound with the power-on hiss (CRT display on); nullptr: none (as is).
+  const int16_t* withHiss(const int16_t* pcm, size_t n);
   void resetFlashFilter();
   void seekCommand(uint64_t f);
   /// frameStep: a paused frame advance (rnf_transport_step: replays inside the take, records
@@ -296,6 +310,16 @@ class EmulationController {
   bool flashAltered_ = false;
   uint64_t lastFlashTick_ = 0;
   bool flashActiveShown_ = false;
+  // CRT reception (display / audio output only): what the shown pictures have (rnf_crt_power),
+  // the hiss (rnf_crt_hiss), the step show() is about to publish.
+  rnf_crt_power* power_ = nullptr;
+  rnf_crt_hiss* hiss_ = nullptr;
+  bool crtDisplay_ = false;
+  bool stepPending_ = false, repeatPending_ = false;
+  int snowRepeats_ = 0;  // no-signal pictures repeated since the last new picture
+  uint64_t stepBefore_ = 0, stepFrame_ = 0;
+  uint8_t stepEvents_ = 0;
+  std::vector<int16_t> hissPcm_;
 
   bool paused_ = true;
   int slow_ = 1;

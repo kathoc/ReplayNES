@@ -197,9 +197,12 @@ kernel void rx_prepare(device const float2* carrier [[buffer(0)]], device const 
     prepared[py * 682 + px] = float4(Y, C, S, 0.0f);
 }
 
+// ReplayNES reception (no signal / power-on, docs/CRT_PORT.md): colour killer gain and the luma lift
+// of a detector without a keyed clamp. (1, 0) = nesterm's decode, untouched (the branch is skipped).
+struct RxParams { float chroma; float lift; int pad0; int pad1; };
 kernel void rx_decode(device const float4* prepared [[buffer(0)]], device const float4* stats [[buffer(1)]],
                       device const float* gains [[buffer(2)]], device float4* outp [[buffer(3)]],
-                      uint2 g [[thread_position_in_grid]]) {
+                      constant RxParams& R [[buffer(4)]], uint2 g [[thread_position_in_grid]]) {
     if (g.x >= 512u || g.y >= 240u) return;
     int px = int(g.x), py = int(g.y);
     float4 stat = stats[py]; float gn = gains[py];
@@ -211,9 +214,39 @@ kernel void rx_decode(device const float4* prepared [[buffer(0)]], device const 
     Y *= factor / 12.0f;
     float u = (CS.x * rot.x - CS.y * rot.y) * factor * (-2.0f / 48.0f);
     float cv = (CS.y * rot.x + CS.x * rot.y) * factor * (2.0f / 48.0f);
+    if (R.chroma != 1.0f || R.lift != 0.0f) { Y += R.lift; u *= R.chroma; cv *= R.chroma; }
     float I = 0.838670568f * cv - 0.544639035f * u, Q = 0.544639035f * cv + 0.838670568f * u;
     float3 rgb = float3(Y + 0.956f * I + 0.621f * Q, Y - 0.272f * I - 0.647f * Q, Y - 1.106f * I + 1.703f * Q);
     outp[py * 512 + px] = float4(pow(clamp(rgb, 0.0f, 1.0f), float3(2.2f)), 1.0f);
+}
+
+// ReplayNES reception: deflection without sync lock (power-on). Screen row y shows signal line
+// y + roll (mod the frame's lines; the lines past the visible ones are the vertical blanking =
+// black); the line is displaced horizontally by a bending wave + per-line jitter (drive samples,
+// outside the active line = horizontal blanking = black), linear in x and between the two lines.
+// `gain` fades input without an RF path (RGB). rows = drive lines (the frame has 262 * rows / 240).
+struct DeflectParams { float roll; float tear; float tearCycles; float tearPhase; float jitter; uint jitterKey; float gain; int rows; };
+static inline float3 deflectAt(device const float4* src, int line, float sx, int rows) {
+    if (line >= rows) return float3(0.0f);
+    float fx = floor(sx); int x0 = int(fx); float t = sx - fx;
+    float3 a = (x0 >= 0 && x0 < 512) ? src[line * 512 + x0].xyz : float3(0.0f);
+    float3 b = (x0 + 1 >= 0 && x0 + 1 < 512) ? src[line * 512 + x0 + 1].xyz : float3(0.0f);
+    return a * (1.0f - t) + b * t;
+}
+kernel void rx_deflect(device const float4* src [[buffer(0)]], device float4* outp [[buffer(1)]],
+                       constant DeflectParams& P [[buffer(2)]], uint2 g [[thread_position_in_grid]]) {
+    if (g.x >= 512u || int(g.y) >= P.rows) return;
+    int x = int(g.x), y = int(g.y);
+    float total = 262.0f * float(P.rows) / 240.0f;
+    float s = float(y) + P.roll * float(P.rows) / 240.0f;
+    s = s - total * floor(s / total);
+    float fl = floor(s); int l0 = int(fl); float fy = s - fl;
+    int l1 = float(l0 + 1) < total ? l0 + 1 : 0;
+    float j = float(lowbias(uint(y) ^ P.jitterKey)) / 4294967296.0f * 2.0f - 1.0f;
+    float off = P.tear * sin(6.283185307f * (float(y) * P.tearCycles / float(P.rows) + P.tearPhase)) + P.jitter * j;
+    float sx = float(x) + off;
+    float3 v = deflectAt(src, l0, sx, P.rows) * (1.0f - fy) + deflectAt(src, l1, sx, P.rows) * fy;
+    outp[y * 512 + x] = float4(v * P.gain, 1.0f);
 }
 
 // ---------------------------------------------------------------- raster-webgl.mjs
@@ -668,6 +701,7 @@ kernel void rx_agc_fast(device const float4* agc [[buffer(0)]], device float* ga
 kernel void rx_decode_fast(device const float* carrier [[buffer(0)]], device const float2* basis [[buffer(1)]],
                            device const float4* stats [[buffer(2)]], device const float* gains [[buffer(3)]],
                            device float4* outp [[buffer(4)]], device float4* means [[buffer(5)]],
+                           constant RxParams& R [[buffer(6)]],
                            uint tid [[thread_index_in_threadgroup]], uint row [[threadgroup_position_in_grid]]) {
     threadgroup float3 prep[682];
     threadgroup float3 part[256];
@@ -696,6 +730,7 @@ kernel void rx_decode_fast(device const float* carrier [[buffer(0)]], device con
         Y *= factor / 12.0f;
         float u = (CS.x * rot.x - CS.y * rot.y) * factor * (-2.0f / 48.0f);
         float cv = (CS.y * rot.x + CS.x * rot.y) * factor * (2.0f / 48.0f);
+        if (R.chroma != 1.0f || R.lift != 0.0f) { Y += R.lift; u *= R.chroma; cv *= R.chroma; }
         float I = 0.838670568f * cv - 0.544639035f * u, Q = 0.544639035f * cv + 0.838670568f * u;
         float3 rgb = float3(Y + 0.956f * I + 0.621f * Q, Y - 0.272f * I - 0.647f * Q, Y - 1.106f * I + 1.703f * Q);
         rgb = pow(clamp(rgb, 0.0f, 1.0f), float3(2.2f));

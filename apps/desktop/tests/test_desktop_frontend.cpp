@@ -1031,6 +1031,70 @@ TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward
   rn_input_free(in);
 }
 
+TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, snow while paused, hiss") {
+  std::string d = tmpDir("crt-reception");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  struct LastAudio : NullAudio {
+    std::vector<int16_t> last;
+    void push(const int16_t* p, size_t n) override {
+      NullAudio::push(p, n);
+      last.assign(p, p + n);
+    }
+  } audio;
+  EmulationController emu(in, &audio);
+  emu.setFlashLevel(RN_FLASH_OFF);
+  emu.setCrtDisplay(true);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NO_SIGNAL);  // frame 0: not powered
+  auto pushedIsGame = [&] {
+    size_t n = 0;
+    const int16_t* pcm = rn_audio(s, &n);
+    return n > 0 && audio.last.size() == n && std::memcmp(audio.last.data(), pcm, n * 2) == 0;
+  };
+  emu.tick();  // the first frame from frame 0: power-on
+  CHECK_EQ(emu.signal().receptionStep, 0);
+  CHECK_FALSE(pushedIsGame());  // the hiss is mixed into a copy
+  tickN(emu, RNF_CRT_POWER_ON_FRAMES - 1);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_POWER_ON_FRAMES - 1);
+  emu.tick();
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
+  CHECK(pushedIsGame());  // the hiss has faded out: the game's sound as is
+  // A reset shows the transition again.
+  emu.requestEvent(RN_EV_SOFT_RESET);
+  emu.tick();
+  CHECK_EQ(emu.signal().receptionStep, 0);
+  tickN(emu, RNF_CRT_POWER_ON_FRAMES);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
+  // A jump to frame 0 (paused): no signal, the snow animates (a picture per tick, the counter on).
+  emu.seek(0);
+  CHECK(emu.paused());
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NO_SIGNAL);
+  CHECK(emu.tick().newPicture);  // the seek's picture
+  uint64_t c = emu.signal().receptionCounter;
+  CHECK(emu.tick().newPicture);
+  CHECK(emu.signal().receptionCounter > c);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NO_SIGNAL);
+  // CRT off: nothing to animate.
+  emu.setCrtDisplay(false);
+  CHECK_FALSE(emu.tick().newPicture);
+  // Flash reduction: static snow, re-encoded a few times after the jump (the phosphors), then nothing.
+  emu.setCrtDisplay(true);
+  emu.setFlashLevel(RN_FLASH_STANDARD);
+  emu.seek(0);
+  int pictures = 0;
+  for (int i = 0; i < 40; ++i) pictures += emu.tick().newPicture ? 1 : 0;
+  CHECK_EQ(pictures, 1 + 12);
+  CHECK(emu.signal().flashReduced);
+  // A jump elsewhere: normal reception.
+  emu.seek(30);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
+  emu.closeSession();
+  rn_input_free(in);
+}
+
 TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which follow the reduced picture") {
   // The legacy test ROM flashes large areas: at Standard most frames are reduced. The CRT signal
   // must stay on the codes (RF path) and the codes must show what the picture shows (block means

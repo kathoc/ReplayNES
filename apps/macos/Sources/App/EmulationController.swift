@@ -229,6 +229,13 @@ final class EmulationController {
     private var flashAltered = false        // last shown frame differs from the emulated one
     private var lastFlashTick: UInt64 = 0   // tick of the last altered frame
     private var flashActiveShown = false
+    // CRT reception (no signal / power-on; display + audio output only, docs/CRT_PORT.md): which
+    // reception each shown picture has, and the hiss mixed into the sound while it lasts.
+    private let crtPower = CRTPowerTracker()
+    private var crtPowerStep: (before: UInt64?, events: UInt8)?   // set by stepOnce for its picture
+    private var crtLastFrame: UInt64?                             // frame of the last shown picture
+    private var noSignalRepeats = 0                               // snow repeats since the last jump
+    private var hissPCM: [Int16] = []
     private let period: UInt64 = HostClock.ticks(seconds: Double(RN_FPS_DEN) / Double(RN_FPS_NUM))
     // Display-locked pacing (emulation thread).
     private var link: CAMetalDisplayLink?
@@ -368,6 +375,9 @@ final class EmulationController {
         vtr.reset()
         vtrOn = false
         thumbnails.reset(take: s?.activeTake ?? 0)
+        crtPower.reset()
+        crtPowerStep = nil
+        crtLastFrame = nil
         if let s, s.mode == RN_MODE_PRACTICE { try? s.setMode(RN_MODE_RECORD) } // never persisted; defensive
         if let s, let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) } else { frames.clear() }
         publishStatus(force: true)
@@ -419,6 +429,20 @@ final class EmulationController {
         meta.countdown = countdown
         meta.countdownFraction = countdownFraction
         meta.countdownNote = countdownNoteShown
+        // CRT reception: a stepped picture continues / starts the power-on, a repeat of the shown
+        // frame keeps it (animated snow), anything else is a jump (frame 0 = no signal).
+        if let st = crtPowerStep {
+            meta.reception = crtPower.step(from: st.before, to: meta.frame, events: st.events)
+        } else if meta.frame == crtLastFrame || session?.mode == RN_MODE_PRACTICE {
+            meta.reception = crtPower.tick()
+        } else {
+            meta.reception = crtPower.show(meta.frame)
+            noSignalRepeats = 0
+        }
+        crtPowerStep = nil
+        crtLastFrame = meta.frame
+        meta.receptionCounter = crtPower.counter
+        meta.receptionFlashReduced = flashFilter.level != .off
         // Only the session's own frame has PPU codes (not a reel picture of the sweep).
         let signal = v == session?.video ? session?.videoIndices : nil
         if let signal { meta.hasCodes = true; meta.burstPhase = signal.burst_phase; meta.signalFrame = signal.frame }
@@ -996,6 +1020,7 @@ final class EmulationController {
             // motion) is re-filtered every tick, so the picture settles on the real frame within the
             // filter's 1-second budget instead of staying blended.
             if stepped == 0 && flashAltered && !rewinding { publishVideo(continuous: true) }
+            if stepped == 0 && !rewinding { tickNoSignal(s) }
         }
         let active = flashFilter.level != .off && tickCount &- lastFlashTick < 45 && lastFlashTick != 0
         if active != flashActiveShown { flashActiveShown = active; statusDirty = true }
@@ -1472,10 +1497,11 @@ final class EmulationController {
         if let v = s.video {
             if mode == RN_MODE_PRACTICE { reel.offer(position: s.practiceFrame, v) }
             if publish {
+                crtPowerStep = (mode == RN_MODE_PRACTICE ? nil : before, info.events)
                 show(v, meta: FrameMeta(frame: info.frame, inputEventTime: eventTime, sampleTime: tSample, emulatedTime: tEmu))
             }
         }
-        if audible { audio.push(s.audio(), frameRate: emulationRate); latency.recordAudioRatio(audio.ratio) }
+        if audible { pushAudio(s.audio()); latency.recordAudioRatio(audio.ratio) }
         if mode != RN_MODE_PRACTICE { pendingThumbnail = info.frame }
         lastStep = tEmu
         latency.recordStep(sampleToEmulated: tEmu - tSample)
@@ -1495,6 +1521,32 @@ final class EmulationController {
         if on(RN_HK_TOGGLE_MODE) { toggleRecord() }
         if on(RN_HK_SAVE) { save(nil) }
         if on(RN_HK_UNDO_TAKE) { undoRetry() }
+    }
+
+    /// The frame's sound to the output; with the CRT model on, the hiss of a power-on is mixed in
+    /// (a copy: the session's sound, recordings and exports of the session are untouched).
+    private func pushAudio(_ pcm: UnsafeBufferPointer<Int16>) {
+        if CRTSettingsModel.shared.snapshot.enabled && pcm.count > 0 {
+            hissPCM.removeAll(keepingCapacity: true)
+            hissPCM.append(contentsOf: pcm)
+            if crtPower.mixHiss(&hissPCM, flashReduced: flashFilter.level != .off) {
+                hissPCM.withUnsafeBufferPointer { audio.push($0, frameRate: emulationRate) }
+                return
+            }
+        }
+        audio.push(pcm, frameRate: emulationRate)
+    }
+
+    /// No signal (frame 0: the machine is not powered yet) with the CRT model on: the snow keeps
+    /// moving while nothing is emulated, one new noise field per NES frame (display only). With
+    /// flash reduction it is a static grain: repeated only until the tube has settled on it (the
+    /// phosphors of the previous picture decay, the AGC reaches its gain), then left alone.
+    private func tickNoSignal(_ s: EngineSession) {
+        guard crtPower.current == RNF_CRT_RECEPTION_NO_SIGNAL, crtLastFrame == s.frame,
+              CRTSettingsModel.shared.snapshot.enabled, let v = s.video else { return }
+        if flashFilter.level != .off && noSignalRepeats >= 12 { return }
+        noSignalRepeats += 1
+        show(v, meta: FrameMeta(frame: s.frame))   // a repeat: crtPower.tick() (display only: no latency sample)
     }
 
     // MARK: operations (emulation thread)

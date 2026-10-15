@@ -292,6 +292,11 @@ final class MP4Exporter {
         let lock = NSLock()
         var videoQueue: [(pixels: [UInt32], pts: CMTime, signal: CRTExportFrame?)] = []
         let crt = try settings.crt.map { try CRTExportRenderer(settings: $0, geometry: g, crop: settings) }
+        // CRT: the video starts with the power-on (snow, then the picture locks; ~1 s over the first
+        // frames of the range) and its hiss; deterministic (fixed seeds, frame order). Display only.
+        let power = crt != nil ? CRTPowerTracker() : nil
+        power?.start()
+        var hissPCM: [Int16] = []
         var audioQueue: [CMSampleBuffer] = []
         var sourceDone = false
         var failure: Error?
@@ -319,6 +324,11 @@ final class MP4Exporter {
                 signal = CRTExportFrame(codes: rn_renderer_video_indices(renderer, &info) == RN_OK && info.codes != nil
                                             ? Array(UnsafeBufferPointer(start: info.codes, count: frameBytes)) : nil,
                                         burstPhase: info.burst_phase, ordinal: info.codes != nil ? info.frame : f, flashAltered: false)
+                if let power {
+                    signal?.reception = power.step(from: nil, to: f, events: 0)
+                    signal?.receptionCounter = power.counter
+                    signal?.receptionFlashReduced = settings.flashReduction != .off
+                }
             }
             var picture: [UInt32]
             if let flash {
@@ -345,7 +355,14 @@ final class MP4Exporter {
                 // Audio PTS from the absolute sample count at 48 kHz.
                 let apts = CMTime(value: CMTimeValue(rn_audio_samples_before(f) - sampleBase), timescale: CMTimeScale(RN_SAMPLE_RATE))
                 do {
-                    audioQueue.append(try MP4Exporter.audioSampleBuffer(audio, count: n, pts: apts, format: audioFormat))
+                    hissPCM.removeAll(keepingCapacity: true)
+                    if let power {
+                        hissPCM.append(contentsOf: UnsafeBufferPointer(start: audio, count: n))
+                        if !power.mixHiss(&hissPCM, flashReduced: settings.flashReduction != .off) { hissPCM.removeAll(keepingCapacity: true) }
+                    }
+                    let sb = try hissPCM.isEmpty ? MP4Exporter.audioSampleBuffer(audio, count: n, pts: apts, format: audioFormat)
+                        : hissPCM.withUnsafeBufferPointer { try MP4Exporter.audioSampleBuffer($0.baseAddress!, count: n, pts: apts, format: audioFormat) }
+                    audioQueue.append(sb)
                     samplesWritten += UInt64(n)
                 } catch { failure = error; return }
             }
@@ -529,6 +546,10 @@ struct CRTExportFrame {
     var burstPhase: UInt32
     var ordinal: UInt64
     var flashAltered: Bool  // the flash filter changed the picture and `codes` do not describe it: RGB path
+    // CRT reception (the power-on intro; CRTPowerTracker): step, picture counter, flash reduction.
+    var reception: Int32 = RNF_CRT_RECEPTION_NORMAL
+    var receptionCounter: UInt64 = 0
+    var receptionFlashReduced = false
 }
 
 /// Offline CRT rendering for the exporter: the live pipeline (CRTRenderer) at reference quality
@@ -570,10 +591,14 @@ final class CRTExportRenderer {
     func render(pixels: [UInt32], signal: CRTExportFrame, into pb: CVPixelBuffer) -> Bool {
         guard let cb = queue.makeCommandBuffer() else { return false }
         let ok: Bool
+        let rx = CRTRenderer.Reception(step: signal.reception, counter: signal.receptionCounter,
+                                       flashReduced: signal.receptionFlashReduced, antennaDbuv: renderer.settings.antennaDbuv)
         if let codes = signal.codes, !signal.flashAltered {
-            ok = codes.withUnsafeBufferPointer { renderer.encode(.codes($0.baseAddress!, burstPhase: signal.burstPhase), ordinal: signal.ordinal, into: cb) }
+            ok = codes.withUnsafeBufferPointer {
+                renderer.encode(.codes($0.baseAddress!, burstPhase: signal.burstPhase), ordinal: signal.ordinal, reception: rx, into: cb)
+            }
         } else {
-            ok = pixels.withUnsafeBufferPointer { renderer.encode(.rgb($0.baseAddress!), ordinal: signal.ordinal, into: cb) }
+            ok = pixels.withUnsafeBufferPointer { renderer.encode(.rgb($0.baseAddress!), ordinal: signal.ordinal, reception: rx, into: cb) }
         }
         guard ok else { return false }
         renderer.encodeShow(into: target, cb: cb, dst: dst, cropFraction: cropFraction)

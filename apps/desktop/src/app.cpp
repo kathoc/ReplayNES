@@ -495,6 +495,9 @@ int App::run(const AppOptions& opt) {
     // 3. Display slower than the NES rate: the frames before the shown one are emulated now, in
     //    the slack (their own, earlier time slots); the shown frame keeps its just-in-time sample.
     bool extraPicture = false;
+    // The CRT model on screen (not off, not the watchdog's plain-picture fallback, the device runs
+    // it): the no-signal snow animates and the power-on hiss plays (display / audio output only).
+    emu_->setCrtDisplay(renderer_->postProcess().crt && renderer_->postProcessStatus().crtAvailable);
     for (int i = 1; i < frames; ++i) {
       SDL_Event e;
       while (SDL_PollEvent(&e)) handleEvent(e, nowSeconds());
@@ -566,7 +569,7 @@ int App::run(const AppOptions& opt) {
     GameRect rect = ui_->gameRect(w, h);
     bool newPicture = tick.newPicture || extraPicture;
     const EmulationController::Signal& es = emu_->signal();
-    FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered};
+    FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered, es.receptionStep, es.receptionCounter, es.flashReduced};
     uint64_t id = renderer_->drawAndPresent(newPicture ? emu_->picture() : nullptr, rect, ImGui::GetDrawData(), &sig);
     rec.submit = nowSeconds();
     rec.acquireWait = renderer_->lastAcquireWait();

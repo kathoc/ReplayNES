@@ -183,6 +183,10 @@ class CrtRenderer {
                 uint32_t pcSize, uint32_t gx, uint32_t gy = 1);
   /// The fast path of encode() after the common prologue (same stages, state and slots).
   void encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t ordinal, int64_t ord, int slot);
+  /// Copies a frame's codes (nullptr: black, no signal) and its row phases into the input slot.
+  void loadCodes(const uint16_t* codes, uint32_t burstPhase, int slot);
+  /// rx_deflect on the drive (rows lines) when the input's reception needs it; returns the new drive.
+  const Buffer* deflect(VkCommandBuffer cmd, const Input& input, const Buffer* drive, int rows);
   void barrier(VkCommandBuffer cmd);
 
   CrtVulkanContext ctx_;
@@ -216,6 +220,7 @@ class CrtRenderer {
   int inputSlot_ = 0;
   // Raster / supply / spot (per line count).
   Buffer rasterOut_, supplyMeans_, supplyRow_, supplyOut_, spotOut_, supplyState_[2];
+  Buffer deflectOut_;  // rx_deflect output (reception)
   int supplyCurrent_ = 0;
   int stageLines_ = 0;
   bool resetReceiverPending_ = true, resetSupplyPending_ = true;

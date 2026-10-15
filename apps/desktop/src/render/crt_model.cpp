@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
 // 1:1 port of apps/macos/Sources/Core/CRT/CRTModel.swift (see crt_model.h).
 #include "render/crt_model.h"
+#include "render/crt_types.h"
+#include "replaynes/frontend.h"
 
 #include <algorithm>
 #include <cmath>
@@ -623,3 +625,32 @@ DriveScatter driveScatter(const Plan& p) {
 }  // namespace tube
 
 }  // namespace rnl::crt
+
+namespace rnl {
+
+bool crtReceptionAt(int step, uint64_t counter, bool flashReduced, double antennaDbuv, CrtReception* out) {
+  rnf_crt_reception r{};
+  rnf_crt_reception_at(step, counter, flashReduced ? 1 : 0, &r);
+  if (!r.active || !out) return false;
+  rnf_crt_receiver x{};
+  rnf_crt_reception_receiver(&r, crt::rf::carrierToNoiseDb(antennaDbuv), &x);
+  CrtReception c;
+  c.signalLevel = x.signal_level;
+  c.minGain = x.agc_min_gain;
+  c.maxGain = x.agc_max_gain;
+  c.noiseFrame = x.noise_frame;
+  c.chroma = x.chroma;
+  c.lift = x.lift;
+  c.roll = r.roll;
+  c.tear = r.tear;
+  c.tearCycles = r.tear_cycles;
+  c.tearPhase = r.tear_phase;
+  c.jitter = r.jitter;
+  c.jitterKey = r.jitter_key;
+  c.picture = r.picture;
+  c.noSignal = r.no_signal != 0;
+  *out = c;
+  return true;
+}
+
+}  // namespace rnl

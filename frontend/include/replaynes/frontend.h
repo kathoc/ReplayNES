@@ -1533,6 +1533,87 @@ char* rnf_video_summary(uint64_t frames, int64_t bytes);
 char* rnf_flash_level_label(rn_flash_level level);
 char* rnf_flash_level_detail(rn_flash_level level);
 
+/* ================================================================== CRT reception (no signal / power-on)
+ * The CRT display's receiver conditions around the picture (docs/CRT_PORT.md "No signal and
+ * power-on"). DISPLAY / AUDIO OUTPUT ONLY: derived from what is shown (frame numbers and the events
+ * applied), never fed back into emulation, the input log or .nesrec.
+ *   - No signal (the machine is not powered: frame 0 / no game): the RF input is receiver noise
+ *     only, the AGC runs to its maximum gain and the colour killer is on = snow.
+ *   - Power-on / reset (the step from frame 0, or a step applying RN_EV_SOFT_RESET /
+ *     RN_EV_POWER_CYCLE): RNF_CRT_POWER_ON_FRAMES frames (~1 s) of snow, then the carrier comes up,
+ *     the AGC follows it and the deflection locks (horizontal tearing and a vertical roll that settle).
+ *     Audio: white noise ("hiss") that fades as the picture locks.
+ *   - Flash reduction (any level): the snow is static, low-contrast grain and the picture fades in
+ *     monotonically (gain and grain both monotonic, no roll / tearing / AGC overshoot).
+ * Everything is a pure function of (step, counter, flash_reduced): reproducible (MP4 export). */
+#define RNF_CRT_POWER_ON_FRAMES 60
+#define RNF_CRT_POWER_ON_SNOW_FRAMES 24 /* frames of snow before the carrier comes up */
+#define RNF_CRT_RECEPTION_NORMAL (-1)
+#define RNF_CRT_RECEPTION_NO_SIGNAL (-2)
+typedef struct rnf_crt_reception {
+  int active;           /* 0: normal reception (the other fields are neutral and ignored) */
+  int no_signal;        /* 1: no carrier at all (snow) */
+  float signal;         /* carrier level 0..1 (agc_pinned: the picture level instead, see receiver) */
+  float noise;          /* receiver output noise (luma sigma) the maximum AGC gain gives without a carrier */
+  int agc_pinned;       /* 1: the AGC gain is pinned (flash-reduced fade); 0: gated AGC up to the snow gain */
+  uint32_t noise_frame; /* RF noise key frame (constant = static grain) */
+  float chroma;         /* colour killer: 0 killed .. 1 normal */
+  float lift;           /* detector DC without a keyed clamp: luma added before the matrix (snow sits on grey) */
+  /* Deflection (unlocked sync): screen row y shows signal line y + roll (mod 262 lines, lines >= 240
+   * are the blanking interval = black); line y is displaced horizontally by
+   * tear * sin(2 pi (y * tear_cycles / 240 + tear_phase)) + jitter * (hash(y, jitter_key) * 2 - 1)
+   * drive samples (512 per active line; outside the active line = blanking = black). */
+  float roll, tear, tear_cycles, tear_phase, jitter;
+  uint32_t jitter_key;
+  float picture; /* picture gain for input that has no RF path (the RGB input): the fade */
+  float hiss;    /* audio: hiss level 0..1 (output = game * (1 - hiss) + noise * hiss) */
+} rnf_crt_reception;
+/* step: 0 .. RNF_CRT_POWER_ON_FRAMES-1 (power-on), RNF_CRT_RECEPTION_NO_SIGNAL, anything else =
+ * normal (active 0). counter: increments per picture (snow animation, tearing jitter). */
+void rnf_crt_reception_at(int step, uint64_t counter, int flash_reduced, rnf_crt_reception* out);
+/* 1 when the deflection stage is needed (roll / tearing / RGB fade not neutral). */
+int rnf_crt_reception_deflects(const rnf_crt_reception* r);
+/* The receiver settings for a reception at the antenna's carrier-to-noise ratio (CRTRF
+ * carrierToNoiseDb): RF carrier level, AGC gain limits (min == max pins the gain) and the noise
+ * frame. agc_min_gain / agc_max_gain are the model's defaults (1/16, 16) when r is not active. */
+typedef struct rnf_crt_receiver {
+  float signal_level, agc_min_gain, agc_max_gain;
+  uint32_t noise_frame;
+  float chroma, lift; /* decode: colour killer gain and luma lift (1, 0 = the model unchanged) */
+} rnf_crt_receiver;
+void rnf_crt_reception_receiver(const rnf_crt_reception* r, double cnr_db, rnf_crt_receiver* out);
+
+/* Which reception a shown picture has. Feed it every picture handed to the display in order:
+ * step() for a picture produced by emulating one frame from frame_before (UINT64_MAX: unknown, e.g.
+ * practice) with the events actually applied (rn_step_info.events); show() for any other picture
+ * (seek, rewind, load: a jump) at frame; tick() for a repeat of the current picture (animated snow
+ * while nothing is emulated). start() makes the next step() / show() picture power-on step 0 (the
+ * export intro). Each call returns the reception step of the picture (0..RNF_CRT_POWER_ON_FRAMES-1,
+ * RNF_CRT_RECEPTION_NO_SIGNAL at frame 0, else RNF_CRT_RECEPTION_NORMAL); counter() is the picture
+ * counter for rnf_crt_reception_at (incremented by every call). */
+typedef struct rnf_crt_power rnf_crt_power;
+rnf_crt_power* rnf_crt_power_new(void);
+void rnf_crt_power_free(rnf_crt_power* p);
+void rnf_crt_power_reset(rnf_crt_power* p);
+void rnf_crt_power_start(rnf_crt_power* p);
+int rnf_crt_power_step(rnf_crt_power* p, uint64_t frame_before, uint64_t frame, uint8_t events);
+int rnf_crt_power_show(rnf_crt_power* p, uint64_t frame);
+int rnf_crt_power_tick(rnf_crt_power* p);
+int rnf_crt_power_current(const rnf_crt_power* p);
+uint64_t rnf_crt_power_counter(const rnf_crt_power* p);
+
+/* Hiss: deterministic white noise (fixed seed; sample counter in the handle), softened by a
+ * one-pole low-pass, mixed into mono int16 PCM: out = in * (1 - h) + noise * h * RNF_CRT_HISS_VOLUME
+ * (saturating), h going linearly over the n samples from the level of the previous call (0 after
+ * new / reset) to hiss. Both 0: the samples are left untouched. */
+#define RNF_CRT_HISS_VOLUME 0.16
+typedef struct rnf_crt_hiss rnf_crt_hiss;
+rnf_crt_hiss* rnf_crt_hiss_new(void);
+void rnf_crt_hiss_free(rnf_crt_hiss* h);
+void rnf_crt_hiss_reset(rnf_crt_hiss* h);
+void rnf_crt_hiss_mix(rnf_crt_hiss* h, int16_t* pcm, size_t n, float hiss);
+float rnf_crt_hiss_level(const rnf_crt_hiss* h); /* level reached by the last call */
+
 #ifdef __cplusplus
 }
 #endif

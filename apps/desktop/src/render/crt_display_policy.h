@@ -37,7 +37,9 @@ class CrtDisplayPolicy {
   void store(const uint32_t* pixels, const FrameSignal* signal);
   bool hasFrame() const { return valid_; }
   /// The stored picture as CRT input (pointers into this object) and its machine frame ordinal.
-  CrtInput input() const;
+  /// With a reception (no signal / power-on, FrameSignal::receptionStep) at the antenna level
+  /// `antennaDbuv` (CrtSettings) the input carries it; a no-signal picture is the noSignal input.
+  CrtInput input(double antennaDbuv) const;
   uint64_t ordinal() const { return signal_.ordinal; }
   /// Tube size for a destination rectangle at the current adaptive scale.
   void tubeSize(const DisplayPostProcess& pp, const CrtRect& dst, double cropFraction, int* w, int* h) const;
@@ -55,6 +57,7 @@ class CrtDisplayPolicy {
   std::vector<uint32_t> pixels_;
   std::vector<uint16_t> codes_;
   FrameSignal signal_;
+  mutable CrtReception reception_;  // of the last input()
   bool hasCodes_ = false, valid_ = false;
   std::vector<double> times_;  // recent GPU build times (window)
   size_t sinceChange_ = 0;

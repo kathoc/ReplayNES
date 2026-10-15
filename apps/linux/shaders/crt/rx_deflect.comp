@@ -1,0 +1,38 @@
+// ReplayNES reception (MSL rx_deflect; docs/CRT_PORT.md "No signal and power-on"): deflection
+// without sync lock. Screen row y shows signal line y + roll (mod the frame's lines; the lines past
+// the visible ones are the vertical blanking = black); the line is displaced horizontally by a
+// bending wave + per-line jitter (drive samples, outside the active line = horizontal blanking =
+// black), linear in x and between the two lines. `gain` fades input without an RF path (RGB).
+// rows = drive lines (the frame has 262 * rows / 240).
+// SPDX-License-Identifier: GPL-2.0-or-later
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+layout(local_size_x = 32, local_size_y = 8) in;
+#include "common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer B0 { vec4 src[]; };
+layout(std430, set = 0, binding = 1) buffer B1 { vec4 outp[]; };
+layout(push_constant) uniform DeflectParams {
+  float roll; float tear; float tearCycles; float tearPhase; float jitter; uint jitterKey; float gain; int rows;
+} P;
+vec3 deflectAt(int line, float sx) {
+  if (line >= P.rows) return vec3(0.0);
+  float fx = floor(sx); int x0 = int(fx); float t = sx - fx;
+  vec3 a = (x0 >= 0 && x0 < 512) ? src[line * 512 + x0].xyz : vec3(0.0);
+  vec3 b = (x0 + 1 >= 0 && x0 + 1 < 512) ? src[line * 512 + x0 + 1].xyz : vec3(0.0);
+  return a * (1.0 - t) + b * t;
+}
+void main() {
+  uvec2 g = gl_GlobalInvocationID.xy;
+  if (g.x >= 512u || int(g.y) >= P.rows) return;
+  int x = int(g.x), y = int(g.y);
+  float total = 262.0 * float(P.rows) / 240.0;
+  float s = float(y) + P.roll * float(P.rows) / 240.0;
+  s = s - total * floor(s / total);
+  float fl = floor(s); int l0 = int(fl); float fy = s - fl;
+  int l1 = float(l0 + 1) < total ? l0 + 1 : 0;
+  float j = float(lowbias(uint(y) ^ P.jitterKey)) / 4294967296.0 * 2.0 - 1.0;
+  float off = P.tear * sin(6.283185307 * (float(y) * P.tearCycles / float(P.rows) + P.tearPhase)) + P.jitter * j;
+  float sx = float(x) + off;
+  vec3 v = deflectAt(l0, sx) * (1.0 - fy) + deflectAt(l1, sx) * fy;
+  outp[y * 512 + x] = vec4(v * P.gain, 1.0);
+}

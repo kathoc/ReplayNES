@@ -18,6 +18,32 @@ rnf_export_settings defaultExportSettings() {
   return s;
 }
 
+ExportCrtIntro::ExportCrtIntro(bool flashReduced)
+    : power_(rnf_crt_power_new()), hiss_(rnf_crt_hiss_new()), flashReduced_(flashReduced) {
+  rnf_crt_power_start(power_);
+}
+
+ExportCrtIntro::~ExportCrtIntro() {
+  rnf_crt_power_free(power_);
+  rnf_crt_hiss_free(hiss_);
+}
+
+void ExportCrtIntro::frame(ExportFrameSignal* sig) {
+  sig->receptionStep = rnf_crt_power_step(power_, UINT64_MAX, 0, 0);
+  sig->receptionCounter = rnf_crt_power_counter(power_);
+  sig->flashReduced = flashReduced_;
+}
+
+const int16_t* ExportCrtIntro::mixAudio(const int16_t* pcm, size_t n) {
+  if (!pcm || n == 0) return pcm;
+  rnf_crt_reception r{};
+  rnf_crt_reception_at(rnf_crt_power_current(power_), rnf_crt_power_counter(power_), flashReduced_ ? 1 : 0, &r);
+  if (r.hiss == 0 && rnf_crt_hiss_level(hiss_) == 0) return pcm;
+  pcm_.assign(pcm, pcm + n);
+  rnf_crt_hiss_mix(hiss_, pcm_.data(), n, r.hiss);
+  return pcm_.data();
+}
+
 namespace exportframe {
 
 namespace {

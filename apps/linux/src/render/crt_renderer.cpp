@@ -45,6 +45,9 @@ const uint32_t rx_prepare[] = {
 const uint32_t rx_decode[] = {
 #include "crt/rx_decode.comp.spv.inc"
 };
+const uint32_t rx_deflect[] = {
+#include "crt/rx_deflect.comp.spv.inc"
+};
 const uint32_t raster_area[] = {
 #include "crt/raster_area.comp.spv.inc"
 };
@@ -158,6 +161,7 @@ const KernelSource kKernels[] = {
     RN_K(rf_forward_tg, 512, 1),  RN_K(rf_inverse_tg, 512, 1),  RN_K(rf_init_codes, 64, 4), RN_K(rf_butterfly2, 32, 8),
     RN_K(rf_butterfly, 32, 8),    RN_K(rf_multiply, 32, 8),     RN_K(rf_extract, 32, 8),    RN_K(rx_reduce, 64, 1),
     RN_K(rx_agc, 1, 1),           RN_K(rx_prepare, 32, 8),      RN_K(rx_decode, 32, 8),     RN_K(raster_area, 32, 8),
+    RN_K(rx_deflect, 32, 8),
     RN_K(supply_mean, 64, 1),     RN_K(supply_row, 64, 1),      RN_K(supply_state, 1, 1),   RN_K(supply_resample, 32, 8),
     RN_K(spot_h, 32, 8),          RN_K(tube_h, 32, 8),          RN_K(tube_v, 32, 8),        RN_K(tube_v_growth, 32, 8),
     RN_K(tube_scatter, 32, 8),    RN_K(tube_scatter_x16, 32, 8), RN_K(tube_scatter_y16, 32, 8), RN_K(tube_mix, 32, 8),
@@ -179,6 +183,9 @@ struct RFParams { int32_t hop, overlap, delay, blocks; float scale, signalLevel,
 struct FFTParams { int32_t span; float signValue; int32_t blocks; int32_t pad; };
 struct AGCParams { float lineSeconds, attack, release, minGain, maxGain; int32_t enabled, delay, pad; };
 struct RasterParams { int32_t lines, decode, rgbSource, pad; };
+// ReplayNES reception (no signal / power-on): rx_decode / rx_decode_fast, rx_deflect.
+struct RxParams { float chroma, lift; int32_t pad0, pad1; };
+struct DeflectParams { float roll, tear, tearCycles, tearPhase, jitter; uint32_t jitterKey; float gain; int32_t rows; };
 struct SupplyParams {
   int32_t width, rows;
   float decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, prime;  // prime: supply_state only
@@ -493,7 +500,7 @@ void CrtRenderer::shutdown() {
   retired_.clear();
   for (Buffer* b : {&ping_, &pong_, &kernelSpec_, &twiddles_, &volts_, &basis_, &carrier_, &stats_, &gains_, &agcState_, &prepared_,
                     &rxOut_, &driveIn_, &rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0],
-                    &supplyState_[1], &carrierReal_, &kernelSpecReal_, &agcRows_})
+                    &supplyState_[1], &carrierReal_, &kernelSpecReal_, &agcRows_, &deflectOut_})
     destroyBuffer(b);
   for (int i = 0; i < kInputSlots; ++i)
     for (Buffer* b : {&codeBufs_[i], &phaseBufs_[i], &rgbBufs_[i], &weightBufs_[i]}) destroyBuffer(b);
@@ -674,14 +681,17 @@ bool CrtRenderer::ensureStages(int rows) {
   if (stageLines_ != 0 || rasterOut_.buffer) {
     // Line count changed: the old stage buffers may be referenced by frames in flight.
     vkDeviceWaitIdle(ctx_.device);
-    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1]}) destroyBuffer(b);
+    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1], &deflectOut_})
+      destroyBuffer(b);
   }
   const VkDeviceSize img = VkDeviceSize(512) * rows * 16;
   bool ok = createBuffer(&rasterOut_, img, false) && createBuffer(&supplyOut_, img, false) && createBuffer(&spotOut_, img, false) &&
+            createBuffer(&deflectOut_, img, false) &&
             createBuffer(&supplyMeans_, VkDeviceSize(rows) * 16, false) && createBuffer(&supplyRow_, VkDeviceSize(rows) * 16, false) &&
             createBuffer(&supplyState_[0], 16, true) && createBuffer(&supplyState_[1], 16, true);
   if (!ok) {
-    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1]}) destroyBuffer(b);
+    for (Buffer* b : {&rasterOut_, &supplyMeans_, &supplyRow_, &supplyOut_, &spotOut_, &supplyState_[0], &supplyState_[1], &deflectOut_})
+      destroyBuffer(b);
     stageLines_ = 0;
     return false;
   }
@@ -795,6 +805,26 @@ std::vector<std::pair<std::string, double>> CrtRenderer::profileTimes() {
 }
 
 // ------------------------------------------------------------------ per-frame encoding
+void CrtRenderer::loadCodes(const uint16_t* codes, uint32_t burstPhase, int slot) {
+  if (codes) {
+    std::memcpy(codeBufs_[slot].map, codes, 256 * 240 * 2);
+  } else {
+    uint16_t* p = static_cast<uint16_t*>(codeBufs_[slot].map);
+    std::fill(p, p + 256 * 240, uint16_t(0x0F));
+  }
+  auto ph = crt::composite::rowPhasesForBurst(burstPhase);
+  std::memcpy(phaseBufs_[slot].map, ph.data(), sizeof(ph));
+}
+
+const CrtRenderer::Buffer* CrtRenderer::deflect(VkCommandBuffer cmd, const Input& input, const Buffer* drive, int rows) {
+  const CrtReception* rx = input.reception;
+  const bool rgb = input.kind == InputKind::rgb;
+  if (!rx || !(rx->deflects() || (rgb && rx->picture != 1))) return drive;
+  DeflectParams dp{rx->roll, rx->tear, rx->tearCycles, rx->tearPhase, rx->jitter, rx->jitterKey, rgb ? rx->picture : 1.0f, rows};
+  dispatch(cmd, "rx_deflect", {drive, &deflectOut_}, &dp, sizeof dp, groups(512, 32), groups(rows, 8));
+  return &deflectOut_;
+}
+
 bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordinal) {
   if (!ready_) return false;
   {
@@ -824,6 +854,8 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
   sanitizeState();
   Tube& t = *tube_;
   int64_t ord = int64_t(std::min<uint64_t>(ordinal, uint64_t(INT64_MAX)));
+  // A reception frame continues the history (CRTRenderer.encode: ordinal = previous + 1).
+  if (input.reception) ord = (hasLastOrdinal_ ? lastOrdinal_ : 0) + 1;
   if (hasLastOrdinal_ && ord <= lastOrdinal_) {
     resetReceiverPending_ = true;
     resetSupplyPending_ = true;
@@ -916,22 +948,23 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     hasOutput_ = true;
     return true;
   };
-  usedCodes_ = input.kind == InputKind::codes;
+  usedCodes_ = input.kind == InputKind::codes || input.kind == InputKind::noSignal;
   if (t.fast) {
     encodeFast(cmd, input, ordinal, ord, slot);
     return finish();
   }
 
   const Buffer* drive = nullptr;
-  if (input.kind == InputKind::codes) {
-    std::memcpy(codeBufs_[slot].map, input.codes, 256 * 240 * 2);
-    auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
-    std::memcpy(phaseBufs_[slot].map, ph.data(), sizeof(ph));
+  const CrtReception rx = input.reception ? *input.reception : CrtReception();
+  const RxParams rxp{rx.chroma, rx.lift, 0, 0};
+  const int32_t noiseKey = crt::rf::noiseKey(1, input.reception ? uint64_t(rx.noiseFrame) : ordinal);
+  if (input.kind == InputKind::codes || input.kind == InputKind::noSignal) {
+    loadCodes(input.kind == InputKind::codes ? input.codes : nullptr, input.kind == InputKind::codes ? input.burstPhase : 0, slot);
     // M3-NOISE: receiver thermal noise from the antenna level; seed 1, keyed by frame ordinal.
     double sigma = crt::rf::noiseSigma(crt::rf::carrierToNoiseDb(settings_.antennaDbuv), 1);
     RFParams rp{crt::rf::kHop, crt::rf::kOverlap, crt::rf::filter().delaySamples, crt::rf::kBlocks,
-                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), 1.0f,
-                noiseEnabled ? float(sigma) : 0.0f, crt::rf::noiseKey(1, ordinal)};
+                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), rx.signalLevel,
+                noiseEnabled ? float(sigma) : 0.0f, noiseKey};
     const uint32_t blocks = uint32_t(crt::rf::kBlocks);
     if (useFastFFT && sharedFFT_) {
       dispatch(cmd, "rf_forward_tg", {&ping_, &codeBufs_[slot], &phaseBufs_[slot], &volts_, &twiddles_}, &rp, sizeof rp, blocks);
@@ -959,11 +992,10 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     }
     dispatch(cmd, "rx_reduce", {&carrier_, &basis_, &stats_}, nullptr, 0, groups(240, 64));
     AGCParams ap{float(double(crt::composite::kLineSamples) / crt::rf::sampleRateHz()), float(crt::agc::kAttackSeconds),
-                 float(crt::agc::kReleaseSeconds), float(crt::agc::kMinGain), float(crt::agc::kMaxGain), 1,
-                 crt::rf::filter().delaySamples, 0};
+                 float(crt::agc::kReleaseSeconds), rx.minGain, rx.maxGain, 1, crt::rf::filter().delaySamples, 0};
     dispatch(cmd, "rx_agc", {&stats_, &gains_, &agcState_}, &ap, sizeof ap, 1);
     dispatch(cmd, "rx_prepare", {&carrier_, &basis_, &stats_, &prepared_}, nullptr, 0, groups(682, 32), groups(240, 8));
-    dispatch(cmd, "rx_decode", {&prepared_, &stats_, &gains_, &rxOut_}, nullptr, 0, groups(512, 32), groups(240, 8));
+    dispatch(cmd, "rx_decode", {&prepared_, &stats_, &gains_, &rxOut_}, &rxp, sizeof rxp, groups(512, 32), groups(240, 8));
     drive = &rxOut_;
   } else if (input.kind == InputKind::rgb) {
     std::memcpy(rgbBufs_[slot].map, input.rgb, 256 * 240 * 4);
@@ -980,6 +1012,7 @@ bool CrtRenderer::encode(VkCommandBuffer cmd, const Input& input, uint64_t ordin
     dispatch(cmd, "raster_area", {drive, drive, &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
     drive = &rasterOut_;
   }
+  drive = deflect(cmd, input, drive, rows);
 
   // M4c: anode-voltage load and ABL act on the drive before the tube.
   if (settings_.supply) {
@@ -1100,22 +1133,21 @@ void CrtRenderer::encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t o
   const int rows = t.key.lines;  // the stages follow the tube in use (ensureStages)
   const Buffer* drive = nullptr;
   bool meansReady = false;  // supplyMeans_ already holds this frame's row means (rx_decode_fast)
-  if (input.kind == InputKind::codes) {
-    std::memcpy(codeBufs_[slot].map, input.codes, 256 * 240 * 2);
-    auto ph = crt::composite::rowPhasesForBurst(input.burstPhase);
-    std::memcpy(phaseBufs_[slot].map, ph.data(), sizeof(ph));
+  const CrtReception rx = input.reception ? *input.reception : CrtReception();
+  const RxParams rxp{rx.chroma, rx.lift, 0, 0};
+  if (input.kind == InputKind::codes || input.kind == InputKind::noSignal) {
+    loadCodes(input.kind == InputKind::codes ? input.codes : nullptr, input.kind == InputKind::codes ? input.burstPhase : 0, slot);
     double sigma = crt::rf::noiseSigma(crt::rf::carrierToNoiseDb(settings_.antennaDbuv), 1);
     RFParams rp{crt::rf::kHop, crt::rf::kOverlap, crt::rf::filter().delaySamples, crt::rf::kBlocks,
-                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), 1.0f,
-                noiseEnabled ? float(sigma) : 0.0f, crt::rf::noiseKey(1, ordinal)};
+                float(crt::rf::kModulationDepth / (crt::composite::kWhite - crt::composite::kSync)), rx.signalLevel,
+                noiseEnabled ? float(sigma) : 0.0f, crt::rf::noiseKey(1, input.reception ? uint64_t(rx.noiseFrame) : ordinal)};
     dispatch(cmd, "rf_fast", {&carrierReal_, &codeBufs_[slot], &phaseBufs_[slot], &volts_, &twiddles_, &kernelSpecReal_}, &rp, sizeof rp,
              uint32_t((crt::rf::kBlocks + 1) / 2));
     AGCParams ap{float(double(crt::composite::kLineSamples) / crt::rf::sampleRateHz()), float(crt::agc::kAttackSeconds),
-                 float(crt::agc::kReleaseSeconds), float(crt::agc::kMinGain), float(crt::agc::kMaxGain), 1,
-                 crt::rf::filter().delaySamples, 0};
+                 float(crt::agc::kReleaseSeconds), rx.minGain, rx.maxGain, 1, crt::rf::filter().delaySamples, 0};
     dispatch(cmd, "rx_stats_fast", {&carrierReal_, &basis_, &stats_, &agcRows_}, &ap, sizeof ap, 240);
     dispatch(cmd, "rx_agc_fast", {&agcRows_, &gains_, &agcState_}, &ap, sizeof ap, 1);
-    dispatch(cmd, "rx_decode_fast", {&carrierReal_, &basis_, &stats_, &gains_, &rxOut_, &supplyMeans_}, nullptr, 0, 240);
+    dispatch(cmd, "rx_decode_fast", {&carrierReal_, &basis_, &stats_, &gains_, &rxOut_, &supplyMeans_}, &rxp, sizeof rxp, 240);
     drive = &rxOut_;
     meansReady = rows == 240;
   } else if (input.kind == InputKind::rgb) {
@@ -1131,6 +1163,10 @@ void CrtRenderer::encodeFast(VkCommandBuffer cmd, const Input& input, uint64_t o
     RasterParams rp2{rows, 0, 0, 0};
     dispatch(cmd, "raster_area", {drive, drive, &rasterOut_}, &rp2, sizeof rp2, groups(512, 32), groups(rows, 8));
     drive = &rasterOut_;
+  }
+  if (const Buffer* d = deflect(cmd, input, drive, rows); d != drive) {
+    drive = d;
+    meansReady = false;  // the row means are of the drive before
   }
   const Buffer* src = drive;
   const bool spot = settings_.beamGrowth && !disableSpotH;

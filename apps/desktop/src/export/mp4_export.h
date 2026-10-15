@@ -34,6 +34,37 @@ struct ExportFrameSignal {
   uint32_t burstPhase = 0;
   uint64_t ordinal = 0;             // machine frame ordinal (info.frame; the take frame when the core has no codes)
   bool flashAltered = false;        // the flash filter changed this frame and `codes` do not describe it (use the RGB picture)
+  // CRT reception of the frame (the power-on intro, ExportCrtIntro): rnf_crt_power step
+  // (RNF_CRT_RECEPTION_NORMAL = none), picture counter and the export's flash reduction.
+  int receptionStep = RNF_CRT_RECEPTION_NORMAL;
+  uint64_t receptionCounter = 0;
+  bool flashReduced = false;
+};
+
+/// The CRT power-on intro of an export with the CRT effect (docs/CRT_PORT.md "No signal and
+/// power-on"): the export starts like switching the console on - rnf_crt_power_start() before the
+/// first exported frame, then one rnf_crt_power_step per exported frame (frame_before UINT64_MAX:
+/// the renderer has no per-frame events, so resets inside the range are not shown), i.e. the first
+/// RNF_CRT_POWER_ON_FRAMES frames of the range carry the intro, overlaid on the game's pictures; the
+/// hiss is mixed into those frames' sound. A pure function of the frame sequence (deterministic).
+/// Display / audio output only (the renderer hash is unaffected).
+class ExportCrtIntro {
+ public:
+  explicit ExportCrtIntro(bool flashReduced);
+  ~ExportCrtIntro();
+  ExportCrtIntro(const ExportCrtIntro&) = delete;
+  ExportCrtIntro& operator=(const ExportCrtIntro&) = delete;
+  /// The next exported frame (in order): its reception into sig.
+  void frame(ExportFrameSignal* sig);
+  /// The current frame's sound with its hiss (a copy kept in this object), or `pcm` itself when
+  /// there is none.
+  const int16_t* mixAudio(const int16_t* pcm, size_t n);
+
+ private:
+  rnf_crt_power* power_;
+  rnf_crt_hiss* hiss_;
+  bool flashReduced_;
+  std::vector<int16_t> pcm_;
 };
 
 /// Optional offline post-process (CRT), implemented elsewhere. Called on the export thread, frames

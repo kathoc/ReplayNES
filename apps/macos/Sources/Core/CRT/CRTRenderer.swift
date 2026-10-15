@@ -38,6 +38,24 @@ final class CRTRenderer {
         case rgb(UnsafePointer<UInt32>)
         /// Linear RGB drive, 512 x 240 (verification: replaces the receiver output).
         case drive(UnsafePointer<SIMD4<Float>>)
+        /// No picture at all (the machine is off): the RF path with black codes, for a reception
+        /// with no carrier (snow; see Reception).
+        case noSignal
+    }
+
+    /// ReplayNES reception around the picture (docs/CRT_PORT.md "No signal and power-on"): the
+    /// receiver settings of rnf_crt_reception_receiver (frontend core) plus the deflection of an
+    /// unlocked sync. nil (the default) = nesterm's model untouched. Display only.
+    struct Reception: Equatable {
+        var signalLevel: Float = 1                     // RF carrier level (0 = noise only)
+        var minGain = Float(CRTAGC.minGain), maxGain = Float(CRTAGC.maxGain)   // AGC limits (equal = pinned)
+        var noiseFrame: UInt32 = 0                     // RF noise key frame (instead of the ordinal)
+        var chroma: Float = 1, lift: Float = 0         // colour killer gain, detector DC lift (luma)
+        var roll: Float = 0, tear: Float = 0, tearCycles: Float = 0, tearPhase: Float = 0
+        var jitter: Float = 0, jitterKey: UInt32 = 0   // deflection (rx_deflect)
+        var picture: Float = 1                         // gain of input without an RF path (RGB)
+        var noSignal = false                           // no carrier at all (snow)
+        var deflects: Bool { roll != 0 || tear != 0 || jitter != 0 }
     }
 
     /// `.reference`: the 1:1 port (conformance tests, MP4 export). `.fast`: the live display path,
@@ -72,6 +90,7 @@ final class CRTRenderer {
     private var supplyMeans: MTLBuffer!, supplyRow: MTLBuffer!, supplyOut: MTLBuffer!, spotOut: MTLBuffer!
     private var supplyState: [MTLBuffer] = []
     private var driveIn: MTLBuffer!   // .drive test input
+    private var deflectOut: MTLBuffer!   // rx_deflect output (reception)
     private var supplyCurrent = 0
     /// Start of history (first frame, or a discontinuity): the next supply pass starts from the
     /// steady state of its picture (supply_state prime mode) instead of the idle tube.
@@ -143,7 +162,7 @@ final class CRTRenderer {
         let fastLib = try Self.library(for: device, fastMath: true)
         var p: [String: MTLComputePipelineState] = [:]
         for name in ["rf_forward_tg", "rf_inverse_tg", "rf_init_codes", "rf_butterfly2", "rf_butterfly", "rf_multiply", "rf_extract", "rx_reduce", "rx_agc",
-                     "rx_prepare", "rx_decode", "raster_area", "supply_mean", "supply_row", "supply_state", "supply_resample",
+                     "rx_prepare", "rx_decode", "rx_deflect", "raster_area", "supply_mean", "supply_row", "supply_state", "supply_resample",
                      "spot_h", "tube_h", "tube_v", "tube_v_growth", "tube_scatter", "tube_scatter_x16", "tube_scatter_y16", "tube_mix", "tube_lit", "tube_persist",
                      "show_kernel", "rf_fast", "rx_stats_fast", "rx_agc_fast", "rx_decode_fast", "row_mean_fast", "supply_fast", "drive_post_fast",
                      "scatter_drive", "tube_h_fast", "tube_v_fast", "show_kernel_h"] {
@@ -292,7 +311,7 @@ final class CRTRenderer {
             return b
         }
         stageLines = 0
-        rasterOut = try img(rows); supplyOut = try img(rows); spotOut = try img(rows)
+        rasterOut = try img(rows); supplyOut = try img(rows); spotOut = try img(rows); deflectOut = try img(rows)
         supplyMeans = try make(rows * 16, .storageModePrivate)
         supplyRow = try make(rows * 16, .storageModePrivate)
         driveIn = try make(512 * 240 * 16, .storageModeShared)
@@ -364,6 +383,8 @@ final class CRTRenderer {
     private struct FFTParams { var span: Int32; var signValue: Float; var blocks: Int32; var pad: Int32 = 0 }
     private struct AGCParams { var lineSeconds, attack, release, minGain, maxGain: Float; var enabled, delay, pad: Int32 }
     private struct RasterParams { var lines, decode, rgbSource, pad: Int32 }
+    private struct RxParams { var chroma, lift: Float; var pad0, pad1: Int32 }
+    private struct DeflectParams { var roll, tear, tearCycles, tearPhase, jitter: Float; var jitterKey: UInt32; var gain: Float; var rows: Int32 }
     private struct SupplyParams {
         var width, rows: Int32; var decay, v0, reff, imax, n, relax, reqScale, ablFraction, ilim, pad: Float; var share: SIMD4<Float>
     }
@@ -382,8 +403,11 @@ final class CRTRenderer {
     /// frame after creation or `reset()` is a history start too. So a frame after a
     /// discontinuity looks like the same picture shown in continuous play.
     /// Returns false when no tube plan is ready yet (nothing encoded).
+    /// `reception` (no signal / power-on): the receiver settings and deflection of that frame; its
+    /// frames continue the history (ordinal = previous + 1, whatever `ordinal` says) so the snow,
+    /// the AGC and the phosphors run on from picture to picture.
     @discardableResult
-    func encode(_ input: Input, ordinal: UInt64, into cb: MTLCommandBuffer) -> Bool {
+    func encode(_ input: Input, ordinal: UInt64, reception: Reception? = nil, into cb: MTLCommandBuffer) -> Bool {
         lock.lock()
         if let b = builtTube { builtTube = nil; tube = b; appliedPersistence = nil; hasOutput = false }
         lock.unlock()
@@ -395,7 +419,8 @@ final class CRTRenderer {
         let passes = PassEncoder(cb: cb, profiler: profiler)
         guard passes.valid else { hasOutput = false; return false }
         sanitizeState()
-        let ord = Int64(clamping: ordinal)
+        var ord = Int64(clamping: ordinal)
+        if reception != nil { ord = (lastOrdinal ?? 0) &+ 1 }
         if let last = lastOrdinal, ord <= last {
             resetReceiver(); resetSupply(); slots = []
         }
@@ -433,24 +458,38 @@ final class CRTRenderer {
             enc.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
         }
         func size(_ w: Int, _ h: Int = 1, _ d: Int = 1) -> MTLSize { MTLSize(width: w, height: h, depth: d) }
+        let rx = reception ?? Reception()
+        var rxp = RxParams(chroma: rx.chroma, lift: rx.lift, pad0: 0, pad1: 0)
+        let noiseKey = CRTRF.noiseKey(seed: 1, frame: reception != nil ? UInt64(rx.noiseFrame) : ordinal)
+        /// rx_deflect on the drive (rows lines) when the reception needs it; returns the new drive.
+        func deflect(_ drive: MTLBuffer, rgb: Bool) -> MTLBuffer {
+            guard reception != nil, rx.deflects || (rgb && rx.picture != 1) else { return drive }
+            var dp = DeflectParams(roll: rx.roll, tear: rx.tear, tearCycles: rx.tearCycles, tearPhase: rx.tearPhase, jitter: rx.jitter,
+                                   jitterKey: rx.jitterKey, gain: rgb ? rx.picture : 1, rows: Int32(rows))
+            let out = deflectOut!
+            dispatch("rx_deflect", 512, rows) {
+                $0.setBuffer(drive, offset: 0, index: 0); $0.setBuffer(out, offset: 0, index: 1)
+                $0.setBytes(&dp, length: MemoryLayout<DeflectParams>.stride, index: 2)
+            }
+            return out
+        }
         if t.fast {
-            encodeFast(input, t: t, slot: slot, ordinal: ordinal, ord: ord, dispatch: dispatch, dispatchGroups: dispatchGroups, size: size)
+            encodeFast(input, t: t, slot: slot, ordinal: ordinal, ord: ord, rx: rx, rxp: &rxp, noiseKey: noiseKey, deflect: deflect,
+                       dispatch: dispatch, dispatchGroups: dispatchGroups, size: size)
             passes.end()
             hasOutput = true
             return true
         }
 
         var drive: MTLBuffer
-        switch input {
+        switch input.rfInput {
         case .codes(let codes, let burst):
-            codeBufs[slot].contents().copyMemory(from: codes, byteCount: 256 * 240 * 2)
-            let ph = CRTComposite.rowPhases(burstPhase: burst)
-            ph.withUnsafeBytes { phaseBufs[slot].contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+            loadCodes(codes, burst: burst, slot: slot)
             // M3-NOISE: receiver thermal noise from the antenna level; seed 1, keyed by frame ordinal.
             let sigma = CRTRF.noiseSigma(cnrDb: CRTRF.carrierToNoiseDb(settings.antennaDbuv), signalLevel: 1)
             var rp = RFParams(hop: Int32(CRTRF.hop), overlap: Int32(CRTRF.overlap), delay: Int32(CRTRF.filter.delaySamples),
                               blocks: Int32(blocks), scale: Float(CRTRF.modulationDepth / (CRTComposite.white - CRTComposite.sync)),
-                              signalLevel: 1, noiseSigma: noiseEnabled ? Float(sigma) : 0, noiseKey: CRTRF.noiseKey(seed: 1, frame: ordinal))
+                              signalLevel: rx.signalLevel, noiseSigma: noiseEnabled ? Float(sigma) : 0, noiseKey: noiseKey)
             if useFastFFT && device.maxThreadgroupMemoryLength >= 4096 * 8 {
                 for (name, isForward) in [("rf_forward_tg", true), ("rf_inverse_tg", false)] {
                     let ps = pipes[name]!
@@ -508,7 +547,7 @@ final class CRTRenderer {
             }
             var ap = AGCParams(lineSeconds: Float(Double(CRTComposite.lineSamples) / CRTRF.sampleRateHz),
                                attack: Float(CRTAGC.attackSeconds), release: Float(CRTAGC.releaseSeconds),
-                               minGain: Float(CRTAGC.minGain), maxGain: Float(CRTAGC.maxGain), enabled: 1,
+                               minGain: rx.minGain, maxGain: rx.maxGain, enabled: 1,
                                delay: Int32(CRTRF.filter.delaySamples), pad: 0)
             dispatch("rx_agc", 1) {
                 $0.setBuffer(stats, offset: 0, index: 0); $0.setBuffer(gains, offset: 0, index: 1)
@@ -521,6 +560,7 @@ final class CRTRenderer {
             dispatch("rx_decode", 512, 240) {
                 $0.setBuffer(prepared, offset: 0, index: 0); $0.setBuffer(stats, offset: 0, index: 1)
                 $0.setBuffer(gains, offset: 0, index: 2); $0.setBuffer(rxOut, offset: 0, index: 3)
+                $0.setBytes(&rxp, length: MemoryLayout<RxParams>.stride, index: 4)
             }
             drive = rxOut
         case .rgb(let px):
@@ -534,6 +574,8 @@ final class CRTRenderer {
         case .drive(let px):
             driveIn.contents().copyMemory(from: px, byteCount: 512 * 240 * 16)
             drive = driveIn
+        case .noSignal:
+            fatalError("rfInput maps noSignal to codes")
         }
         if case .rgb = input {} else if rows != 240 {
             // RasterWebGL.process(texture): the native 240-line RF path passes through untouched.
@@ -545,6 +587,7 @@ final class CRTRenderer {
             }
             drive = rasterOut
         }
+        if case .rgb = input { drive = deflect(drive, rgb: true) } else { drive = deflect(drive, rgb: false) }
 
         // M4c: anode-voltage load and ABL act on the drive before the tube.
         if settings.supply {
@@ -669,6 +712,18 @@ final class CRTRenderer {
         return true
     }
 
+    /// Copies a frame's codes and its row phases into the input ring slot; nil = black (no signal).
+    private func loadCodes(_ codes: UnsafePointer<UInt16>?, burst: UInt32, slot: Int) {
+        if let codes {
+            codeBufs[slot].contents().copyMemory(from: codes, byteCount: 256 * 240 * 2)
+        } else {
+            let p = codeBufs[slot].contents().assumingMemoryBound(to: UInt16.self)
+            for i in 0..<(256 * 240) { p[i] = 0x0F }
+        }
+        let ph = CRTComposite.rowPhases(burstPhase: burst)
+        ph.withUnsafeBytes { phaseBufs[slot].contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    }
+
     // MARK: per-pass GPU timing (benchmarks only)
 
     /// Set to time every pass: each one then gets its own compute encoder with timestamp samples
@@ -727,22 +782,21 @@ final class CRTRenderer {
     }
 
     /// The fast path of `encode` (same stages, state and slot bookkeeping; see CRTShaders.fast).
-    private func encodeFast(_ input: Input, t: Tube, slot: Int, ordinal: UInt64, ord: Int64,
+    private func encodeFast(_ input: Input, t: Tube, slot: Int, ordinal: UInt64, ord: Int64, rx: Reception, rxp: inout RxParams,
+                            noiseKey: Int32, deflect: (MTLBuffer, Bool) -> MTLBuffer,
                             dispatch: (String, Int, Int, (MTLComputeCommandEncoder) -> Void) -> Void,
                             dispatchGroups: (String, MTLSize, MTLSize, (MTLComputeCommandEncoder) -> Void) -> Void,
                             size: (Int, Int, Int) -> MTLSize) {
         let rows = t.key.lines
         var drive: MTLBuffer
         var meansReady = false   // supplyMeans already holds this frame's row means (rx_decode_fast)
-        switch input {
+        switch input.rfInput {
         case .codes(let codes, let burst):
-            codeBufs[slot].contents().copyMemory(from: codes, byteCount: 256 * 240 * 2)
-            let ph = CRTComposite.rowPhases(burstPhase: burst)
-            ph.withUnsafeBytes { phaseBufs[slot].contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+            loadCodes(codes, burst: burst, slot: slot)
             let sigma = CRTRF.noiseSigma(cnrDb: CRTRF.carrierToNoiseDb(settings.antennaDbuv), signalLevel: 1)
             var rp = RFParams(hop: Int32(CRTRF.hop), overlap: Int32(CRTRF.overlap), delay: Int32(CRTRF.filter.delaySamples),
                               blocks: Int32(blocks), scale: Float(CRTRF.modulationDepth / (CRTComposite.white - CRTComposite.sync)),
-                              signalLevel: 1, noiseSigma: noiseEnabled ? Float(sigma) : 0, noiseKey: CRTRF.noiseKey(seed: 1, frame: ordinal))
+                              signalLevel: rx.signalLevel, noiseSigma: noiseEnabled ? Float(sigma) : 0, noiseKey: noiseKey)
             dispatchGroups("rf_fast", size((blocks + 1) / 2, 1, 1), size(512, 1, 1)) {
                 $0.setBuffer(carrierReal, offset: 0, index: 0); $0.setBuffer(codeBufs[slot], offset: 0, index: 1)
                 $0.setBuffer(phaseBufs[slot], offset: 0, index: 2); $0.setBuffer(volts, offset: 0, index: 3)
@@ -751,7 +805,7 @@ final class CRTRenderer {
             }
             var ap = AGCParams(lineSeconds: Float(Double(CRTComposite.lineSamples) / CRTRF.sampleRateHz),
                                attack: Float(CRTAGC.attackSeconds), release: Float(CRTAGC.releaseSeconds),
-                               minGain: Float(CRTAGC.minGain), maxGain: Float(CRTAGC.maxGain), enabled: 1,
+                               minGain: rx.minGain, maxGain: rx.maxGain, enabled: 1,
                                delay: Int32(CRTRF.filter.delaySamples), pad: 0)
             dispatchGroups("rx_stats_fast", size(240, 1, 1), size(64, 1, 1)) {
                 $0.setBuffer(carrierReal, offset: 0, index: 0); $0.setBuffer(basis, offset: 0, index: 1); $0.setBuffer(stats, offset: 0, index: 2)
@@ -764,6 +818,7 @@ final class CRTRenderer {
             dispatchGroups("rx_decode_fast", size(240, 1, 1), size(256, 1, 1)) {
                 $0.setBuffer(carrierReal, offset: 0, index: 0); $0.setBuffer(basis, offset: 0, index: 1); $0.setBuffer(stats, offset: 0, index: 2)
                 $0.setBuffer(gains, offset: 0, index: 3); $0.setBuffer(rxOut, offset: 0, index: 4); $0.setBuffer(supplyMeans, offset: 0, index: 5)
+                $0.setBytes(&rxp, length: MemoryLayout<RxParams>.stride, index: 6)
             }
             drive = rxOut
             meansReady = rows == 240
@@ -779,6 +834,8 @@ final class CRTRenderer {
         case .drive(let px):
             driveIn.contents().copyMemory(from: px, byteCount: 512 * 240 * 16)
             drive = driveIn
+        case .noSignal:
+            fatalError("rfInput maps noSignal to codes")
         }
         if case .rgb = input {} else if rows != 240 {
             var rp2 = RasterParams(lines: Int32(rows), decode: 0, rgbSource: 0, pad: 0)
@@ -789,6 +846,9 @@ final class CRTRenderer {
             }
             drive = rasterOut
         }
+        let deflected: MTLBuffer
+        if case .rgb = input { deflected = deflect(drive, true) } else { deflected = deflect(drive, false) }
+        if deflected !== drive { drive = deflected; meansReady = false }   // the row means are of the drive before
         let src = drive
         let spot = settings.beamGrowth && !disableSpotH
         if settings.supply {
@@ -962,6 +1022,19 @@ final class CRTRenderer {
         var w = min(dst.width, fullH * 4 / 3)
         w = max(256, min(Double(maxWidth), (w / 4).rounded() * 4))
         return (Int(w), Int(w) * 3 / 4)
+    }
+}
+
+private extension CRTRenderer.Input {
+    /// The RF stage's view of the input: no signal = black codes (the carrier level does the rest).
+    enum RF { case codes(UnsafePointer<UInt16>?, burst: UInt32), rgb(UnsafePointer<UInt32>), drive(UnsafePointer<SIMD4<Float>>), noSignal }
+    var rfInput: RF {
+        switch self {
+        case .codes(let c, let b): return .codes(c, burst: b)
+        case .rgb(let p): return .rgb(p)
+        case .drive(let p): return .drive(p)
+        case .noSignal: return .codes(nil, burst: 0)
+        }
     }
 }
 

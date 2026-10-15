@@ -49,8 +49,15 @@ void CrtDisplayPolicy::store(const uint32_t* pixels, const FrameSignal* signal) 
   valid_ = true;
 }
 
-CrtInput CrtDisplayPolicy::input() const {
+CrtInput CrtDisplayPolicy::input(double antennaDbuv) const {
   CrtInput in;
+  if (crtReceptionAt(signal_.receptionStep, signal_.receptionCounter, signal_.flashReduced, antennaDbuv, &reception_)) {
+    in.reception = &reception_;
+    if (reception_.noSignal) {  // no carrier: the picture does not matter (snow)
+      in.kind = CrtInputKind::noSignal;
+      return in;
+    }
+  }
   if (hasCodes_ && !signal_.flashAltered) {
     in.kind = CrtInputKind::codes;
     in.codes = codes_.data();

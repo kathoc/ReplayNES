@@ -585,7 +585,7 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
     bool needBuild = !plain && crtPolicy_.hasFrame() && (newPicture || changed || !crt_->hasOutput() || crt_->planPending());
     if (needBuild) {
       if (crtPolicy_.pipelined() && crt_->hasOutput()) crtBuildAfter = true;
-      else if (!crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
+      else if (!crt_->encode(crtPolicy_.input(crt_->settings().antennaDbuv), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
     }
     shownPost_ = post_;
     shownCrt_ = rect.crt;
@@ -653,7 +653,7 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   if (crtBuildAfter) {
     // Built ahead: queued after this present's commands (the immediate context keeps the order),
     // so the next present shows it.
-    if (!crt_->encode(crtPolicy_.input(), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
+    if (!crt_->encode(crtPolicy_.input(crt_->settings().antennaDbuv), crtPolicy_.ordinal()) && crt_->renderedLines() > 0) crtFailed = true;
     ctx_->Flush();
   }
   if (crtFailed) {
