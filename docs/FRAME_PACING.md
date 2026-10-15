@@ -339,6 +339,15 @@ otherwise (logged); RECOVER replaces the queue. The emulation thread marks its p
 (`ThreadProbe`) so a monitor on another thread can tell a blocked thread from one that presents
 nothing.
 
+**Dropped own presents are not a stall.** At 120 Hz with the CRT model on, for seconds at a
+time every new frame's own drawable can be replaced before the display latches it (presentedTime
+0, counted as `droppedFrames`; the "own" present rate drops to ~0) while the repeat present a
+refresh later shows the picture: measured on iPhone 17 Pro after display link restarts, 60
+pictures / s stayed on screen and screenshots kept changing. The watchdog confirms pictures by any
+drawable that showed them, own or repeat, so it does not act there, and acts when no drawable
+reaches the screen at all (`noPresent`). `onScreenFPS` (`OnScreenCounter`) counts each picture at
+its first appearance; `presentedFPS` stays the own-present rate (perf-smoke compares it).
+
 **Tube plans under size churn.** A finished CRT tube plan is adopted even when a newer size is
 already wanted (sizes that changed faster than a plan is built - rotation, adaptive scale - kept the
 CRT picture from ever appearing).

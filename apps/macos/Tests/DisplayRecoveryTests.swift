@@ -245,6 +245,54 @@ final class DisplayRecoveryTests: XCTestCase {
         XCTAssertTrue(allFinite(r))
     }
 
+    /// The watchdog over what the display path reports, as EmulationController feeds it: each
+    /// published picture, and the confirmed sequence whenever it changes. Returns its actions.
+    private func runWatchdog(frames: Int, _ present: (DisplayHealth, UInt64, Double) -> Void) -> [DisplayWatchdog.Action] {
+        let h = DisplayHealth()
+        h.presented(sequence: 0, frame: 0, at: 0)   // the platform reports presentation times (iPhone)
+        var w = DisplayWatchdog()
+        var confirmed: UInt64 = 0
+        var actions: [DisplayWatchdog.Action] = []
+        var t = 10.0
+        for seq in UInt64(1)...UInt64(frames) {
+            w.emulated(at: t)
+            present(h, seq, t)
+            let snap = h.snapshot
+            if snap.confirmedSequence != confirmed { confirmed = snap.confirmedSequence; w.presented(at: snap.confirmedAt) }
+            let a = w.check(at: t)
+            if a != .none { actions.append(a) }
+            t += 1 / 60.0
+        }
+        return actions
+    }
+
+    /// iPhone 17 Pro, CRT on, 120 Hz: for seconds at a time every new frame's own drawable was
+    /// replaced before the display latched it (presentedTime 0: "shown 0.5 fps" in the stats) and
+    /// the repeat present a refresh later showed the picture (60 pictures / s on screen, the
+    /// picture never froze). That is a refresh of latency, not a stall: no recovery, and the
+    /// on-screen count sees every picture.
+    func testDroppedOwnPresentsShownByRepeatsAreNotAStall() {
+        var counter = OnScreenCounter()
+        let actions = runWatchdog(frames: 600) { h, seq, t in
+            h.completed(sequence: seq, frame: seq, at: t)                  // own present: completed, never shown
+            h.presented(sequence: seq, frame: seq, at: t + 1 / 120.0)      // the repeat shows it
+            counter.shown(frame: seq)                                     // (repeat of the same picture)
+            counter.shown(frame: seq)
+        }
+        XCTAssertEqual(actions, [])
+        XCTAssertEqual(counter.count, 600)
+    }
+
+    /// Pictures whose drawables complete but never reach the screen - neither their own present
+    /// nor a repeat (presentedTime 0 throughout) - while the game plays on: the watchdog must act
+    /// (RECOVER, RESTART, FALLBACK) although every command buffer completed without error.
+    func testPicturesThatNeverReachTheScreenTriggerTheWatchdog() {
+        let actions = runWatchdog(frames: 60) { h, seq, t in
+            h.completed(sequence: seq, frame: seq, at: t)
+        }
+        XCTAssertEqual(actions, [.recover, .restart, .fallback])
+    }
+
     func testFaultSwitchesAndProbe() {
         let f = DisplayFaults("crtStale, gpuHang,bogus")
         XCTAssertEqual(f.active, [.crtStale, .gpuHang])

@@ -13,7 +13,8 @@ final class LatencyMeter {
         var lastInputToPresentMs = 0.0
         var stepMs = 0.0
         var lastAutosaveMs = 0.0
-        var presentedFPS = 0.0
+        var presentedFPS = 0.0       // new frames shown by their own present (a dropped one is shown by the next repeat)
+        var onScreenFPS = 0.0        // new pictures that reached the screen, own present or repeat (OnScreenCounter)
         var audioFillMs = 0.0
         var audioUnderruns: UInt64 = 0
         var audioDropped: UInt64 = 0
@@ -53,6 +54,8 @@ final class LatencyMeter {
     private let lock = NSLock()
     private var s = Snapshot()
     private var presentCount = 0
+    private var onScreen = OnScreenCounter()
+    private var onScreenWindowCount: UInt64 = 0, onScreenWindowStart = HostClock.now()
     private var fpsWindowStart = HostClock.now()
     private var gpuMaxWindow = 0.0, gpuWindowStart = HostClock.now()
     private var pacing = FramePacing()
@@ -103,6 +106,18 @@ final class LatencyMeter {
     func recordAudioRatio(_ r: Double) { lock.lock(); s.audioRatio = r; lock.unlock() }
     func recordRepeat() { lock.lock(); s.repeatPresents &+= 1; lock.unlock() }
     func recordDropped() { lock.lock(); s.droppedFrames &+= 1; lock.unlock() }
+
+    /// Lock held. A picture on screen (own present or repeat): onScreenFPS over 1 s windows.
+    private func noteOnScreen(frame: UInt64) {
+        onScreen.shown(frame: frame)
+        let now = HostClock.now()
+        let dt = HostClock.seconds(now - onScreenWindowStart)
+        if dt >= 1 {
+            s.onScreenFPS = Double(onScreen.count &- onScreenWindowCount) / dt
+            onScreenWindowCount = onScreen.count
+            onScreenWindowStart = now
+        }
+    }
     func recordLayerSize(_ size: CGSize) { lock.lock(); s.layerPixels = "\(Int(size.width))x\(Int(size.height))"; lock.unlock() }
     func recordForeignCallback() { lock.lock(); s.foreignCallbacks &+= 1; lock.unlock() }
     func recordWatchdog(gpuErrors: Int) { lock.lock(); s.watchdogActions &+= 1; s.gpuErrors = gpuErrors; lock.unlock() }
@@ -165,6 +180,7 @@ final class LatencyMeter {
            abs(presentedSeconds - l.time - expectedInterval) > refreshInterval / 2 {
             s.offCadence &+= 1
         }
+        noteOnScreen(frame: meta.frame)
         pacing.present(frame: meta.frame, at: presentedSeconds)
         s.presentCount = pacing.presents
         s.presentHitches = pacing.hitches
@@ -203,6 +219,7 @@ final class LatencyMeter {
     /// A repeat present of the picture of `frame` reached the screen (frame log only).
     func recordRepeatPresented(frame: UInt64, target: Double, presentedSeconds: Double) {
         lock.lock(); defer { lock.unlock() }
+        noteOnScreen(frame: frame)
         guard frameLog != nil else { return }
         frameLog?.append("\(frame),0,0,0,0," + String(format: "%.6f,%.6f,", target, presentedSeconds) + "0,1,0,0")
     }

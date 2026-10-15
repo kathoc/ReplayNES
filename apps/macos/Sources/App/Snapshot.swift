@@ -58,7 +58,7 @@ extension AppModel {
         var info: [String: Any] = [
             "frame": frameIndex, "statusFrame": status.frame, "takeLength": status.takeLength,
             "recording": status.recording, "paused": status.paused,
-            "presentedFPS": s.presentedFPS, "emulatedToPresentMs": s.emulatedToPresentMs,
+            "presentedFPS": s.presentedFPS, "onScreenFPS": s.onScreenFPS, "emulatedToPresentMs": s.emulatedToPresentMs,
             "sampleToEmulatedMs": s.sampleToEmulatedMs, "audioUnderruns": s.audioUnderruns,
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,
             "lateTicks": s.lateTicks, "emulatedFPS": s.emulatedFPS, "presentCount": s.presentCount,
@@ -126,7 +126,7 @@ extension AppModel {
             defer { mainCPU0 = mainCPU }
             let row: [String: Any] = [
                 "t": HostClock.seconds(HostClock.now() - start), "frame": self.status.frame, "paused": self.status.paused,
-                "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "presentCount": s.presentCount,
+                "emulatedFPS": s.emulatedFPS, "presentedFPS": s.presentedFPS, "onScreenFPS": s.onScreenFPS, "presentCount": s.presentCount,
                 "presentHitches": s.presentHitches, "offCadence": s.offCadence, "skippedFrames": s.skippedFrames,
                 "presentIntervalMaxMs": s.presentIntervalMaxMs, "missedRefreshes": s.missedRefreshes, "droppedFrames": s.droppedFrames, "foreignCallbacks": s.foreignCallbacks,
                 "repeatPresents": s.repeatPresents, "backlogDrains": s.backlogDrains, "gpuErrors": s.gpuErrors, "watchdogActions": s.watchdogActions,

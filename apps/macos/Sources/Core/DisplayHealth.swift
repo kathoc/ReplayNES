@@ -226,3 +226,19 @@ final class DisplayFaults {
         now.truncatingRemainder(dividingBy: period) < length
     }
 }
+
+/// Pictures that reached the screen, each counted once at its first appearance: through its own
+/// present or - when that drawable was replaced before the display latched it (presentedTime 0,
+/// "dropped") - through the repeat present that showed the same picture a refresh later. The
+/// display watchdog confirms pictures the same way, so a run of dropped own presents whose
+/// repeats are shown is not a stall (the picture is late by a refresh, not frozen).
+struct OnScreenCounter {
+    private(set) var count: UInt64 = 0
+    private var last: UInt64?
+    /// A drawable showing the picture of emulated frame `frame` reached the screen.
+    mutating func shown(frame: UInt64) {
+        guard frame != last else { return }
+        last = frame
+        count &+= 1
+    }
+}
