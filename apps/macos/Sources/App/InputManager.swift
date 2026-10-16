@@ -492,19 +492,34 @@ final class InputManager {
 
     /// Emulation thread: paused state changed. Entering pause releases D-pad ←/→ held for the
     /// game so a following frame advance does not record them.
+    /// Leaving pause (play resumes, the resume countdown first) hands a D-pad direction still held
+    /// from stepping back to the game, so it counts from the first frame (docs/design/VTR_UX.md,
+    /// "Countdown type-ahead"). The queued work follows the state at the time it runs: a pause that
+    /// is over at once (`paused = true; resume()`) never takes a held direction from the game.
     func setPausedStepMode(_ on: Bool) {
         stepLock.lock()
         let changed = stepModeOn != on
         stepModeOn = on
-        let ids = Array(stepDirs.keys)
         stepLock.unlock()
         guard changed else { return }
         gcQueue.async { [weak self] in
             guard let self else { return }
+            self.stepLock.lock()
+            let paused = self.stepModeOn
+            let dirs = self.stepDirs
+            self.stepLock.unlock()
             self.updateRepeat()
-            if !on { self.confirmTap.clear(); self.endMarkerHolds() }
-            guard on else { return }
-            for id in ids where self.lastState[id] == true && !self.routedSteps.contains(id) {
+            if !paused {
+                self.confirmTap.clear()
+                self.endMarkerHolds()
+                for id in self.routedSteps {
+                    if self.lastState[id] == true { rn_input_set_pressed(self.handle, id, 1) }
+                    if let d = dirs[id] { self.onPausedStep?(d, false) }
+                }
+                self.routedSteps.removeAll()
+                return
+            }
+            for id in dirs.keys where self.lastState[id] == true && !self.routedSteps.contains(id) {
                 rn_input_set_pressed(self.handle, id, 0)
                 self.routedSteps.insert(id) // its release is then swallowed too
             }

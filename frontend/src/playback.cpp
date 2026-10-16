@@ -29,6 +29,11 @@ struct rnf_resume_countdown {
   bool enabled = true;
   bool active = false;
   double since = 0;
+  // Type-ahead (rnf_resume_countdown_input / _apply): the pads as p1 | p2 << 8.
+  bool haveBaseline = false;  // the first sample since the start / a hold was seen
+  uint16_t prev = 0;          // the previous counting sample
+  uint16_t latched = 0;       // pressed after the baseline (taps typed ahead)
+  uint16_t pending = 0;       // the latch of a countdown that ended: for the first live frame
 };
 
 struct rnf_frame_history {
@@ -296,10 +301,26 @@ rnf_resume_countdown* rnf_resume_countdown_new(void) {
 rnf_resume_countdown* rnf_resume_countdown_clone(const rnf_resume_countdown* c) { return cloneOf(c); }
 void rnf_resume_countdown_free(rnf_resume_countdown* c) { delete c; }
 
+namespace {
+void clearTypeAhead(rnf_resume_countdown* c) {
+  c->haveBaseline = false;
+  c->prev = 0;
+  c->latched = 0;
+  c->pending = 0;
+}
+// The countdown is over (done, or switched off while counting): its taps wait for the first frame.
+void finishCountdown(rnf_resume_countdown* c) {
+  c->active = false;
+  uint16_t taps = c->latched;
+  clearTypeAhead(c);
+  c->pending = taps;
+}
+}  // namespace
+
 void rnf_resume_countdown_set_enabled(rnf_resume_countdown* c, int on) {
   if (!c) return;
   c->enabled = on != 0;
-  if (!c->enabled) c->active = false;
+  if (!c->enabled && c->active) finishCountdown(c);
 }
 int rnf_resume_countdown_enabled(const rnf_resume_countdown* c) { return c && c->enabled ? 1 : 0; }
 
@@ -311,6 +332,7 @@ int rnf_resume_countdown_wanted(const rnf_resume_countdown* c, rn_mode mode, rnf
 
 int rnf_resume_countdown_start(rnf_resume_countdown* c, double now, rn_mode mode, rnf_practice_phase practice_phase) {
   if (!c) return 0;
+  clearTypeAhead(c);
   c->active = rnf_resume_countdown_wanted(c, mode, practice_phase) != 0;
   c->since = now;
   return c->active ? 1 : 0;
@@ -321,7 +343,7 @@ rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, do
   if (!c || !c->active) return st;
   double e = now - c->since;
   if (e >= RNF_PRACTICE_COUNTDOWN_SECONDS) {
-    c->active = false;
+    finishCountdown(c);
     st.done = 1;
     return st;
   }
@@ -332,12 +354,49 @@ rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, do
 }
 
 void rnf_resume_countdown_hold(rnf_resume_countdown* c, double now) {
-  if (c && c->active) c->since = now;
+  if (!c || !c->active) return;
+  c->since = now;
+  clearTypeAhead(c);  // it starts over: so does the type-ahead
 }
 void rnf_resume_countdown_cancel(rnf_resume_countdown* c) {
-  if (c) c->active = false;
+  if (!c) return;
+  c->active = false;
+  clearTypeAhead(c);
 }
 int rnf_resume_countdown_active(const rnf_resume_countdown* c) { return c && c->active ? 1 : 0; }
+
+void rnf_resume_countdown_input(rnf_resume_countdown* c, uint8_t p1, uint8_t p2) {
+  if (!c || !c->active) return;
+  uint16_t bits = uint16_t(p1 | (p2 << 8));
+  if (c->haveBaseline) c->latched = uint16_t(c->latched | (bits & ~c->prev));
+  c->haveBaseline = true;
+  c->prev = bits;
+}
+
+int rnf_resume_countdown_apply(rnf_resume_countdown* c, uint8_t* p1, uint8_t* p2) {
+  if (!c || !c->pending || !p1 || !p2) return 0;
+  const uint16_t cur = uint16_t(*p1 | (*p2 << 8));
+  uint16_t add = uint16_t(c->pending & ~cur);
+  c->pending = 0;
+  // Never both directions of an axis: a latched one goes when the opposite is held or latched too.
+  const uint16_t pairs[4][2] = {{RN_BTN_LEFT, RN_BTN_RIGHT},
+                                {RN_BTN_UP, RN_BTN_DOWN},
+                                {RN_BTN_LEFT << 8, RN_BTN_RIGHT << 8},
+                                {RN_BTN_UP << 8, RN_BTN_DOWN << 8}};
+  uint16_t drop = 0;
+  for (const auto& p : pairs) {
+    bool addA = add & p[0], addB = add & p[1];
+    if (addA && ((cur & p[1]) || addB)) drop |= p[0];
+    if (addB && ((cur & p[0]) || addA)) drop |= p[1];
+  }
+  add = uint16_t(add & ~drop);
+  if (!add) return 0;
+  *p1 = uint8_t(*p1 | (add & 0xFF));
+  *p2 = uint8_t(*p2 | (add >> 8));
+  return 1;
+}
+
+int rnf_resume_countdown_pending(const rnf_resume_countdown* c) { return c && c->pending ? 1 : 0; }
 
 int rnf_practice_history_index(double back, int count) {
   if (count <= 0) return 0;

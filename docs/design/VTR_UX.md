@@ -39,6 +39,35 @@ they conflict, this one wins. Applies to macOS, desktop (Linux/Steam Deck, Windo
    recorded), ◀◀ 巻き戻し / Rewind, ▶▶ 早送り / Fast-forward, スロー ½ / Slow ½, テープの終わり /
    End of tape, export progress.
 
+## Countdown type-ahead
+
+From the moment the resume countdown starts until play resumes, the NES buttons (D-pad, A, B,
+Select, Start - whatever is bound to an NES pad button on a pad, the keyboard or touch) are game
+input only, typed ahead for the first frame:
+
+- They never act on the UI or the transport: no frame step (the paused D-pad ←/→ stepping is off
+  while the game is unpaused, and a direction still held from stepping is handed back to the
+  game when play resumes), no seek bar tap, no countdown cancel (the controller's cancel tap
+  cancels only the practice countdown), no hint action.
+- Hotkeys that are not NES buttons keep their meaning: L2 / R2 (rewind / fast-forward; holding
+  one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too),
+  L3 (Undo), the pause hotkey (cancels).
+- **Held through**: a button held when the countdown ends is pressed from the very first frame
+  (the normal sample of that frame).
+- **Pressed and let go inside the countdown** (decision): it counts. It is latched and applied as
+  a press on the first frame and released on the next (`rnf_resume_countdown_apply`). Taps from
+  before the countdown (e.g. the seek bar's Play tap, or a button tapped to leave Playback) are
+  not typed ahead: the first sample of the countdown is its baseline. A latched direction is
+  dropped when the opposite one is held or also latched (never left + right / up + down).
+- The first frame and every frame after it go through `rn_step` like any live frame, so they are
+  recorded in the input log (deterministic: replay and export see exactly what was played).
+- A cancel (pause, menu, rewind / fast-forward held) or a restart drops what was typed ahead; a
+  modal dialog that holds the countdown at its start starts the type-ahead over as well.
+- Shared core: `rnf_resume_countdown_input` (every counting tick: the sampled pads) and
+  `rnf_resume_countdown_apply` (every live frame between `rn_input_sample_game` and `rn_step`);
+  ctest `test_frontend_resume_countdown`. The practice countdown (after returning to A) is
+  unchanged: its input is dropped and its cancel tap ends practice.
+
 ## Screens
 
 - **While Rewind/FF is held**: show the bottom seek bar read-only (plus existing VTR effect),

@@ -53,6 +53,9 @@ struct EmuStatus {
   double countdownFraction = 0;
   // VTR transport (docs/design/VTR_UX.md).
   bool retryNotice = false;  // the resume countdown starts an overwrite: "Retrying from here" under the numeral
+  /// The resume countdown is running (rnf_resume_countdown): the NES buttons are game input typed
+  /// ahead, never UI (no countdown cancel tap: that is the practice countdown's).
+  bool resumeCountdown = false;
   bool canUndo = false;      // the Undo chip (rnf_retry_can_undo): a retry started < 10 s ago
   bool atTapeEnd = false;    // the cursor is at the end of the tape (length > 0, not practicing)
   uint64_t rewindStops = 0;  // count of rewinds of the tape ended (L2 released; the coach's RETRY tip)

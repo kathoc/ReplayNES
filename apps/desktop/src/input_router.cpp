@@ -265,7 +265,18 @@ void InputRouter::setPausedStepMode(bool paused) {
   bool changed = pausedStepMode_ != paused;
   pausedStepMode_ = paused;
   updateRepeat();
-  if (!changed || !paused) return;
+  if (!changed) return;
+  if (!paused) {
+    // Play resumes (the resume countdown first): a D-pad direction still held from stepping is the
+    // game's again, so it counts from the first frame (docs/design/VTR_UX.md, "Countdown type-ahead").
+    for (auto it = routedSteps_.begin(); it != routedSteps_.end();) {
+      auto d = stepDirs_.find(*it);
+      if (pressed_.count(*it)) rn_input_set_pressed(in_, it->c_str(), 1);
+      if (d != stepDirs_.end() && onPausedStep) onPausedStep(d->second, false);
+      it = routedSteps_.erase(it);
+    }
+    return;
+  }
   for (const auto& [id, dir] : stepDirs_) {
     if (pressed_.count(id) && !routedSteps_.count(id)) {
       rn_input_set_pressed(in_, id.c_str(), 0);

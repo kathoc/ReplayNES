@@ -12,7 +12,8 @@
 # (scripts/macos-vm/reset.sh && scripts/macos-vm/start.sh); stop it afterwards (stop.sh).
 #   scripts/ui-check-macos.sh [app]          (default build/ReplayNES.app; generated test ROM)
 #   EMPTY=1 ...                              also the empty library (no game open)
-#   ONLY="input flows" ...                   a subset: input, step (paused frame step), flows (pad flows), walk
+#   ONLY="input flows" ...                   a subset: input, step (paused frame step), countdown (resume
+#                                            countdown type-ahead), flows (pad flows), walk
 #   LOCAL=1 ...                              run the app on this Mac instead (needs a GUI login session;
 #                                            no flows by default: they change the bindings / settings)
 set -euo pipefail
@@ -20,7 +21,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:-$ROOT/build/ReplayNES.app}"
 CLI="$ROOT/build/tools/replaynes-cli/replaynes-cli"
 OUT="${OUT:-$ROOT/build/ui-check}"
-if [ "${LOCAL:-0}" = 1 ]; then ONLY="${ONLY:-input step walk}"; else ONLY="${ONLY:-input step flows walk}"; fi
+if [ "${LOCAL:-0}" = 1 ]; then ONLY="${ONLY:-input step countdown walk}"; else ONLY="${ONLY:-input step countdown flows walk}"; fi
 [ -d "$APP" ] || { echo "app not found: $APP"; exit 1; }
 [ -x "$CLI" ] || { echo "replaynes-cli not found: $CLI (cmake --build build)"; exit 1; }
 rm -rf "$OUT" && mkdir -p "$OUT"
@@ -130,7 +131,8 @@ PY
 # Paused frame step inside the take (v0.5.0 bug: R while paused before the take end recorded a
 # frame with live input and started a new take): record ~4 s, R pauses, L2 held rewinds, then R
 # (released) x4 and D-pad → x2 step 6 frames along the SAME take (length / take count unchanged,
-# still paused, still record mode); a tap of south then resumes there = a new take (count + 1).
+# still paused, still record mode); a tap of south then resumes there (after the 3 s resume
+# countdown) = a new take (count + 1).
 step_check() {
   local name="step" d="$G/step"
   local pad="5:rightShoulder:d,5.05:rightShoulder:u,6:leftTrigger:d,6.6:leftTrigger:u"
@@ -139,8 +141,8 @@ step_check() {
   pad="$pad,10:dpad.right:d,10.05:dpad.right:u,10.5:dpad.right:d,10.55:dpad.right:u"
   pad="$pad,12:face.south:d,12.05:face.south:u"
   app "$name" --rom "$ROM" --autoplay --library-root "$d/library" --session-root "$d/session" "${COMMON[@]}" \
-    --inject-pad "$pad" --snapshot-at "7.5:$d/a.png,11.5:$d/b.png,14:$d/c.png" \
-    --test-actions "0.5:screen:0,15:quit" -AppleLanguages "(en)"
+    --inject-pad "$pad" --snapshot-at "7.5:$d/a.png,11.5:$d/b.png,16.5:$d/c.png" \
+    --test-actions "0.5:screen:0,17.5:quit" -AppleLanguages "(en)"
   fetch "$name"
   python3 - "$OUT/$name" <<'PY' || fail=1
 import json, sys
@@ -158,6 +160,38 @@ check(b["paused"] and b["recording"], f"b: paused {b['paused']} recording {b['re
 check(not c["paused"] and c["takeCount"] == a["takeCount"] + 1, f"resume: paused {c['paused']} takes {a['takeCount']} -> {c['takeCount']}")
 print(f"{d}: paused frame step " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
       + f" (frame {a['statusFrame']} -> {b['statusFrame']} of {a['takeLength']}, takes {a['takeCount']} -> {c['takeCount']})")
+sys.exit(1 if bad else 0)
+PY
+}
+
+# Resume countdown type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): R pauses, south tapped
+# (the seek bar's Play) starts the 3-2-1; during it D-pad taps, A, B (the cancel button) and a held
+# D-pad are game input only: no frame step, no cancel - still counting on the paused frame; then
+# play goes on from there.
+countdown_check() {
+  local name="countdown" d="$G/countdown"
+  local pad="5:rightShoulder:d,5.05:rightShoulder:u,6:face.south:d,6.05:face.south:u"
+  pad="$pad,6.4:dpad.right:d,6.45:dpad.right:u,6.8:face.east:d,6.85:face.east:u"
+  pad="$pad,7.2:face.south:d,7.25:face.south:u,7.6:dpad.left:d,7.65:dpad.left:u,8:dpad.right:d,10.5:dpad.right:u"
+  app "$name" --rom "$ROM" --autoplay --library-root "$d/library" --session-root "$d/session" "${COMMON[@]}" \
+    --inject-pad "$pad" --snapshot-at "5.6:$d/a.png,8.4:$d/b.png,11.5:$d/c.png" \
+    --test-actions "0.5:screen:0,12.5:quit" -AppleLanguages "(en)"
+  fetch "$name"
+  python3 - "$OUT/$name" <<'PY' || fail=1
+import json, sys
+d = sys.argv[1]
+a, b, c = (json.load(open(f"{d}/{k}.json")) for k in "abc")
+bad = []
+def check(cond, msg):
+    if not cond: bad.append(msg)
+check(a["paused"] and a["countdown"] == 0, f"a: paused {a['paused']} countdown {a['countdown']}")
+check(not b["paused"] and 1 <= b["countdown"] <= 3, f"b: paused {b['paused']} countdown {b['countdown']} (cancelled / not counting)")
+check(b["statusFrame"] == a["statusFrame"] and b["takeLength"] == a["takeLength"],
+      f"b: frame {a['statusFrame']} -> {b['statusFrame']} during the countdown (frame step / emulated)")
+check(not c["paused"] and c["countdown"] == 0 and c["statusFrame"] > a["statusFrame"] + 60,
+      f"c: paused {c['paused']} countdown {c['countdown']} frame {a['statusFrame']} -> {c['statusFrame']}")
+print(f"{d}: resume countdown type-ahead " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
+      + f" (frame {a['statusFrame']} -> {b['statusFrame']} -> {c['statusFrame']}, countdown {b['countdown']})")
 sys.exit(1 if bad else 0)
 PY
 }
@@ -247,6 +281,7 @@ PY
 
 want input && input_check
 want step && step_check
+want countdown && countdown_check
 want flows && flows
 if want walk; then
   for lang in en ja; do

@@ -57,7 +57,7 @@ extension AppModel {
         let s = emu.latency.snapshot(audio: emu.audio)
         var info: [String: Any] = [
             "frame": frameIndex, "statusFrame": status.frame, "takeLength": status.takeLength,
-            "recording": status.recording, "paused": status.paused,
+            "recording": status.recording, "paused": status.paused, "countdown": status.countdown,
             "presentedFPS": s.presentedFPS, "onScreenFPS": s.onScreenFPS, "emulatedToPresentMs": s.emulatedToPresentMs,
             "sampleToEmulatedMs": s.sampleToEmulatedMs, "audioUnderruns": s.audioUnderruns,
             "audioFillMs": s.audioFillMs, "audioOutputLatencyMs": s.audioOutputLatencyMs,

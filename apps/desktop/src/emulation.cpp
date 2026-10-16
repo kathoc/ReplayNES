@@ -579,6 +579,8 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
     // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
     uint64_t clock = mode == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
     rn_input_sample_game(input_, clock, &p1, &p2);
+    // The first frame after the resume countdown: plus the buttons typed ahead during it (once).
+    if (!frameStep) rnf_resume_countdown_apply(resumeCountdown_, &p1, &p2);
   }
   uint8_t ev = live ? pendingEvents_ : 0;
   pendingEvents_ = 0;
@@ -805,14 +807,13 @@ bool EmulationController::tickResumeCountdown() {
     countdownFraction_ = st.fraction;
   }
   setMuted(true);
-  // The game input is sampled and dropped (no tap latched into the first frame; a button held
-  // through counts from the first frame).
-  if (rn_get_mode(s) == RN_MODE_PRACTICE) {
-    dropInput();
-  } else {
-    uint8_t p1 = 0, p2 = 0;
-    rn_input_sample_game(input_, rn_frame(s), &p1, &p2);
-  }
+  // Type-ahead (docs/design/VTR_UX.md): the game input is sampled and handed to the countdown; a
+  // button held through counts from the first frame, one pressed and let go meanwhile is pressed on
+  // it (stepOnce: rnf_resume_countdown_apply).
+  uint8_t p1 = 0, p2 = 0;
+  const uint64_t clock = rn_get_mode(s) == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
+  rn_input_sample_game(input_, clock, &p1, &p2);
+  rnf_resume_countdown_input(resumeCountdown_, p1, p2);
   return true;
 }
 
@@ -1382,6 +1383,7 @@ void EmulationController::updateStatus() {
   st.countdown = countdown_;
   st.countdownFraction = countdownFraction_;
   st.retryNotice = retryNotice_ && countdown_ > 0 && rnf_resume_countdown_active(resumeCountdown_);
+  st.resumeCountdown = rnf_resume_countdown_active(resumeCountdown_) != 0;
   st.canUndo = rnf_retry_can_undo(retry_, nowSeconds(), st.activeTake, rn_get_mode(s)) != 0;
   st.rewindStops = rewindStops_;
   if (st.practicing) {

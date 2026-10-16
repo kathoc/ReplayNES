@@ -194,8 +194,26 @@ struct ResumeCountdown: Equatable {
     /// A modal UI is up: it waits at its start.
     mutating func hold(now: Double) { rnf_resume_countdown_hold(RNFHandle.unique(&box), now) }
 
-    /// Back to paused (a pause, the menu, the cancel tap).
-    mutating func cancel() { if active { rnf_resume_countdown_cancel(RNFHandle.unique(&box)) } }
+    /// Back to paused (a pause, the menu, rewind held). Also drops taps typed ahead for a first frame
+    /// that has not been emulated yet.
+    mutating func cancel() {
+        if active || pending { rnf_resume_countdown_cancel(RNFHandle.unique(&box)) }
+    }
+
+    /// Type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): every counting tick, the game input
+    /// sampled for it (rn_input_sample_game). The first sample is the baseline; buttons pressed after
+    /// it are latched for the first frame.
+    mutating func input(p1: UInt8, p2: UInt8) { rnf_resume_countdown_input(RNFHandle.unique(&box), p1, p2) }
+
+    /// Every live frame, after sampling and before rn_step: the first one after the countdown gets the
+    /// buttons pressed (and let go) during it, once.
+    mutating func apply(p1: inout UInt8, p2: inout UInt8) {
+        guard pending else { return }
+        rnf_resume_countdown_apply(RNFHandle.unique(&box), &p1, &p2)
+    }
+
+    /// Latched buttons wait for the first frame.
+    var pending: Bool { rnf_resume_countdown_pending(box.ptr) != 0 }
 
     private static func phase(_ p: PracticeLoop.Phase) -> rnf_practice_phase {
         switch p {

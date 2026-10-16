@@ -195,7 +195,9 @@ final class EmulationController {
     private let reel = PracticeReel()   // pictures of the run for the 1 s sweep back to A
     private var practiceRewindStarted = false
     private var countdown = 0 {
-        didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0) } }
+        // The cancel tap ends the practice countdown only; during the resume countdown the NES buttons
+        // are game input typed ahead (docs/design/VTR_UX.md, "Countdown type-ahead").
+        didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0 && !resumeCountdown.active) } }
     }
     private var countdownFraction = 0.0
     /// 3, 2, 1 over the paused picture before play resumes from a pause (resume()).
@@ -1217,8 +1219,8 @@ final class EmulationController {
     }
 
     /// The resume countdown's tick (unpaused): true = counting (nothing is emulated; the game input is
-    /// sampled and dropped, so a tap is not latched into the first frame and a button held through
-    /// counts from it); false = not counting or it just ended (play on in this same tick).
+    /// typed ahead: a button held through counts from the first frame, a tap meanwhile is pressed on
+    /// it); false = not counting or it just ended (play on in this same tick).
     private func tickResumeCountdown(_ s: EngineSession) -> Bool {
         guard resumeCountdown.active else {
             // Ended / cancelled / switched off: outside practice no other countdown is shown.
@@ -1241,12 +1243,17 @@ final class EmulationController {
             countdownFraction = st.fraction
         }
         audio.setMuted(true)
+        // Type-ahead (docs/design/VTR_UX.md): the game input is sampled and handed to the countdown; a
+        // button held through counts from the first frame, one pressed and let go meanwhile is pressed
+        // on it (stepOnce: ResumeCountdown.apply).
+        var p1: UInt8 = 0, p2: UInt8 = 0
         if isPracticing {
-            dropInput()
+            rn_input_sample_game(input.handle, practiceSeq, &p1, &p2)
+            practiceSeq &+= 1
         } else {
-            var p1: UInt8 = 0, p2: UInt8 = 0
             rn_input_sample_game(input.handle, s.frame, &p1, &p2)
         }
+        resumeCountdown.input(p1: p1, p2: p2)
         // The paused picture stays (shown again every tick: the viewport draws the numeral over it).
         if let v = s.video { show(v, meta: FrameMeta(frame: s.frame)) }
         return true
@@ -1462,6 +1469,8 @@ final class EmulationController {
             let clock = mode == RN_MODE_PRACTICE ? practiceSeq : s.frame
             if mode == RN_MODE_PRACTICE { practiceSeq &+= 1 }
             rn_input_sample_game(input.handle, clock, &p1, &p2)
+            // The first frame after the resume countdown: plus the buttons typed ahead during it (once).
+            if !frameStep { resumeCountdown.apply(p1: &p1, p2: &p2) }
         }
         let eventTime = input.consumeEventTime()
         let ev = live ? pendingEvents : 0

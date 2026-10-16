@@ -1257,6 +1257,76 @@ TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing em
   rn_input_free(in);
 }
 
+TEST_CASE("emulation: resume countdown type-ahead - NES buttons during it reach the first frame, recorded") {
+  std::string d = tmpDir("resume-countdown-type-ahead");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  char* def = rnf_input_default_config_json(RNF_KEYBOARD_SDL);
+  REQUIRE(rn_input_load_json(in, def) == RN_OK);
+  rnf_string_free(def);
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  tickN(emu, 60);
+  emu.togglePause();
+  REQUIRE(emu.paused());
+  // The seek bar's Play tap (the cancel button = NES B) reaches the game while paused: not typed ahead.
+  rn_input_set_pressed(in, "gc0:face.south", 1);
+  rn_input_set_pressed(in, "gc0:face.south", 0);
+  emu.togglePause();
+  emu.tick();
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK(emu.status().resumeCountdown);
+  // During it: A tapped, START tapped, right pressed and held on. Nothing is emulated.
+  rn_input_set_pressed(in, "gc0:face.east", 1);
+  emu.tick();
+  rn_input_set_pressed(in, "gc0:face.east", 0);
+  rn_input_set_pressed(in, "gc0:menu", 1);
+  rn_input_set_pressed(in, "gc0:menu", 0);
+  emu.tick();
+  rn_input_set_pressed(in, "gc0:dpad.right", 1);
+  tickN(emu, 3);
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.status().countdown, 3);
+  CHECK_EQ(emu.status().frame, uint64_t(60));
+  // It ends (the setting switched off: plays on at once, as after "1"): the first frame has them all.
+  emu.setResumeCountdown(false);
+  emu.tick();
+  CHECK_FALSE(emu.status().resumeCountdown);
+  CHECK_EQ(emu.status().frame, uint64_t(61));
+  rn_input_set_pressed(in, "gc0:dpad.right", 0);
+  emu.tick();
+  CHECK_EQ(emu.status().frame, uint64_t(62));
+  // Cancelled (a pause) after taps: nothing reaches the frames after the next resume.
+  emu.setResumeCountdown(true);
+  emu.togglePause();
+  emu.togglePause();
+  emu.tick();
+  rn_input_set_pressed(in, "gc0:face.east", 1);
+  rn_input_set_pressed(in, "gc0:face.east", 0);
+  emu.tick();
+  emu.togglePause();  // the pause hotkey: back to paused
+  REQUIRE(emu.paused());
+  emu.setResumeCountdown(false);
+  emu.togglePause();  // the setting off: plays at once
+  emu.tick();
+  CHECK_EQ(emu.status().frame, uint64_t(63));
+  // Recorded in the take: 60 = A + START + right, 61 = nothing (taps released), 62 = nothing.
+  emu.setPaused(true);
+  REQUIRE(rn_set_mode(s, RN_MODE_REPLAY) == RN_OK);
+  REQUIRE(rn_seek(s, 60) == RN_OK);
+  const uint8_t want[3] = {RN_BTN_A | RN_BTN_START | RN_BTN_RIGHT, 0, 0};
+  for (uint8_t w : want) {
+    rn_step_info info{};
+    REQUIRE(rn_step(s, 0, 0, 0, &info) == RN_OK);
+    CHECK_EQ(info.p1, w);
+  }
+  emu.closeSession();
+  rn_input_free(in);
+}
+
 TEST_CASE("emulation: resume countdown in practice - only while the run plays, never on top of its own countdown") {
   std::string d = tmpDir("resume-countdown-practice");
   std::string rom = testRom(d);

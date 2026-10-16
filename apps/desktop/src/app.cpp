@@ -156,7 +156,9 @@ void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
   input_->setSeekFocus(inter ? 0 : ui_->seekFocus());
-  input_->setCountdown(!inter && emu_->status().countdown > 0);
+  // The cancel tap ends the practice countdown only; during the resume countdown the NES buttons are
+  // game input typed ahead (docs/design/VTR_UX.md, "Countdown type-ahead").
+  input_->setCountdown(!inter && emu_->status().countdown > 0 && !emu_->status().resumeCountdown);
   ImGuiIO& io = ImGui::GetIO();
   if (inter) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
   else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);

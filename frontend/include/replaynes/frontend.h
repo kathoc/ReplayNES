@@ -1229,11 +1229,20 @@ int rnf_practice_history_index(double back, int count);
  * pause hotkey / Space, the seek bar's cancel tap, the menu's Resume / closing it, the pill) first
  * shows 3, 2, 1 over the paused picture (RNF_PRACTICE_COUNTDOWN_SECONDS, one number per second, the
  * practice countdown's look: rnf_practice_countdown_visual), then plays. The frontend keeps the game
- * unpaused meanwhile but emulates nothing (the game input is sampled and dropped every tick, audio
- * stays muted); a pause (hotkey, menu, dialog, frame step) or the cancel tap aborts it back to paused
- * (rnf_resume_countdown_cancel). Setting "Resume Countdown" (default on), independent of the practice
- * countdown (rnf_practice_loop_set_countdown). Only for live play: RECORD, or PRACTICE while its loop
- * is playing (a pending return / its own countdown is never stacked with this one); never REPLAY. */
+ * unpaused meanwhile but emulates nothing (audio stays muted); a pause (hotkey, menu, dialog) or
+ * holding rewind / fast-forward aborts it back to paused (rnf_resume_countdown_cancel). Setting
+ * "Resume Countdown" (default on), independent of the practice countdown
+ * (rnf_practice_loop_set_countdown). Only for live play: RECORD, or PRACTICE while its loop is playing
+ * (a pending return / its own countdown is never stacked with this one); never REPLAY.
+ * Type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): from its start until play resumes the
+ * NES buttons (D-pad, A, B, Select, Start on pads, keys, touch) are game input only - no frame step,
+ * seek bar tap, countdown cancel or hint action; hotkeys (rewind, fast-forward, menu, undo, pause)
+ * keep their meaning. Every counting tick the frontend samples the game input as usual
+ * (rn_input_sample_game) and passes it to rnf_resume_countdown_input. The pad state sampled for the
+ * first live frame is applied to it as always (a button held through the countdown counts from that
+ * frame); rnf_resume_countdown_apply adds the buttons pressed during the countdown and released
+ * before its end (pressed on the first frame, released on the next). Both go through rn_step, so
+ * they are recorded like any input. */
 typedef struct rnf_resume_countdown rnf_resume_countdown;
 typedef struct rnf_resume_countdown_state {
   int count;       /* 3, 2, 1 while counting; 0 otherwise */
@@ -1258,6 +1267,19 @@ rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, do
 void rnf_resume_countdown_hold(rnf_resume_countdown* c, double now);
 void rnf_resume_countdown_cancel(rnf_resume_countdown* c); /* back to paused (the frontend pauses) */
 int rnf_resume_countdown_active(const rnf_resume_countdown* c);
+/* Every counting tick (active; also behind a modal hold): the game input sampled this tick. The first
+ * sample after a start / hold is the baseline: what it shows was pressed before (e.g. the seek bar's
+ * Play tap, the Playback button that started it) and is not typed ahead - only held on. A button
+ * that goes down after the baseline is latched. start / hold / cancel clear the latch; the end (done,
+ * or the setting switched off while counting) hands it to rnf_resume_countdown_apply. */
+void rnf_resume_countdown_input(rnf_resume_countdown* c, uint8_t p1, uint8_t p2);
+/* Every live frame (RECORD / PRACTICE play), after rn_input_sample_game and before rn_step: the
+ * first one after the countdown ended gets the latched buttons added (once). A latched direction is
+ * dropped when the opposite one is held or latched too (never left + right / up + down). Returns 1
+ * if *p1 / *p2 changed. NULL-safe. */
+int rnf_resume_countdown_apply(rnf_resume_countdown* c, uint8_t* p1, uint8_t* p2);
+/* 1 while latched buttons wait for the first frame (until apply / start / cancel). */
+int rnf_resume_countdown_pending(const rnf_resume_countdown* c);
 
 /* Ring of the most recent 256x240 BGRA frames (allocated on first append). */
 typedef struct rnf_frame_history rnf_frame_history;

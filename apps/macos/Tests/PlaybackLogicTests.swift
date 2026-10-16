@@ -306,4 +306,37 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertFalse(loop.countdownEnabled)
         XCTAssertTrue(c.start(now: 30, mode: RN_MODE_PRACTICE, practicePhase: loop.phase))
     }
+
+    /// Type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): a tap during the countdown is
+    /// pressed on the first frame and released on the next; a tap from before it (the baseline) is not;
+    /// a pause drops what was typed; copies keep their own latch.
+    func testResumeCountdownTypeAhead() {
+        var c = ResumeCountdown()
+        c.start(now: 0, mode: RN_MODE_RECORD, practicePhase: .playing)
+        c.input(p1: UInt8(RN_BTN_B), p2: 0)   // the seek bar's Play tap, still latched: baseline
+        c.input(p1: 0, p2: 0)
+        c.input(p1: UInt8(RN_BTN_A), p2: UInt8(RN_BTN_START))
+        c.input(p1: 0, p2: 0)
+        var p1 = UInt8(RN_BTN_RIGHT), p2: UInt8 = 0
+        c.apply(p1: &p1, p2: &p2)             // still counting: nothing yet
+        XCTAssertEqual(p1, UInt8(RN_BTN_RIGHT))
+        XCTAssertTrue(c.tick(now: 3).done)
+        XCTAssertTrue(c.pending)
+        let copy = c
+        c.apply(p1: &p1, p2: &p2)
+        XCTAssertEqual(p1, UInt8(RN_BTN_RIGHT | RN_BTN_A))
+        XCTAssertEqual(p2, UInt8(RN_BTN_START))
+        XCTAssertFalse(c.pending)
+        XCTAssertTrue(copy.pending)
+        p1 = 0; p2 = 0
+        c.apply(p1: &p1, p2: &p2)             // once
+        XCTAssertEqual(p1, 0)
+        // Paused before the first frame: dropped.
+        c.start(now: 10, mode: RN_MODE_RECORD, practicePhase: .playing)
+        c.input(p1: 0, p2: 0)
+        c.input(p1: UInt8(RN_BTN_A), p2: 0)
+        XCTAssertTrue(c.tick(now: 13).done)
+        c.cancel()
+        XCTAssertFalse(c.pending)
+    }
 }
