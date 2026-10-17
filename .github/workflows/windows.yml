@@ -116,7 +116,7 @@ jobs:
     name: llvm-mingw x86_64 tests on Windows
     needs: mingw-cross
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45  # WARP CRT conformance + export self-test: ~30 min on main (2026-10)
     steps:
       - uses: actions/download-artifact@v4
         with:
