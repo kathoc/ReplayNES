@@ -185,6 +185,7 @@ final class AppModel: ObservableObject {
         input.onSeekInput = { [weak self] i, down in self?.markers.seekInput(i, down: down) }
         input.onMarkerHold = { [weak self] dir, down in self?.markers.markerHold(dir, down: down) }
         input.onPausedShoulder = { [weak self] dir in self?.markers.pausedShoulder(dir) }
+        input.onPauseGesture = { [weak self] dir in self?.markers.pauseGesture(dir) }
         markers.model = self
         input.onDisconnect = { [weak self] name in
             guard let self else { return }

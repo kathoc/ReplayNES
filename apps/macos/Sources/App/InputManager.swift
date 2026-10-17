@@ -57,6 +57,10 @@ final class InputManager {
     var onSeekInput: ((SeekInput, Bool) -> Void)?
     /// Main thread: L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
     var onPausedShoulder: ((Int) -> Void)?
+    /// Main thread: pad 1's gestures in play (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L
+    /// = -1 (pause and step one frame; at the press, repeated while held), L or R held + START = 0
+    /// (pause: the seek bar).
+    var onPauseGesture: ((Int) -> Void)?
     /// Main thread: L / R held while a marker is edited: the marker moves (-1 / +1) until released.
     var onMarkerHold: ((Int, Bool) -> Void)?
 
@@ -91,6 +95,8 @@ final class InputManager {
     private var countdownTaps: Set<String> = []   // gcQueue only
     /// Presses taken by "press a key" (keys only): their releases are swallowed too. gcQueue only.
     private var captureSwallowed: Set<String> = []
+    /// START pressed with L / R held (a pause): never the game's, nor its release. gcQueue only.
+    private var swallowedStarts: Set<String> = []
 
     /// Called (main thread) with the physical id while capturing a binding (keys only). Esc and the
     /// controller's cancel button cancel (nil); other controller input is ignored meanwhile.
@@ -165,6 +171,7 @@ final class InputManager {
     /// layout 5: the Quick Menu ("hk.menu"): pad 1's L+R and Esc (unless Esc is taken).
     /// layout 6: bindings to HOME / guide (never assignable) are dropped.
     /// layout 7: pad 1's L3 = "hk.undo_take" (Undo of a retry) unless L3 is taken.
+    /// layout 8: pad 1's L slow / R pause dropped (L / R alone do nothing in play: no misfires).
     private func migrateControllerLayout() {
         let d = UserDefaults.standard
         let from = d.integer(forKey: "controllerLayoutVersion")
@@ -177,6 +184,7 @@ final class InputManager {
         if from < 5 { changed = apply(InputCatalog.menuMigration(config)) || changed }
         if from < 6 { changed = apply(InputCatalog.homeMigration(config)) || changed }
         if from < 7 { changed = apply(InputCatalog.undoMigration(config)) || changed }
+        if from < 8 { changed = apply(InputCatalog.shoulderStepMigration(config)) || changed }
         guard changed else { return }
         if let p = rn_input_save_json(handle) {
             try? String(cString: p).write(to: Self.configURL, atomically: true, encoding: .utf8)
@@ -399,6 +407,36 @@ final class InputManager {
             case .repeated(_, let member):
                 let dir = member == 0 ? -1 : 1
                 if isPausedInPlay && seekFocus < 2 { onMain { $0.onPausedShoulder?(dir) } }
+            case .suppressed(let id, let member):   // held for a gesture: no action of its own
+                let dir = member == 0 ? -1 : 1
+                if holdMembers.removeValue(forKey: id) != nil {
+                    onMain { $0.onMarkerHold?(dir, false) }
+                } else if forwardedMembers.remove(id) != nil {
+                    setPressed(id, false)
+                }
+            case .follow(let id, true, let member, _):
+                // Pressed while the other member is held on its own: L held + R = forward, R held + L =
+                // back (pause and step at the press). A member bound to a game button is the game's.
+                let dir = member == 0 ? -1 : 1
+                stepLock.lock(); let paused = stepModeOn; stepLock.unlock()
+                if isNavMode || (paused && seekFocus == 2) { break }
+                if !paused && gameMembers.contains(id) {
+                    forwardedMembers.insert(id)
+                    confirmTap.cancel()
+                    setPressed(id, true)
+                } else {
+                    onMain { $0.onPauseGesture?(dir) }
+                }
+            case .followRepeated(let id, let member):
+                let dir = member == 0 ? -1 : 1
+                if !isNavMode && seekFocus < 2 && !forwardedMembers.contains(id) { onMain { $0.onPauseGesture?(dir) } }
+            case .follow(let id, false, let member, _):
+                let dir = member == 0 ? -1 : 1
+                if forwardedMembers.remove(id) != nil {
+                    setPressed(id, false)
+                } else if isNavMode {
+                    post(dir < 0 ? .pagePrev : .pageNext)   // a page, on the release
+                }
             case .alone(let id, false, let member, let repeats):   // the trigger of a single press
                 let dir = member == 0 ? -1 : 1
                 if holdMembers.removeValue(forKey: id) != nil {
@@ -410,7 +448,7 @@ final class InputManager {
                 } else if isPausedInPlay {
                     if repeats == 0 { onMain { $0.onPausedShoulder?(dir) } }
                 } else {
-                    // A tap of its own action (pause, slow, ...): the hotkey fires on the press edge.
+                    // A tap of its own action (none by default since layout 8): the hotkey fires on the press edge.
                     confirmTap.cancel()
                     setPressed(id, true)
                     setPressed(id, false)
@@ -823,6 +861,7 @@ final class InputManager {
             guard let self else { return }
             // The detector's state is shared by every pad: forget it and release what it handed on.
             self.chord.reset()
+            self.swallowedStarts = self.swallowedStarts.filter { !$0.hasPrefix(prefix) }
             self.releaseForwardedMembers()
             self.endMarkerHolds()
             self.confirmTap.clear()
@@ -880,6 +919,20 @@ final class InputManager {
             return
         }
         emitChord(fed.events)   // a member held alone may have fired just now
+        // L or R held + START: pause (the seek bar). START never reaches the game then, nor its
+        // release; the held member does nothing of its own when released.
+        if name == "menu", down, !isNavMode {
+            let claim = chord.claimHeld(prefix: prefix, now: now())
+            emitChord(claim.events)
+            if claim.claimed > 0 {
+                swallowedStarts.insert(id)
+                confirmTap.cancel()
+                scheduleChordTick()
+                onMain { $0.onPauseGesture?(0) }
+                return
+            }
+        }
+        if !down, swallowedStarts.remove(id) != nil { return }
         if isMenuInput(id) {
             if down { post(.menu) }
             return

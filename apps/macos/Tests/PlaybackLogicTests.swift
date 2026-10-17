@@ -55,14 +55,15 @@ final class PlaybackLogicTests: XCTestCase {
         XCTAssertNotEqual(held & UInt32(RN_HK_FAST_FORWARD), 0)
         rn_input_set_pressed(h, "gc0:rightTrigger", 0)
 
+        // Layout 8: L / R alone have no hotkey (the L+R chord members' gestures pause / step instead).
         rn_input_set_pressed(h, "gc0:leftShoulder", 1)
         rn_input_poll_hotkeys(h, &e, &held)
-        XCTAssertNotEqual(e & UInt32(RN_HK_SLOW), 0)
+        XCTAssertEqual(e & UInt32(RN_HK_SLOW), 0)
         rn_input_set_pressed(h, "gc0:leftShoulder", 0)
 
         rn_input_set_pressed(h, "gc0:rightShoulder", 1)
         rn_input_poll_hotkeys(h, &e, &held)
-        XCTAssertNotEqual(e & UInt32(RN_HK_PAUSE), 0)
+        XCTAssertEqual(e & UInt32(RN_HK_PAUSE), 0)
         rn_input_sample_game(h, 1, &p1, &p2)
         XCTAssertEqual(p1, 0)
     }

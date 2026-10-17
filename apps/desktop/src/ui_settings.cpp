@@ -102,10 +102,10 @@ std::string UI::itemValue(const std::string& id) const {
     std::snprintf(b, sizeof b, "%.2f\xC3\x97", double(s.uiScale));
     return b;
   }
-  if (id == "updates.status") {
-    if (d_.updates && d_.updates->ownsDialogs()) return TRF("Version %@", {RNL_APP_VERSION});
+  if (id == "updates.status") {  // under the version row (Settings > System > ReplayNES Version)
+    if (d_.updates && d_.updates->ownsDialogs()) return "\xE2\x80\x94";  // the updater's own dialogs tell
     std::string t = updateStatusText();
-    return t.empty() ? TRF("Version %@", {RNL_APP_VERSION}) : t;
+    return t.empty() ? std::string(TR("Not checked yet")) : t;
   }
   if (id == "updates.apply") return update_.phase == UpdatePhase::installed ? TR("Restart") : "";
   if (id == "about.version") return RNL_APP_VERSION;
@@ -462,6 +462,7 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     bool assigned = rnf_list_count(acts) > 0;
     bool hotkey = false;
     for (size_t j = 0; j < rnf_list_count(acts); ++j) hotkey = hotkey || std::string(rnf_list_a(acts, j)).rfind("hk.", 0) == 0;
+    hotkey = hotkey || rnf_list_count(acts) == 0;  // a badge with no action: the L+R members' frame-step gesture
     rnf_list_free(acts);
     bool down = in.pressed().count(id) > 0;
     ImU32 fill = down ? kBrand : assigned ? IM_COL32(64, 66, 78, 255) : IM_COL32(255, 255, 255, 22);

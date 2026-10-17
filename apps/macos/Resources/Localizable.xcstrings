@@ -362,12 +362,12 @@
         }
       }
     },
-    "A new version of ReplayNES is available (Settings › System › Updates).": {
+    "A new version of ReplayNES is available (Settings › System › ReplayNES Version).": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ReplayNES の新しいバージョンがあります（設定 › システム › アップデート）。"
+            "value": "ReplayNES の新しいバージョンがあります（設定 › システム › ReplayNESのバージョン）。"
           }
         }
       }
@@ -516,16 +516,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "A：キーを設定・X：消去"
-          }
-        }
-      }
-    },
-    "About": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バージョン情報"
           }
         }
       }
@@ -865,16 +855,6 @@
         }
       }
     },
-    "Automatic checks and installing updates": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動確認とアップデートのインストール"
-          }
-        }
-      }
-    },
     "Automatic follows the system language": {
       "localizations": {
         "ja": {
@@ -1183,32 +1163,12 @@
         }
       }
     },
-    "Check": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "確認"
-          }
-        }
-      }
-    },
     "Check Automatically": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "自動で確認"
-          }
-        }
-      }
-    },
-    "Check for a new version": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいバージョンを確認"
           }
         }
       }
@@ -2463,6 +2423,16 @@
         }
       }
     },
+    "Folders and License": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダとライセンス"
+          }
+        }
+      }
+    },
     "Follow Display": {
       "localizations": {
         "ja": {
@@ -3532,6 +3502,16 @@
         }
       }
     },
+    "ReplayNES Version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNESのバージョン"
+          }
+        }
+      }
+    },
     "Retrying from here": {
       "comment": "Line under the resume countdown when play resumes before the end of the tape",
       "localizations": {
@@ -3539,6 +3519,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ここからやり直し"
+          }
+        }
+      }
+    },
+    "ROM and project folders, settings file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROMとプロジェクトのフォルダ、設定ファイル"
           }
         }
       }
@@ -7173,16 +7163,6 @@
         }
       }
     },
-    "Updates": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップデート"
-          }
-        }
-      }
-    },
     "Updates unavailable (installed without a repository)": {
       "localizations": {
         "ja": {
@@ -7269,12 +7249,22 @@
         }
       }
     },
-    "Version and licenses": {
+    "Version, updates and folders": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バージョンとライセンス"
+            "value": "バージョン・アップデート・フォルダ"
+          }
+        }
+      }
+    },
+    "Version, updates and licenses": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン・アップデート・ライセンス"
           }
         }
       }
@@ -7285,16 +7275,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "とても明るい画面は少し広がって暗くなります"
-          }
-        }
-      }
-    },
-    "Version, folders and license": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バージョン・フォルダ・ライセンス"
           }
         }
       }

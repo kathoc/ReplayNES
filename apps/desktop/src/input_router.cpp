@@ -92,6 +92,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 8) {  // L slow / R pause dropped: L / R alone do nothing in play (no misfires)
+      rnf_input_shoulder_step_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -399,15 +404,35 @@ void InputRouter::pumpChord() {
           if (onMarkerHold) onMarkerHold(dir, false);
         } else if (forwardedMembers_.erase(id)) {
           setPressed(id, false, ev.time, true);
+        } else if (ev.suppressed) {
+          // It was held for a gesture (the other member followed it, or START): no action of its own.
         } else if (ui_) {
           if (onUiShoulder) onUiShoulder(dir);
         } else if (paused) {
           if (ev.repeats == 0 && onPausedShoulder) onPausedShoulder(dir);
         } else {
-          // A tap of its own action (pause, slow, ...): the hotkey fires on the press edge.
+          // A tap of its own action (none by default since layout 8): the hotkey fires on the press edge.
           setPressed(id, true, ev.time, true);
           setPressed(id, false, ev.time, true);
         }
+        break;
+      // Pressed while the other member is held on its own: L held + R = forward, R held + L = back
+      // (pause and step at the press, repeated while held). A member bound to a game button is the game's.
+      case RNF_CHORD_FOLLOW_DOWN:
+        if (ui_ || (paused && seekFocus_ == 2)) break;
+        if (!pausedStepMode_ && isGameMember(id)) {
+          forwardedMembers_.insert(id);
+          setPressed(id, true, ev.time, true);
+        } else if (onPauseGesture) {
+          onPauseGesture(dir);
+        }
+        break;
+      case RNF_CHORD_FOLLOW_REPEAT:
+        if (!ui_ && seekFocus_ < 2 && !forwardedMembers_.count(id) && onPauseGesture) onPauseGesture(dir);
+        break;
+      case RNF_CHORD_FOLLOW_UP:
+        if (forwardedMembers_.erase(id)) setPressed(id, false, ev.time, true);
+        else if (ui_ && !ev.suppressed && onUiShoulder) onUiShoulder(dir);  // a page, on the release
         break;
     }
   }
@@ -497,6 +522,8 @@ void InputRouter::detach(SDL_JoystickID id) {
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
+  for (auto it = swallowedStarts_.begin(); it != swallowedStarts_.end();)
+    it = it->compare(0, prefix.size(), prefix) == 0 ? swallowedStarts_.erase(it) : std::next(it);
   confirmTap_.clear();
   for (const auto& [m, dir] : holdMembers_)
     if (onMarkerHold) onMarkerHold(dir, false);
@@ -546,6 +573,22 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
     return;
   }
   pumpChord();  // a member held alone may have fired just now
+  // L or R held + START: pause (the seek bar). START never reaches the game then, nor its release;
+  // the held member does nothing of its own when released.
+  if (std::strcmp(el, "menu") == 0 && !ui_) {
+    if (down && rnf_chord_claim_held(chord_, slotPrefix(slot).c_str(), t) > 0) {
+      pumpChord();
+      pressed_.insert(id);
+      confirmTap_.cancel();
+      swallowedStarts_.insert(id);
+      if (onPauseGesture) onPauseGesture(0);
+      return;
+    }
+  }
+  if (!down && swallowedStarts_.erase(id)) {
+    pressed_.erase(id);
+    return;
+  }
   if (menuIds_.count(id)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);

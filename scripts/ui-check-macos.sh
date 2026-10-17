@@ -78,17 +78,18 @@ PY
 
 # Input model through the real controller / keyboard paths (--inject-pad / --inject-keys), menus
 # confirming with east and going back with south (the defaults): L+R opens the menu, D-pad + east
-# open a page, south goes back, L+R closes (resumes); R alone (released) pauses, R while paused
-# steps a frame (stays paused), south tapped resumes, L alone toggles slow; Esc opens / closes;
+# open a page, south goes back, L+R closes (resumes); R held + START pauses (START not the game's,
+# R's release no step), R while paused steps a frame (stays paused), south tapped resumes, L alone
+# does nothing in play (layout 8: no slow, no pause); Esc opens / closes; L held + R pauses and steps;
 # while paused, south held through a D-pad frame step does not resume, a tap does.
 input_check() {
   local name="input"
   local pad="3:leftShoulder:d,3.04:rightShoulder:d,3.2:leftShoulder:u,3.2:rightShoulder:u"
   pad="$pad,4.5:dpad.right:d,4.6:dpad.right:u,5:face.east:d,5.1:face.east:u,6.5:face.south:d,6.6:face.south:u"
   pad="$pad,7.5:rightShoulder:d,7.53:leftShoulder:d,7.7:leftShoulder:u,7.7:rightShoulder:u"
-  pad="$pad,9:rightShoulder:d,9.05:rightShoulder:u,11:rightShoulder:d,11.05:rightShoulder:u,11.8:face.south:d,11.85:face.south:u"
+  pad="$pad,9:rightShoulder:d,9.15:menu:d,9.2:menu:u,9.25:rightShoulder:u,11:rightShoulder:d,11.05:rightShoulder:u,11.8:face.south:d,11.85:face.south:u"
   pad="$pad,12:leftShoulder:d,12.4:leftShoulder:u"
-  pad="$pad,17.5:rightShoulder:d,17.55:rightShoulder:u,18.5:face.south:d,18.6:dpad.right:d,18.7:dpad.right:u,18.9:face.south:u"
+  pad="$pad,17.4:leftShoulder:d,17.6:rightShoulder:d,17.65:rightShoulder:u,17.7:leftShoulder:u,18.5:face.south:d,18.6:dpad.right:d,18.7:dpad.right:u,18.9:face.south:u"
   pad="$pad,20:face.south:d,20.1:face.south:u"
   local d="$G/$name"
   local snaps="4:$d/a.png,6:$d/b.png,7:$d/c.png,8.5:$d/d.png,10:$d/e.png,11.5:$d/f.png,13:$d/g.png,15:$d/h.png,17:$d/i.png,19.5:$d/j.png,21:$d/k.png"
@@ -104,8 +105,8 @@ d = sys.argv[1]
 want = {  # snapshot: (menuOpen, page, paused, slow)
     "a": (True, "top", True, "Normal"), "b": (True, "retry", True, "Normal"), "c": (True, "top", True, "Normal"),
     "d": (False, None, False, "Normal"), "e": (False, None, True, "Normal"), "f": (False, None, True, "Normal"),
-    "g": (False, None, False, "1/2"), "h": (True, "top", True, "1/2"), "i": (False, None, False, "1/2"),
-    "j": (False, None, True, "1/2"), "k": (False, None, False, "1/2"),
+    "g": (False, None, False, "Normal"), "h": (True, "top", True, "Normal"), "i": (False, None, False, "Normal"),
+    "j": (False, None, True, "Normal"), "k": (False, None, False, "Normal"),
 }
 bad, skipped = [], []
 J = {k: json.load(open(f"{d}/{k}.json")) for k in want}
@@ -119,7 +120,8 @@ for k, (menu, page, paused, slow) in want.items():
     got = (j["menuOpen"], j["menuPage"] if menu else None, j["paused"], j["slow"])
     if got != (menu, page, paused, slow) or j["pillMetalVisible"] != (not menu and not paused):
         bad.append(f"{k}: got {got} pill {j['pillMetalVisible']}, want {(menu, page, paused, slow)}")
-# R released while paused: one frame forward (the cursor moved by exactly one).
+# R + START paused without a step (R's release is suppressed); R released while paused: one frame
+# forward (the cursor moved by exactly one).
 if J["f"]["statusFrame"] != J["e"]["statusFrame"] + 1:
     bad.append(f"R step: frame {J['e']['statusFrame']} -> {J['f']['statusFrame']}, want +1")
 print(f"{d}: input model " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
@@ -129,13 +131,13 @@ PY
 }
 
 # Paused frame step inside the take (v0.5.0 bug: R while paused before the take end recorded a
-# frame with live input and started a new take): record ~4 s, R pauses, L2 held rewinds, then R
+# frame with live input and started a new take): record ~4 s, R + START pauses, L2 held rewinds, then R
 # (released) x4 and D-pad → x2 step 6 frames along the SAME take (length / take count unchanged,
 # still paused, still record mode); a tap of south then resumes there (after the 3 s resume
 # countdown) = a new take (count + 1).
 step_check() {
   local name="step" d="$G/step"
-  local pad="5:rightShoulder:d,5.05:rightShoulder:u,6:leftTrigger:d,6.6:leftTrigger:u"
+  local pad="5:rightShoulder:d,5.15:menu:d,5.2:menu:u,5.25:rightShoulder:u,6:leftTrigger:d,6.6:leftTrigger:u"
   pad="$pad,8:rightShoulder:d,8.05:rightShoulder:u,8.5:rightShoulder:d,8.55:rightShoulder:u"
   pad="$pad,9:rightShoulder:d,9.05:rightShoulder:u,9.5:rightShoulder:d,9.55:rightShoulder:u"
   pad="$pad,10:dpad.right:d,10.05:dpad.right:u,10.5:dpad.right:d,10.55:dpad.right:u"
@@ -164,13 +166,13 @@ sys.exit(1 if bad else 0)
 PY
 }
 
-# Resume countdown type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): R pauses, south tapped
+# Resume countdown type-ahead (docs/design/VTR_UX.md, "Countdown type-ahead"): R + START pauses, south tapped
 # (the seek bar's Play) starts the 3-2-1; during it D-pad taps, A, B (the cancel button) and a held
 # D-pad are game input only: no frame step, no cancel - still counting on the paused frame; then
 # play goes on from there.
 countdown_check() {
   local name="countdown" d="$G/countdown"
-  local pad="5:rightShoulder:d,5.05:rightShoulder:u,6:face.south:d,6.05:face.south:u"
+  local pad="5:rightShoulder:d,5.15:menu:d,5.2:menu:u,5.25:rightShoulder:u,6:face.south:d,6.05:face.south:u"
   pad="$pad,6.4:dpad.right:d,6.45:dpad.right:u,6.8:face.east:d,6.85:face.east:u"
   pad="$pad,7.2:face.south:d,7.25:face.south:u,7.6:dpad.left:d,7.65:dpad.left:u,8:dpad.right:d,10.5:dpad.right:u"
   app "$name" --rom "$ROM" --autoplay --library-root "$d/library" --session-root "$d/session" "${COMMON[@]}" \
@@ -200,7 +202,7 @@ PY
 #  controller: Settings › Controls › Controller, the D-pad moves the focus between the buttons on
 #   the picture, east opens the action picker (focus on the current action), R = next sheet, east
 #   assigns and returns, X = next pad, south goes back; the diagram of each family.
-#  markers: pause, R / L step; drop two markers (east, hold R, east), ↑ focuses one, east edits,
+#  markers: pause (R + START), R / L step; drop two markers (east, hold R, east), ↑ focuses one, east edits,
 #   D-pad / L held move it, east commits, X deletes one, south resumes.
 flows() {
   local lang
@@ -238,7 +240,7 @@ sys.exit(1 if bad else 0)
 PY
 
     name="markers-$lang"; d="$G/markers-$lang"
-    pad="3:rightShoulder:d,3.05:rightShoulder:u,5.5:rightShoulder:d,5.55:rightShoulder:u,8:leftShoulder:d,8.05:leftShoulder:u"
+    pad="3:rightShoulder:d,3.15:menu:d,3.2:menu:u,3.25:rightShoulder:u,5.5:rightShoulder:d,5.55:rightShoulder:u,8:leftShoulder:d,8.05:leftShoulder:u"
     pad="$pad,10.5:face.east:d,10.55:face.east:u,13:rightShoulder:d,14:rightShoulder:u,15:face.east:d,15.05:face.east:u"
     pad="$pad,17.5:dpad.up:d,17.55:dpad.up:u,20:face.east:d,20.05:face.east:u,22.5:dpad.left:d,22.55:dpad.left:u"
     pad="$pad,25:leftShoulder:d,26.1:leftShoulder:u,28:face.east:d,28.05:face.east:u,30.5:dpad.up:d,30.55:dpad.up:u"
@@ -258,7 +260,7 @@ def check(cond, msg):
     if not cond: bad.append(msg)
 f = lambda k: J[k]["statusFrame"]
 slot0 = lambda k: next((s for s in J[k]["practiceSlots"] if s["slot"] == 0), None)
-check(J[0]["paused"], "R did not pause")
+check(J[0]["paused"], "R + START did not pause")
 check(J[1]["paused"] and f(1) == f(0) + 1, f"R step: {f(0)} -> {f(1)}")
 check(J[2]["paused"] and f(2) == f(1) - 1, f"L step: {f(1)} -> {f(2)}")
 check(J[3]["markers"] == [f(2)] and slot0(3) and not slot0(3)["hasB"], f"first marker: {J[3]['markers']} slot {slot0(3)}")

@@ -180,6 +180,12 @@ void UI::pausedShoulder(int dir) {
   d_.emu->step(dir);
 }
 
+void UI::pauseGesture(int dir) {
+  if (!hasSession() || menuOpen_ || interactive() || rnf_markers_editing(markers_)) return;
+  if (dir == 0) d_.emu->setPaused(true);
+  else d_.emu->step(dir);  // pauses first
+}
+
 // ------------------------------------------------------------------ seek bar
 
 bool UI::seekBarShown() const {

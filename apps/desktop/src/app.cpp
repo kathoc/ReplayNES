@@ -329,6 +329,7 @@ int App::run(const AppOptions& opt) {
   input_->onSeekInput = [this](InputRouter::SeekInput in, bool down) { ui_->seekInput(int(in), down); };
   input_->onMarkerHold = [this](int dir, bool down) { ui_->markerHold(dir, down); };
   input_->onPausedShoulder = [this](int dir) { ui_->pausedShoulder(dir); };
+  input_->onPauseGesture = [this](int dir) { ui_->pauseGesture(dir); };
   input_->onUiShoulder = [this](int dir) { ui_->shoulder(dir); };
   ui_->onLanguage = [this](const std::string& l) { pendingLanguage_ = l; };
   input_->onDisconnect = [this](const std::string& name) {

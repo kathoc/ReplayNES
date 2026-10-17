@@ -332,13 +332,13 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 7
+#define RNF_CONTROLLER_LAYOUT_VERSION 8
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
 /* Engine config JSON (rn_input_load_json) of the defaults. */
 char* rnf_input_default_config_json(rnf_keyboard_scheme scheme);
-/* Controller hotkeys of layout 1 (<= 0.1.x) and layout 2+ (pairs in a = input, b = action). */
+/* Controller hotkeys of layout 1 (<= 0.1.x) and layouts 2-7 (pairs in a = input, b = action). */
 rnf_list* rnf_input_legacy_controller_hotkeys(void);
 rnf_list* rnf_input_controller_hotkeys(void);
 /* Layout-2 face defaults (GameController names "gc<slot>:buttonA" ...) of a slot. */
@@ -391,6 +391,11 @@ void rnf_input_home_migration(const rnf_binding* bindings, size_t count, rnf_lis
 /* Layout 6 -> 7: pad 1's L3 (left stick press) = "hk.undo_take" (Undo of a retry, docs/design/VTR_UX.md)
  * unless L3 is taken or the action already has a pad 1 button. */
 void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
+/* Layout 7 -> 8: pad 1's L (hk.slow) and R (hk.pause) alone do nothing in play any more (they misfired
+ * next to the L+R chord): each of those two default bindings still present is unbound (other actions
+ * on L / R stay). Pause / frame steps are the combo members' gestures (L held + R, R held + L, L / R
+ * held + START: docs/design/UI_REDESIGN.md); slow motion stays in the Quick Menu and on the keyboard. */
+void rnf_input_shoulder_step_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Two-input combo ids "<a>+<b>" (both held: e.g. the Quick Menu's L+R). rnf_input_combo_id: NULL for an empty
  * part. rnf_input_combo_split: 1 and the parts (free with rnf_string_free) when id is a combo. */
 char* rnf_input_combo_id(const char* a, const char* b);
@@ -520,6 +525,15 @@ rnf_group_summary rnf_input_group_summary(const rnf_binding* bindings, size_t co
  *     at press + RNF_CHORD_HOLD_DELAY and then every RNF_CHORD_REPEAT_INTERVAL until released (paused
  *     frame stepping); its ALONE_UP then carries the number of repeats (the frontend skips the
  *     single action when it is > 0). A chorded member never repeats.
+ *   - a member pressed while the other one is already held on its own (after the window: L held,
+ *     then R) FOLLOWS it: RNF_CHORD_FOLLOW_DOWN at once (no window: it can no longer be the chord),
+ *     RNF_CHORD_FOLLOW_REPEAT at press + RNF_CHORD_HOLD_DELAY and every RNF_CHORD_REPEAT_INTERVAL
+ *     (always, not only in repeat mode), RNF_CHORD_FOLLOW_UP on its release (the frame-step
+ *     gesture: L held + R = forward, R held + L = back). The held member becomes the LEAD: it stops
+ *     repeating and its release (ALONE_UP / FOLLOW_UP) has `suppressed` set (skip its single action).
+ *     Pressing the follower again while the lead is still held follows again.
+ *   - rnf_chord_claim_held: the members held now (pending, alone, follow) become leads (the frontend
+ *     used them as a modifier, e.g. L / R held + START = pause): no repeat, no chord, release suppressed.
  *   - repeated presses of a held id (key repeat) are ignored.
  * Times are seconds on one monotonic clock (event timestamps). Not thread-safe. */
 #define RNF_CHORD_WINDOW 0.100
@@ -531,14 +545,18 @@ typedef enum rnf_chord_kind {
   RNF_CHORD_COMBO_UP = 1,    /* both released after COMBO_DOWN: release the combo id */
   RNF_CHORD_ALONE_DOWN = 2,  /* member held alone (or tapped): it is not part of a chord */
   RNF_CHORD_ALONE_UP = 3,    /* that member released: the single press's trigger */
-  RNF_CHORD_ALONE_REPEAT = 4 /* repeat mode: held alone >= RNF_CHORD_HOLD_DELAY (and every interval) */
+  RNF_CHORD_ALONE_REPEAT = 4, /* repeat mode: held alone >= RNF_CHORD_HOLD_DELAY (and every interval) */
+  RNF_CHORD_FOLLOW_DOWN = 5,  /* pressed while the other member is held on its own (the step gesture) */
+  RNF_CHORD_FOLLOW_REPEAT = 6, /* a follower held >= RNF_CHORD_HOLD_DELAY (and every interval) */
+  RNF_CHORD_FOLLOW_UP = 7      /* the follower released */
 } rnf_chord_kind;
 typedef struct rnf_chord_event {
   rnf_chord_kind kind;
   const char* input; /* valid until the next call on the handle */
   int member;        /* ALONE_*: 0 = the combo's first id (L), 1 = the second (R); COMBO_*: -1 */
   double time;       /* when it happened (the release, press + window for a held member, the repeat) */
-  int repeats;       /* ALONE_UP / ALONE_REPEAT: repeats fired during this hold so far (incl. this one) */
+  int repeats;       /* *_UP / *_REPEAT: repeats fired during this hold so far (incl. this one) */
+  int suppressed;    /* ALONE_UP / FOLLOW_UP: 1 = it led a follow press or was claimed (skip its action) */
 } rnf_chord_event;
 rnf_chord* rnf_chord_new(double window); /* <= 0: RNF_CHORD_WINDOW */
 void rnf_chord_free(rnf_chord* c);
@@ -565,6 +583,9 @@ void rnf_chord_reset(rnf_chord* c);
  * counts its hold from its press. */
 void rnf_chord_set_repeat(rnf_chord* c, int on);
 int rnf_chord_repeat(const rnf_chord* c);
+/* The members held now whose id starts with `prefix` (NULL: all) become leads (see above), after
+ * firing what is due at t. Returns how many: 0 = none held (e.g. START then goes to the game). */
+size_t rnf_chord_claim_held(rnf_chord* c, const char* prefix, double t);
 
 /* ------------------------------------------------------------------ UI confirm / cancel
  * Menus, dialogs, the on-screen keyboard, prompts and the paused seek bar confirm with the EAST face

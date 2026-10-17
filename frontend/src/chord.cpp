@@ -1,7 +1,10 @@
 // Chord detector: two-button combos (the Quick Menu's L+R) next to the members' own actions.
 // Each member of a combo is UP, PENDING (pressed, the other may still come within the window),
-// ALONE (held on its own: its single press fires on release, repeats in repeat mode) or CHORDED
-// (part of a fired combo, suppressed until released). See frontend.h for the rules.
+// ALONE (held on its own: its single press fires on release, repeats in repeat mode), FOLLOW
+// (pressed while the other member was already held on its own: the sequential L-then-R gesture,
+// always repeats) or CHORDED (part of a fired combo, suppressed until released). A LEAD member (the
+// held one a follow press came after, or one claimed with rnf_chord_claim_held) never repeats and
+// reports its release as suppressed. See frontend.h for the rules.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <deque>
 #include <memory>
@@ -12,14 +15,15 @@
 
 namespace {
 
-enum class State { up, pending, alone, chorded };
+enum class State { up, pending, alone, follow, chorded };
 
 struct Combo {
   std::string id, member[2];
   State state[2] = {State::up, State::up};
   double since[2] = {0, 0};  // press time
   int repeats[2] = {0, 0};   // ALONE: repeats fired during this hold
-  double next[2] = {0, 0};   // ALONE: when the next repeat is due (repeat mode)
+  double next[2] = {0, 0};   // ALONE / FOLLOW: when the next repeat is due
+  bool lead[2] = {false, false};  // led a follow press / claimed: no repeat, release suppressed
   bool comboDown = false;    // COMBO_DOWN sent, COMBO_UP not yet
 };
 
@@ -29,6 +33,7 @@ struct Event {
   int member;
   double time;
   int repeats;
+  bool suppressed;
 };
 
 }  // namespace
@@ -51,8 +56,14 @@ struct rnf_chord {
     return false;
   }
 
-  void push(rnf_chord_kind k, const std::string& input, int member, double t, int repeats = 0) {
-    queue.push_back({k, input, member, t, repeats});
+  void push(rnf_chord_kind k, const std::string& input, int member, double t, int repeats = 0, bool suppressed = false) {
+    queue.push_back({k, input, member, t, repeats, suppressed});
+  }
+
+  // The repeats a held member fires: ALONE in repeat mode, FOLLOW always; never a lead.
+  bool repeating(const Combo& c, int m) const {
+    if (c.lead[m]) return false;
+    return (c.state[m] == State::alone && repeat) || c.state[m] == State::follow;
   }
 
   void tick(double t) {
@@ -62,13 +73,14 @@ struct rnf_chord {
           c.state[m] = State::alone;
           push(RNF_CHORD_ALONE_DOWN, c.member[m], m, c.since[m] + window);
         }
-        if (repeat && c.state[m] == State::alone && t >= c.next[m]) {
+        if (repeating(c, m) && t >= c.next[m]) {
           // One repeat per tick: after a stall (or repeat turned on late) it resumes from now.
           double at = c.next[m];
           c.repeats[m] += 1;
           c.next[m] += RNF_CHORD_REPEAT_INTERVAL;
           if (c.next[m] <= t) c.next[m] = t + RNF_CHORD_REPEAT_INTERVAL;
-          push(RNF_CHORD_ALONE_REPEAT, c.member[m], m, at, c.repeats[m]);
+          push(c.state[m] == State::follow ? RNF_CHORD_FOLLOW_REPEAT : RNF_CHORD_ALONE_REPEAT, c.member[m], m, at,
+               c.repeats[m]);
         }
       }
   }
@@ -80,15 +92,22 @@ struct rnf_chord {
       if (c.state[m] != State::up) return;  // repeat of a held member
       if (c.comboDown) {
         c.state[m] = State::chorded;  // re-pressed while the chord is still held: nothing
-      } else if (c.state[o] == State::pending) {
+      } else if (c.state[o] == State::pending && !c.lead[o]) {
         c.state[m] = c.state[o] = State::chorded;
+        c.lead[m] = c.lead[o] = false;
         c.comboDown = true;
         push(RNF_CHORD_COMBO_DOWN, c.id, -1, t);
       } else {
-        c.state[m] = State::pending;
+        bool follow = c.state[o] != State::up;  // the other is held on its own (or claimed): no window
+        c.state[m] = follow ? State::follow : State::pending;
+        c.lead[m] = false;
         c.since[m] = t;
         c.repeats[m] = 0;
         c.next[m] = t + RNF_CHORD_HOLD_DELAY;
+        if (follow) {
+          c.lead[o] = true;
+          push(RNF_CHORD_FOLLOW_DOWN, c.member[m], m, t);
+        }
       }
       return;
     }
@@ -96,9 +115,10 @@ struct rnf_chord {
       case State::up: return;
       case State::pending:  // a tap shorter than the window: fires on its release
         push(RNF_CHORD_ALONE_DOWN, c.member[m], m, t);
-        push(RNF_CHORD_ALONE_UP, c.member[m], m, t);
+        push(RNF_CHORD_ALONE_UP, c.member[m], m, t, 0, c.lead[m]);
         break;
-      case State::alone: push(RNF_CHORD_ALONE_UP, c.member[m], m, t, c.repeats[m]); break;
+      case State::alone: push(RNF_CHORD_ALONE_UP, c.member[m], m, t, c.repeats[m], c.lead[m]); break;
+      case State::follow: push(RNF_CHORD_FOLLOW_UP, c.member[m], m, t, c.repeats[m], c.lead[m]); break;
       case State::chorded:
         if (c.state[o] != State::chorded && c.comboDown) {
           c.comboDown = false;
@@ -107,6 +127,7 @@ struct rnf_chord {
         break;
     }
     c.state[m] = State::up;
+    c.lead[m] = false;
   }
 };
 
@@ -191,7 +212,7 @@ double rnf_chord_deadline(const rnf_chord* c) {
     for (int m = 0; m < 2; ++m) {
       double d = 0;
       if (k.state[m] == State::pending) d = k.since[m] + c->window;
-      else if (k.state[m] == State::alone && c->repeat) d = k.next[m];
+      else if (c->repeating(k, m)) d = k.next[m];
       if (d > 0 && (best == 0 || d < best)) best = d;
     }
   return best;
@@ -215,6 +236,7 @@ int rnf_chord_poll(rnf_chord* c, rnf_chord_event* out) {
     out->member = e.member;
     out->time = e.time;
     out->repeats = e.repeats;
+    out->suppressed = e.suppressed ? 1 : 0;
   }
   return 1;
   RNF_GUARD_END(0)
@@ -225,8 +247,27 @@ void rnf_chord_reset(rnf_chord* c) {
   c->queue.clear();
   for (Combo& k : c->combos) {
     k.state[0] = k.state[1] = State::up;
+    k.lead[0] = k.lead[1] = false;
     k.comboDown = false;
   }
+}
+
+size_t rnf_chord_claim_held(rnf_chord* c, const char* prefix, double t) {
+  if (!c) return 0;
+  RNF_GUARD_BEGIN
+  c->tick(t);
+  size_t n = 0;
+  std::string p = prefix ? prefix : "";
+  for (Combo& k : c->combos)
+    for (int m = 0; m < 2; ++m) {
+      State s = k.state[m];
+      if (s != State::pending && s != State::alone && s != State::follow) continue;
+      if (k.member[m].compare(0, p.size(), p) != 0) continue;
+      k.lead[m] = true;
+      ++n;
+    }
+  return n;
+  RNF_GUARD_END(0)
 }
 
 }  // extern "C"

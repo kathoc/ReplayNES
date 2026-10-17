@@ -50,7 +50,7 @@ input only, typed ahead for the first frame:
   game when play resumes), no seek bar tap, no countdown cancel (the controller's cancel tap
   cancels only the practice countdown), no hint action.
 - Hotkeys that are not NES buttons keep their meaning: L2 / R2 (rewind / fast-forward; holding
-  one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too),
+  one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too), L / R held + START (a pause) and L held + R / R held + L (a step),
   L3 (Undo), the pause hotkey (cancels).
 - **Held through**: a button held when the countdown ends is pressed from the very first frame
   (the normal sample of that frame).

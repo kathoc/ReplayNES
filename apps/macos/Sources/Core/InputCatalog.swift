@@ -100,6 +100,10 @@ enum InputCatalog {
     /// is taken or the action already has a pad 1 button.
     static func undoMigration(_ c: Config) -> Plan { plan(c) { rnf_input_undo_migration($0, $1, $2, $3) } }
 
+    /// Layout 7 -> 8: pad 1's L (slow) / R (pause) alone do nothing in play any more (they misfired next
+    /// to L+R): those default bindings are dropped. L held + R / R held + L step, L / R held + START pauses.
+    static func shoulderStepMigration(_ c: Config) -> Plan { plan(c) { rnf_input_shoulder_step_migration($0, $1, $2, $3) } }
+
     /// The pad 1 control bound to `action` ("gc0:<element>"), or the first keyboard key.
     static func boundInput(_ c: Config, action: String, pad: Bool) -> String? {
         c.bindings.first { $0.action == action && !isCombo($0.input) && $0.input.hasPrefix(pad ? "gc0:" : "kb:") }?.input

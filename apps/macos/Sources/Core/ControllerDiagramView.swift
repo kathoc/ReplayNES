@@ -160,8 +160,10 @@ struct ControllerDiagramView: View {
         }
     }
 
+    /// A badge without an action of its own is the L+R chord members' frame-step gesture: a hotkey too.
     private func isHotkey(_ element: String) -> Bool {
-        ControllerAssignments.actions(element: element, slot: slot, config: config).contains { $0.hasPrefix("hk.") }
+        let actions = ControllerAssignments.actions(element: element, slot: slot, config: config)
+        return actions.isEmpty || actions.contains { $0.hasPrefix("hk.") }
     }
 }
 

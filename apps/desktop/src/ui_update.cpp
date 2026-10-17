@@ -36,7 +36,7 @@ void UI::refreshUpdate() {
   }
   // While playing (no library on screen): a short notice when something is waiting.
   if (hasSession() && !update_.noticeHidden) {
-    if (update_.phase == UpdatePhase::available) notice(TR("A new version of ReplayNES is available (Settings › System › Updates)."));
+    if (update_.phase == UpdatePhase::available) notice(TR("A new version of ReplayNES is available (Settings › System › ReplayNES Version)."));
     else if (update_.phase == UpdatePhase::installed) notice(TR("The update is installed. Restart ReplayNES to use it."));
   }
 }
@@ -79,7 +79,7 @@ std::string UI::updateStatusText() const {
   return {};
 }
 
-// The library's notice: a small pill in its top bar; a click / tap opens Settings > System > Updates.
+// The library's notice: a small pill in its top bar; a click / tap opens Settings > System > ReplayNES Version.
 void UI::buildUpdateNotice(const LRect& r) {
   if (!update_.noticeVisible()) return;
   ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -88,7 +88,7 @@ void UI::buildUpdateNotice(const LRect& r) {
   std::string t = std::string(icons::glyph("download")) + "  " + updateStatusText();
   theme::textFit(dl, metrics_.hint(), ImVec2(r.x + S(14), r.y + (r.h - metrics_.hint()) / 2), r.w - S(28), theme::kText, t);
   ImGui::SetCursorScreenPos(ImVec2(r.x, r.y));
-  if (ImGui::InvisibleButton("##updatenotice", ImVec2(r.w, r.h))) openPage("system.updates");
+  if (ImGui::InvisibleButton("##updatenotice", ImVec2(r.w, r.h))) openPage("system.about");
 }
 
 bool UI::scriptUpdate(const std::string& action) {
