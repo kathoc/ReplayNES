@@ -22,8 +22,8 @@ packages:
     exactVersion: 2.10.0
 settings:
   base:
-    MARKETING_VERSION: "0.6.0"
-    CURRENT_PROJECT_VERSION: "12"
+    MARKETING_VERSION: "0.6.1"
+    CURRENT_PROJECT_VERSION: "13"
     SWIFT_VERSION: "5.0"
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO

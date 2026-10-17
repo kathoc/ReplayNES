@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.1" date="2026-10-17">
+      <description>
+        <p>The picture never stays frozen (display watchdog with fallback and an on-screen picture rate), the CRT display shows RF snow with no signal and a power-on effect (also in CRT videos), and the CRT picture is now exactly 8:7. Buttons pressed during the resume countdown reach the game. Shoulder buttons no longer misfire in play: hold L + R to step forward, R + L to step back, L or R + START to pause. Also: a Stop Practice button (Y toggles practice), face buttons shown by position, and a "ReplayNES Version" settings page that includes Updates.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-14">
       <description>
         <p>Video-deck style controls: playing is recording, with no REC badge and no takes to manage. Releasing Rewind counts down 3-2-1 and plays on ("Retrying from here"); Undo (L3) brings back the previous run for 10 seconds; in Playback any game button plays from there. "Make Video" replaces MP4 export with a one-screen dialog (range, quality, estimated size). Also: one-time tips for new players, flash reduction that only reduces real flashes, and a display watchdog that recovers a stalled or broken CRT picture.</p>
