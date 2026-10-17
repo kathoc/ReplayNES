@@ -451,6 +451,7 @@ void UI::buildPageHeader(const PageGeometry& g, size_t page) {
   // LIST: "2 / 3" with L / R, right-aligned; the page's own column title on the left.
   size_t sheets = rnf_menu_sheet_count(menu_);
   std::string left;
+  float leftX = g.header.x + S(6);
   std::string id = pi.id;
   if (id == "controls.keyboard") left = TR("Action");
   else if (id == "controls.assign" && !assignElement_.empty()) {
@@ -458,9 +459,13 @@ void UI::buildPageHeader(const PageGeometry& g, size_t page) {
     rnf_input_controller_slot(assignElement_.c_str(), &slot);
     std::string el = assignElement_.substr(assignElement_.find(':') + 1);
     left = str(rnf_input_element_title(el.c_str(), diagramFamily(slot), nullptr));
+    if (rnf_ui_face_glyph(el.c_str(), southConfirm()) != RNF_FACE_GLYPH_NONE) {  // the position glyph first
+      float fh = m.hint() * 1.2f;
+      leftX += faceGlyph(dl, ImVec2(leftX, cy - fh / 2), el, fh, true, kTextDim, alpha(kTextDim, 0.6f)) + S(8);
+    }
   }
   else if (id == "library.projects" && projectsRom()) left = projectsRom()->name;
-  if (!left.empty()) textFit(dl, m.hint() * 1.1f, ImVec2(g.header.x + S(6), cy - m.hint() * 0.55f), g.header.w * 0.6f, kTextDim, left);
+  if (!left.empty()) textFit(dl, m.hint() * 1.1f, ImVec2(leftX, cy - m.hint() * 0.55f), g.header.w * 0.6f, kTextDim, left);
   if (sheets > 1) {
     std::string n = std::to_string(rnf_menu_sheet(menu_) + 1) + " / " + std::to_string(sheets);
     float rw = glyph(dl, ImVec2(), "rightShoulder", fam, gh, false), nw = measure(m.label(), n.c_str()).x;
@@ -517,20 +522,19 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
       }
       case RNF_MENU_ITEM_CHOICE: {
         if (std::strcmp(it.id, "controls.confirm") == 0) {
-          // The button pair as glyphs of the controller family: "(A) Confirm  (B) Back".
+          // The button pair as position glyphs (right on every family): "◎ Confirm  ◎ Back".
           bool south = d_.settings->southConfirm;
-          rnf_controller_family fam = promptFamily();
           float gh = m.label() * 1.25f, aw = m.label() * 0.9f;
           const std::pair<const char*, const char*> parts[] = {{rnf_ui_confirm_element(south), TR("Confirm")},
                                                                {rnf_ui_cancel_element(south), TR("Back")}};
           float w = aw * 2 + S(12);
-          for (const auto& [el, verb] : parts) w += keycap(dl, ImVec2(), gh, padGlyph(fam, el), true, false) + S(6) +
+          for (const auto& [el, verb] : parts) w += faceGlyph(dl, ImVec2(), el, gh, false) + S(6) +
                                                    measure(m.label(), verb).x + S(14);
           float x = valueRight - w;
           icon(dl, "chevron-left", ImVec2(x + aw / 2, cy), m.label(), f ? kText : kTextFaint);
           x += aw + S(6);
           for (const auto& [el, verb] : parts) {
-            x += keycap(dl, ImVec2(x, cy - gh / 2), gh, padGlyph(fam, el), true) + S(6);
+            x += faceGlyph(dl, ImVec2(x, cy - gh / 2), el, gh, true, fg, alpha(fg, 0.55f)) + S(6);
             dl->AddText(ImGui::GetFont(), m.label(), ImVec2(x, cy - m.label() / 2), fg, verb);
             x += measure(m.label(), verb).x + S(14);
           }

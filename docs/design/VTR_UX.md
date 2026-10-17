@@ -47,8 +47,7 @@ input only, typed ahead for the first frame:
 
 - They never act on the UI or the transport: no frame step (the paused D-pad ←/→ stepping is off
   while the game is unpaused, and a direction still held from stepping is handed back to the
-  game when play resumes), no seek bar tap, no countdown cancel (the controller's cancel tap
-  cancels only the practice countdown), no hint action.
+  game when play resumes), no seek bar tap, no countdown cancel (neither countdown has a cancel tap; Y stops practice), no hint action.
 - Hotkeys that are not NES buttons keep their meaning: L2 / R2 (rewind / fast-forward; holding
   one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too), L / R held + START (a pause) and L held + R / R held + L (a step),
   L3 (Undo), the pause hotkey (cancels).
@@ -65,8 +64,9 @@ input only, typed ahead for the first frame:
   modal dialog that holds the countdown at its start starts the type-ahead over as well.
 - Shared core: `rnf_resume_countdown_input` (every counting tick: the sampled pads) and
   `rnf_resume_countdown_apply` (every live frame between `rn_input_sample_game` and `rn_step`);
-  ctest `test_frontend_resume_countdown`. The practice countdown (after returning to A) is
-  unchanged: its input is dropped and its cancel tap ends practice.
+  ctest `test_frontend_resume_countdown`. The practice countdown (after returning to A) has no cancel tap
+  either (2026-10-17): its NES buttons are game input (held through = held from the first frame);
+  practice stops with Y or the "■ Stop Practice" status button.
 
 ## Screens
 

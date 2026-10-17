@@ -1,6 +1,7 @@
 // Frontend core: the paused seek bar's controller model (docs/design/UI_REDESIGN.md): UI confirm /
 // cancel buttons, the one hold speed curve (rewind, fast-forward, a held marker), the A/B markers,
 // the controller diagram's outline and the button action picker.
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,30 @@ std::vector<uint64_t> frames(const rnf_markers* m) {
 rnf_timeline_range range(uint64_t a, int hasB, uint64_t b) { return rnf_timeline_range{0, a, hasB, b}; }
 
 }  // namespace
+
+TEST_CASE("face-button hints: the position glyph (filled circle), confirm / cancel follow the swap") {
+  CHECK_EQ(rnf_ui_face_glyph("face.north", 0), RNF_FACE_GLYPH_NORTH);
+  CHECK_EQ(rnf_ui_face_glyph("gc1:face.west", 0), RNF_FACE_GLYPH_WEST);
+  CHECK_EQ(rnf_ui_face_glyph("ui.confirm", 0), RNF_FACE_GLYPH_EAST);
+  CHECK_EQ(rnf_ui_face_glyph("ui.cancel", 0), RNF_FACE_GLYPH_SOUTH);
+  CHECK_EQ(rnf_ui_face_glyph("ui.confirm", 1), RNF_FACE_GLYPH_SOUTH);
+  CHECK_EQ(rnf_ui_face_glyph("ui.cancel", 1), RNF_FACE_GLYPH_EAST);
+  CHECK_EQ(rnf_ui_face_glyph("leftShoulder", 0), RNF_FACE_GLYPH_NONE);
+  CHECK_EQ(rnf_ui_face_glyph("menu", 0), RNF_FACE_GLYPH_NONE);
+  CHECK_EQ(rnf_ui_face_glyph(nullptr, 0), RNF_FACE_GLYPH_NONE);
+  rnf_face_glyph_circle c[4];
+  for (int i = 0; i < 4; ++i) REQUIRE(rnf_ui_face_glyph_circle(i, 20, &c[i]));
+  CHECK_FALSE(rnf_ui_face_glyph_circle(4, 20, &c[0]));
+  // A diamond inside the box: north above, south below, east right, west left; no overlap.
+  CHECK(c[0].y < c[1].y);
+  CHECK(c[2].y > c[1].y);
+  CHECK(c[1].x > c[0].x);
+  CHECK(c[3].x < c[0].x);
+  for (auto& k : c) CHECK((k.x - k.radius >= 0 && k.x + k.radius <= 20 && k.y - k.radius >= 0 && k.y + k.radius <= 20));
+  double gap = std::hypot(c[0].x - c[1].x, c[0].y - c[1].y) - 2 * c[0].radius;
+  CHECK(gap > 0);
+  CHECK_EQ(std::string(rnf_ui_face_glyph_name(RNF_FACE_GLYPH_EAST)), "Right button");
+}
 
 TEST_CASE("UI confirm / cancel: east confirms, south cancels by default; the setting swaps them") {
   CHECK_EQ(std::string(rnf_ui_confirm_element(0)), "face.east");

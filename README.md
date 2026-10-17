@@ -210,7 +210,7 @@ Practice only the tricky section over and over without recording.
 2. Choose the card to practice from A. Play to where the section should end, open the menu and choose **Set B** on that card (outside practice: play on from A and use Practice › Set B Here (Timeline), ⌥⌘O). Each section shows its length (minutes:seconds.frames); Y renames, X clears.
 3. Choose a finished section to **practice** it: play starts at A, and **at B the picture holds for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again**.
 4. While practicing you can also use L2 rewind (back to A), pause (L or R held + START), L held + R / R held + L frame steps, and the D-pad frame advance / step back while paused.
-5. **Stop Practicing** (on the active card, or ⇧⌘P) returns you exactly to the position in the take from before you started.
+5. **■ Stop Practice** (the button at the bottom left while practicing; **Y** on the controller - playing, paused or in the countdown; the active card; ⇧⌘P) returns you exactly to the position in the take from before you started ("Practice stopped"). The countdown has no cancel button: buttons pressed there are game input.
 
 - Nothing is recorded during practice. The take does not change.
 - Set B at a position you reached by playing on from A. If you rewound, or moved on the seek bar after A, a message says so (start over from A, or set A again).

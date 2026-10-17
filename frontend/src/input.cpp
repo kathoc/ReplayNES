@@ -992,6 +992,9 @@ char* rnf_input_element_title(const char* element_c, rnf_controller_family f, co
   for (auto& p : positional) {
     if (element != p.element) continue;
     std::string pt = tr(p.text);
+    // Face buttons: the position only (the frontends draw the position glyph, rnf_ui_face_glyph: the
+    // printed letter differs per family and A / B swap places between them).
+    if (rnf_ui_face_glyph(p.element, 0) != RNF_FACE_GLYPH_NONE) return dup(pt);
     return dup(label.empty() ? pt : trf(RNF_L("%@ (%@)"), {argS(pt), argS(label)}));
   }
   return dup(label.empty() ? element : label);

@@ -645,10 +645,11 @@ TEST_CASE("diagram elements per family") {
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_PLAYSTATION, "face.east")), "○");
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_NINTENDO, "leftTrigger")), "ZL");
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_XBOX, "rightTrigger")), "RT");
-  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "Right Button (A)");
+  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "Right Button");  // + the position glyph
   CHECK_EQ(take(rnf_input_element_title("dpad.up", RNF_FAMILY_XBOX, nullptr)), "D-pad ↑");
   CHECK_EQ(take(rnf_input_element_title("leftTrigger", RNF_FAMILY_NINTENDO, nullptr)), "ZL");
-  CHECK_EQ(take(rnf_input_element_title("face.south", RNF_FAMILY_XBOX, "X")), "Bottom Button (X)");
+  CHECK_EQ(take(rnf_input_element_title("face.south", RNF_FAMILY_XBOX, "X")), "Bottom Button");
+  CHECK_EQ(take(rnf_input_element_title("leftThumb", RNF_FAMILY_XBOX, nullptr)), "Left Stick Press (LS)");
   rnf_diagram_info info;
   rnf_diagram_info_get(RNF_FAMILY_PLAYSTATION, &info);
   CHECK(info.has_touchpad);

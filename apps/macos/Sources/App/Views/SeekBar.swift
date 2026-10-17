@@ -43,7 +43,8 @@ struct SeekBarOverlay: View {
 
     /// The buttons of the state (docs/design/VTR_UX.md, at most 4 on the bar): cancel Play (Continue
     /// at the end of the tape) · L R Step · L2 R2 Rewind / Fast-forward · ↑ Practice sections. After ↑
-    /// (the marker lane): cancel Play · confirm Marker · ↑ Markers · Y Practice · X A/B n; a marker
+    /// (the marker lane): cancel Play · confirm Marker · ↑ Markers · Y Practice · X A/B n; practicing:
+    /// cancel Play · L R Step · Y Stop Practicing · L2 R2; a marker
     /// (←→ Select · confirm Move · X Delete · cancel Back) or editing one (←→ ±1 · L R Move · confirm
     /// Done · cancel Undo). The buttons themselves are unchanged. Keyboard only: Space plays.
     /// The Undo / Make Video chips sit at the row's right end.
@@ -68,8 +69,10 @@ struct SeekBarOverlay: View {
                 items.append(([.key(g.x)], "A/B \(min(7, max(0, strip.selectedSlot)) + 1)"))
             } else {
                 let rw = model.controlName(for: "hk.rewind") ?? "L2", ff = model.controlName(for: "hk.fast_forward") ?? "R2"
-                items = [([.key(g.back)], play), ([.key(g.l), .key(g.r)], String(localized: "Step")),
-                         ([.key(rw), .key(ff)], String(localized: "Rewind") + " / " + String(localized: "Fast-forward"))]
+                items = [([.key(g.back)], play), ([.key(g.l), .key(g.r)], String(localized: "Step"))]
+                // Practicing: Y stops it (Y toggles practice: on the marker lane it starts one).
+                if st.practicing { items.append(([.key(g.y)], String(localized: "Stop Practicing"))) }
+                items.append(([.key(rw), .key(ff)], String(localized: "Rewind") + " / " + String(localized: "Fast-forward")))
                 if on { items.append(([.dpadUp], Self.withoutArrow(String(localized: "↑ Practice sections")))) }
             }
         } else {

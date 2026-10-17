@@ -100,7 +100,10 @@ final class FrontendBridgeTests: XCTestCase {
         XCTAssertEqual(ControllerAssignments.group("dpad", slot: 0, config: c), .movement("Move"))
         XCTAssertEqual(ControllerAssignments.badge(element: "home", slot: 0, config: c), nil)
         XCTAssertEqual(ControllerAssignments.title(element: "face.south", family: .xbox, labels: ["face.south": "Ⓐ"]),
-                       "Bottom Button (Ⓐ)")
+                       "Bottom Button", "face buttons: the position (the position glyph is drawn next to it)")
+        XCTAssertEqual(InputCatalog.faceGlyph("ui.confirm", southConfirm: false), 1, "east")
+        XCTAssertEqual(InputCatalog.faceGlyph("face.north", southConfirm: false), 0)
+        XCTAssertNil(InputCatalog.faceGlyph("leftShoulder", southConfirm: false))
     }
 
     func testResumeRecordConversion() throws {

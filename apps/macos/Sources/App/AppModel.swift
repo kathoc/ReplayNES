@@ -162,6 +162,7 @@ final class AppModel: ObservableObject {
         inputConfig = input.config
         emu.onStatus = { [weak self] st in
             guard let self else { return }
+            if self.status.practicing != st.practicing { self.input.setPracticing(st.practicing) }
             if self.status != st { self.status = st; self.clock.status = st }
         }
         emu.onStructure = { [weak self] st in
@@ -177,7 +178,10 @@ final class AppModel: ObservableObject {
         input.onConfigChanged = { [weak self] c in self?.inputConfig = c }
         input.onControllersChanged = { [weak self] c in self?.controllers = c; self?.updateUIMode() }
         input.onNav = { [weak self] n in self?.handleNav(n) }
-        input.onCountdownCancel = { [weak self] in self?.emu.perform { e in e.abortCountdown() } }
+        input.onPracticeStop = { [weak self] in
+            guard let self, self.status.practicing, !self.quickMenu.isOpen, !self.showLibrary else { return }
+            self.practiceStop()
+        }
         input.onPausedResume = { [weak self] in
             guard let self, self.status.hasSession, self.status.paused, !self.quickMenu.isOpen, !self.showLibrary else { return }
             self.togglePause()
@@ -288,16 +292,18 @@ final class AppModel: ObservableObject {
 
     private func showCoach(_ tip: rnf_coach_tip, shown: UInt32) {
         UserDefaults.standard.set(Int(shown), forKey: "coachShown")
-        flash(CoachTips.text(tip, rewindControl: controlName(for: "hk.rewind")), seconds: 5)
+        flash(CoachTips.text(tip, rewindControl: controlName(for: "hk.rewind").map(FaceGlyph.plain)), seconds: 5)
     }
 
     /// The name of the control bound to `action` for the device in use: pad 1's button as printed
-    /// on the connected controller, else the keyboard key (nil: unbound).
+    /// on the connected controller (a face button: its FaceGlyph token, drawn by KeyCap), else the
+    /// keyboard key (nil: unbound).
     func controlName(for action: String) -> String? {
         let config = inputConfig
         if let c = input.controllerMonitor.controllers.min(by: { $0.slot < $1.slot }),
            let id = InputCatalog.boundInput(config, action: action, pad: true), let colon = id.firstIndex(of: ":") {
-            return c.label(String(id[id.index(after: colon)...]))
+            let element = String(id[id.index(after: colon)...])
+            return FaceGlyph.token(forElement: element) ?? c.label(element)
         }
         return InputCatalog.boundInput(config, action: action, pad: false).map { InputCatalog.displayName($0) }
     }

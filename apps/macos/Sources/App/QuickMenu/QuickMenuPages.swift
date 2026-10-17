@@ -16,7 +16,7 @@ struct QMItem: Identifiable {
         case choice([String], Int)
         case slider(Double, ClosedRange<Double>, String)   // value, range, shown text
         case text(String)
-        /// Button glyphs with their verbs ("Ⓑ Confirm  Ⓐ Back"), switched with ← / →.
+        /// Button glyphs (FaceGlyph tokens) with their verbs ("◎ Confirm  ◎ Back"), switched with ← / →.
         case buttons([(glyph: String, verb: String)])
     }
     let id: String
@@ -306,11 +306,10 @@ enum QuickMenuPages {
     }
 
     /// Settings › Controls › Confirm Button: which face button confirms in menus (east by default,
-    /// Nintendo style, on every family), as the glyph pair of the connected controller family.
+    /// Nintendo style, on every family), as the position glyph pair (FaceGlyph: right on every family).
     private static func confirmButton(_ m: AppModel) -> QMItem {
         let south = m.southConfirm
-        let info = m.input.controllerMonitor.controllers.min { $0.slot < $1.slot }
-        let label = { (e: String) in info?.label(e) ?? ControllerFamily.xbox.label(e) }
+        let label = { (e: String) in FaceGlyph.token(e) }
         let ok = String(cString: rnf_ui_confirm_element(south ? 1 : 0)), back = String(cString: rnf_ui_cancel_element(south ? 1 : 0))
         let set = { (s: Bool) in m.southConfirm = s }
         return QMItem(id: "confirmButton", icon: "checkmark.circle", title: String(localized: "Confirm Button"),

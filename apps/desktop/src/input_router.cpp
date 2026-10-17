@@ -336,25 +336,19 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
   return true;
 }
 
-void InputRouter::setCountdown(bool on) {
-  if (countdown_ == on) return;
-  countdown_ = on;
-  countdownTaps_.clear();
-}
+void InputRouter::setPracticing(bool on) { practicing_ = on; }
 
-// The practice countdown: the UI's cancel tapped (pressed and released within it, nothing else
-// pressed meanwhile) ends practice. The game gets the presses as usual; it is not emulated then.
-void InputRouter::routeCountdownTap(const std::string& id, bool down) {
-  if (!countdown_ || ui_) return;
+// Practicing: Y (face.north) stops it - while playing, paused or in the countdown. Never game input
+// then (its release neither, also when practice has ended meanwhile).
+bool InputRouter::routePracticeStop(const std::string& id, bool down) {
   size_t colon = id.find(':');
-  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return;
-  bool south = settings_ && settings_->southConfirm;
-  if (down) {
-    countdownTaps_.clear();
-    if (id.substr(colon + 1) == rnf_ui_cancel_element(south)) countdownTaps_.insert(id);
-    return;
-  }
-  if (countdownTaps_.erase(id) && onCountdownCancel) onCountdownCancel();
+  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
+  if (!down) return practiceStops_.erase(id) > 0;
+  if (!practicing_ || ui_ || id.compare(colon + 1, std::string::npos, "face.north") != 0) return false;
+  practiceStops_.insert(id);
+  confirmTap_.cancel();
+  if (onPracticeStop) onPracticeStop();
+  return true;
 }
 
 // A marker focused / edited: the pad is the seek bar's (D-pad / left stick, confirm, cancel, X).
@@ -459,6 +453,11 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
     else pressed_.erase(id);
     return;
   }
+  if (routePracticeStop(id, down)) {
+    if (down) pressed_.insert(id);
+    else pressed_.erase(id);
+    return;
+  }
   if (routePausedStep(id, down)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -466,7 +465,6 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
   }
   setPressed(id, down, t, true);
   routePausedTap(id, down);
-  routeCountdownTap(id, down);
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
@@ -522,8 +520,8 @@ void InputRouter::detach(SDL_JoystickID id) {
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
-  for (auto it = swallowedStarts_.begin(); it != swallowedStarts_.end();)
-    it = it->compare(0, prefix.size(), prefix) == 0 ? swallowedStarts_.erase(it) : std::next(it);
+  for (auto* set : {&swallowedStarts_, &practiceStops_})
+    for (auto it = set->begin(); it != set->end();) it = it->compare(0, prefix.size(), prefix) == 0 ? set->erase(it) : std::next(it);
   confirmTap_.clear();
   for (const auto& [m, dir] : holdMembers_)
     if (onMarkerHold) onMarkerHold(dir, false);

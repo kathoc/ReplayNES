@@ -594,6 +594,31 @@ size_t rnf_chord_claim_held(rnf_chord* c, const char* prefix, double t);
 const char* rnf_ui_confirm_element(int south_confirm); /* "face.east" (default) / "face.south" */
 const char* rnf_ui_cancel_element(int south_confirm);  /* "face.south" (default) / "face.east" */
 
+/* ------------------------------------------------------------------ face-button hint glyph
+ * Controller hints never print a face button's letter (A / B / X / Y, ○ ✕ △ □ differ per family and
+ * A / B even swap places): they draw the POSITION glyph - four small circles in a diamond (north,
+ * east, south, west), the one to press filled, the others hollow - so one hint is right on Xbox,
+ * PlayStation, Nintendo and the Steam Deck alike. Keyboard / mouse / touch hints and the shoulder /
+ * trigger / stick / START glyphs stay as they are. */
+typedef enum rnf_face_position_glyph {
+  RNF_FACE_GLYPH_NONE = -1, /* not a face button: draw the element's own label */
+  RNF_FACE_GLYPH_NORTH = 0,
+  RNF_FACE_GLYPH_EAST = 1,
+  RNF_FACE_GLYPH_SOUTH = 2,
+  RNF_FACE_GLYPH_WEST = 3
+} rnf_face_position_glyph;
+/* The filled position for a hint element: "face.north" / "face.east" / "face.south" / "face.west"
+ * (also "gc<n>:face.*"), and the UI's "ui.confirm" / "ui.cancel" (following south_confirm). */
+rnf_face_position_glyph rnf_ui_face_glyph(const char* element, int south_confirm);
+/* One circle of the glyph in a size x size box (top-left origin): centre and radius; stroke = the
+ * hollow circles' line width. index = rnf_face_position_glyph (0 north ... 3 west). */
+typedef struct rnf_face_glyph_circle {
+  double x, y, radius, stroke;
+} rnf_face_glyph_circle;
+int rnf_ui_face_glyph_circle(int index, double size, rnf_face_glyph_circle* out);
+/* Accessible text of the glyph ("Right button" ...: the element title's position word). */
+const char* rnf_ui_face_glyph_name(rnf_face_position_glyph g); /* localization key */
+
 /* ------------------------------------------------------------------ hold speed
  * Rewind (L2 held), fast-forward (R2 held) and a seek bar marker moved with L / R held move by the
  * same number of frames per 60 Hz tick, in opposite directions: rnf_hold_speed(n) for the n-th tick

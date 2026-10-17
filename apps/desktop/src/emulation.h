@@ -224,8 +224,8 @@ class EmulationController {
   // Practice (A/B repeat).
   void startPractice(int slot);
   void stopPractice();
-  /// The UI's cancel tapped during the countdown: the resume countdown goes back to paused; the
-  /// practice countdown ends practice (back to the take, paused).
+  /// Aborts a countdown (scripts / tests; the pad has no cancel tap there, its buttons are game input
+  /// typed ahead): the resume countdown goes back to paused; the practice countdown ends practice.
   void abortCountdown();
   void practiceSetA(int slot);
   void practiceSetB(int slot);

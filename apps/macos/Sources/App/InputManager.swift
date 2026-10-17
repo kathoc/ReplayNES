@@ -49,8 +49,8 @@ final class InputManager {
     /// Main thread: the UI's cancel button tapped while the game is paused = resume
     /// (ConfirmTap.swift: holding it for a frame advance never resumes).
     var onPausedResume: (() -> Void)?
-    /// Main thread: the UI's cancel tapped during the practice countdown (practice ends).
-    var onCountdownCancel: (() -> Void)?
+    /// Main thread: Y while practicing (playing, paused or in the countdown): stop practice.
+    var onPracticeStop: (() -> Void)?
     /// The paused seek bar's controller input: taps on the bar (ok, up, y: press only), everything
     /// while a marker is focused / edited (press and release). Main thread.
     enum SeekInput { case ok, cancel, up, down, left, right, x, y }
@@ -90,9 +90,9 @@ final class InputManager {
     /// The paused seek bar's focus: 0 = the bar, 1 = a marker, 2 = a marker being edited. gcQueue only.
     private var seekFocus = 0
     /// The practice countdown is shown (any thread sets it; gcQueue reads); cancel presses in it.
-    private let countdownLock = NSLock()
-    private var countdownOn = false
-    private var countdownTaps: Set<String> = []   // gcQueue only
+    private let practiceLock = NSLock()
+    private var practicingOn = false              // practiceLock
+    private var practiceStops: Set<String> = []   // Y pressed to stop practice (gcQueue only)
     /// Presses taken by "press a key" (keys only): their releases are swallowed too. gcQueue only.
     private var captureSwallowed: Set<String> = []
     /// START pressed with L / R held (a pause): never the game's, nor its release. gcQueue only.
@@ -459,23 +459,23 @@ final class InputManager {
 
     private enum PausedTap { case resume, seek(SeekInput) }
 
-    /// The practice countdown is shown (nothing is emulated): the UI's cancel tapped then ends
-    /// practice (onCountdownCancel). A press from before the countdown, or with another button, is no tap.
-    func setCountdown(_ on: Bool) {
-        countdownLock.lock(); let changed = countdownOn != on; countdownOn = on; countdownLock.unlock()
-        if changed { gcQueue.async { [weak self] in self?.countdownTaps.removeAll() } }
+    /// Practicing (any thread sets it; gcQueue reads): Y (face.north) stops practice (onPracticeStop)
+    /// while playing, paused or in the countdown, and never reaches the game then. The practice
+    /// countdown has no cancel tap: NES buttons there are game input typed ahead (docs/design/VTR_UX.md).
+    func setPracticing(_ on: Bool) {
+        practiceLock.lock(); practicingOn = on; practiceLock.unlock()
     }
 
-    /// gcQueue: the countdown's cancel tap (pressed and released within it, nothing else meanwhile).
-    private func trackCountdownTap(_ id: String, _ name: String, _ down: Bool) {
-        countdownLock.lock(); let on = countdownOn; countdownLock.unlock()
-        guard on, !isNavMode, id.hasPrefix("gc") else { return }
-        if down {
-            countdownTaps.removeAll()
-            if name == cancelElement { countdownTaps.insert(id) }
-        } else if countdownTaps.remove(id) != nil {
-            onMain { $0.onCountdownCancel?() }
-        }
+    /// gcQueue: Y while practicing (true: taken, also its release).
+    private func routePracticeStop(_ id: String, _ name: String, _ down: Bool) -> Bool {
+        guard id.hasPrefix("gc") else { return false }
+        if !down { return practiceStops.remove(id) != nil }
+        practiceLock.lock(); let on = practicingOn; practiceLock.unlock()
+        guard on, !isNavMode, name == "face.north" else { return false }
+        practiceStops.insert(id)
+        confirmTap.cancel()
+        onMain { $0.onPracticeStop?() }
+        return true
     }
 
     /// gcQueue: paused in play (the seek bar), taps (ConfirmTap.swift) of the UI's cancel (resume),
@@ -939,9 +939,9 @@ final class InputManager {
         }
         if isNavMode { routeNav(id, name, down); return }
         if routeSeek(name, down) { return }
+        if routePracticeStop(id, name, down) { return }
         if routePausedStep(id, down) { return }
         let tap = trackPausedTap(id, name, down)
-        trackCountdownTap(id, name, down)
         // The seek bar's taps (cancel / confirm / up / X / Y while paused) never take over Playback.
         let seekTap = down && isPausedInPlay && [cancelElement, confirmElement, "dpad.up", "face.north", "face.west"].contains(name)
         setPressed(id, down, at: gcEventTime, takeover: !seekTap)

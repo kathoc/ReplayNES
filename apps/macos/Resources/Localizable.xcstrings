@@ -1066,6 +1066,16 @@
         }
       }
     },
+    "Bottom button": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下のボタン"
+          }
+        }
+      }
+    },
     "Bright lines get thicker": {
       "localizations": {
         "ja": {
@@ -3247,6 +3257,16 @@
         }
       }
     },
+    "Left button": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左のボタン"
+          }
+        }
+      }
+    },
     "Left Control": {
       "localizations": {
         "ja": {
@@ -3485,6 +3505,16 @@
         }
       }
     },
+    "Practice stopped": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "練習をやめました"
+          }
+        }
+      }
+    },
     "Quality (video)": {
       "comment": "Make Video: row title",
       "localizations": {
@@ -3519,6 +3549,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ここからやり直し"
+          }
+        }
+      }
+    },
+    "Right button": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右のボタン"
           }
         }
       }
@@ -6539,16 +6579,6 @@
         }
       }
     },
-    "Stopped practicing (the take is unchanged)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "練習をやめました（テイクは練習前のままです）"
-          }
-        }
-      }
-    },
     "Strategy (genre)": {
       "localizations": {
         "en": {
@@ -6951,6 +6981,16 @@
         }
       }
     },
+    "Top button": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上のボタン"
+          }
+        }
+      }
+    },
     "Try a ROM (No Project)…": {
       "localizations": {
         "ja": {
@@ -7235,16 +7275,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "バージョン"
-          }
-        }
-      }
-    },
-    "Version %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バージョン %@"
           }
         }
       }
@@ -7557,6 +7587,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "↶ 取り消す"
+          }
+        }
+      }
+    },
+    "■ Stop Practice": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "■ 練習をやめる"
           }
         }
       }

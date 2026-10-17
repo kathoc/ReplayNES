@@ -225,7 +225,9 @@ void UI::buildSeekBar(double now) {
   // The hints row: the status label at the left, at most four hints, the chips at the right.
   rnf_controller_family f = promptFamily();
   float gh = m.hint() * 1.45f, x = g.hints.x, hy = g.hints.y + (g.hints.h - gh) / 2;
-  std::string label = statusLabelText();
+  // Practicing: the label is the "■ Stop Practice" button (click / tap), then the rest of it.
+  if (st.practicing) x += stopPracticeChip(dl, x, hy, gh) + S(16);
+  std::string label = statusLabelText(!st.practicing);
   if (!label.empty()) {
     dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, hy + (gh - m.hint()) / 2), kText, label.c_str());
     x += measure(m.hint(), label.c_str()).x + S(26);
@@ -267,6 +269,7 @@ void UI::buildSeekBar(double now) {
       // At most four: play, frame step, rewind / fast-forward, the marker lane.
       hint({"ui.cancel"}, play);
       hint({"leftShoulder", "rightShoulder"}, TR("Step"));
+      if (st.practicing) hint({"face.north"}, TR("Stop Practicing"));  // Y toggles practice
       if (st.practicing) hint({"leftTrigger"}, TR("Rewind"));
       else hint({"leftTrigger", "rightTrigger"}, std::string(TR("Rewind")) + " / " + TR("Fast-Forward"));
       if (markers) hint({}, TR("↑ Practice sections"));
@@ -619,11 +622,11 @@ void UI::buildBadges() {
   ui::Pill(dl, p, TR("Flash Reduction Active"), IM_COL32(30, 150, 150, 220), fs);
 }
 
-std::string UI::statusLabelText() const {
+std::string UI::statusLabelText(bool practicePart) const {
   if (!hasSession()) return {};
   const EmuStatus& st = d_.emu->status();
   rnf_tape_status ts{};
-  ts.mode = st.practicing ? RN_MODE_PRACTICE : st.recording ? RN_MODE_RECORD : RN_MODE_REPLAY;
+  ts.mode = st.practicing ? (practicePart ? RN_MODE_PRACTICE : RN_MODE_RECORD) : st.recording ? RN_MODE_RECORD : RN_MODE_REPLAY;
   ts.rewinding = st.rewinding;
   ts.fast_forward = st.fastForward;
   ts.slow_rate = st.slow;
@@ -654,6 +657,20 @@ std::string UI::boundKeyName(const char* action) const {
     if (name && *name) return name;
   }
   return {};
+}
+
+float UI::stopPracticeChip(ImDrawList* dl, float x, float y, float h) {
+  const std::string text = TR("■ Stop Practice");
+  float w = S(12) * 2 + measure(metrics_.hint(), text.c_str()).x;  // chip()'s width without a glyph
+  bool clicked = false;
+  chip(dl, x + w, y, h, std::string(), text, &clicked);
+  if (clicked) d_.emu->stopPractice();
+  return w;
+}
+
+void UI::stopPracticeFromPad() {
+  if (!hasSession() || menuOpen_ || interactive() || !d_.emu->status().practicing) return;
+  d_.emu->stopPractice();
 }
 
 LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked) {
@@ -705,12 +722,15 @@ void UI::buildPlayOverlay(double now) {
   SeekGeometry g = layoutSeek(m);
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   float gh = m.hint() * 1.45f, hy = g.hints.y + (g.hints.h - gh) / 2;
-  std::string label = statusLabelText();
   const EmuStatus& st = d_.emu->status();
+  std::string label = statusLabelText(!st.practicing);
+  float lx = g.hints.x;
+  // Practicing: the label is the "■ Stop Practice" button (click / tap; Y on the pad), above the
+  // practice pill (same corner), then the rest of the label.
+  if (st.practicing) lx += stopPracticeChip(dl, lx, hy - gh - S(24), gh) + S(12);
   if (!label.empty()) {
     float fs = m.hint();
-    ImVec2 p(g.hints.x, hy + (gh - fs - S(8)) / 2);
-    // Practicing: above the practice pill (same corner).
+    ImVec2 p(lx, hy + (gh - fs - S(8)) / 2);
     if (st.practicing) p.y -= gh + S(24);
     ui::Pill(dl, p, label.c_str(), IM_COL32(20, 20, 22, 200), fs);
   }

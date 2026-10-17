@@ -129,9 +129,9 @@ The artwork is generated from the app icon (`apps/linux/steam/artwork/`, see its
 ## Using ReplayNES
 
 The menus follow `docs/design/UI_REDESIGN.md`: a few large tiles, short labels, one line describing
-the focused item at the bottom left and the buttons to press at the bottom right (the glyphs of the
-controller in use: Steam Deck / Xbox A B X Y, PlayStation ✕ ○ □ △, Nintendo by position, so the
-confirm button is the bottom one; key caps without a controller). No screen scrolls; the focused item
+the focused item at the bottom left and the buttons to press at the bottom right (face buttons as a
+position glyph - four circles in a diamond, the one to press filled - right on every controller;
+key caps without a controller). No screen scrolls; the focused item
 has a red frame.
 
 **The Menu pill.** "☰ Menu  L+R" (日本語: "☰ メニュー  L+R") is always in the top-right corner. It
