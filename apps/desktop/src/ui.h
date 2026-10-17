@@ -128,6 +128,11 @@ class UI : public DialogHost {
   void seekInput(int input, bool down);  // InputRouter::SeekInput
   void markerHold(int dir, bool down);
   void pausedShoulder(int dir);
+  /// Pad 1's gestures in play (InputRouter::onPauseGesture): 0 = pause (the seek bar), -1 / +1 = pause
+  /// and step one frame back / forward.
+  void pauseGesture(int dir);
+  /// Y while practicing (InputRouter::onPracticeStop): stop practice.
+  void stopPracticeFromPad();
   /// The seek bar's focus for the InputRouter: 0 the bar, 1 a marker, 2 editing.
   int seekFocus() const;
   void pointerMoved(double now) { lastPointer_ = now; }
@@ -210,6 +215,10 @@ class UI : public DialogHost {
   bool controllerConnected() const;
   std::string triggerAction(bool left) const;  // "hk.rewind" / "hk.fast_forward" / ""
   float glyph(ImDrawList* dl, ImVec2 p, const std::string& element, rnf_controller_family f, float h, bool draw = true) const;
+  /// A face button as the position glyph (four circles in a diamond, the one to press filled; element
+  /// "face.*" / "ui.confirm" / "ui.cancel"). Width = h. on / off: 0 = the theme's text colours.
+  float faceGlyph(ImDrawList* dl, ImVec2 p, const std::string& element, float h, bool draw = true, ImU32 on = 0,
+                  ImU32 off = 0) const;
   /// "ui.confirm" / "ui.cancel" -> the face button of the setting; other elements unchanged.
   std::string uiElement(const std::string& element) const;
   /// ImGui's gamepad keys of the UI confirm / cancel buttons (east / south by default).
@@ -268,7 +277,12 @@ class UI : public DialogHost {
   /// The seek bar is up: paused, or rewind / fast-forward held in play (read-only).
   bool seekBarShown() const;
   /// The bottom-left status label (rnf_tape_status_label + the video export's progress); "" = none.
-  std::string statusLabelText() const;
+  /// The bottom-left status label; practicePart = false leaves out "Practice (not recorded)" (the
+  /// "■ Stop Practice" button stands there while practicing).
+  std::string statusLabelText(bool practicePart = true) const;
+  /// "■ Stop Practice" at (x, y), left-anchored, clickable / tappable; returns its width.
+  float stopPracticeChip(ImDrawList* dl, float x, float y, float h);
+
   /// Status label (bottom left) and the chips (bottom right: Undo, Make Video) while playing.
   void buildPlayOverlay(double now);
   /// A chip (rounded, clickable: true when clicked) right-aligned at `right`; returns its rectangle.

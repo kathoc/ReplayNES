@@ -92,6 +92,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 8) {  // L slow / R pause dropped: L / R alone do nothing in play (no misfires)
+      rnf_input_shoulder_step_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -331,25 +336,19 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
   return true;
 }
 
-void InputRouter::setCountdown(bool on) {
-  if (countdown_ == on) return;
-  countdown_ = on;
-  countdownTaps_.clear();
-}
+void InputRouter::setPracticing(bool on) { practicing_ = on; }
 
-// The practice countdown: the UI's cancel tapped (pressed and released within it, nothing else
-// pressed meanwhile) ends practice. The game gets the presses as usual; it is not emulated then.
-void InputRouter::routeCountdownTap(const std::string& id, bool down) {
-  if (!countdown_ || ui_) return;
+// Practicing: Y (face.north) stops it - while playing, paused or in the countdown. Never game input
+// then (its release neither, also when practice has ended meanwhile).
+bool InputRouter::routePracticeStop(const std::string& id, bool down) {
   size_t colon = id.find(':');
-  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return;
-  bool south = settings_ && settings_->southConfirm;
-  if (down) {
-    countdownTaps_.clear();
-    if (id.substr(colon + 1) == rnf_ui_cancel_element(south)) countdownTaps_.insert(id);
-    return;
-  }
-  if (countdownTaps_.erase(id) && onCountdownCancel) onCountdownCancel();
+  if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
+  if (!down) return practiceStops_.erase(id) > 0;
+  if (!practicing_ || ui_ || id.compare(colon + 1, std::string::npos, "face.north") != 0) return false;
+  practiceStops_.insert(id);
+  confirmTap_.cancel();
+  if (onPracticeStop) onPracticeStop();
+  return true;
 }
 
 // A marker focused / edited: the pad is the seek bar's (D-pad / left stick, confirm, cancel, X).
@@ -399,15 +398,35 @@ void InputRouter::pumpChord() {
           if (onMarkerHold) onMarkerHold(dir, false);
         } else if (forwardedMembers_.erase(id)) {
           setPressed(id, false, ev.time, true);
+        } else if (ev.suppressed) {
+          // It was held for a gesture (the other member followed it, or START): no action of its own.
         } else if (ui_) {
           if (onUiShoulder) onUiShoulder(dir);
         } else if (paused) {
           if (ev.repeats == 0 && onPausedShoulder) onPausedShoulder(dir);
         } else {
-          // A tap of its own action (pause, slow, ...): the hotkey fires on the press edge.
+          // A tap of its own action (none by default since layout 8): the hotkey fires on the press edge.
           setPressed(id, true, ev.time, true);
           setPressed(id, false, ev.time, true);
         }
+        break;
+      // Pressed while the other member is held on its own: L held + R = forward, R held + L = back
+      // (pause and step at the press, repeated while held). A member bound to a game button is the game's.
+      case RNF_CHORD_FOLLOW_DOWN:
+        if (ui_ || (paused && seekFocus_ == 2)) break;
+        if (!pausedStepMode_ && isGameMember(id)) {
+          forwardedMembers_.insert(id);
+          setPressed(id, true, ev.time, true);
+        } else if (onPauseGesture) {
+          onPauseGesture(dir);
+        }
+        break;
+      case RNF_CHORD_FOLLOW_REPEAT:
+        if (!ui_ && seekFocus_ < 2 && !forwardedMembers_.count(id) && onPauseGesture) onPauseGesture(dir);
+        break;
+      case RNF_CHORD_FOLLOW_UP:
+        if (forwardedMembers_.erase(id)) setPressed(id, false, ev.time, true);
+        else if (ui_ && !ev.suppressed && onUiShoulder) onUiShoulder(dir);  // a page, on the release
         break;
     }
   }
@@ -434,6 +453,11 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
     else pressed_.erase(id);
     return;
   }
+  if (routePracticeStop(id, down)) {
+    if (down) pressed_.insert(id);
+    else pressed_.erase(id);
+    return;
+  }
   if (routePausedStep(id, down)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -441,7 +465,6 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
   }
   setPressed(id, down, t, true);
   routePausedTap(id, down);
-  routeCountdownTap(id, down);
 }
 
 void InputRouter::setPressed(const std::string& id, bool down, double t, bool game) {
@@ -497,6 +520,8 @@ void InputRouter::detach(SDL_JoystickID id) {
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
+  for (auto* set : {&swallowedStarts_, &practiceStops_})
+    for (auto it = set->begin(); it != set->end();) it = it->compare(0, prefix.size(), prefix) == 0 ? set->erase(it) : std::next(it);
   confirmTap_.clear();
   for (const auto& [m, dir] : holdMembers_)
     if (onMarkerHold) onMarkerHold(dir, false);
@@ -546,6 +571,22 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
     return;
   }
   pumpChord();  // a member held alone may have fired just now
+  // L or R held + START: pause (the seek bar). START never reaches the game then, nor its release;
+  // the held member does nothing of its own when released.
+  if (std::strcmp(el, "menu") == 0 && !ui_) {
+    if (down && rnf_chord_claim_held(chord_, slotPrefix(slot).c_str(), t) > 0) {
+      pumpChord();
+      pressed_.insert(id);
+      confirmTap_.cancel();
+      swallowedStarts_.insert(id);
+      if (onPauseGesture) onPauseGesture(0);
+      return;
+    }
+  }
+  if (!down && swallowedStarts_.erase(id)) {
+    pressed_.erase(id);
+    return;
+  }
   if (menuIds_.count(id)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);

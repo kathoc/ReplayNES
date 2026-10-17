@@ -156,9 +156,9 @@ void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
   input_->setSeekFocus(inter ? 0 : ui_->seekFocus());
-  // The cancel tap ends the practice countdown only; during the resume countdown the NES buttons are
-  // game input typed ahead (docs/design/VTR_UX.md, "Countdown type-ahead").
-  input_->setCountdown(!inter && emu_->status().countdown > 0 && !emu_->status().resumeCountdown);
+  // Y stops practice; both countdowns take the NES buttons as game input typed ahead
+  // (docs/design/VTR_UX.md, "Countdown type-ahead").
+  input_->setPracticing(!inter && emu_->status().practicing);
   ImGuiIO& io = ImGui::GetIO();
   if (inter) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
   else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
@@ -325,10 +325,11 @@ int App::run(const AppOptions& opt) {
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
   input_->onPausedResume = [this] { ui_->resumeFromSeekBar(); };
-  input_->onCountdownCancel = [this] { emu_->abortCountdown(); };
+  input_->onPracticeStop = [this] { ui_->stopPracticeFromPad(); };
   input_->onSeekInput = [this](InputRouter::SeekInput in, bool down) { ui_->seekInput(int(in), down); };
   input_->onMarkerHold = [this](int dir, bool down) { ui_->markerHold(dir, down); };
   input_->onPausedShoulder = [this](int dir) { ui_->pausedShoulder(dir); };
+  input_->onPauseGesture = [this](int dir) { ui_->pauseGesture(dir); };
   input_->onUiShoulder = [this](int dir) { ui_->shoulder(dir); };
   ui_->onLanguage = [this](const std::string& l) { pendingLanguage_ = l; };
   input_->onDisconnect = [this](const std::string& name) {

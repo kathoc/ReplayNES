@@ -63,13 +63,17 @@ class InputRouter {
   std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / F1
   std::function<void(int dir, bool down)> onPausedStep;  // D-pad left/right while paused
   std::function<void()> onPausedResume;                  // cancel tapped while paused in play: resume
-  std::function<void()> onCountdownCancel;               // cancel tapped during the practice countdown
+  /// Y (face.north) while practicing (playing, paused or in its countdown): stop practice. Never game input then.
+  std::function<void()> onPracticeStop;
   /// The paused seek bar's controller input (docs/design/UI_REDESIGN.md): taps on the bar (ok, up,
   /// y: press only), everything while a marker is focused / edited (press and release).
   enum class SeekInput { ok, cancel, up, down, left, right, x, y };
   std::function<void(SeekInput in, bool down)> onSeekInput;
   /// L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
   std::function<void(int dir)> onPausedShoulder;
+  /// Pad 1's gestures in play (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L = -1 (pause and
+  /// step one frame; at the press, repeated while held), L or R held + START = 0 (pause: the seek bar).
+  std::function<void(int dir)> onPauseGesture;
   /// L / R held while a marker is edited: the marker moves (-1 / +1) until released.
   std::function<void(int dir, bool down)> onMarkerHold;
   /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).
@@ -85,9 +89,9 @@ class InputRouter {
   void setPausedStepMode(bool paused);
   /// The seek bar's focus while paused: 0 = the bar, 1 = a marker, 2 = a marker being edited.
   void setSeekFocus(int focus);
-  /// The practice countdown is shown (nothing is emulated): the UI's cancel tapped then ends practice
-  /// (onCountdownCancel). A press from before the countdown, or with another button, is no tap.
-  void setCountdown(bool on);
+  /// Practicing (docs/design/VTR_UX.md): Y stops it (onPracticeStop); everything else is as in play.
+  /// The practice countdown has no cancel tap of its own: NES buttons there are game input typed ahead.
+  void setPracticing(bool on);
 
   /// One SDL event (keyboard / gamepad). evTime: the event's time on the CLOCK_MONOTONIC clock.
   /// keyboardForUI: ImGui wants the keyboard (text field or menu).
@@ -145,7 +149,7 @@ class InputRouter {
   bool routePausedStep(const std::string& id, bool down);
   bool routePausedTap(const std::string& id, bool down);
   bool routeSeek(const std::string& id, bool down);
-  void routeCountdownTap(const std::string& id, bool down);
+  bool routePracticeStop(const std::string& id, bool down);
   void updateRepeat();
   bool isGameMember(const std::string& id) const;
   void pumpChord();
@@ -175,11 +179,12 @@ class InputRouter {
   std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
   ConfirmTap confirmTap_;                 // confirm / cancel / up / Y pressed while paused: taps
   int seekFocus_ = 0;
-  bool countdown_ = false;
-  std::set<std::string> countdownTaps_;
+  bool practicing_ = false;
+  std::set<std::string> practiceStops_;   // Y pressed to stop practice: its release is swallowed too
   std::set<std::string> gameMembers_;     // chord members bound to game input (held, not tapped)
   std::set<std::string> forwardedMembers_;  // ... pressed for the game now
   std::map<std::string, int> holdMembers_;  // members moving an edited marker now -> -1 / +1
+  std::set<std::string> swallowedStarts_;   // START pressed with L / R held (a pause): its release too
   // parsed config
   std::vector<std::pair<std::string, std::string>> bindingPairs_;
   std::vector<rnf_binding> bindingView_;

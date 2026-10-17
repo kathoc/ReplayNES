@@ -3,6 +3,7 @@
 // A/B markers of the selected practice slot. See frontend.h for the rules.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
+#include <cstring>
 #include <vector>
 
 #include "common.hpp"
@@ -41,6 +42,42 @@ extern "C" {
 
 const char* rnf_ui_confirm_element(int south_confirm) { return south_confirm ? "face.south" : "face.east"; }
 const char* rnf_ui_cancel_element(int south_confirm) { return south_confirm ? "face.east" : "face.south"; }
+
+rnf_face_position_glyph rnf_ui_face_glyph(const char* element, int south_confirm) {
+  if (!element) return RNF_FACE_GLYPH_NONE;
+  const char* e = std::strchr(element, ':');
+  e = e ? e + 1 : element;
+  if (std::strcmp(e, "ui.confirm") == 0) e = rnf_ui_confirm_element(south_confirm);
+  else if (std::strcmp(e, "ui.cancel") == 0) e = rnf_ui_cancel_element(south_confirm);
+  if (std::strcmp(e, "face.north") == 0) return RNF_FACE_GLYPH_NORTH;
+  if (std::strcmp(e, "face.east") == 0) return RNF_FACE_GLYPH_EAST;
+  if (std::strcmp(e, "face.south") == 0) return RNF_FACE_GLYPH_SOUTH;
+  if (std::strcmp(e, "face.west") == 0) return RNF_FACE_GLYPH_WEST;
+  return RNF_FACE_GLYPH_NONE;
+}
+
+int rnf_ui_face_glyph_circle(int index, double size, rnf_face_glyph_circle* out) {
+  if (!out || index < 0 || index > 3 || !(size > 0)) return 0;
+  // A diamond of four circles touching the box: centres 0.27 from the middle, radius 0.21 (a gap of
+  // ~0.08 between neighbours keeps them apart at hint size).
+  static const double dx[4] = {0, 1, 0, -1}, dy[4] = {-1, 0, 1, 0};
+  const double c = size / 2, d = size * 0.29;
+  out->x = c + dx[index] * d;
+  out->y = c + dy[index] * d;
+  out->radius = size * 0.19;
+  out->stroke = std::max(1.0, size * 0.075);
+  return 1;
+}
+
+const char* rnf_ui_face_glyph_name(rnf_face_position_glyph g) {
+  switch (g) {
+    case RNF_FACE_GLYPH_NORTH: return RNF_L("Top button");
+    case RNF_FACE_GLYPH_EAST: return RNF_L("Right button");
+    case RNF_FACE_GLYPH_SOUTH: return RNF_L("Bottom button");
+    case RNF_FACE_GLYPH_WEST: return RNF_L("Left button");
+    default: return "";
+  }
+}
 
 int rnf_hold_speed(int tick) {
   if (tick <= RNF_HOLD_SPEED_FAST_AFTER) return 2;

@@ -105,16 +105,16 @@ const Pair kKeyboardSDL[] = {
 // Controller slot 0 -> P1, slot 1 -> P2. Face buttons by POSITION: east = A, south = B
 // (Nintendo's own A/B; B/A on Xbox, ○/✕ on PlayStation), north = turbo A, west = turbo B.
 // In-game controls (hotkeys, never recorded): L2 hold = rewind, R2 hold = fast-forward,
-// L = slow 1/2 toggle, R = pause/play, L+R together = Quick Menu (a two-button combo id that the
-// frontend presses through its chord detector, rnf_chord: L or R alone fire on release or after
-// RNF_CHORD_WINDOW). While paused the D-pad ←/→ steps frames.
+// L+R together = Quick Menu (a two-button combo id that the frontend presses through its chord
+// detector, rnf_chord). L or R alone do nothing in play (layout 8: no misfires); L held + R = pause
+// and step forward, R held + L = step back, L or R held + START = pause (the frontends' gestures on
+// the combo members, docs/design/UI_REDESIGN.md). While paused L / R and the D-pad ←/→ step frames.
 const Pair kController[] = {
     {"gc0:dpad.up", "p1.up"}, {"gc0:dpad.down", "p1.down"}, {"gc0:dpad.left", "p1.left"}, {"gc0:dpad.right", "p1.right"},
     {"gc0:lstick.up", "p1.up"}, {"gc0:lstick.down", "p1.down"}, {"gc0:lstick.left", "p1.left"}, {"gc0:lstick.right", "p1.right"},
     {"gc0:face.east", "p1.a"}, {"gc0:face.south", "p1.b"}, {"gc0:face.north", "p1.turbo_a"}, {"gc0:face.west", "p1.turbo_b"},
     {"gc0:menu", "p1.start"}, {"gc0:options", "p1.select"},
     {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
-    {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
     {"gc0:leftShoulder+gc0:rightShoulder", "hk.menu"},
     {"gc0:leftThumb", "hk.undo_take"},  // L3: Undo of a retry (docs/design/VTR_UX.md)
     {"gc1:dpad.up", "p2.up"}, {"gc1:dpad.down", "p2.down"}, {"gc1:dpad.left", "p2.left"}, {"gc1:dpad.right", "p2.right"},
@@ -130,8 +130,13 @@ const Pair kLegacyControllerHotkeys[] = {
     {"gc0:leftShoulder", "hk.rewind"}, {"gc0:rightShoulder", "hk.fast_forward"},
     {"gc0:leftTrigger", "hk.step_back"}, {"gc0:rightTrigger", "hk.frame_advance"},
 };
+// Layouts 2-7 (layout 1 -> 2 migrates to these; layout 7 -> 8 then drops L slow / R pause).
 const Pair kControllerHotkeys[] = {
     {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
+    {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
+};
+// Layout <= 7 pad 1 shoulder defaults, dropped by layout 7 -> 8.
+const Pair kLayout7ShoulderHotkeys[] = {
     {"gc0:leftShoulder", "hk.slow"}, {"gc0:rightShoulder", "hk.pause"},
 };
 // Layouts 2-3 had the triggers the other way round (R2 rewind, L2 fast-forward).
@@ -747,6 +752,15 @@ void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_lis
   emit(u, nb, unbind, bind);
 }
 
+void rnf_input_shoulder_step_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {
+  Pairs b = rnf::toPairs(bindings, count);
+  Pairs u, nb;
+  for (const Pair& old : kLayout7ShoulderHotkeys)
+    if (std::any_of(b.begin(), b.end(), [&](auto& x) { return x.first == old.input && x.second == old.action; }))
+      u.emplace_back(old.input, old.action);
+  emit(u, nb, unbind, bind);
+}
+
 char* rnf_input_combo_id(const char* a, const char* b) {
   if (!a || !b || !*a || !*b) return nullptr;
   return dup(std::string(a) + "+" + b);
@@ -978,6 +992,9 @@ char* rnf_input_element_title(const char* element_c, rnf_controller_family f, co
   for (auto& p : positional) {
     if (element != p.element) continue;
     std::string pt = tr(p.text);
+    // Face buttons: the position only (the frontends draw the position glyph, rnf_ui_face_glyph: the
+    // printed letter differs per family and A / B swap places between them).
+    if (rnf_ui_face_glyph(p.element, 0) != RNF_FACE_GLYPH_NONE) return dup(pt);
     return dup(label.empty() ? pt : trf(RNF_L("%@ (%@)"), {argS(pt), argS(label)}));
   }
   return dup(label.empty() ? element : label);
@@ -992,8 +1009,17 @@ char* rnf_input_action_short_label(const char* action, int slot) {
 
 char* rnf_input_element_badge(const rnf_binding* bindings, size_t count, const char* element, int slot) {
   RNF_GUARD_BEGIN
-  auto a = elementActions(rnf::toPairs(bindings, count), element ? element : "", slot);
-  if (a.empty()) return nullptr;
+  Pairs b = rnf::toPairs(bindings, count);
+  auto a = elementActions(b, element ? element : "", slot);
+  if (a.empty()) {
+    // A member of the Quick Menu chord with nothing of its own: the frame-step gesture (L held + R =
+    // forward, R held + L = back; while paused L / R alone step): the first member back, the second forward.
+    std::string id = slotPrefix(slot) + (element ? element : ""), x, y;
+    for (auto& p : b)
+      if (p.second == "hk.menu" && splitCombo(p.first, x, y) && (x == id || y == id))
+        return dup(shortLabel(x == id ? "hk.step_back" : "hk.frame_advance", slot));
+    return nullptr;
+  }
   std::string out;
   for (size_t i = 0; i < a.size(); ++i) {
     if (i) out += tr(RNF_L(" · "));

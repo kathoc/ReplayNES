@@ -56,10 +56,10 @@ replaced by Save As).
 
 - **In the app:** while ReplayNES runs, the system's Flatpak portal checks the repository about every
   30 minutes; a new version shows a notice in the library's top bar (and a short notice while
-  playing). **Settings › System › Updates** has the status, **Update** (downloads in the background),
+  playing). **Settings › System › ReplayNES Version** has the version, the status, **Update** (downloads in the background),
   then **Restart** (saves the session, quits and starts the new version through the portal; Steam
   keeps showing the game as running).
-- **Settings › System › Updates:** "Check Automatically" (on by default; off = no update monitor) and
+- **Settings › System › ReplayNES Version:** "Check Automatically" (on by default; off = no update monitor) and
   **Check Now** (checks right away and installs the update when there is one; "ReplayNES is up to
   date." otherwise). The app itself has no network access: the portal
   (`org.freedesktop.portal.Flatpak`, outside the sandbox) does the checking and installing.
@@ -129,9 +129,9 @@ The artwork is generated from the app icon (`apps/linux/steam/artwork/`, see its
 ## Using ReplayNES
 
 The menus follow `docs/design/UI_REDESIGN.md`: a few large tiles, short labels, one line describing
-the focused item at the bottom left and the buttons to press at the bottom right (the glyphs of the
-controller in use: Steam Deck / Xbox A B X Y, PlayStation ✕ ○ □ △, Nintendo by position, so the
-confirm button is the bottom one; key caps without a controller). No screen scrolls; the focused item
+the focused item at the bottom left and the buttons to press at the bottom right (face buttons as a
+position glyph - four circles in a diamond, the one to press filled - right on every controller;
+key caps without a controller). No screen scrolls; the focused item
 has a red frame.
 
 **The Menu pill.** "☰ Menu  L+R" (日本語: "☰ メニュー  L+R") is always in the top-right corner. It
@@ -153,7 +153,7 @@ An empty library is one card with the folder, Open Folder and Reload.
 **Playing.** Only the Menu pill is on screen (status badges appear while rewinding, fast-forwarding,
 in slow motion, at the end of the tape or while flashes are reduced). Hold L2 to rewind and release it: a 3-2-1 countdown runs and play resumes from there ("Retrying from here" when that is before the end of the tape); for 10 s a "↶ Undo" chip (bottom right; **L3** on the pad) brings the previous continuation back, and a quick second retry keeps only the latest attempt. The first run shows three one-line hints (hold L2 to rewind, play from here to retry, Make Video).
 
-**Pause (R).** Only the seek bar: the filmstrip timeline with the time and the A/B lane, with hints for Play (Continue at the end of the tape), frame step L / R, L2 / R2 and ↑ Practice sections.
+**Pause (L or R held + START, or L held + R / R held + L: pause and step).** Only the seek bar: the filmstrip timeline with the time and the A/B lane, with hints for Play (Continue at the end of the tape), frame step L / R, L2 / R2 and ↑ Practice sections.
 A (the back button) tapped resumes; L / R (released) and the D-pad ←/→ step frames (held: repeat);
 L2 / R2 hold rewind / fast-forward. **A/B markers**: B (confirm) drops a flag at the playhead for the
 selected section ("A/B n", Y picks the next): the first is A, the second makes the range (left = A,
@@ -173,7 +173,7 @@ level, B confirms (Settings › Controls › Confirm Button swaps them). L / R s
 | Retry | Play from Here, Bookmarks (Add Bookmark, A jumps, Y renames, X deletes), Playback (watch the tape without changing it; a game button plays from there), Start Over |
 | Practice | the 8 A/B sections as cards (picture of A, name, length): A on an empty card sets A at the current position, then B, then practices; Y renames, X clears (or stops practicing) |
 | Share | Make Video (the one-screen dialog: Range All / Up to here / Section n, Quality Standard (YouTube) / High / Small, length and estimated size, Details ›) |
-| Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad (Steam Deck: wide body, screen, trackpads): the D-pad / stick move a red ring over the buttons, confirm opens the action picker (six per page, L / R pages, back cancels), X next pad, Y reset -, Keyboard › - confirm sets a key, X clears -, Confirm Button (B Confirm · A Back, or swapped), D-pad While Paused, On-screen Keyboard, More › with pause after rewind, turbo speed, turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Updates ›, Add to Steam, About ›, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
+| Settings | four pages, L / R: **Display** (Size: Integer / FILL, CRT, 8:7 pixels, Reduce Flashing, Hide Edges, CRT Details ›), **Controls** (Controller › - a diagram of the pad (Steam Deck: wide body, screen, trackpads): the D-pad / stick move a red ring over the buttons, confirm opens the action picker (six per page, L / R pages, back cancels), X next pad, Y reset -, Keyboard › - confirm sets a key, X clears -, Confirm Button (B Confirm · A Back, or swapped), D-pad While Paused, On-screen Keyboard, More › with pause after rewind, turbo speed, turbo press length, opposite directions, stick threshold, reset), **Sound** (Volume), **System** (Language: Automatic / 日本語 / English, Add to Steam, ReplayNES Version › - the version, update status, Check Now, Update, Check Automatically, Folders and License › -, More › with full screen, UI size, autosave interval, flash badge, latency stats, Quit) |
 | Game | Choose Game (back to the library; a temporary session asks "Do you want to save?" first), Save, Save As, Open Project, Reset (Soft Reset, Power Cycle - recorded like the console's buttons - or Reset Project…) |
 
 Save in a temporary session asks where, in a file chooser rooted at `~/Documents/ReplayNES/Projects`
@@ -231,8 +231,11 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | Input | In play | Paused (the seek bar) | In menus (Quick Menu, Settings, library) |
 |---|---|---|---|
 | **L+R together** (within 0.1 s, either order) | open the Quick Menu (pauses) | open the Quick Menu | close it (resume play) |
-| R alone (on release) | pause (the seek bar only) | step 1 frame forward (held ≥ 0.4 s: repeat) | next page (Settings pages, list pages, library pages) |
-| L alone (on release) | slow motion 1/2 on / off | step 1 frame back (held ≥ 0.4 s: repeat) | previous page |
+| L held, then R (after 0.1 s) | pause + step 1 frame forward (at the press; held ≥ 0.4 s: repeat) | step 1 frame forward | - |
+| R held, then L (after 0.1 s) | pause + step 1 frame back (at the press; held ≥ 0.4 s: repeat) | step 1 frame back | - |
+| L or R held + Menu (≡, START) | pause (the seek bar only); START does not reach the game | - | - |
+| R alone (on release) | nothing | step 1 frame forward (held ≥ 0.4 s: repeat) | next page (Settings pages, list pages, library pages) |
+| L alone (on release) | nothing | step 1 frame back (held ≥ 0.4 s: repeat) | previous page |
 | L2 / R2 hold | rewind / fast-forward (recorded part only; the same speed curve) | rewind / fast-forward | rewind / fast-forward the game behind |
 | D-pad / left stick | NES D-pad | ←/→ step frames, ↑ to the A/B markers | move the focus |
 | B (east) | NES A (by position, as on macOS: Nintendo's A/B) | tap: drop an A/B marker | **confirm** |
@@ -243,11 +246,13 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | R3 | Quick Menu (reserved) | Quick Menu | close the menu |
 | Steam / Guide (HOME) | the system's (Steam overlay); ReplayNES ignores it and it cannot be assigned | - | - |
 
-L or R alone acts when it is **released** (the shared core's chord detector, `rnf_chord`: ALONE_UP is
-the trigger), so a single press never gets in the way of L+R. The chord is the action "Quick Menu"
+L or R alone does nothing in play (no misfires next to L+R; slow 1/2 is in the Quick Menu); while
+paused / in menus it acts when it is **released** (the shared core's chord detector, `rnf_chord`:
+ALONE_UP is the trigger), so a single press never gets in the way of L+R. One held past the 0.1 s
+window and then the other is the frame step (FOLLOW_DOWN, at the press). The chord is the action "Quick Menu"
 bound to the two-button combo `gc0:leftShoulder+gc0:rightShoulder` (the same on every platform); it
-stays remappable. Saved assignments from before get L+R and Esc added once (layout 5); R keeps
-pausing. Older versions cannot read an assignments file that has the Quick Menu in it. Layout 6
+stays remappable. Saved assignments from before get L+R and Esc added once (layout 5); layout 8
+drops R's pause and L's slow (when still assigned that way). Older versions cannot read an assignments file that has the Quick Menu in it. Layout 6
 drops any binding to HOME / guide once (it was assignable on macOS before).
 
 Confirm / back: B (east) / A (south) by default on every controller (Nintendo style); Settings ›

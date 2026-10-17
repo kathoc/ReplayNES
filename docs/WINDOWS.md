@@ -225,7 +225,7 @@ failed / cancelled export removes its file.
   architecture (`sparkle:os="windows-x64"` / `"windows-arm64"`; an x64 build emulated on Arm gets
   x64), enclosure = the release zip. `scripts/release-windows.sh` builds and signs it
   ([RELEASE.md](RELEASE.md)).
-* Settings › System › Updates: "Check Automatically" (WinSparkle's own setting in
+* Settings › System › ReplayNES Version: "Check Automatically" (WinSparkle's own setting in
   `HKCU\Software\ReplayNES\WinSparkle`; WinSparkle asks on the second launch, like Sparkle) and
   "Check Now" (WinSparkle's dialogs, Japanese / English with the app).
 * Installing: WinSparkle downloads the zip and verifies its signature, then calls the app (it

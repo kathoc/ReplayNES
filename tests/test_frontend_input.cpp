@@ -118,8 +118,10 @@ TEST_CASE("default controller hotkeys") {
   auto b = asSet(defaultBindings());
   CHECK(b.count("gc0:leftTrigger=hk.rewind"));
   CHECK(b.count("gc0:rightTrigger=hk.fast_forward"));
-  CHECK(b.count("gc0:leftShoulder=hk.slow"));
-  CHECK(b.count("gc0:rightShoulder=hk.pause"));
+  // Layout 8: L / R alone do nothing in play (the gestures on the L+R combo members pause / step).
+  CHECK_FALSE(b.count("gc0:leftShoulder=hk.slow"));
+  CHECK_FALSE(b.count("gc0:rightShoulder=hk.pause"));
+  CHECK(b.count("gc0:leftShoulder+gc0:rightShoulder=hk.menu"));
   for (auto k : {"kb:51=hk.rewind", "kb:48=hk.fast_forward", "kb:49=hk.pause", "kb:37=hk.slow", "kb:43=hk.step_back",
                  "kb:47=hk.frame_advance"})
     CHECK(b.count(k));
@@ -163,7 +165,8 @@ TEST_CASE("defaults load into the engine and hotkeys are not game input") {
   rn_input_set_pressed(h, "gc0:rightTrigger", 0);
   rn_input_set_pressed(h, "gc0:leftShoulder", 1);
   rn_input_poll_hotkeys(h, &e, &held);
-  CHECK(e & RN_HK_SLOW);
+  CHECK_FALSE(e & RN_HK_SLOW);  // layout 8: nothing on L alone
+  CHECK_FALSE(e & RN_HK_PAUSE);
   rn_input_free(h);
 }
 
@@ -299,6 +302,7 @@ TEST_CASE("full chain from 0.1.x") {
   }
   c = applying(plan(rnf_input_home_migration, c), c);
   c = applying(plan(rnf_input_undo_migration, c), c);
+  c = applying(plan(rnf_input_shoulder_step_migration, c), c);
   CHECK(asSet(c) == asSet(defaultConfig()));
   // From layout 3 (0.2.x): the triggers swap.
   Pairs l3 = layout3Triggers(defaultConfig());
@@ -390,11 +394,22 @@ TEST_CASE("an old (0.4.0) bindings.json loads and migrates to layout 5") {
     rnf_list_free(u);
     rnf_list_free(n);
   }
+  {  // Layout 7 -> 8: L slow / R pause dropped.
+    Pairs mid = bindingsOf(h);
+    Bindings b{mid};
+    auto v = b.view();
+    rnf_list *u = nullptr, *n = nullptr;
+    rnf_input_shoulder_step_migration(v.data(), v.size(), &u, &n);
+    CHECK(rnf_input_apply_plan(h, u, n));
+    rnf_list_free(u);
+    rnf_list_free(n);
+  }
   Pairs after = bindingsOf(h);
   CHECK(asSet(after) == asSet(defaultConfig()));  // == a fresh install's bindings
-  // Everything the user had is still there; only the two Quick Menu bindings and L3 were added.
-  for (auto& p : before) CHECK(contains(after, p.first, p.second));
-  CHECK_EQ(after.size(), before.size() + 3);
+  // Everything the user had is still there but L slow / R pause; the two Quick Menu bindings and L3 were added.
+  for (auto& p : before)
+    if (p.first != "gc0:leftShoulder" && p.first != "gc0:rightShoulder") CHECK(contains(after, p.first, p.second));
+  CHECK_EQ(after.size(), before.size() + 3 - 2);
   // The migrated file round-trips through the engine, and migrating again changes nothing.
   char* saved = rn_input_save_json(h);
   rn_input* h2 = rn_input_new();
@@ -630,10 +645,11 @@ TEST_CASE("diagram elements per family") {
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_PLAYSTATION, "face.east")), "○");
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_NINTENDO, "leftTrigger")), "ZL");
   CHECK_EQ(std::string(rnf_controller_family_label(RNF_FAMILY_XBOX, "rightTrigger")), "RT");
-  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "Right Button (A)");
+  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "Right Button");  // + the position glyph
   CHECK_EQ(take(rnf_input_element_title("dpad.up", RNF_FAMILY_XBOX, nullptr)), "D-pad ↑");
   CHECK_EQ(take(rnf_input_element_title("leftTrigger", RNF_FAMILY_NINTENDO, nullptr)), "ZL");
-  CHECK_EQ(take(rnf_input_element_title("face.south", RNF_FAMILY_XBOX, "X")), "Bottom Button (X)");
+  CHECK_EQ(take(rnf_input_element_title("face.south", RNF_FAMILY_XBOX, "X")), "Bottom Button");
+  CHECK_EQ(take(rnf_input_element_title("leftThumb", RNF_FAMILY_XBOX, nullptr)), "Left Stick Press (LS)");
   rnf_diagram_info info;
   rnf_diagram_info_get(RNF_FAMILY_PLAYSTATION, &info);
   CHECK(info.has_touchpad);
@@ -642,14 +658,43 @@ TEST_CASE("diagram elements per family") {
   CHECK_EQ(info.dpad_anchor_y, info.dpad_y + RNF_DIAGRAM_DPAD_ARM * 1.5 + 4);
 }
 
+TEST_CASE("L / R alone do nothing in play (layout 8): the old shoulder defaults are dropped") {
+  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 8);
+  CHECK(plan(rnf_input_shoulder_step_migration, defaultConfig()).unbind.empty());  // nothing to do
+  Pairs old = defaultConfig();
+  old.emplace_back("gc0:leftShoulder", "hk.slow");
+  old.emplace_back("gc0:rightShoulder", "hk.pause");
+  Plan m = plan(rnf_input_shoulder_step_migration, old);
+  CHECK(m.bind.empty());
+  CHECK_EQ(m.unbind.size(), size_t(2));
+  CHECK(asSet(applying(m, old)) == asSet(defaultConfig()));
+  // Customised: only the old default pairs go; other actions on L / R (and elsewhere) stay.
+  Pairs custom = defaultConfig();
+  custom.emplace_back("gc0:leftShoulder", "p1.select");
+  custom.emplace_back("gc0:rightShoulder", "hk.pause");
+  custom.emplace_back("gc0:options", "hk.slow");
+  custom.emplace_back("gc1:rightShoulder", "hk.pause");
+  m = plan(rnf_input_shoulder_step_migration, custom);
+  REQUIRE_EQ(m.unbind.size(), size_t(1));
+  CHECK(m.unbind[0] == std::make_pair(std::string("gc0:rightShoulder"), std::string("hk.pause")));
+  auto after = asSet(applying(m, custom));
+  CHECK(after.count("gc0:leftShoulder=p1.select"));
+  CHECK(after.count("gc0:options=hk.slow"));
+  CHECK(after.count("gc1:rightShoulder=hk.pause"));
+  // A bound member keeps its own badge.
+  CHECK_EQ(badge(custom, "leftShoulder", 0), "SELECT");
+}
+
 TEST_CASE("diagram badges show game buttons and hotkeys") {
   Pairs c = defaultConfig();
   CHECK_EQ(badge(c, "face.east", 0), "A");
   CHECK_EQ(badge(c, "face.north", 0), "Turbo A");
   CHECK_EQ(badge(c, "leftTrigger", 0), "Rewind");
   CHECK_EQ(badge(c, "rightTrigger", 0), "Fast Fwd");
-  CHECK_EQ(badge(c, "leftShoulder", 0), "Slow");
-  CHECK_EQ(badge(c, "rightShoulder", 0), "Pause");
+  // L / R: nothing of their own; as the Quick Menu chord's members they step (back / forward).
+  CHECK_EQ(badge(c, "leftShoulder", 0), "Step Back");
+  CHECK_EQ(badge(c, "rightShoulder", 0), "Advance");
+  CHECK_EQ(badge(c, "leftShoulder", 1), "<nil>");
   CHECK_EQ(badge(c, "menu", 0), "START");
   CHECK_EQ(badge(c, "home", 0), "<nil>");
   CHECK_EQ(group(c, "dpad", 0), "movement:Move");
@@ -672,7 +717,7 @@ TEST_CASE("diagram badges show game buttons and hotkeys") {
 }
 
 TEST_CASE("L3 = Undo of a retry (layout 7)") {
-  CHECK_EQ(RNF_CONTROLLER_LAYOUT_VERSION, 7);
+  CHECK(RNF_CONTROLLER_LAYOUT_VERSION >= 7);
   CHECK(contains(defaultConfig(), "gc0:leftThumb", "hk.undo_take"));
   CHECK(plan(rnf_input_undo_migration, defaultConfig()).bind.empty());  // already there
   Pairs old = defaultConfig();

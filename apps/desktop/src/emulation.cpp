@@ -918,7 +918,7 @@ void EmulationController::stopPractice() {
   setMuted(true);
   publishVideo();
   markStructureDirty();
-  notice(TR("Stopped practicing (the take is unchanged)"));
+  notice(TR("Practice stopped"));  // back where the take was before practice
 }
 
 void EmulationController::refreshPracticeLength(int slot) {

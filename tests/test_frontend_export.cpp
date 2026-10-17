@@ -168,7 +168,7 @@ TEST_CASE("localization table and formatting") {
   CHECK_EQ(std::string(rnf_l10n_language()), "ja");
   CHECK_EQ(take(rnf_l10n_format("Pad %lld %@", args, 2)), "パッド2 D-pad ↑");
   CHECK_EQ(take(rnf_input_display_name(RNF_KEYBOARD_MACOS, "gc0:face.east", "A")), "パッド1 右ボタン(A)");
-  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "右ボタン（A）");
+  CHECK_EQ(take(rnf_input_element_title("face.east", RNF_FAMILY_NINTENDO, nullptr)), "右ボタン");
   rnf_l10n_set_language("en");
   // Positional arguments and printf-style conversions.
   args[0] = rnf_arg{RNF_ARG_STRING, 0, 0, 0, "x"};

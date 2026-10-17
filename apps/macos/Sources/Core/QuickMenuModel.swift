@@ -14,7 +14,7 @@ enum QMPage: String, CaseIterable, Hashable {
     case display, displayShape, crtDetail
     case controls, controller, assign, bindings, controlsDetail
     case sound
-    case system, updates, about
+    case system, about   // about = System › ReplayNES Version (the version and the updates)
     case game, reset
 
     /// The four settings pages (L / R switch between them; the Settings tile opens the first).
@@ -50,7 +50,6 @@ enum QMPage: String, CaseIterable, Hashable {
         case .controlsDetail: return "controls.detail"
         case .sound: return "settings.sound"
         case .system: return "settings.system"
-        case .updates: return "system.updates"
         case .about: return "system.about"
         case .game: return "game"
         case .stream, .reset: return nil
@@ -67,7 +66,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .crtDetail, .displayShape: return .display
         case .controller, .bindings, .controlsDetail: return .controls
         case .assign: return .controller   // the action picker of a button on the diagram
-        case .updates, .about: return .system
+        case .about: return .system
         case .reset: return .game
         }
     }
@@ -134,7 +133,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .retry, .bookmarks: return "clock.arrow.circlepath"
         case .practice: return "target"
         case .share, .stream: return "square.and.arrow.up"
-        case .display, .displayShape, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .updates, .about:
+        case .display, .displayShape, .crtDetail, .controls, .controller, .assign, .bindings, .controlsDetail, .sound, .system, .about:
             return "gearshape"
         case .game, .reset: return "gamecontroller"
         }
@@ -158,8 +157,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .controlsDetail: return String(localized: "Controls Details")
         case .sound: return String(localized: "Sound")
         case .system: return String(localized: "System")
-        case .updates: return String(localized: "Updates")
-        case .about: return String(localized: "About")
+        case .about: return String(localized: "ReplayNES Version")
         case .game: return String(localized: "Game")
         case .reset: return String(localized: "Reset")
         }

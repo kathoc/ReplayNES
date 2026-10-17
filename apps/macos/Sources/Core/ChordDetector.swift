@@ -5,6 +5,9 @@
 // (`alone(down: false)`: pause / slow in play, a page in menus, a frame step while paused);
 // `alone(down: true)` only says "held alone" (a member bound to a game button is held from there).
 // Repeat mode (paused frame steps): a member held alone fires `repeated` after 400 ms, then every 50 ms.
+// A member pressed while the other is already held on its own (L held, then R) `follow`s it at once
+// (the frame-step gesture), repeating (`followRepeated`) while held; the held one's release is then
+// `suppressed` (no action of its own), as is that of a member claimed with `claimHeld` (L / R + START).
 // SPDX-License-Identifier: GPL-2.0-or-later
 import Foundation
 
@@ -19,6 +22,13 @@ enum ChordEvent: Equatable {
     case alone(String, down: Bool, member: Int, repeats: Int)
     /// Repeat mode: held alone >= RNF_CHORD_HOLD_DELAY (and every RNF_CHORD_REPEAT_INTERVAL).
     case repeated(String, member: Int)
+    /// Pressed (down) / released while the other member was held on its own: the step gesture.
+    case follow(String, down: Bool, member: Int, repeats: Int)
+    /// A follower held >= RNF_CHORD_HOLD_DELAY (and every RNF_CHORD_REPEAT_INTERVAL), in any mode.
+    case followRepeated(String, member: Int)
+    /// The release of a member that led a follow press or was claimed: no action of its own (a
+    /// member held for the game / a marker is still released).
+    case suppressed(String, member: Int)
 }
 
 /// Thin wrapper over rnf_chord. Not thread-safe: use it from one queue. Times are seconds on one
@@ -64,6 +74,13 @@ final class ChordDetector {
     /// Forget everything held / pending without events (controller detached).
     func reset() { rnf_chord_reset(handle) }
 
+    /// The members held now whose id starts with `prefix` lead (their release is `suppressed`): L / R
+    /// held + START. Returns the events due at `now` and how many were claimed (0: START is the game's).
+    func claimHeld(prefix: String, now: Double) -> (claimed: Int, events: [ChordEvent]) {
+        let n = Int(rnf_chord_claim_held(handle, prefix, now))
+        return (n, poll())
+    }
+
     /// Repeat mode (members held alone fire `repeated`): on only while paused in play.
     var repeatMode: Bool {
         get { rnf_chord_repeat(handle) != 0 }
@@ -75,11 +92,19 @@ final class ChordDetector {
         var e = rnf_chord_event()
         while rnf_chord_poll(handle, &e) != 0 {
             let id = String(cString: e.input)
+            let member = Int(e.member)
+            if (e.kind == RNF_CHORD_ALONE_UP || e.kind == RNF_CHORD_FOLLOW_UP) && e.suppressed != 0 {
+                out.append(.suppressed(id, member: member))
+                continue
+            }
             switch e.kind {
             case RNF_CHORD_COMBO_DOWN: out.append(.comboDown(id))
             case RNF_CHORD_COMBO_UP: out.append(.comboUp(id))
             case RNF_CHORD_ALONE_DOWN: out.append(.alone(id, down: true, member: Int(e.member), repeats: Int(e.repeats)))
             case RNF_CHORD_ALONE_REPEAT: out.append(.repeated(id, member: Int(e.member)))
+            case RNF_CHORD_FOLLOW_DOWN: out.append(.follow(id, down: true, member: member, repeats: 0))
+            case RNF_CHORD_FOLLOW_REPEAT: out.append(.followRepeated(id, member: member))
+            case RNF_CHORD_FOLLOW_UP: out.append(.follow(id, down: false, member: member, repeats: Int(e.repeats)))
             default: out.append(.alone(id, down: false, member: Int(e.member), repeats: Int(e.repeats)))
             }
         }

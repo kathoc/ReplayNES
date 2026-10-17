@@ -671,9 +671,26 @@ float UI::glyph(ImDrawList* dl, ImVec2 p, const std::string& logical, rnf_contro
     }
     return w;
   }
+  // Face buttons: the position glyph (rnf_ui_face_glyph: four circles, the one to press filled), the
+  // same on every family (letters differ and A / B swap places between them).
+  if (rnf_ui_face_glyph(element.c_str(), southConfirm()) != RNF_FACE_GLYPH_NONE) return faceGlyph(dl, p, element, h, draw);
   std::string label = padGlyph(f, element.c_str());
   if (label.empty()) label = element;
-  return keycap(dl, p, h, label, element.rfind("face.", 0) == 0, draw);
+  return keycap(dl, p, h, label, false, draw);
+}
+
+float UI::faceGlyph(ImDrawList* dl, ImVec2 p, const std::string& element, float h, bool draw, ImU32 on, ImU32 off) const {
+  int pressed = rnf_ui_face_glyph(element.c_str(), southConfirm());
+  if (draw && dl) {
+    for (int i = 0; i < 4; ++i) {
+      rnf_face_glyph_circle c{};
+      if (!rnf_ui_face_glyph_circle(i, h, &c)) continue;
+      ImVec2 cc(p.x + float(c.x), p.y + float(c.y));
+      if (i == pressed) dl->AddCircleFilled(cc, float(c.radius), on ? on : kText, 16);
+      else dl->AddCircle(cc, float(c.radius - c.stroke / 2), off ? off : kTextDim, 16, float(c.stroke));
+    }
+  }
+  return h;
 }
 
 void UI::buildHintBar(const LRect& bar) {

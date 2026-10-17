@@ -20,12 +20,14 @@ struct Ev {
   std::string input;
   double time;
   int repeats;
+  int suppressed;
+  int member;
 };
 
 std::vector<Ev> drain(rnf_chord* c) {
   std::vector<Ev> v;
   rnf_chord_event e;
-  while (rnf_chord_poll(c, &e)) v.push_back({e.kind, e.input, e.time, e.repeats});
+  while (rnf_chord_poll(c, &e)) v.push_back({e.kind, e.input, e.time, e.repeats, e.suppressed, e.member});
   return v;
 }
 
@@ -33,7 +35,10 @@ std::string str(const std::vector<Ev>& v) {
   std::string s;
   for (auto& e : v) {
     const char* k = e.kind == RNF_CHORD_COMBO_DOWN ? "COMBO" : e.kind == RNF_CHORD_COMBO_UP ? "combo-up"
-                    : e.kind == RNF_CHORD_ALONE_DOWN ? "DOWN" : e.kind == RNF_CHORD_ALONE_REPEAT ? "rep" : "up";
+                    : e.kind == RNF_CHORD_ALONE_DOWN ? "DOWN" : e.kind == RNF_CHORD_ALONE_REPEAT ? "rep"
+                    : e.kind == RNF_CHORD_FOLLOW_DOWN ? "FOLLOW" : e.kind == RNF_CHORD_FOLLOW_REPEAT ? "frep"
+                    : e.kind == RNF_CHORD_FOLLOW_UP ? (e.suppressed ? "fup~" : "fup")
+                    : e.suppressed ? "up~" : "up";
     s += std::string(s.empty() ? "" : " ") + k + ":" + (e.input == LR ? "LR" : e.input == L ? "L" : e.input == R ? "R" : e.input);
   }
   return s;
@@ -80,17 +85,19 @@ TEST_CASE("chord: either order, and exactly at the window edge") {
   rnf_chord_feed(c, R, 0, 5.2);
   rnf_chord_feed(c, L, 0, 5.2);
   CHECK_EQ(str(drain(c)), "combo-up:LR");
-  // 100 ms or more apart: R alone (at press + 100 ms), then L on its own.
+  // 100 ms or more apart: R alone (at press + 100 ms), then L follows it (R held + L: the step).
   rnf_chord_feed(c, R, 1, 6.0);
   rnf_chord_feed(c, L, 1, 6.11);
   auto ev = drain(c);
-  CHECK_EQ(str(ev), "DOWN:R");
-  REQUIRE_EQ(ev.size(), size_t(1));
+  CHECK_EQ(str(ev), "DOWN:R FOLLOW:L");
+  REQUIRE_EQ(ev.size(), size_t(2));
   CHECK(near(ev[0].time, 6.1, 1e-9));
+  CHECK(near(ev[1].time, 6.11, 1e-9));
+  CHECK_EQ(ev[1].member, 0);
   rnf_chord_feed(c, L, 0, 6.15);
-  CHECK_EQ(str(drain(c)), "DOWN:L up:L");
+  CHECK_EQ(str(drain(c)), "fup:L");
   rnf_chord_feed(c, R, 0, 6.3);
-  CHECK_EQ(str(drain(c)), "up:R");
+  CHECK_EQ(str(drain(c)), "up~:R");
   rnf_chord_free(c);
 }
 
@@ -202,14 +209,17 @@ TEST_CASE("chord: repeat-safe (key repeat, re-pressing while held, one menu per 
   rnf_chord_free(c);
 }
 
-TEST_CASE("chord: held alone, then the other comes late: no menu") {
+TEST_CASE("chord: held alone, then the other comes late: no menu, it follows (the step gesture)") {
   rnf_chord* c = menuChord();
   rnf_chord_feed(c, L, 1, 1.0);
   rnf_chord_tick(c, 1.2);
   CHECK_EQ(str(drain(c)), "DOWN:L");
-  rnf_chord_feed(c, R, 1, 1.3);  // L held alone already: R starts its own window
+  rnf_chord_feed(c, R, 1, 1.3);  // L held alone already: R follows at once (no window)
+  CHECK_EQ(str(drain(c)), "FOLLOW:R");
   rnf_chord_feed(c, R, 0, 1.35);
-  CHECK_EQ(str(drain(c)), "DOWN:R up:R");
+  CHECK_EQ(str(drain(c)), "fup:R");
+  rnf_chord_feed(c, L, 0, 1.4);  // the lead's release is suppressed
+  CHECK_EQ(str(drain(c)), "up~:L");
   // Non-members pass through and still fire due timeouts.
   rnf_chord_feed(c, R, 1, 2.0);
   CHECK_EQ(rnf_chord_feed(c, "gc0:face.south", 1, 2.5), 0);
@@ -218,6 +228,74 @@ TEST_CASE("chord: held alone, then the other comes late: no menu") {
   CHECK(drain(c).empty());
   rnf_chord_feed(c, R, 0, 2.6);  // forgotten by the reset
   CHECK(drain(c).empty());
+  rnf_chord_free(c);
+}
+
+TEST_CASE("chord: follow repeats while held (even without repeat mode); the lead never repeats") {
+  rnf_chord* c = menuChord();
+  rnf_chord_set_repeat(c, 1);  // paused: L alone repeats ...
+  rnf_chord_feed(c, R, 1, 1.0);
+  rnf_chord_tick(c, 1.45);
+  CHECK_EQ(str(drain(c)), "DOWN:R rep:R");
+  rnf_chord_feed(c, L, 1, 1.47);  // ... until L follows: R is the lead now
+  CHECK_EQ(str(drain(c)), "FOLLOW:L");
+  CHECK(near(rnf_chord_deadline(c), 1.87, 1e-9));
+  rnf_chord_set_repeat(c, 0);  // a follower repeats regardless
+  rnf_chord_tick(c, 1.871);
+  rnf_chord_tick(c, 1.93);
+  auto ev = drain(c);
+  CHECK_EQ(str(ev), "frep:L frep:L");
+  CHECK_EQ(ev[1].repeats, 2);
+  rnf_chord_feed(c, L, 0, 1.95);
+  ev = drain(c);
+  CHECK_EQ(str(ev), "fup:L");
+  CHECK_EQ(ev[0].repeats, 2);
+  CHECK_EQ(rnf_chord_deadline(c), 0.0);  // the lead does not repeat
+  // The lead still held: tapping the other again follows again (one step per tap).
+  rnf_chord_feed(c, L, 1, 2.0);
+  rnf_chord_feed(c, L, 0, 2.05);
+  CHECK_EQ(str(drain(c)), "FOLLOW:L fup:L");
+  // The lead released first: the follower keeps following until its release; the old lead pressed
+  // again follows the follower (which becomes the lead).
+  rnf_chord_feed(c, L, 1, 3.0);
+  rnf_chord_feed(c, R, 0, 3.1);
+  rnf_chord_feed(c, R, 1, 3.2);
+  CHECK_EQ(str(drain(c)), "FOLLOW:L up~:R FOLLOW:R");
+  rnf_chord_feed(c, L, 0, 3.3);
+  rnf_chord_feed(c, R, 0, 3.4);
+  CHECK_EQ(str(drain(c)), "fup~:L fup:R");
+  // Everything up: L+R within the window is the menu again.
+  rnf_chord_feed(c, L, 1, 4.0);
+  rnf_chord_feed(c, R, 1, 4.05);
+  CHECK_EQ(str(drain(c)), "COMBO:LR");
+  rnf_chord_free(c);
+}
+
+TEST_CASE("chord: claimed members (L / R held + START): no chord, no repeat, release suppressed") {
+  rnf_chord* c = menuChord();
+  CHECK_EQ(rnf_chord_claim_held(c, "gc0:", 0.5), size_t(0));  // nothing held: START is the game's
+  rnf_chord_set_repeat(c, 1);
+  rnf_chord_feed(c, L, 1, 1.0);
+  CHECK_EQ(rnf_chord_claim_held(c, "gc1:", 1.02), size_t(0));  // another pad's START
+  CHECK_EQ(rnf_chord_claim_held(c, "gc0:", 1.03), size_t(1));  // still in its window
+  rnf_chord_feed(c, R, 1, 1.05);  // within L's window, but L is claimed: R follows, no menu
+  CHECK_EQ(str(drain(c)), "FOLLOW:R");
+  rnf_chord_tick(c, 1.2);
+  CHECK_EQ(str(drain(c)), "DOWN:L");  // L's window ends (a game member is held from here)
+  rnf_chord_feed(c, R, 0, 1.3);
+  rnf_chord_tick(c, 3.0);  // claimed: no repeat even in repeat mode
+  CHECK_EQ(str(drain(c)), "fup:R");
+  rnf_chord_feed(c, L, 0, 3.1);
+  CHECK_EQ(str(drain(c)), "up~:L");
+  // A tap claimed: its release is suppressed too.
+  rnf_chord_feed(c, R, 1, 4.0);
+  CHECK_EQ(rnf_chord_claim_held(c, nullptr, 4.02), size_t(1));
+  rnf_chord_feed(c, R, 0, 4.05);
+  CHECK_EQ(str(drain(c)), "DOWN:R up~:R");
+  // Not claimed again on the next press.
+  rnf_chord_feed(c, R, 1, 5.0);
+  rnf_chord_feed(c, R, 0, 5.05);
+  CHECK_EQ(str(drain(c)), "DOWN:R up:R");
   rnf_chord_free(c);
 }
 
@@ -253,9 +331,9 @@ TEST_CASE("Quick Menu defaults: L+R combo for pad 1, Esc on the keyboard") {
   CHECK(sdl.count(std::string(LR) + "=hk.menu"));
   CHECK(mac.count("kb:53=hk.menu"));
   CHECK(sdl.count("kb:41=hk.menu"));
-  // R still pauses, L still slows down.
-  CHECK(sdl.count("gc0:rightShoulder=hk.pause"));
-  CHECK(sdl.count("gc0:leftShoulder=hk.slow"));
+  // Layout 8: L / R alone do nothing in play (no misfires next to the chord).
+  CHECK_FALSE(sdl.count("gc0:rightShoulder=hk.pause"));
+  CHECK_FALSE(sdl.count("gc0:leftShoulder=hk.slow"));
   CHECK_EQ(take(rnf_input_action_label("hk.menu")), "Quick Menu");
   // The engine accepts the action and the combo id; it is a hotkey (never game input).
   rn_input* in = rn_input_new();
@@ -295,9 +373,15 @@ TEST_CASE("menu migration (layout 4 -> 5)") {
   };
   Pairs layout4 = defaultConfig();
   removeIf(layout4, [](const std::pair<std::string, std::string>& b) { return b.second == "hk.menu"; });
+  layout4.emplace_back("gc0:leftShoulder", "hk.slow");  // layouts <= 7 (dropped by layout 7 -> 8)
+  layout4.emplace_back("gc0:rightShoulder", "hk.pause");
   Plan m = plan5(layout4, RNF_KEYBOARD_MACOS);
   CHECK(m.unbind.empty());
-  CHECK(asSet(applying(m, layout4)) == asSet(defaultConfig()));
+  Pairs layout5 = applying(m, layout4);
+  removeIf(layout5, [](const std::pair<std::string, std::string>& b) {
+    return b.first == "gc0:leftShoulder" || b.first == "gc0:rightShoulder";
+  });
+  CHECK(asSet(layout5) == asSet(defaultConfig()));
   // R keeps pausing (nothing unbound).
   CHECK(asSet(applying(m, layout4)).count("gc0:rightShoulder=hk.pause"));
   // Already migrated: nothing.
@@ -409,6 +493,28 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK((itemIds(m, "settings.display") ==
         std::vector<std::string>{"display.size", "display.flash", "display.vtr", "display.shape"}));
   CHECK((itemIds(m, "settings.system") == std::vector<std::string>{"system.language", "system.about", "system.detail"}));
+  CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "about.folders"}));
+  rnf_menu_free(m);
+  // Settings > System > ReplayNES Version: the version and the updates in one page (no Updates page).
+  m = rnf_menu_new(kAll);
+  CHECK(rnf_menu_page_find(m, "system.updates") < 0);
+  CHECK((itemIds(m, "settings.system") ==
+         std::vector<std::string>{"system.language", "system.steam", "system.about", "system.detail", "system.quit"}));
+  CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "updates.status", "updates.check",
+                                                                "updates.apply", "updates.auto", "about.folders"}));
+  CHECK((itemIds(m, "about.folders") ==
+         std::vector<std::string>{"about.roms", "about.projects", "about.settings", "about.license"}));
+  {
+    int sys = rnf_menu_page_find(m, "settings.system"), about = rnf_menu_page_find(m, "system.about");
+    REQUIRE(sys >= 0);
+    REQUIRE(about >= 0);
+    rnf_menu_item_info it{};
+    REQUIRE(rnf_menu_item_get(m, size_t(sys), size_t(rnf_menu_item_find(m, size_t(sys), "system.about")), &it));
+    CHECK_EQ(std::string(rnf_menu_text(it.label)), "ReplayNES Version");
+    rnf_menu_page_info pi{};
+    REQUIRE(rnf_menu_page_get(m, size_t(about), &pi));
+    CHECK_EQ(std::string(rnf_menu_text(pi.title)), "ReplayNES Version");
+  }
   rnf_menu_free(m);
   // Resume Countdown: System > More (Controls and Controls > More are full on Linux).
   for (uint32_t f : {0u, kDesktopLinux, kAll}) {

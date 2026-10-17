@@ -5,11 +5,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import SwiftUI
 
-/// The status label; nothing when there is nothing to say (normal play).
+/// The status label; nothing when there is nothing to say (normal play). Practicing, it is the
+/// "■ Stop Practice" button (click / tap; Y on the pad), then the rest of the label.
 struct TapeStatusLabel: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
+        if model.status.hasSession && model.status.practicing {
+            HStack(spacing: 8) {
+                TapeChip(title: String(localized: "■ Stop Practice")) { model.practiceStop() }
+                let rest = model.status.tapeLabelBesidePractice
+                if !rest.isEmpty { TapeLabelText(text: rest) }
+            }
+        } else {
+            label
+        }
+    }
+
+    @ViewBuilder private var label: some View {
         let base = model.status.hasSession ? model.status.tapeLabel : ""
         if let job = model.exportJob, !job.finished {
             ExportProgressLabel(job: job, base: base)

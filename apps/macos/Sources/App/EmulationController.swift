@@ -114,6 +114,10 @@ struct EmuStatus: Equatable {
         Tape.statusLabel(mode: mode, rewinding: rewinding, fastForward: fastForward, slow: slow,
                          endOfTape: endOfTake && !practicing)
     }
+    /// Practicing: the label without "Practice (not recorded)" (the "■ Stop Practice" button stands there).
+    var tapeLabelBesidePractice: String {
+        Tape.statusLabel(mode: RN_MODE_RECORD, rewinding: rewinding, fastForward: fastForward, slow: slow, endOfTape: false)
+    }
 }
 
 /// Bookmarks, takes and practice slots (published when they change).
@@ -194,11 +198,9 @@ final class EmulationController {
     private var modeBeforePractice = RN_MODE_RECORD
     private let reel = PracticeReel()   // pictures of the run for the 1 s sweep back to A
     private var practiceRewindStarted = false
-    private var countdown = 0 {
-        // The cancel tap ends the practice countdown only; during the resume countdown the NES buttons
-        // are game input typed ahead (docs/design/VTR_UX.md, "Countdown type-ahead").
-        didSet { if (countdown > 0) != (oldValue > 0) { input.setCountdown(countdown > 0 && !resumeCountdown.active) } }
-    }
+    /// The practice / resume countdown (3, 2, 1). NES buttons there are game input typed ahead
+    /// (docs/design/VTR_UX.md, "Countdown type-ahead"); Y stops practice (InputManager.setPracticing).
+    private var countdown = 0
     private var countdownFraction = 0.0
     /// 3, 2, 1 over the paused picture before play resumes from a pause (resume()).
     private var resumeCountdown = ResumeCountdown()
@@ -1176,14 +1178,6 @@ final class EmulationController {
         practiceSeq &+= 1
     }
 
-    /// The UI's cancel tapped during the countdown: the resume countdown goes back to paused; the
-    /// practice countdown ends practice (back to the take, paused).
-    func abortCountdown() {
-        if resumeCountdown.active { paused = true; return }
-        guard isPracticing, practiceLoop.inCountdown else { return }
-        stopPractice()
-    }
-
     // MARK: resume countdown (emulation thread)
 
     /// The user resumes play from a pause (the pause hotkey / Space, the seek bar's cancel tap, the
@@ -1352,7 +1346,7 @@ final class EmulationController {
         audio.setMuted(true)
         publishVideo()
         structureDirty = true
-        notice(String(localized: "Stopped practicing (the take is unchanged)"))
+        notice(String(localized: "Practice stopped"))   // back where the take was before practice
     }
 
     private func refreshPracticeLength(_ s: EngineSession, _ slot: Int) {

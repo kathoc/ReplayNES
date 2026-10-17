@@ -183,4 +183,11 @@ final class SeekMarkers: ObservableObject {
         guard let m = model, m.status.hasSession, m.status.paused, !m.quickMenu.isOpen, !m.showLibrary, !editing else { return }
         m.stepFrame(dir)
     }
+
+    /// Pad 1's gestures in play (InputManager.onPauseGesture): 0 = pause (the seek bar), -1 / +1 =
+    /// pause and step one frame back / forward.
+    func pauseGesture(_ dir: Int) {
+        guard let m = model, m.status.hasSession, !m.quickMenu.isOpen, !m.showLibrary, !editing else { return }
+        if dir == 0 { m.setPaused(true) } else { m.stepFrame(dir) }   // stepFrame pauses first
+    }
 }

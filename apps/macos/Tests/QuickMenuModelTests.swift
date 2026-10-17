@@ -65,6 +65,31 @@ final class ChordDetectorTests: XCTestCase {
         XCTAssertEqual(c.feed(l, down: false, now: 2).events, [.alone(l, down: false, member: 0, repeats: 0)])
     }
 
+    /// L held, then R (after the window): R follows at once (step forward), repeating while held in
+    /// any mode; L's release is suppressed. R held + L: back.
+    func testFollowIsTheStepGesture() {
+        let c = detector()
+        _ = c.feed(l, down: true, now: 0)
+        XCTAssertEqual(c.tick(now: w), [.alone(l, down: true, member: 0, repeats: 0)])
+        XCTAssertEqual(c.feed(r, down: true, now: 0.2).events, [.follow(r, down: true, member: 1, repeats: 0)])
+        XCTAssertEqual(c.nextDeadline ?? 0, 0.2 + Double(RNF_CHORD_HOLD_DELAY), accuracy: 1e-9)
+        XCTAssertEqual(c.tick(now: 0.601), [.followRepeated(r, member: 1)])
+        XCTAssertEqual(c.feed(r, down: false, now: 0.62).events, [.follow(r, down: false, member: 1, repeats: 1)])
+        XCTAssertEqual(c.feed(l, down: false, now: 0.7).events, [.suppressed(l, member: 0)])
+        _ = c.feed(r, down: true, now: 1)
+        _ = c.tick(now: 1 + w)
+        XCTAssertEqual(c.feed(l, down: true, now: 1.3).events, [.follow(l, down: true, member: 0, repeats: 0)])
+    }
+
+    /// L / R held + START: the held member is claimed (its release does nothing of its own).
+    func testClaimHeld() {
+        let c = detector()
+        XCTAssertEqual(c.claimHeld(prefix: "gc0:", now: 0).claimed, 0)
+        _ = c.feed(r, down: true, now: 1)
+        XCTAssertEqual(c.claimHeld(prefix: "gc0:", now: 1.02).claimed, 1)
+        XCTAssertEqual(c.feed(r, down: false, now: 1.05).events, [.alone(r, down: true, member: 1, repeats: 0), .suppressed(r, member: 1)])
+    }
+
     func testOtherInputsPassAndRepeatOrResetFireNothing() {
         let c = detector()
         let other = c.feed("gc0:face.south", down: true, now: 0)
@@ -121,7 +146,7 @@ final class MenuMigrationTests: XCTestCase {
         XCTAssertTrue(plan.unbind.isEmpty)
         XCTAssertEqual(Set(plan.bind.map { "\($0.0)=\($0.1)" }),
                        ["gc0:leftShoulder+gc0:rightShoulder=hk.menu", "kb:53=hk.menu"])
-        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 7)
+        XCTAssertEqual(InputCatalog.controllerLayoutVersion, 8)
         XCTAssertTrue(InputCatalog.isCombo("gc0:leftShoulder+gc0:rightShoulder"))
         XCTAssertFalse(InputCatalog.isCombo("kb:53"))
         // Esc already bound to something else: kept, only the pad chord is added.
@@ -145,6 +170,23 @@ final class MenuMigrationTests: XCTestCase {
         // L3 already used: kept.
         let taken = InputCatalog.undoMigration(config(old + [(input: "gc0:leftThumb", action: "hk.bookmark")]))
         XCTAssertTrue(taken.bind.isEmpty)
+    }
+
+    /// Layout 7 -> 8: pad 1's L slow / R pause are dropped (L / R alone do nothing in play).
+    func testLayout7FileDropsShoulderHotkeys() {
+        let defaults = InputCatalog.parse(InputCatalog.defaultConfigJSON())!
+        XCTAssertFalse(defaults.bindings.contains { $0.input == "gc0:leftShoulder" || $0.input == "gc0:rightShoulder" })
+        func config(_ b: [(input: String, action: String)]) -> InputCatalog.Config {
+            InputCatalog.Config(bindings: b, turboPeriod: defaults.turboPeriod, turboDuty: defaults.turboDuty,
+                                socd: defaults.socd, analogThreshold: defaults.analogThreshold)
+        }
+        let old = defaults.bindings + [(input: "gc0:leftShoulder", action: "hk.slow"), (input: "gc0:rightShoulder", action: "hk.pause")]
+        let plan = InputCatalog.shoulderStepMigration(config(old))
+        XCTAssertTrue(plan.bind.isEmpty)
+        XCTAssertEqual(Set(plan.unbind.map { "\($0.0)=\($0.1)" }), ["gc0:leftShoulder=hk.slow", "gc0:rightShoulder=hk.pause"])
+        // Customised: only the old default pairs go.
+        let custom = InputCatalog.shoulderStepMigration(config(defaults.bindings + [(input: "gc0:leftShoulder", action: "p1.select")]))
+        XCTAssertTrue(custom.unbind.isEmpty)
     }
 }
 
@@ -175,7 +217,7 @@ final class CoreMenuTreeTests: XCTestCase {
     }
 
     /// Core pages macOS deliberately has no page for (see QMPage.coreID).
-    private let notOnMac: Set<String> = ["system.detail", "library.projects"]
+    private let notOnMac: Set<String> = ["system.detail", "library.projects", "about.folders"]
 
     func testTopLevelTilesMatch() {
         let quick = Int(rnf_menu_page_find(menu, "quick"))

@@ -16,7 +16,7 @@ struct QMItem: Identifiable {
         case choice([String], Int)
         case slider(Double, ClosedRange<Double>, String)   // value, range, shown text
         case text(String)
-        /// Button glyphs with their verbs ("Ⓑ Confirm  Ⓐ Back"), switched with ← / →.
+        /// Button glyphs (FaceGlyph tokens) with their verbs ("◎ Confirm  ◎ Back"), switched with ← / →.
         case buttons([(glyph: String, verb: String)])
     }
     let id: String
@@ -81,7 +81,6 @@ enum QuickMenuPages {
         case .controlsDetail: return QMContent(items: controlsDetail(m))
         case .sound: return QMContent(items: sound(m))
         case .system: return QMContent(items: system(m))
-        case .updates: return QMContent(items: updates())
         case .about: return QMContent(items: about())
         case .game: return QMContent(items: game(m, menu))
         case .reset: return QMContent(items: reset(m, menu))
@@ -307,11 +306,10 @@ enum QuickMenuPages {
     }
 
     /// Settings › Controls › Confirm Button: which face button confirms in menus (east by default,
-    /// Nintendo style, on every family), as the glyph pair of the connected controller family.
+    /// Nintendo style, on every family), as the position glyph pair (FaceGlyph: right on every family).
     private static func confirmButton(_ m: AppModel) -> QMItem {
         let south = m.southConfirm
-        let info = m.input.controllerMonitor.controllers.min { $0.slot < $1.slot }
-        let label = { (e: String) in info?.label(e) ?? ControllerFamily.xbox.label(e) }
+        let label = { (e: String) in FaceGlyph.token(e) }
         let ok = String(cString: rnf_ui_confirm_element(south ? 1 : 0)), back = String(cString: rnf_ui_cancel_element(south ? 1 : 0))
         let set = { (s: Bool) in m.southConfirm = s }
         return QMItem(id: "confirmButton", icon: "checkmark.circle", title: String(localized: "Confirm Button"),
@@ -492,13 +490,17 @@ enum QuickMenuPages {
                    String(localized: "Show input and display latency over the game"), m.showLatency) { m.showLatency = $0 },
             toggle("flashBadge", "bolt.badge.checkmark", String(localized: "Flash Notice"),
                    String(localized: "Show a badge while flashing is being reduced"), m.showFlashIndicator) { m.showFlashIndicator = $0 },
-            link("updates", "arrow.triangle.2.circlepath", String(localized: "Updates"),
-                 String(localized: "Automatic checks and installing updates"), .updates),
-            link("about", "info.circle", String(localized: "About"), String(localized: "Version and licenses"), .about),
+            link("about", "info.circle", String(localized: "ReplayNES Version"),
+                 String(localized: "Version, updates and licenses"), .about),
         ]
     }
 
-    private static func updates() -> [QMItem] {
+    /// System › ReplayNES Version: the version (confirm = check for a new version now), the update
+    /// settings (Sparkle), the core and the licenses.
+    private static func about() -> [QMItem] {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+        let site = "https://github.com/kathoc/ReplayNES"
         let u = UpdaterModel.shared
         var auto = toggle("autoInstall", "arrow.down.circle", String(localized: "Install Automatically"),
                           String(localized: "Download in the background and install when you quit"), u.automaticallyDownloads) { u.automaticallyDownloads = $0 }
@@ -506,20 +508,11 @@ enum QuickMenuPages {
         let last = u.lastCheck.map { String(localized: "Last checked: \($0.formatted(date: .abbreviated, time: .shortened))") }
             ?? String(localized: "Not checked yet")
         return [
+            QMItem(id: "version", icon: "info.circle", title: String(localized: "Version"), detail: last, value: .text(version),
+                   confirm: u.canCheckForUpdates ? { u.checkForUpdates() } : nil, verb: String(localized: "Check Now")),
             toggle("autoCheck", "arrow.triangle.2.circlepath", String(localized: "Check Automatically"),
                    String(localized: "Look for new versions on GitHub (nothing personal is sent)"), u.automaticallyChecks) { u.automaticallyChecks = $0 },
             auto,
-            QMItem(id: "checkNow", icon: "magnifyingglass", title: String(localized: "Check Now"), detail: last,
-                   enabled: u.canCheckForUpdates, confirm: { u.checkForUpdates() }, verb: String(localized: "Check")),
-        ]
-    }
-
-    private static func about() -> [QMItem] {
-        let info = Bundle.main.infoDictionary ?? [:]
-        let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
-        let site = "https://github.com/kathoc/ReplayNES"
-        return [
-            QMItem(id: "version", icon: "info.circle", title: String(localized: "Version"), detail: "ReplayNES \(version)", value: .text(version)),
             QMItem(id: "core", icon: "cpu", title: String(localized: "Emulation Core"),
                    detail: String(localized: "Projects open only with the same core (exact replays)"), value: .text(Engine.coreCompatID)),
             QMItem(id: "site", icon: "safari", title: String(localized: "Website"),
