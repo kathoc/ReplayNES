@@ -157,7 +157,7 @@ every backend and the export follow it:
 Checks: `tests/test_frontend_crt.cpp` "crt geometry" (the clock derivation, the constants, the export's
 8:7 within 0.5 % on every canvas); `pictureGeometry` in `crt_conformance` (Vulkan, Direct3D 11) and
 `CRTTests.testPictureGeometryIs87` (Metal): three 16x16 white squares 128 dots / 128 lines apart through
-the RF path with default settings, the centroids of their light (the same frames on black subtracted)
+the RF path with default settings, the centroids of their light (Metal: the same frames on black subtracted; shared harness: no ambient light)
 on the face, both kernel sets, 640x480 (Metal also 1144x858), pixel aspect 8:7 within 0.5 % and centred within
 0.5 %; `replaynes-export --self-test` measures the same squares in the CRT export's canvas (1280x960,
 1920x1080). Measured (M1 Max):
