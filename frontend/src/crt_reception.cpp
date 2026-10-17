@@ -60,6 +60,11 @@ uint32_t hash32(uint32_t x) {  // lowbias32 (the CRT model's noise hash)
 
 extern "C" {
 
+// Picture geometry (frontend.h "CRT picture geometry"): a dot's width / a line's height on a 4:3
+// face whose width the 256 dots span `active_width` of and whose height the 240 lines span.
+double rnf_crt_active_width(void) { return RNF_CRT_ACTIVE_WIDTH; }
+double rnf_crt_pixel_aspect(double active_width) { return (4.0 / 3.0 * active_width / 256) / (1.0 / 240); }
+
 void rnf_crt_reception_at(int step, uint64_t counter, int flash_reduced, rnf_crt_reception* out) {
   if (!out) return;
   const bool reduced = flash_reduced != 0;

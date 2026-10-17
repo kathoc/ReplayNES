@@ -112,7 +112,43 @@ struct CRTConformance {
         return diff
     }
 
-    static let off = CRTRenderer.Settings(lines: 240, beamGrowth: false, persistence: false, supply: false)
+    /// Effects off, nesterm's geometry (the drive fills the face): the fixtures'.
+    static let off = CRTRenderer.Settings(lines: 240, beamGrowth: false, persistence: false, supply: false, activeWidth: 1)
+
+    /// Picture geometry (docs/CRT_PORT.md "Picture geometry"; crt_conformance.h pictureGeometry):
+    /// three 16x16 white squares on black, centred 128 dots / 128 lines apart (dot 64 / 192, line
+    /// 56 / 184), through the RF path; the light of the squares alone (the same history on an
+    /// all-black picture subtracted) gives their centroids on the face. par = displayed width of a
+    /// dot / height of a line (8:7 = the plain display's "8:7 Pixels"); centreX = the face position
+    /// of the picture's centre (dot boundary 128; 0.5 = centred).
+    func pictureGeometry(_ s: CRTRenderer.Settings = CRTRenderer.Settings(), quality: CRTRenderer.Quality, ow: Int, oh: Int) throws
+        -> (par: Double, centreX: Double) {
+        let lit = try renderer(s, ow: ow, oh: oh, quality: quality), dark = try renderer(s, ow: ow, oh: oh, quality: quality)
+        lit.noiseEnabled = false; dark.noiseEnabled = false
+        var a = [UInt16](repeating: 0x0F, count: 256 * 240)
+        let b = a
+        let centres = [(64, 56), (192, 56), (64, 184)]
+        for (cx, cy) in centres { for y in (cy - 8)..<(cy + 8) { for x in (cx - 8)..<(cx + 8) { a[y * 256 + x] = 0x30 } } }
+        for f in 1...3 {
+            a.withUnsafeBufferPointer { run(lit, .codes($0.baseAddress!, burstPhase: UInt32(f % 3)), ordinal: UInt64(f)) }
+            b.withUnsafeBufferPointer { run(dark, .codes($0.baseAddress!, burstPhase: UInt32(f % 3)), ordinal: UInt64(f)) }
+        }
+        let p = lit.read(.output), d = dark.read(.output)
+        guard p.count >= ow * oh, d.count == p.count else { return (0, 0) }
+        var m = [Double](repeating: 0, count: 3), mx = m, my = m
+        for y in 0..<oh { for x in 0..<ow {
+            let k = y < oh / 2 ? (x < ow / 2 ? 0 : 1) : (x < ow / 2 ? 2 : -1)
+            if k < 0 { continue }
+            let v = p[y * ow + x] - d[y * ow + x]
+            let l = 0.2126 * Double(v.x) + 0.7152 * Double(v.y) + 0.0722 * Double(v.z)
+            if !(l > 0) { continue }
+            m[k] += l; mx[k] += l * (Double(x) + 0.5); my[k] += l * (Double(y) + 0.5)
+        } }
+        guard m.allSatisfy({ $0 > 0 }) else { return (0, 0) }
+        let ax = mx[0] / m[0], ay = my[0] / m[0], bx = mx[1] / m[1], cy = my[2] / m[2]
+        let dot = (bx - ax) / 128 / Double(ow), line = (cy - ay) / 128 / Double(oh)   // fractions of the face
+        return (dot * 4 / (line * 3), (ax + bx) / 2 / Double(ow))
+    }
 
     func receiver(noise: Bool) throws -> Diff {
         var s = Self.off

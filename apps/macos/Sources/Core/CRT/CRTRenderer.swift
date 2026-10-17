@@ -20,6 +20,10 @@ final class CRTRenderer {
         var supply = true               // bright screens widen and dim the picture (M4c)
         var antennaDbuv = 65.0          // signal strength 20...90 dBuV (M3-NOISE)
         var ambientLux = 40.0           // fixed in nesterm's UI
+        /// Picture geometry: the fraction of the 4:3 face width the 256 active dots span (centred).
+        /// rnf_crt_active_width() (32/35): the NTSC raster, 8:7 dots like the plain display's
+        /// "8:7 Pixels"; 1: nesterm's mapping (the dots fill the face, 1.25:1) - the fixtures' geometry.
+        var activeWidth = rnf_crt_active_width()
 
         static func validLines(_ l: Int) -> Bool { l == 240 || (110...220).contains(l) }
         var sanitized: Settings {
@@ -27,6 +31,7 @@ final class CRTRenderer {
             if !Self.validLines(s.lines) { s.lines = 240 }
             s.antennaDbuv = min(90, max(20, s.antennaDbuv))
             s.ambientLux = min(500, max(0, s.ambientLux))
+            if !(0.5...1).contains(s.activeWidth) { s.activeWidth = rnf_crt_active_width() }
             return s
         }
     }
@@ -113,7 +118,10 @@ final class CRTRenderer {
         /// Rendered by the fast kernels (key.quality == .fast and the plan fits them).
         var fast = false
     }
-    private struct TubeKey: Equatable { var ow: Int; var oh: Int; var lines: Int; var growth: Bool; var ambient: Double; var quality: Quality }
+    private struct TubeKey: Equatable {
+        var ow: Int; var oh: Int; var lines: Int; var growth: Bool; var ambient: Double; var quality: Quality
+        var active = 1.0   // Settings.activeWidth (picture geometry)
+    }
     private var tube: Tube?
     private var pendingKey: TubeKey?
     private var inFlightKey: TubeKey?
@@ -230,7 +238,7 @@ final class CRTRenderer {
         // plan is still being built (that mismatch read and wrote past the stage / tube buffers).
         settings = s
         let key = TubeKey(ow: max(64, outputWidth), oh: max(48, outputHeight), lines: s.lines, growth: s.beamGrowth, ambient: s.ambientLux,
-                          quality: quality == .fast && fastSupported ? .fast : .reference)
+                          quality: quality == .fast && fastSupported ? .fast : .reference, active: s.activeWidth)
         if synchronous {
             if tube?.key != key { tube = try? makeTube(key); appliedPersistence = nil }
             return
@@ -264,7 +272,8 @@ final class CRTRenderer {
     }
 
     private func makeTube(_ k: TubeKey) throws -> Tube {
-        let plan = CRTTube.makePlan(lines: k.lines, outputWidth: k.ow, outputHeight: k.oh, ambientLux: k.ambient, beamGrowth: k.growth ? 1 : 0)
+        let plan = CRTTube.makePlan(lines: k.lines, outputWidth: k.ow, outputHeight: k.oh, ambientLux: k.ambient, beamGrowth: k.growth ? 1 : 0,
+                                    activeWidth: k.active)
         func constBuf<T>(_ a: [T]) throws -> MTLBuffer {
             if a.isEmpty { return device.makeBuffer(length: 16, options: .storageModeShared)! }
             guard let b = a.withUnsafeBytes({ device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared) })
@@ -290,7 +299,7 @@ final class CRTRenderer {
             t.fastTaps = fp.taps; t.hStride = fp.maxSpan
             t.hplanes = try img(ow, plan.height * 2, 16)
             t.outH = try img(ow, oh, 8)
-            t.scatterSrc = try img(512, plan.height, 8); t.scatterTmp = try img(512, plan.height, 8)
+            t.scatterSrc = try img(sc.width, plan.height, 8); t.scatterTmp = try img(sc.width, plan.height, 8)
         } else {
             t.kx = try constBuf(plan.kernels[0].weights); t.ky = try constBuf(plan.kernels[1].weights)
             t.ambient = try constBuf(plan.ambient)
@@ -633,7 +642,7 @@ final class CRTRenderer {
         // M4C-SPOT-H: horizontal counterpart of the beam-current spot growth (same toggle).
         if settings.beamGrowth && !disableSpotH {
             var spp = SpotParams(width: 512, rows: Int32(rows), radius: Int32(CRTTube.spotHRadius),
-                                 k1: Float(CRTTube.extraSigmaSamples(1, growth: 1, width: 512)))
+                                 k1: Float(CRTTube.extraSigmaSamples(1, growth: 1, width: 512, activeWidth: t.key.active)))
             let src = drive
             dispatch("spot_h", 512, rows) {
                 $0.setBuffer(src, offset: 0, index: 0); $0.setBuffer(spotOut, offset: 0, index: 1)
@@ -774,11 +783,15 @@ final class CRTRenderer {
         return r
     }
 
-    private struct PostParams { var supply, spot: Int32; var k1: Float; var persistence, newSlot, depth, rows, rx: Int32 }
-    private struct ScatterParams { var rows, ry, pad0, pad1: Int32; var kappa: SIMD4<Float> }
+    private struct PostParams {
+        var supply, spot: Int32; var k1: Float; var persistence, newSlot, depth, rows, rx: Int32
+        var margin: Int32 = 0, pad0: Int32 = 0, pad1: Int32 = 0, pad2: Int32 = 0
+    }
+    private struct ScatterParams { var rows, ry, width, pad1: Int32; var kappa: SIMD4<Float> }
     private struct FastTubeParams {
         var height, ow, oh, xCount, gCount, hStride: Int32; var gain, keep: Float
         var amb: SIMD4<Float>; var light: SIMD4<Float>
+        var scat: SIMD4<Float>   // scatter source sampling: x scale, x offset, width, unused
     }
 
     /// The fast path of `encode` (same stages, state and slot bookkeeping; see CRTShaders.fast).
@@ -873,8 +886,9 @@ final class CRTRenderer {
         }
         let persist = settings.persistence && t.ring != nil
         do {
-            var pp = PostParams(supply: settings.supply ? 1 : 0, spot: spot ? 1 : 0, k1: Float(CRTTube.extraSigmaSamples(1, growth: 1, width: 512)),
-                                persistence: 0, newSlot: 0, depth: Int32(CRTPhosphor.depth), rows: Int32(rows), rx: Int32(t.scatter!.rx))
+            var pp = PostParams(supply: settings.supply ? 1 : 0, spot: spot ? 1 : 0, k1: Float(CRTTube.extraSigmaSamples(1, growth: 1, width: 512, activeWidth: t.key.active)),
+                                persistence: 0, newSlot: 0, depth: Int32(CRTPhosphor.depth), rows: Int32(rows), rx: Int32(t.scatter!.rx),
+                                margin: Int32(t.scatter!.margin))
             var w = [SIMD4<Float>](repeating: .zero, count: CRTPhosphor.depth)
             if persist {
                 let r = nextRingSlot(ord)
@@ -902,11 +916,12 @@ final class CRTRenderer {
                                 gain: Float(p.gain), keep: Float(1 - p.scatterFraction),
                                 amb: SIMD4(Float(CRTTube.albedo * t.key.ambient / (Double.pi * CRTTube.referenceWhiteCdM2)),
                                            Float(CRTTube.diffuseFraction), Float(CRTTube.normalSlopeX), Float(CRTTube.normalSlopeY)),
-                                light: SIMD4(Float(CRTTube.lightX / lightNorm), Float(CRTTube.lightY / lightNorm), Float(CRTTube.lightZ / lightNorm), 0))
+                                light: SIMD4(Float(CRTTube.lightX / lightNorm), Float(CRTTube.lightY / lightNorm), Float(CRTTube.lightZ / lightNorm), 0),
+                                scat: SIMD4(sc.sxScale, sc.sxOffset, Float(sc.width), 0))
         let tps = MemoryLayout<FastTubeParams>.stride
         let hsrc = drive, hplanes = t.hplanes!, outH = t.outH!, scatterSrc = t.scatterSrc!
-        var sp = ScatterParams(rows: Int32(rows), ry: Int32(sc.ry), pad0: 0, pad1: 0, kappa: SIMD4(sc.kappa, 0))
-        dispatch("scatter_drive", 512, rows) {
+        var sp = ScatterParams(rows: Int32(rows), ry: Int32(sc.ry), width: Int32(sc.width), pad1: 0, kappa: SIMD4(sc.kappa, 0))
+        dispatch("scatter_drive", sc.width, rows) {
             $0.setBuffer(t.scatterTmp, offset: 0, index: 0); $0.setBuffer(t.scatterWY, offset: 0, index: 1)
             $0.setBuffer(scatterSrc, offset: 0, index: 2); $0.setBytes(&sp, length: MemoryLayout<ScatterParams>.stride, index: 3)
         }

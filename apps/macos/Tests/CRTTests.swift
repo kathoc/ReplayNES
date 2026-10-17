@@ -110,6 +110,26 @@ final class CRTTests: XCTestCase {
         XCTAssertTrue(try c.deterministic(quality: .fast))
     }
 
+    /// The CRT shows the NES picture with the plain display's 8:7 pixel shape (an object's
+    /// width / height within 0.5 %), centred on the 4:3 face, on every kernel set. Before: the 256
+    /// dots filled the face width (nesterm's mapping), 1.25:1 (+9.4 %).
+    func testPictureGeometryIs87() throws {
+        let expected = rnf_crt_pixel_aspect(rnf_crt_active_width())
+        XCTAssertEqual(expected, 8.0 / 7, accuracy: 1e-12)
+        for q in [CRTRenderer.Quality.reference, .fast] {
+            for (w, h) in [(640, 480), (1144, 858)] {
+                let g = try c.pictureGeometry(quality: q, ow: w, oh: h)
+                print("pictureGeometry \(q) \(w)x\(h): pixel aspect \(g.par), centre \(g.centreX)")
+                XCTAssertEqual(g.par / expected, 1, accuracy: 0.005, "\(q) \(w)x\(h): pixel aspect \(g.par)")
+                XCTAssertEqual(g.centreX, 0.5, accuracy: 0.005, "\(q) \(w)x\(h): centre \(g.centreX)")
+            }
+        }
+        // nesterm's mapping (the fixtures' geometry) for comparison: 1.25.
+        let n = try c.pictureGeometry(CRTConformance.off, quality: .reference, ow: 640, oh: 480)
+        print("pictureGeometry nesterm mapping 640x480: pixel aspect \(n.par)")
+        XCTAssertEqual(n.par, 1.25, accuracy: 0.01)
+    }
+
     func testNoiseHashAndKeyMatchReference() throws {
         guard let meta = c.cases["noiseHash"]?.meta else { return XCTFail("noiseHash fixture") }
         let hashes = (meta["hash"] as? [NSNumber])?.map { $0.uint32Value } ?? []

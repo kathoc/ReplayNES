@@ -145,8 +145,10 @@ class CrtRenderer {
     bool growth = false;
     double ambient = 0;
     CrtQuality quality = CrtQuality::reference;
+    double active = 1;  // CrtSettings::activeWidth (picture geometry)
     bool operator==(const TubeKey& o) const {
-      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient && quality == o.quality;
+      return ow == o.ow && oh == o.oh && lines == o.lines && growth == o.growth && ambient == o.ambient && quality == o.quality &&
+             active == o.active;
     }
   };
   struct Tube {
@@ -162,6 +164,8 @@ class CrtRenderer {
     bool fast = false;
     int fastTaps = 1, hStride = 1, srx = 0, sry = 0;
     float kappa[3] = {0, 0, 0};
+    int smargin = 0, swidth = 512;  // scatter source: 512 + 2 margins columns (DriveScatter)
+    float sxScale = 0, sxOffset = -0.5f;
     Buffer xmapFast, tiles, vrows, vcoef, colinv, swx, swy, hplanes, outH, scatterTmp, scatterSrc;
   };
   struct Slot { int ring; int64_t ordinal; };

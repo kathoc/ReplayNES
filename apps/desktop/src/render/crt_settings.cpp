@@ -10,12 +10,13 @@ CrtSettings CrtSettings::sanitized() const {
   if (!validLines(s.lines)) s.lines = 240;
   s.antennaDbuv = std::min(90.0, std::max(20.0, s.antennaDbuv));
   s.ambientLux = std::min(500.0, std::max(0.0, s.ambientLux));
+  if (!(s.activeWidth >= 0.5 && s.activeWidth <= 1)) s.activeWidth = RNF_CRT_ACTIVE_WIDTH;
   return s;
 }
 
 bool CrtSettings::operator==(const CrtSettings& o) const {
   return lines == o.lines && beamGrowth == o.beamGrowth && persistence == o.persistence && supply == o.supply &&
-         antennaDbuv == o.antennaDbuv && ambientLux == o.ambientLux;
+         antennaDbuv == o.antennaDbuv && ambientLux == o.ambientLux && activeWidth == o.activeWidth;
 }
 
 }  // namespace rnl

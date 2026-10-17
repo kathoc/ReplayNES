@@ -110,7 +110,7 @@ Direct3D 11 feature level 11_0+ (32 KB group shared memory for the FFT, raw buff
   shader source for Linux and Windows, readable diffs. Cost: ~1.7-2 s of compilation when the CRT is
   first switched on (in the VM), done on a worker thread - the plain picture shows meanwhile.
 * Storage buffers become `(RW)ByteAddressBuffer` at `t<n>` / `u<n>` (binding n); which slot of a
-  kernel is an SRV or a UAV comes from shader reflection; push constants become a 64-byte constant
+  kernel is an SRV or a UAV comes from shader reflection; push constants become an 80-byte constant
   buffer (b0). The show pass is the generated vertex / pixel shader (Vulkan's clip-space y flipped).
 * One GLSL change for FXC: `tube_v_growth` had a `continue` in the per-channel loop, which FXC cannot
   compile inside the dynamic loops ("forced to unroll loop, but unrolling failed"); it is an `if`

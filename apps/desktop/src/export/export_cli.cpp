@@ -391,6 +391,56 @@ class SyntheticProcessor : public rnl::ExportVideoProcessor {
   bool scroll_;
 };
 
+#ifdef RNL_EXPORT_CRT
+/// Picture geometry through the CRT export (docs/CRT_PORT.md "Picture geometry"): the export's CRT
+/// processor (the renderer + the 4:3 face placed in the canvas) on three 16x16 white squares 128
+/// dots / 128 lines apart (the light of the squares alone: the same frames on black subtracted).
+/// Returns the pixel aspect ratio in the canvas (a dot's width / a line's height; 0 on failure).
+double crtExportPixelAspect(const rnf_export_settings& st, std::string* why) {
+  rnf_export_geometry g{};
+  rnf_export_geometry_compute(&st, &g);
+  const int w = g.canvas_width, h = g.canvas_height;
+  std::vector<uint16_t> lit(256 * 240, 0x0F), dark(256 * 240, 0x0F);
+  const int centres[3][2] = {{64, 56}, {192, 56}, {64, 184}};
+  for (const auto& c : centres)
+    for (int y = c[1] - 8; y < c[1] + 8; ++y)
+      for (int x = c[0] - 8; x < c[0] + 8; ++x) lit[size_t(y * 256 + x)] = 0x30;
+  std::vector<uint32_t> px(256 * 240, 0xFF000000u);
+  std::vector<uint8_t> canvas[2];
+  for (int k = 0; k < 2; ++k) {
+    canvas[k].assign(size_t(w) * size_t(h) * 4, 0);
+    auto p = rnl::makeCrtExportProcessor(rnl::CrtSettings(), why);
+    if (!p || !p->begin(st, g, why)) return 0;
+    for (uint64_t f = 1; f <= 3; ++f) {
+      rnl::ExportFrameSignal sig;
+      sig.codes = k == 0 ? lit.data() : dark.data();
+      sig.burstPhase = uint32_t(f % 3);
+      sig.ordinal = f;
+      if (!p->render(sig, px.data(), canvas[k].data(), size_t(w) * 4, why)) return 0;
+    }
+  }
+  auto linear = [](uint8_t v) {
+    double c = v / 255.0;
+    return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+  };
+  double m[3] = {0, 0, 0}, mx[3] = {0, 0, 0}, my[3] = {0, 0, 0};
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      const int k = y < h / 2 ? (x < w / 2 ? 0 : 1) : (x < w / 2 ? 2 : -1);
+      if (k < 0) continue;
+      const size_t i = (size_t(y) * size_t(w) + size_t(x)) * 4;  // BGRA
+      double l = 0;
+      for (int c = 0; c < 3; ++c) l += (c == 0 ? 0.0722 : c == 1 ? 0.7152 : 0.2126) * (linear(canvas[0][i + size_t(c)]) - linear(canvas[1][i + size_t(c)]));
+      if (!(l > 0)) continue;
+      m[k] += l;
+      mx[k] += l * (x + 0.5);
+      my[k] += l * (y + 0.5);
+    }
+  if (!(m[0] > 0 && m[1] > 0 && m[2] > 0)) return 0;
+  return (mx[1] / m[1] - mx[0] / m[0]) / (my[2] / m[2] - my[0] / m[0]);  // both 128 apart; square canvas pixels
+}
+#endif
+
 int selfTest(const Args& a) {
   const fs::path dir = fs::u8path(a.get("--self-test"));
   const uint64_t frames = std::max<uint64_t>(a.num("--frames", 300), 260);
@@ -587,6 +637,15 @@ int selfTest(const Args& a) {
     std::string why;
     if (run(&h1, &why)) {
       expectTrue(run(&h2, &why) && h1 == h2, "CRT export with the intro: deterministic");
+      // The CRT export shows the plain 8:7 export's pixel shape (within 0.5 %).
+      for (const auto& cv : {std::pair<int, int>{1280, 960}, std::pair<int, int>{1920, 1080}}) {
+        rnf_export_settings gs = rnl::defaultExportSettings();
+        gs.preset = {RNF_PRESET_CANVAS, 0, cv.first, cv.second};
+        const double par = crtExportPixelAspect(gs, &why);
+        char label[96];
+        std::snprintf(label, sizeof label, "CRT export %dx%d pixel aspect %.4f (8:7)", cv.first, cv.second, par);
+        expectTrue(std::fabs(par / RNF_NES_PIXEL_ASPECT - 1) < 0.005, label);
+      }
     } else {
       std::printf("  CRT export skipped (%s)\n", why.c_str());
     }

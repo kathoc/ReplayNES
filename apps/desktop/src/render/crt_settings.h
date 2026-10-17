@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "replaynes/frontend.h"  // RNF_CRT_ACTIVE_WIDTH
+
 namespace rnl {
 
 /// physical-worker.mjs `effects` + `lines` (defaults as shipped in nesterm's web UI).
@@ -14,6 +16,10 @@ struct CrtSettings {
   bool supply = true;        // bright screens widen and dim the picture (M4c)
   double antennaDbuv = 65.0; // signal strength 20...90 dBuV (M3-NOISE)
   double ambientLux = 40.0;  // fixed in nesterm's UI
+  // Picture geometry: the fraction of the 4:3 face width the 256 active dots span (centred).
+  // RNF_CRT_ACTIVE_WIDTH (32/35): the NTSC raster, 8:7 dots like the plain display's "8:7 Pixels";
+  // 1: nesterm's mapping (the dots fill the face, 1.25:1) - the conformance fixtures' geometry.
+  double activeWidth = RNF_CRT_ACTIVE_WIDTH;
 
   static bool validLines(int l) { return l == 240 || (l >= 110 && l <= 220); }
   CrtSettings sanitized() const;

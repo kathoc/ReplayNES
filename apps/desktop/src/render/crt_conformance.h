@@ -227,6 +227,7 @@ class Conformance {
     s.beamGrowth = false;
     s.persistence = false;
     s.supply = false;
+    s.activeWidth = 1;  // nesterm's geometry (the drive fills the face): the fixtures'
     return s;
   }
   CrtInput codes(uint32_t burst) {
@@ -559,6 +560,54 @@ class Conformance {
   }
   /// deflectRollAndGain (with deflectPictureGain): rx_deflect on a drive input (effects off): a roll of +1 line shows line y + 1 on row y (the
   /// last row: the vertical blanking, black).
+  /// Picture geometry (docs/CRT_PORT.md "Picture geometry"): three 16x16 white squares on black,
+  /// centred 128 dots / 128 lines apart (dot 64 / 192, line 56 / 184), through the RF path; the
+  /// light of the squares alone (the same history on an all-black picture subtracted) gives their
+  /// centroids on the tube face. par = displayed width of a dot / height of a line (8:7 for the
+  /// NTSC dot clock, the plain display's "8:7 Pixels"); centreX = the face position of the dot
+  /// boundary 128 (the picture's centre; 0.5 = centred).
+  struct Geometry { double par = 0, centreX = 0; };
+  Geometry pictureGeometry(const CrtSettings& s, CrtQuality q, int ow, int oh) {
+    Geometry g;
+    auto lit = renderer(s, ow, oh, q), dark = renderer(s, ow, oh, q);
+    if (!lit || !dark) return g;
+    lit->noiseEnabled = false;
+    dark->noiseEnabled = false;
+    std::vector<uint16_t> a(256 * 240, 0x0F), b(256 * 240, 0x0F);
+    const int centres[3][2] = {{64, 56}, {192, 56}, {64, 184}};
+    for (const auto& c : centres)
+      for (int y = c[1] - 8; y < c[1] + 8; ++y)
+        for (int x = c[0] - 8; x < c[0] + 8; ++x) a[size_t(y * 256 + x)] = 0x30;
+    for (uint64_t f = 1; f <= 3; ++f) {
+      CrtInput in;
+      in.kind = CrtInputKind::codes;
+      in.burstPhase = uint32_t(f % 3);
+      in.codes = a.data();
+      if (!run(*lit, in, f)) return g;
+      in.codes = b.data();
+      if (!run(*dark, in, f)) return g;
+    }
+    auto p = read(*lit, CrtStage::output), d = read(*dark, CrtStage::output);
+    if (p.size() < size_t(ow) * size_t(oh) * 4 || d.size() != p.size()) return g;
+    double m[3] = {0, 0, 0}, mx[3] = {0, 0, 0}, my[3] = {0, 0, 0};
+    for (int y = 0; y < oh; ++y)
+      for (int x = 0; x < ow; ++x) {
+        int k = y < oh / 2 ? (x < ow / 2 ? 0 : 1) : (x < ow / 2 ? 2 : -1);
+        if (k < 0) continue;
+        size_t i = (size_t(y) * size_t(ow) + size_t(x)) * 4;
+        double l = 0.2126 * (p[i] - d[i]) + 0.7152 * (p[i + 1] - d[i + 1]) + 0.0722 * (p[i + 2] - d[i + 2]);
+        if (!(l > 0)) continue;
+        m[k] += l;
+        mx[k] += l * (x + 0.5);
+        my[k] += l * (y + 0.5);
+      }
+    if (!(m[0] > 0 && m[1] > 0 && m[2] > 0)) return g;
+    const double ax = mx[0] / m[0], ay = my[0] / m[0], bx = mx[1] / m[1], cy = my[2] / m[2];
+    const double dot = (bx - ax) / 128 / ow, line = (cy - ay) / 128 / oh;  // fractions of the face
+    g.par = (dot * 4) / (line * 3);
+    g.centreX = (ax + bx) / 2 / ow;
+    return g;
+  }
   bool deflectRoll() {
     auto r = renderer(off());
     if (!r) return false;
@@ -817,6 +866,17 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
       checker.check(po.maxAbs < 2e-2 && po.meanAbs < 1e-3, qn + b);
     }
   }
+  // Picture geometry: a dot is 8:7 as wide as a line is high on the 4:3 face (the same shape as
+  // the plain display's 8:7 pixels), centred; every kernel set, two tube sizes.
+  for (CrtQuality q : {CrtQuality::reference, CrtQuality::fast})
+    for (const auto& sz : {std::pair<int, int>{640, 480}, std::pair<int, int>{1144, 858}}) {
+      auto g = c.pictureGeometry(CrtSettings(), q, sz.first, sz.second);
+      char b[200];
+      std::snprintf(b, sizeof b, "%s[pictureGeometry] %dx%d: pixel aspect %.4f (8:7 = %.4f, %+.2f%%), centre %.4f",
+                    q == CrtQuality::fast ? "fast path: " : "", sz.first, sz.second, g.par, 8.0 / 7, (g.par / (8.0 / 7) - 1) * 100,
+                    g.centreX);
+      checker.check(std::fabs(g.par / (8.0 / 7) - 1) < 0.005 && std::fabs(g.centreX - 0.5) < 0.005, b);
+    }
   checker.check(c.deflectRoll() && c.deflectPictureGain(),
                 "[deflectRollAndGain] rx_deflect: roll +1 line shows line y+1 on row y (row 239 black); RGB picture 0.5 halves the drive");
   std::printf(checker.failures ? "%d FAILED\n" : "all passed\n", checker.failures);

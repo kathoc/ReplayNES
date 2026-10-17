@@ -246,7 +246,9 @@ std::vector<Panel> exposedPanels(double low, double high, double period, double 
 
 using WeightList = std::vector<std::pair<int, double>>;
 
-WeightList weights(double position, int size, double sigma, bool normalize) {
+/// blackOutside: the input continues as black beyond its ends (a drive narrower than the face):
+/// normalized over the whole support, the taps beyond the ends weigh nothing.
+WeightList weights(double position, int size, double sigma, bool normalize, bool blackOutside = false) {
   WeightList result;
   double sum = 0.0;
   double radius = kCutoffSigma * sigma;
@@ -257,6 +259,13 @@ WeightList weights(double position, int size, double sigma, bool normalize) {
       double w = std::exp(-0.5 * (d * d)) / (std::sqrt(2 * kPi) * sigma);
       result.push_back({i, w});
       sum += w;
+    }
+  }
+  if (normalize && blackOutside && !result.empty()) {
+    sum = 0.0;
+    for (int i = int(std::ceil(position - radius)), e = int(std::floor(position + radius)); i <= e; ++i) {
+      double d = (position - double(i)) / sigma;
+      sum += std::exp(-0.5 * (d * d)) / (std::sqrt(2 * kPi) * sigma);
     }
   }
   if (normalize)
@@ -292,8 +301,12 @@ void detectorQuadrature(int outputCount, double length, int samples, bool horizo
 
 /// detectorMaps(): per output pixel and branch, (input index, weight) in first-insertion order
 /// (JS Map semantics, which fixes the GPU summation order).
+/// The input spans [origin, origin + span] of the face's `length` (horizontal: the drive's active
+/// width; vertical: the whole height), black beyond (blackOutside).
 std::vector<std::vector<WeightList>> detectorMaps(int outputCount, int inputCount, double length, int samples, bool horizontal,
-                                                  double sigmaX, double sigmaY) {
+                                                  double sigmaX, double sigmaY, double origin = 0, double span = 0,
+                                                  bool blackOutside = false) {
+  if (span <= 0) span = length;
   int branches = horizontal ? 6 : 2;
   std::vector<std::vector<WeightList>> maps(static_cast<size_t>(outputCount), std::vector<WeightList>(static_cast<size_t>(branches)));
   std::vector<int> slot(static_cast<size_t>(inputCount), -1);  // index -> position in the current list
@@ -308,7 +321,8 @@ std::vector<std::vector<WeightList>> detectorMaps(int outputCount, int inputCoun
       lastP = p;
       lastT = target;
     }
-    for (const auto& [i, beam] : weights(coordinate / length * double(inputCount) - 0.5, inputCount, horizontal ? sigmaX : sigmaY, horizontal)) {
+    for (const auto& [i, beam] : weights((coordinate - origin) / span * double(inputCount) - 0.5, inputCount, horizontal ? sigmaX : sigmaY,
+                                         horizontal, blackOutside)) {
       if (slot[size_t(i)] >= 0) list[size_t(slot[size_t(i)])].second += beam * detector;
       else {
         slot[size_t(i)] = int(list.size());
@@ -378,18 +392,21 @@ void pack(const std::vector<std::vector<WeightList>>& maps, int* countOut, std::
 
 double sigmaOutputPixels() { return std::sqrt(2 * std::log(100.0)) / kPi; }
 
-double extraSigmaSamples(double u, double growth, int width, int scanLines) {
-  double pitchM = kSurfaceHeightM / double(scanLines), sampleM = kSurfaceWidthM / double(width);
+double extraSigmaSamples(double u, double growth, int width, int scanLines, double activeWidth) {
+  double pitchM = kSurfaceHeightM / double(scanLines), sampleM = kSurfaceWidthM * activeWidth / double(width);
   return growth * kGrowthDiscPitches * pitchM * std::sqrt(std::max(0.0, u)) / 4 / sampleM;
 }
 
-Plan makePlan(int lines, int ow, int oh, double ambientLux, double beamGrowth, int width, int samples, int beamReferenceWidth,
-              int beamReferenceHeight) {
+Plan makePlan(int lines, int ow, int oh, double ambientLux, double beamGrowth, double activeWidth, int width, int samples,
+              int beamReferenceWidth, int beamReferenceHeight) {
   Plan plan;
   int height = lines;
   double sigmaX = kSigmaXPitches * double(width) / double(beamReferenceWidth);
   double mass = double(height) / double(beamReferenceHeight), sigmaY = kSigmaYPitches * mass;
-  auto xs = detectorMaps(ow, width, kSurfaceWidthM, samples, true, sigmaX, sigmaY);
+  // Picture geometry: the drive spans activeWidth of the face, centred (1: nesterm's mapping, unchanged).
+  const bool narrow = activeWidth < 1;
+  const double span = kSurfaceWidthM * (narrow ? activeWidth : 1), origin = narrow ? (kSurfaceWidthM - span) / 2 : 0;
+  auto xs = detectorMaps(ow, width, kSurfaceWidthM, samples, true, sigmaX, sigmaY, origin, span, narrow);
   auto ys = detectorMaps(oh, height, kSurfaceHeightM, samples, false, sigmaX, sigmaY);
   pack(xs, &plan.xCount, &plan.xmap);
   pack(ys, &plan.yCount, &plan.ymap);
@@ -453,6 +470,7 @@ Plan makePlan(int lines, int ow, int oh, double ambientLux, double beamGrowth, i
           float(kAlbedo * ambientLux / (kPi * kReferenceWhiteCdM2) * (kDiffuseFraction + (1 - kDiffuseFraction) * cosine));
     }
   plan.width = width;
+  plan.activeWidth = narrow ? activeWidth : 1;
   plan.height = height;
   plan.outputWidth = ow;
   plan.outputHeight = oh;
@@ -572,9 +590,10 @@ FastPlan fastPlan(const Plan& p) {
 DriveScatter driveScatter(const Plan& p) {
   DriveScatter d;
   const double rows = double(p.height), mass = rows / 240;
-  const double sx = kScatterSigmaM / (kSurfaceWidthM / 512), sy = kScatterSigmaM / (kSurfaceHeightM / rows);
+  const double a = p.activeWidth;  // drive samples are a / 512 of the face width
+  const double sx = kScatterSigmaM / (kSurfaceWidthM * a / 512), sy = kScatterSigmaM / (kSurfaceHeightM / rows);
   const double bx = kSigmaXPitches * 512 / 256, by = kSigmaYPitches * mass;
-  const double dx = sigmaOutputPixels() * 512 / double(p.outputWidth), dy = sigmaOutputPixels() * rows / double(p.outputHeight);
+  const double dx = sigmaOutputPixels() * 512 / (double(p.outputWidth) * a), dy = sigmaOutputPixels() * rows / double(p.outputHeight);
   const double sigX = std::sqrt(sx * sx + bx * bx + dx * dx - 1.0 / 6), sigY = std::sqrt(sy * sy + by * by + dy * dy - 1.0 / 6);
   d.rx = int(std::ceil(4 * sigX));
   d.ry = int(std::ceil(4 * sigY));
@@ -599,7 +618,7 @@ DriveScatter driveScatter(const Plan& p) {
         if (p.growth) meanX += double(p.colsum[size_t((c * 2 + parity) * ow + x)]);
         else for (int k = 0; k < p.xCount; ++k) meanX += double(p.xmap[size_t(((x * 6 + c * 2 + parity) * p.xCount + k) * 2 + 1)]);
       }
-      meanX /= double(ow);
+      meanX /= double(ow) * a;  // per output column the drive covers
       double meanY = 0;
       for (int y = 0; y < oh; ++y) {
         const int row = y * 2 + parity;
@@ -619,6 +638,12 @@ DriveScatter driveScatter(const Plan& p) {
     }
     d.kappa[c] = float(total * p.gain * p.scatterFraction);
   }
+  // The face beside the drive: 256 (1 - a) / a samples per side (24 at 32/35), whole samples.
+  const double side = 256 * (1 - a) / a;
+  d.margin = a < 1 ? int(std::ceil(side - 1e-9)) : 0;
+  d.width = 512 + 2 * d.margin;
+  d.sxScale = float(512 / (double(ow) * a));
+  d.sxOffset = float(double(d.margin) - side - 0.5);
   return d;
 }
 

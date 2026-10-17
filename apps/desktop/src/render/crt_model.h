@@ -114,12 +114,17 @@ constexpr double kTruncatedGaussianMass = 0.9999366575163338;
 constexpr int kSpotHRadius = 3;  // M4C-SPOT-H
 double sigmaOutputPixels();
 
-/// M4C-SPOT-H: extra horizontal sigma in drive samples for current fraction u.
-double extraSigmaSamples(double u, double growth, int width, int scanLines = 240);
+/// M4C-SPOT-H: extra horizontal sigma in drive samples for current fraction u. activeWidth: the
+/// fraction of the face width the drive spans (Plan::activeWidth).
+double extraSigmaSamples(double u, double growth, int width, int scanLines = 240, double activeWidth = 1);
 
 /// createTubePlan() result, packed for the GPU like tube-webgl.mjs (pairs = (index, weight)).
 struct Plan {
   int width = 0, height = 0, outputWidth = 0, outputHeight = 0;
+  /// Fraction of the face width the drive (the 256 active dots) spans, centred: 1 = nesterm's
+  /// geometry (the dots fill the 4:3 face: 1.25 pixel aspect); RNF_CRT_ACTIVE_WIDTH (32/35) = the
+  /// NTSC raster (8:7, docs/CRT_PORT.md "Picture geometry"). Outside it the beam draws black.
+  double activeWidth = 1;
   double gain = 0, scatterFraction = 0;
   int xCount = 1;
   std::vector<float> xmap;  // [((x*6+b)*xCount + k)*2 + {0,1}]
@@ -135,9 +140,11 @@ struct Plan {
 };
 
 /// createTubePlan(input {width 512, height lines, beamReference 256x240},
-/// {outputWidth, outputHeight, samples 4, ambientLux, beamGrowth}) as used by physical-worker.mjs.
+/// {outputWidth, outputHeight, samples 4, ambientLux, beamGrowth}) as used by physical-worker.mjs,
+/// with the drive spanning `activeWidth` of the face width (Plan::activeWidth; 1 = nesterm's).
 Plan makePlan(int lines, int outputWidth, int outputHeight, double ambientLux = 40, double beamGrowth = 1,
-              int width = 512, int samples = 4, int beamReferenceWidth = 256, int beamReferenceHeight = 240);
+              double activeWidth = 1, int width = 512, int samples = 4, int beamReferenceWidth = 256,
+              int beamReferenceHeight = 240);
 /// Fast path tables (CRTTube.FastPlan): horizontal taps with padding at the tile's first input
 /// (weight 0) + the input span (first, last) of every 64-column tile; vertical spot tables as
 /// contiguous input rows (first, count) per output row and parity with a cubic in the beam-current
@@ -154,11 +161,16 @@ struct FastPlan {
 FastPlan fastPlan(const Plan& p);
 
 /// Fast path scatter source (CRTTube.DriveScatter): drive-domain blur radii / weights per axis and
-/// the mean emission per unit drive times the scatter fraction per phosphor.
+/// the mean emission per unit drive times the scatter fraction per phosphor. The source is
+/// `width` = 512 + 2 x `margin` samples wide (drive sample j at column j + margin): the margins
+/// cover the face beside a drive narrower than the face (activeWidth < 1), where the scatter of
+/// the picture's edges still lands. Output pixel x samples it at (x + 0.5) * sxScale + sxOffset.
 struct DriveScatter {
   int rx = 0, ry = 0;
   std::vector<float> wx, wy;
   float kappa[3] = {0, 0, 0};
+  int margin = 0, width = 512;
+  float sxScale = 0, sxOffset = -0.5f;
 };
 DriveScatter driveScatter(const Plan& p);
 }  // namespace tube

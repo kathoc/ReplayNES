@@ -1555,6 +1555,23 @@ char* rnf_video_summary(uint64_t frames, int64_t bytes);
 char* rnf_flash_level_label(rn_flash_level level);
 char* rnf_flash_level_detail(rn_flash_level level);
 
+/* ================================================================== CRT picture geometry
+ * One shape of the NES picture on every display (docs/CRT_PORT.md "Picture geometry"). The NTSC
+ * dot clock is 21.477272 MHz / 4 = 5.369318 MHz; a 4:3 NTSC raster has square pixels at
+ * 12 3/11 MHz (640 per active line of a 480-line frame), so a dot is 12.2727 / 5.3693 = 16/7 of
+ * them wide and a line of the 240-line field 2 high: a pixel aspect ratio of 8:7 (the plain
+ * display's "8:7 Pixels", rnf_export's 8:7). On the CRT's 4:3 tube face the 240 lines fill the
+ * height, so the 256 active dots span 256 x 8/7 / (240 x 4/3) = 32/35 of its width, centred; the
+ * rest of the line (border and blanking, black in the model's signal) is the dark band beside it. */
+#define RNF_NES_PIXEL_ASPECT (8.0 / 7.0)
+#define RNF_CRT_ACTIVE_WIDTH (32.0 / 35.0)
+/* RNF_CRT_ACTIVE_WIDTH (for Swift, which does not import the macro). */
+double rnf_crt_active_width(void);
+/* The pixel aspect ratio of the picture on a 4:3 tube face whose width the 256 dots span the
+ * fraction `active_width` of (the 240 lines spanning its height): 8/7 at RNF_CRT_ACTIVE_WIDTH,
+ * 1.25 at 1 (the full width: nesterm's geometry). */
+double rnf_crt_pixel_aspect(double active_width);
+
 /* ================================================================== CRT reception (no signal / power-on)
  * The CRT display's receiver conditions around the picture (docs/CRT_PORT.md "No signal and
  * power-on"). DISPLAY / AUDIO OUTPUT ONLY: derived from what is shown (frame numbers and the events

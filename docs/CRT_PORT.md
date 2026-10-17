@@ -84,7 +84,11 @@ CRT Display itself is off by default (the conventional crisp display).
 3. **Restructuring for speed (numerically identical)**: the 12 FFT stages are computed in threadgroup memory, and the scatter (about 90 taps)
    in a register window. Operations, order, and weights are the same, and the results match the literal-translation version bit for bit
    (`testOptimizedKernelsAreBitIdenticalToDirectPort`).
-4. **Display layout**: the tube face is always 4:3 (the same geometry as nesterm). "Pixel aspect 8:7" is not used with CRT Display.
+4. **Display layout and picture geometry**: the tube face is always 4:3 (the same face as nesterm's). nesterm maps
+   the 256 active dots across the whole face width (a dot 1.25 times as wide as a line is high); ReplayNES maps them
+   to the 32/35 of the width the NTSC raster gives them, so a dot is 8:7 like the plain display's "8:7 Pixels" and
+   the black bands beside the picture are the line's border and blanking (section "Picture geometry"). The
+   "8:7 Pixels" setting itself is not used with CRT Display (the tube has that shape already).
    "Hide overscan" crops 8/240 from the top and bottom of the tube face. 1x/FILL fit 4:3 to the same height as the normal display.
 5. **Internal resolution cap of 1600x1200**: the same as nesterm's OUTPUT-RESOLUTION-SPEC (256x192 to 1600x1200, the work cap for the detector).
    For larger destinations such as full screen, the display pass enlarges it with bilinear interpolation in linear light
@@ -103,6 +107,69 @@ CRT Display itself is off by default (the conventional crisp display).
    not model (no carrier, an unlocked sync). Off (the default "normal" reception), every kernel runs
    exactly as before: the conformance checks above are unchanged and `receptionNeutralIsIdentity`
    checks it bit for bit.
+
+## Picture geometry (ReplayNES change)
+
+The NES picture has one shape on every display: an object (a 16x16 sprite) is as wide relative to
+its height on the CRT as with "8:7 Pixels", in the MP4 export and in the live view, on Metal,
+Vulkan and Direct3D 11.
+
+Derivation (NTSC):
+
+- Master clock 6 x 315/88 MHz = 21.477272 MHz; the PPU outputs a dot every 4 clocks: 5.369318 MHz.
+  The 256 active dots take 47.68 us of the line.
+- A 4:3 NTSC picture has square pixels at 12 3/11 MHz (640 per active line, 480 lines per frame,
+  240 per field).
+- So a dot is 12.2727 / 5.3693 = 16/7 square pixels wide and a field line 2 high: a pixel aspect
+  ratio of **8:7** (`RNF_NES_PIXEL_ASPECT`, the plain display's and the export's 8:7).
+- On a 4:3 face whose height the 240 lines fill (a line = H/240), a dot is 8/7 x H/240 wide, and the
+  256 dots span 256 x 8/7 x H/240 = 32/35 x 4H/3: **32/35 (91.4 %) of the face width**, centred
+  (`RNF_CRT_ACTIVE_WIDTH`, `rnf_crt_active_width()`; `rnf_crt_pixel_aspect(a)` = (4/3 a / 256) / (1/240)
+  = 8/7 at 32/35, 1.25 at 1). On the model's 280 x 210 mm face: a dot is 1.000 mm, a line 0.875 mm,
+  the picture 256 mm wide with a 12 mm band (12 dots, 24 drive samples) on each side.
+- The bands are the rest of the line (the NES's 26 border dots and the blanking; about 280 dot widths
+  fit a 4:3 line): the model's composite signal is at blanking level there (`rfInitAt`: 0.312 V
+  outside samples 36..2084), so the beam draws black, and the face shows only its ambient light.
+
+nesterm's mapping put the 512 drive samples across the whole 280 mm (1.25:1, 9.4 % too wide): the
+cause of the CRT picture looking wider than "8:7 Pixels". The change is in the shared tube plan, so
+every backend and the export follow it:
+
+- `CrtSettings::activeWidth` / `CRTRenderer.Settings.activeWidth` (default `RNF_CRT_ACTIVE_WIDTH`; 1 =
+  nesterm's mapping, which the conformance comparisons with the fixtures keep using) goes to the tube
+  plan (`makePlan(activeWidth:)`, `Plan.activeWidth`, part of the tube key).
+- Horizontal detector maps: the drive position of face coordinate x is (x - 12 mm) / 256 mm x 512 - 0.5
+  (nesterm: x / 280 mm x 512 - 0.5); the beam's taps beyond the drive weigh nothing (the beam Gaussian
+  is normalised over its whole support: black beyond the ends). Vertical maps, slot mask, detector,
+  scatter, ambient light: unchanged (all on the 4:3 face).
+- Quantities in drive samples use the drive's sample pitch (0.5 mm instead of 0.547 mm): the
+  horizontal spot growth (`extraSigmaSamples(activeWidth:)`, M4C-SPOT-H) and the fast path's
+  drive-domain scatter (`DriveScatter`; kappa = mean emission per unit drive over the columns the
+  drive covers).
+- Fast path: the scatter source is 512 + 2 x 24 samples wide (`DriveScatter.margin`: the face beside
+  the drive), so the 2 mm glow of a bright edge reaches into the band as in the reference path's
+  full-resolution scatter; `tube_v_fast` samples it at (x + 0.5) x scale + offset (`FastTubeParams.scat`;
+  the fast tube parameters are 80 bytes).
+- Not modelled: the supply's widening of bright pictures (M4C) still resamples within the drive, so
+  at full white about one dot per side is pushed out instead of into the band (as at the face edge
+  in nesterm).
+
+Checks: `tests/test_frontend_crt.cpp` "crt geometry" (the clock derivation, the constants, the export's
+8:7 within 0.5 % on every canvas); `pictureGeometry` in `crt_conformance` (Vulkan, Direct3D 11) and
+`CRTTests.testPictureGeometryIs87` (Metal): three 16x16 white squares 128 dots / 128 lines apart through
+the RF path with default settings, the centroids of their light (the same frames on black subtracted)
+on the face, both kernel sets, 640x480 and 1144x858, pixel aspect 8:7 within 0.5 % and centred within
+0.5 %; `replaynes-export --self-test` measures the same squares in the CRT export's canvas (1280x960,
+1920x1080). Measured (M1 Max):
+
+| Path | Before (nesterm mapping) | After |
+|---|---|---|
+| Metal, reference and fast, 640x480 / 1144x858 | 1.2501 (+9.4 %) | 1.1433 (+0.03 %) |
+| Vulkan (MoltenVK), reference and fast, 640x480 / 1144x858 | 1.2504 (+9.4 %) | 1.1433 (+0.04 %) |
+| CRT MP4 export (Vulkan processor), 1280x960 / 1920x1080 canvas | 1.2505 (+9.4 %) | 1.1433 (+0.04 %) |
+| Plain 8:7 export, 1280x960 crop 8 (1170x896 for 256x224) | 1.1426 (-0.02 %) | unchanged |
+
+Direct3D 11 runs the same checks on WARP in CI (`crt_conformance_d3d11`, the Windows export self-test).
 
 ## No signal and power-on (ReplayNES addition)
 

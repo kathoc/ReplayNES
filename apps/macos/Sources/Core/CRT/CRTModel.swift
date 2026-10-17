@@ -254,7 +254,9 @@ enum CRTTube {
         return result
     }
 
-    static func weights(_ position: Double, _ size: Int, _ sigma: Double, normalize: Bool) -> [(Int, Double)] {
+    /// blackOutside: the input continues as black beyond its ends (a drive narrower than the face):
+    /// normalized over the whole support, the taps beyond the ends weigh nothing.
+    static func weights(_ position: Double, _ size: Int, _ sigma: Double, normalize: Bool, blackOutside: Bool = false) -> [(Int, Double)] {
         var result: [(Int, Double)] = []
         var sum = 0.0
         let radius = cutoffSigma * sigma
@@ -264,6 +266,15 @@ enum CRTTube {
                 let d = (position - Double(i)) / sigma
                 let w = exp(-0.5 * (d * d)) / (sqrt(2 * Double.pi) * sigma)
                 result.append((i, w)); sum += w
+            }
+        }
+        if normalize && blackOutside && !result.isEmpty {
+            sum = 0
+            var i = Int((position - radius).rounded(.up))
+            while i <= Int((position + radius).rounded(.down)) {
+                let d = (position - Double(i)) / sigma
+                sum += exp(-0.5 * (d * d)) / (sqrt(2 * Double.pi) * sigma)
+                i += 1
             }
         }
         if normalize { for k in result.indices { result[k].1 /= sum } }
@@ -296,9 +307,12 @@ enum CRTTube {
     }
 
     /// detectorMaps(): per output pixel and branch, (input index, weight) in first-insertion
-    /// order (JS Map semantics, which fixes the GPU summation order).
+    /// order (JS Map semantics, which fixes the GPU summation order). The input spans
+    /// [origin, origin + span] of the face's `length` (span 0: all of it), black beyond (blackOutside).
     static func detectorMaps(_ outputCount: Int, _ inputCount: Int, _ length: Double, _ samples: Int, horizontal: Bool,
-                             sigmaX: Double, sigmaY: Double) -> [[[(Int, Double)]]] {
+                             sigmaX: Double, sigmaY: Double, origin: Double = 0, span spanIn: Double = 0,
+                             blackOutside: Bool = false) -> [[[(Int, Double)]]] {
+        let span = spanIn > 0 ? spanIn : length
         let branches = horizontal ? 6 : 2
         var maps = [[[(Int, Double)]]](repeating: [[(Int, Double)]](repeating: [], count: branches), count: outputCount)
         var slot = [Int](repeating: -1, count: inputCount)  // index -> position in the current list
@@ -310,8 +324,8 @@ enum CRTTube {
                 for (k, e) in maps[p][target].enumerated() { slot[e.0] = k }
                 lastKey = (p, target)
             }
-            for (i, beam) in weights(coordinate / length * Double(inputCount) - 0.5, inputCount,
-                                     horizontal ? sigmaX : sigmaY, normalize: horizontal) {
+            for (i, beam) in weights((coordinate - origin) / span * Double(inputCount) - 0.5, inputCount,
+                                     horizontal ? sigmaX : sigmaY, normalize: horizontal, blackOutside: blackOutside) {
                 if slot[i] >= 0 { maps[p][target][slot[i]].1 += beam * detector }
                 else { slot[i] = maps[p][target].count; maps[p][target].append((i, beam * detector)) }
             }
@@ -351,9 +365,10 @@ enum CRTTube {
         } }
     }
 
-    /// M4C-SPOT-H: extra horizontal sigma in drive samples for current fraction u.
-    static func extraSigmaSamples(_ u: Double, growth: Double, width: Int, scanLines: Int = 240) -> Double {
-        let pitchM = surfaceHeightM / Double(scanLines), sampleM = surfaceWidthM / Double(width)
+    /// M4C-SPOT-H: extra horizontal sigma in drive samples for current fraction u. activeWidth: the
+    /// fraction of the face width the drive spans (Plan.activeWidth).
+    static func extraSigmaSamples(_ u: Double, growth: Double, width: Int, scanLines: Int = 240, activeWidth: Double = 1) -> Double {
+        let pitchM = surfaceHeightM / Double(scanLines), sampleM = surfaceWidthM * activeWidth / Double(width)
         return growth * growthDiscPitches * pitchM * sqrt(max(0, u)) / 4 / sampleM
     }
 
@@ -369,6 +384,10 @@ enum CRTTube {
         let kernels: [(radius: Int, weights: [Float])]      // scatter x, y
         let ambient: [Float]                                // ow*oh (same value in r,g,b)
         let growth: Bool
+        /// Fraction of the face width the drive (the 256 active dots) spans, centred: 1 = nesterm's
+        /// geometry (the dots fill the 4:3 face: 1.25 pixel aspect); rnf_crt_active_width() (32/35)
+        /// = the NTSC raster (8:7, docs/CRT_PORT.md "Picture geometry"). Beyond it the beam draws black.
+        var activeWidth = 1.0
     }
 
     /// Fast path tables, repacked from a Plan: horizontal taps whose padding points at the tile's
@@ -467,13 +486,21 @@ enum CRTTube {
     /// so blur(emission) = kappa * blur'(drive), blur' with the variances of scatter, beam spot and
     /// detector minus the bilinear upsampling tent (per axis, in drive samples), kappa = the mean
     /// emission per unit drive of the plan (flat field, per phosphor) times the scatter fraction.
-    struct DriveScatter { let rx: Int; let ry: Int; let wx: [Float]; let wy: [Float]; let kappa: SIMD3<Float> }
+    /// The scatter source is `width` = 512 + 2 x `margin` samples wide (drive sample j at column
+    /// j + margin): the margins cover the face beside a drive narrower than the face (activeWidth < 1),
+    /// where the scatter of the picture's edges still lands. Output pixel x samples it at
+    /// (x + 0.5) * sxScale + sxOffset.
+    struct DriveScatter {
+        let rx: Int; let ry: Int; let wx: [Float]; let wy: [Float]; let kappa: SIMD3<Float>
+        var margin = 0, width = 512
+        var sxScale: Float = 0, sxOffset: Float = -0.5
+    }
 
     static func driveScatter(_ p: Plan) -> DriveScatter {
-        let rows = Double(p.height), mass = rows / 240
-        let sx = scatterSigmaM / (surfaceWidthM / 512), sy = scatterSigmaM / (surfaceHeightM / rows)
+        let rows = Double(p.height), mass = rows / 240, a = p.activeWidth   // drive samples are a / 512 of the face width
+        let sx = scatterSigmaM / (surfaceWidthM * a / 512), sy = scatterSigmaM / (surfaceHeightM / rows)
         let bx = sigmaXPitches * 512 / 256, by = sigmaYPitches * mass
-        let dx = sigmaOutputPixels * 512 / Double(p.outputWidth), dy = sigmaOutputPixels * rows / Double(p.outputHeight)
+        let dx = sigmaOutputPixels * 512 / (Double(p.outputWidth) * a), dy = sigmaOutputPixels * rows / Double(p.outputHeight)
         let sigX = (sx * sx + bx * bx + dx * dx - 1.0 / 6).squareRoot(), sigY = (sy * sy + by * by + dy * dy - 1.0 / 6).squareRoot()
         let ry = Int((4 * sigY).rounded(.up)), rx = Int((4 * sigX).rounded(.up))
         func kernel(_ sigma: Double, _ r: Int) -> [Float] {
@@ -491,7 +518,7 @@ enum CRTTube {
                 var meanX = 0.0
                 if p.growth { for x in 0..<ow { meanX += Double(p.colsum[(c * 2 + parity) * ow + x]) } }
                 else { for x in 0..<ow { for k in 0..<p.xCount { meanX += Double(p.xmap[(x * 6 + c * 2 + parity) * p.xCount + k].y) } } }
-                meanX /= Double(ow)
+                meanX /= Double(ow) * a   // per output column the drive covers
                 var meanY = 0.0
                 for y in 0..<oh {
                     let row = y * 2 + parity
@@ -506,18 +533,30 @@ enum CRTTube {
             }
             kappa[c] = Float(total * p.gain * p.scatterFraction)
         }
-        return DriveScatter(rx: rx, ry: ry, wx: kernel(sigX, rx), wy: kernel(sigY, ry), kappa: kappa)
+        var out = DriveScatter(rx: rx, ry: ry, wx: kernel(sigX, rx), wy: kernel(sigY, ry), kappa: kappa)
+        // The face beside the drive: 256 (1 - a) / a samples per side (24 at 32/35), whole samples.
+        let side = 256 * (1 - a) / a
+        out.margin = a < 1 ? Int((side - 1e-9).rounded(.up)) : 0
+        out.width = 512 + 2 * out.margin
+        out.sxScale = Float(512 / (Double(ow) * a))
+        out.sxOffset = Float(Double(out.margin) - side - 0.5)
+        return out
     }
 
     /// createTubePlan(input {width: 512, height: lines, beamReferenceWidth: 256, beamReferenceHeight: 240},
-    /// {outputWidth, outputHeight, samples: 4, ambientLux, beamGrowth}) as used by physical-worker.mjs.
+    /// {outputWidth, outputHeight, samples: 4, ambientLux, beamGrowth}) as used by physical-worker.mjs,
+    /// with the drive spanning `activeWidth` of the face width (Plan.activeWidth; 1 = nesterm's).
     static func makePlan(width: Int = 512, lines: Int, outputWidth ow: Int, outputHeight oh: Int, samples: Int = 4,
                          ambientLux: Double = 40, beamGrowth: Double = 1, beamReferenceWidth: Int = 256,
-                         beamReferenceHeight: Int = 240) -> Plan {
+                         beamReferenceHeight: Int = 240, activeWidth: Double = 1) -> Plan {
         let height = lines
         let sigmaX = sigmaXPitches * Double(width) / Double(beamReferenceWidth)
         let mass = Double(height) / Double(beamReferenceHeight), sigmaY = sigmaYPitches * mass
-        let xs = detectorMaps(ow, width, surfaceWidthM, samples, horizontal: true, sigmaX: sigmaX, sigmaY: sigmaY)
+        // Picture geometry: the drive spans activeWidth of the face, centred (1: nesterm's mapping, unchanged).
+        let narrow = activeWidth < 1
+        let span = surfaceWidthM * (narrow ? activeWidth : 1), origin = narrow ? (surfaceWidthM - span) / 2 : 0
+        let xs = detectorMaps(ow, width, surfaceWidthM, samples, horizontal: true, sigmaX: sigmaX, sigmaY: sigmaY,
+                              origin: origin, span: span, blackOutside: narrow)
         let ys = detectorMaps(oh, height, surfaceHeightM, samples, horizontal: false, sigmaX: sigmaX, sigmaY: sigmaY)
         func pack(_ maps: [[[(Int, Double)]]]) -> (Int, [SIMD2<Float>]) {
             let branches = maps[0].count
@@ -564,6 +603,6 @@ enum CRTTube {
         return Plan(width: width, height: height, outputWidth: ow, outputHeight: oh,
                     gain: emissionGain / (widthFraction * verticalFill) * mass, scatterFraction: scatterFraction,
                     xCount: xCount, xmap: xmap, yCount: yCount, ymap: ymap, growthLevels: levels, gCount: gCount, gmap: gmap,
-                    colsum: colsum, kernels: kernels, ambient: ambient, growth: growth)
+                    colsum: colsum, kernels: kernels, ambient: ambient, growth: growth, activeWidth: narrow ? activeWidth : 1)
     }
 }

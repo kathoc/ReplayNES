@@ -34,12 +34,14 @@ void main() {
     }
     value += sum * P.gain;
   }
-  float sx = (float(px) + 0.5) * 512.0 / float(P.ow) - 0.5, sy = (float(py) + 0.5) * float(P.height) / float(P.oh) - 0.5;
+  // Scatter source (sw = 512 + 2 margins columns: the drive and the face beside it) at the pixel centre.
+  int sw = int(P.scat.z);
+  float sx = (float(px) + 0.5) * P.scat.x + P.scat.y, sy = (float(py) + 0.5) * float(P.height) / float(P.oh) - 0.5;
   float fx0 = floor(sx), fy0 = floor(sy), fx = sx - fx0, fy = sy - fy0;
-  int x0 = clamp(int(fx0), 0, 511), x1 = clamp(int(fx0) + 1, 0, 511);
+  int x0 = clamp(int(fx0), 0, sw - 1), x1 = clamp(int(fx0) + 1, 0, sw - 1);
   int y0 = clamp(int(fy0), 0, P.height - 1), y1 = clamp(int(fy0) + 1, 0, P.height - 1);
-  vec3 top = mix(unpackH4(scatterSrc[y0 * 512 + x0]).rgb, unpackH4(scatterSrc[y0 * 512 + x1]).rgb, fx);
-  vec3 bot = mix(unpackH4(scatterSrc[y1 * 512 + x0]).rgb, unpackH4(scatterSrc[y1 * 512 + x1]).rgb, fx);
+  vec3 top = mix(unpackH4(scatterSrc[y0 * sw + x0]).rgb, unpackH4(scatterSrc[y0 * sw + x1]).rgb, fx);
+  vec3 bot = mix(unpackH4(scatterSrc[y1 * sw + x0]).rgb, unpackH4(scatterSrc[y1 * sw + x1]).rgb, fx);
   float nx = ((float(px) + 0.5) / float(P.ow) * 2.0 - 1.0) * P.amb.z;
   float ny = ((float(py) + 0.5) / float(P.oh) * 2.0 - 1.0) * P.amb.w;
   float cosine = max(0.0, (nx * P.light.x + ny * P.light.y + P.light.z) / sqrt(nx * nx + ny * ny + 1.0));

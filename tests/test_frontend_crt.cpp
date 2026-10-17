@@ -182,3 +182,31 @@ TEST_CASE("crt hiss: deterministic, fades, leaves silence alone when off") {
   rnf_crt_hiss_free(h1);
   rnf_crt_hiss_free(h2);
 }
+
+// Picture geometry (docs/CRT_PORT.md "Picture geometry"): the CRT's 4:3 tube face and the plain
+// display / export's 8:7 pixels show the NES picture with one shape.
+TEST_CASE("crt geometry: the 4:3 face shows 8:7 dots, the same shape as the plain 8:7 display and export") {
+  // NTSC: master clock 6 x 315/88 MHz, dot clock / 4; square pixels of the 4:3 raster at
+  // 12 3/11 MHz (640 per active line of a 480-line frame). A dot is 16/7 square pixels wide and a
+  // field line 2 high.
+  const double dot = 6 * 315.0 / 88 / 4, square = 12 + 3.0 / 11;
+  CHECK(std::fabs(square / dot / 2 - 8.0 / 7) < 1e-12);
+  CHECK(std::fabs(RNF_NES_PIXEL_ASPECT - 8.0 / 7) < 1e-15);
+  CHECK(rnf_crt_active_width() == RNF_CRT_ACTIVE_WIDTH);
+  CHECK(std::fabs(rnf_crt_active_width() - 32.0 / 35) < 1e-15);
+  CHECK(std::fabs(rnf_crt_pixel_aspect(rnf_crt_active_width()) - RNF_NES_PIXEL_ASPECT) < 1e-12);
+  CHECK(std::fabs(rnf_crt_pixel_aspect(1) - 1.25) < 1e-12);  // the full width (nesterm's): 9.4 % too wide
+  // The export's 8:7 (nearest-neighbour, whole pixels) within 0.5 %, every canvas.
+  const int canvases[][2] = {{1280, 960}, {1920, 1080}, {1280, 720}, {3840, 2160}, {640, 480}};
+  for (const auto& cv : canvases)
+    for (int crop : {0, 8}) {
+      rnf_export_settings s{};
+      s.preset = {RNF_PRESET_CANVAS, 0, cv[0], cv[1]};
+      s.crop_top = s.crop_bottom = crop;
+      s.pixel_aspect_87 = 1;
+      rnf_export_geometry g{};
+      rnf_export_geometry_compute(&s, &g);
+      const double par = (double(g.dst_width) / g.src_width) / (double(g.dst_height) / g.src_height);
+      CHECK(std::fabs(par / rnf_crt_pixel_aspect(rnf_crt_active_width()) - 1) < 0.005);
+    }
+}

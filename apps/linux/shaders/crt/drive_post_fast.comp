@@ -2,7 +2,8 @@
 // invocations). Spot: tap k of source sample j weighs e_|k| / sum with e_k = e1^(k^2), s from the
 // source's own drive. Persistence in the drive domain: the frame's drive goes into its ring slot
 // (half4) and the tube is driven by the persistence-weighted sum of the slots. Also the x pass of
-// the scatter source on the result (half4).
+// the scatter source on the result (half4), 512 + 2 margins wide: the first 2 x margin
+// invocations also blur the face beside the drive (DriveScatter).
 // SPDX-License-Identifier: GPL-2.0-or-later (port); original MIT, see THIRD_PARTY_NOTICES.md
 #version 450
 #extension GL_GOOGLE_include_directive : enable
@@ -15,8 +16,17 @@ layout(std430, set = 0, binding = 3) buffer B3 { uvec2 ring[]; };
 layout(std430, set = 0, binding = 4) readonly buffer B4 { vec4 w[]; };
 layout(std430, set = 0, binding = 5) readonly buffer B5 { float wx[]; };
 layout(std430, set = 0, binding = 6) writeonly buffer B6 { uvec2 blurX[]; };
-layout(push_constant) uniform PostParams { int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx; } P;
+layout(push_constant) uniform PostParams {
+  int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx; int margin; int pad0; int pad1; int pad2;
+} P;
 shared float rowv[3 * 512];
+// The scatter x pass at drive sample q (zero beyond the drive).
+vec3 blurAt(int q) {
+  vec3 s = vec3(0.0);
+  int lo = max(-P.rx, -q), hi = min(P.rx, 511 - q);
+  for (int d = lo; d <= hi; d++) { int j = q + d; s += vec3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + P.rx]; }
+  return s;
+}
 vec3 postResample(int py, int x, vec2 k) {
   if (x < 0 || x >= 512) return vec3(0.0);
   if (P.supply == 0) return src[py * 512 + x].rgb;
@@ -59,8 +69,10 @@ void main() {
   outp[i] = vec4(v, 1.0);
   rowv[px] = v.r; rowv[512 + px] = v.g; rowv[1024 + px] = v.b;
   barrier();
-  vec3 s = vec3(0.0);
-  int lo = max(-P.rx, -px), hi = min(P.rx, 511 - px);
-  for (int d = lo; d <= hi; d++) { int j = px + d; s += vec3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + P.rx]; }
-  blurX[i] = packH4(vec4(s, 1.0));
+  int sw = 512 + 2 * P.margin;
+  blurX[py * sw + px + P.margin] = packH4(vec4(blurAt(px), 1.0));
+  if (px < 2 * P.margin) {  // the face beside the drive: samples -margin .. -1 and 512 .. 511 + margin
+    int q = px < P.margin ? px - P.margin : 512 + px - P.margin;
+    blurX[py * sw + q + P.margin] = packH4(vec4(blurAt(q), 1.0));
+  }
 }

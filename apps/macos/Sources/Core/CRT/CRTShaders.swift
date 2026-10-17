@@ -823,8 +823,17 @@ kernel void supply_fast(device const float4* means [[buffer(0)]], device const f
 // drive domain): the frame's drive goes into its ring slot and the tube is driven by the
 // persistence-weighted sum of the slots, i.e. the tube is applied to the weighted drive instead of
 // weighting the tube's light (the same except for the beam-current spot growth of the < 12 %
-// afterglow share). Also the x pass of the scatter source (scatter_drive) on the result.
-struct PostParams { int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx; };
+// afterglow share). Also the x pass of the scatter source (scatter_drive) on the result, 512 + 2
+// margins wide: the first 2 x margin threads also blur the face beside the drive (DriveScatter).
+struct PostParams { int supply; int spot; float k1; int persistence; int newSlot; int depth; int rows; int rx;
+                    int margin; int pad0; int pad1; int pad2; };
+// The scatter x pass at drive sample q (zero beyond the drive).
+static inline float3 postBlurAt(threadgroup const float* rowv, constant float* wx, int rx, int q) {
+    float3 s = float3(0.0f);
+    int lo = max(-rx, -q), hi = min(rx, 511 - q);
+    for (int d = lo; d <= hi; d++) { int j = q + d; s += float3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + rx]; }
+    return s;
+}
 static inline float3 postResample(device const float4* src, int py, int x, float2 k, int supply) {
     if (x < 0 || x >= 512) return float3(0.0f);
     if (supply == 0) return src[py * 512 + x].rgb;
@@ -871,34 +880,38 @@ kernel void drive_post_fast(device const float4* src [[buffer(0)]], device const
     outp[i] = float4(v, 1.0f);
     rowv[px] = v.r; rowv[512 + px] = v.g; rowv[1024 + px] = v.b;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    float3 s = float3(0.0f);
-    int lo = max(-P.rx, -px), hi = min(P.rx, 511 - px);
-    for (int d = lo; d <= hi; d++) { int j = px + d; s += float3(rowv[j], rowv[512 + j], rowv[1024 + j]) * wx[d + P.rx]; }
-    blurX[i] = half4(half3(s), 1.0h);
+    int sw = 512 + 2 * P.margin;
+    blurX[py * sw + px + P.margin] = half4(half3(postBlurAt(rowv, wx, P.rx, px)), 1.0h);
+    if (px < 2 * P.margin) {  // the face beside the drive: samples -margin .. -1 and 512 .. 511 + margin
+        int q = px < P.margin ? px - P.margin : 512 + px - P.margin;
+        blurX[py * sw + q + P.margin] = half4(half3(postBlurAt(rowv, wx, P.rx, q)), 1.0h);
+    }
 }
 // Scatter source (fast path): the 2 mm screen scatter of the emitted light, evaluated on the tube
 // drive. The scatter Gaussian is ~8x wider than the beam spot, the detector and the slot pitch,
 // so the scattered light is the drive blurred by sqrt(scatter^2 + spot^2 + detector^2 - bilinear)
 // (in drive samples per axis; zero extension) times the mean emission per unit drive and the
 // scatter fraction (kappa, from the plan). The x pass runs in drive_post_fast; this is the y pass.
-struct ScatterParams { int rows; int ry; int pad0; int pad1; float4 kappa; };
+// width: 512 + 2 margins (the face beside a narrower drive, DriveScatter).
+struct ScatterParams { int rows; int ry; int width; int pad1; float4 kappa; };
 kernel void scatter_drive(device const half4* src [[buffer(0)]], constant float* w [[buffer(1)]],
                           device half4* outp [[buffer(2)]], constant ScatterParams& P [[buffer(3)]],
                           uint2 g [[thread_position_in_grid]]) {
     int x = int(g.x), y = int(g.y);
-    if (x >= 512 || y >= P.rows) return;
+    if (x >= P.width || y >= P.rows) return;
     float3 s = float3(0.0f);
     int lo = max(-P.ry, -y), hi = min(P.ry, P.rows - 1 - y);
-    device const half4* c = src + y * 512 + x;
-    for (int d = lo; d <= hi; d++) s += float3(c[d * 512].rgb) * w[d + P.ry];
-    outp[y * 512 + x] = half4(half3(s * P.kappa.rgb), 1.0h);
+    device const half4* c = src + y * P.width + x;
+    for (int d = lo; d <= hi; d++) s += float3(c[d * P.width].rgb) * w[d + P.ry];
+    outp[y * P.width + x] = half4(half3(s * P.kappa.rgb), 1.0h);
 }
 
-// 64 bytes (the Vulkan push-constant budget). The drive is 512 samples wide.
+// 80 bytes (the Vulkan push-constant layout). The drive is 512 samples wide.
 struct FastTubeParams {
     int height; int ow; int oh; int xCount; int gCount; int hStride; float gain; float keep;
     float4 amb;    // ambient: (scale, diffuse fraction, normal slope x, normal slope y)
     float4 light;  // normalised light direction (w unused)
+    float4 scat;   // scatter source sampling: column = (x + 0.5) * scale + offset; width; unused
 };
 // hprog: h[((parity*height + y)*ow + x)*4 + c] from branch c*2 + parity. A threadgroup covers
 // 64 columns x 64 rows, one thread per (parity, column, channel): the thread loads its branch's
@@ -978,13 +991,14 @@ kernel void tube_v_fast(device const float4* h [[buffer(0)]], device const float
         }
         value += sum * P.gain;
     }
-    // Scatter source sampled at the pixel centre in drive coordinates (512 x height samples).
-    float sx = (float(px) + 0.5f) * 512.0f / float(P.ow) - 0.5f, sy = (float(py) + 0.5f) * float(P.height) / float(P.oh) - 0.5f;
+    // Scatter source (sw = 512 + 2 margins columns: the drive and the face beside it) at the pixel centre.
+    int sw = int(P.scat.z);
+    float sx = (float(px) + 0.5f) * P.scat.x + P.scat.y, sy = (float(py) + 0.5f) * float(P.height) / float(P.oh) - 0.5f;
     float fx0 = floor(sx), fy0 = floor(sy), fx = sx - fx0, fy = sy - fy0;
-    int x0 = clamp(int(fx0), 0, 511), x1 = clamp(int(fx0) + 1, 0, 511);
+    int x0 = clamp(int(fx0), 0, sw - 1), x1 = clamp(int(fx0) + 1, 0, sw - 1);
     int y0 = clamp(int(fy0), 0, P.height - 1), y1 = clamp(int(fy0) + 1, 0, P.height - 1);
-    float3 top = mix(float3(scatter[y0 * 512 + x0].rgb), float3(scatter[y0 * 512 + x1].rgb), fx);
-    float3 bot = mix(float3(scatter[y1 * 512 + x0].rgb), float3(scatter[y1 * 512 + x1].rgb), fx);
+    float3 top = mix(float3(scatter[y0 * sw + x0].rgb), float3(scatter[y0 * sw + x1].rgb), fx);
+    float3 bot = mix(float3(scatter[y1 * sw + x0].rgb), float3(scatter[y1 * sw + x1].rgb), fx);
     float nx = ((float(px) + 0.5f) / float(P.ow) * 2.0f - 1.0f) * P.amb.z;
     float ny = ((float(py) + 0.5f) / float(P.oh) * 2.0f - 1.0f) * P.amb.w;
     float cosine = max(0.0f, (nx * P.light.x + ny * P.light.y + P.light.z) / sqrt(nx * nx + ny * ny + 1.0f));

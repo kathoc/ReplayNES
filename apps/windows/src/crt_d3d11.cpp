@@ -80,15 +80,16 @@ struct TubeParams {
 };
 struct ShowParams { float dst[4]; float src[4]; int32_t ow, oh, tw, th; float ndc[4]; };
 // Fast path.
-struct PostParams { int32_t supply, spot; float k1; int32_t persistence, newSlot, depth, rows, rx; };
-struct ScatterParams { int32_t rows, ry, pad0, pad1; float kappa[4]; };
+struct PostParams { int32_t supply, spot; float k1; int32_t persistence, newSlot, depth, rows, rx, margin, pad0, pad1, pad2; };
+struct ScatterParams { int32_t rows, ry, width, pad1; float kappa[4]; };
 struct FastTubeParams {
   int32_t height, ow, oh, xCount, gCount, hStride;
   float gain, keep;
   float amb[4], light[4];
+  float scat[4];  // scatter source sampling: x scale, x offset, width, unused
 };
-constexpr uint32_t kParamBytes = 64;
-static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64 && sizeof(FastTubeParams) == 64,
+constexpr uint32_t kParamBytes = 80;
+static_assert(sizeof(SupplyParams) == 64 && sizeof(TubeParams) == 64 && sizeof(ShowParams) == 64 && sizeof(FastTubeParams) == 80,
               "constant layout");
 
 uint32_t groups(int n, uint32_t local) { return uint32_t((std::max(0, n) + int(local) - 1) / int(local)); }
@@ -430,7 +431,7 @@ void CrtRendererD3D11::configure(const CrtSettings& newSettings, int outputWidth
   // key.lines): the stages are sized from the tube in use, never from a newer setting whose plan is
   // still being built (that mismatch read and wrote past the stage / tube buffers).
   settings_ = s;
-  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux, quality};
+  TubeKey key{std::max(64, outputWidth), std::max(48, outputHeight), s.lines, s.beamGrowth, s.ambientLux, quality, s.activeWidth};
   if (synchronous) {
     if (!tube_ || !(tube_->key == key)) {
       auto t = makeTube(key);
@@ -481,7 +482,7 @@ void CrtRendererD3D11::buildLoop() {
 }
 
 std::unique_ptr<CrtRendererD3D11::Tube> CrtRendererD3D11::makeTube(const TubeKey& k) {
-  crt::tube::Plan plan = crt::tube::makePlan(k.lines, k.ow, k.oh, k.ambient, k.growth ? 1 : 0);
+  crt::tube::Plan plan = crt::tube::makePlan(k.lines, k.ow, k.oh, k.ambient, k.growth ? 1 : 0, k.active);
   auto t = std::make_unique<Tube>();
   t->key = k;
   t->width = plan.width;
@@ -509,7 +510,11 @@ std::unique_ptr<CrtRendererD3D11::Tube> CrtRendererD3D11::makeTube(const TubeKey
       t->srx = sc.rx;
       t->sry = sc.ry;
       for (int c = 0; c < 3; ++c) t->kappa[c] = sc.kappa[c];
-      const size_t drive = size_t(512) * size_t(plan.height) * 8;
+      t->smargin = sc.margin;
+      t->swidth = sc.width;
+      t->sxScale = sc.sxScale;
+      t->sxOffset = sc.sxOffset;
+      const size_t drive = size_t(sc.width) * size_t(plan.height) * 8;  // scatter source
       bool ok = createBuffer(&t->xmapFast, fp.xmap.size() * 4, fp.xmap.data()) &&
                 createBuffer(&t->tiles, fp.tiles.size() * 4, fp.tiles.data()) &&
                 createBuffer(&t->vrows, fp.vrows.size() * 4, fp.vrows.data()) &&
@@ -894,7 +899,7 @@ bool CrtRendererD3D11::encode(const Input& input, uint64_t ordinal) {
   }
   // M4C-SPOT-H: horizontal counterpart of the beam-current spot growth (same toggle).
   if (settings_.beamGrowth && !disableSpotH) {
-    SpotParams spp{512, rows, crt::tube::kSpotHRadius, float(crt::tube::extraSigmaSamples(1, 1, 512))};
+    SpotParams spp{512, rows, crt::tube::kSpotHRadius, float(crt::tube::extraSigmaSamples(1, 1, 512, 240, t.key.active))};
     dispatch("spot_h", {drive, &spotOut_}, &spp, sizeof spp, groups(512, 32), groups(rows, 8));
     drive = &spotOut_;
   }
@@ -1034,8 +1039,8 @@ void CrtRendererD3D11::encodeFast(const Input& input, uint64_t ordinal, int64_t 
     primeSupply_ = false;
   }
   const bool persist = settings_.persistence && t.ring.buffer;
-  PostParams pp{settings_.supply ? 1 : 0, spot ? 1 : 0, float(crt::tube::extraSigmaSamples(1, 1, 512)), 0, 0,
-                crt::phosphor::depth(), rows, t.srx};
+  PostParams pp{settings_.supply ? 1 : 0, spot ? 1 : 0, float(crt::tube::extraSigmaSamples(1, 1, 512, 240, t.key.active)), 0, 0,
+                crt::phosphor::depth(), rows, t.srx, t.smargin, 0, 0, 0};
   std::vector<float> w(size_t(crt::phosphor::depth()) * 4, 0.0f);
   if (persist) {
     const int depth = crt::phosphor::depth();
@@ -1071,9 +1076,10 @@ void CrtRendererD3D11::encodeFast(const Input& input, uint64_t ordinal, int64_t 
   FastTubeParams tp{t.height, t.ow, t.oh, t.xCount, t.fastTaps, t.hStride, float(t.gain), float(1 - t.scatterFraction),
                     {float(crt::tube::kAlbedo * t.key.ambient / (3.141592653589793 * crt::tube::kReferenceWhiteCdM2)),
                      float(crt::tube::kDiffuseFraction), float(crt::tube::kNormalSlopeX), float(crt::tube::kNormalSlopeY)},
-                    {float(crt::tube::kLightX / lightNorm), float(crt::tube::kLightY / lightNorm), float(crt::tube::kLightZ / lightNorm), 0}};
-  ScatterParams scp{rows, t.sry, 0, 0, {t.kappa[0], t.kappa[1], t.kappa[2], 0}};
-  dispatch("scatter_drive", {&t.scatterTmp, &t.swy, &t.scatterSrc}, &scp, sizeof scp, groups(512, 32), groups(rows, 8));
+                    {float(crt::tube::kLightX / lightNorm), float(crt::tube::kLightY / lightNorm), float(crt::tube::kLightZ / lightNorm), 0},
+                    {t.sxScale, t.sxOffset, float(t.swidth), 0}};
+  ScatterParams scp{rows, t.sry, t.swidth, 0, {t.kappa[0], t.kappa[1], t.kappa[2], 0}};
+  dispatch("scatter_drive", {&t.scatterTmp, &t.swy, &t.scatterSrc}, &scp, sizeof scp, groups(t.swidth, 32), groups(rows, 8));
   dispatch("tube_h_fast", {drive, &t.xmapFast, &t.hplanes, &t.tiles}, &tp, sizeof tp, groups(t.ow, 64), groups(t.height, 64));
   dispatch("tube_v_fast", {&t.hplanes, &t.vcoef, &t.colinv, &t.vrows, &t.scatterSrc, &t.outH}, &tp, sizeof tp, groups(t.ow, 32),
            groups(t.oh, 8));
