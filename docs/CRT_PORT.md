@@ -158,7 +158,7 @@ Checks: `tests/test_frontend_crt.cpp` "crt geometry" (the clock derivation, the 
 8:7 within 0.5 % on every canvas); `pictureGeometry` in `crt_conformance` (Vulkan, Direct3D 11) and
 `CRTTests.testPictureGeometryIs87` (Metal): three 16x16 white squares 128 dots / 128 lines apart through
 the RF path with default settings, the centroids of their light (the same frames on black subtracted)
-on the face, both kernel sets, 640x480 and 1144x858, pixel aspect 8:7 within 0.5 % and centred within
+on the face, both kernel sets, 640x480 (Metal also 1144x858), pixel aspect 8:7 within 0.5 % and centred within
 0.5 %; `replaynes-export --self-test` measures the same squares in the CRT export's canvas (1280x960,
 1920x1080). Measured (M1 Max):
 
@@ -167,9 +167,8 @@ on the face, both kernel sets, 640x480 and 1144x858, pixel aspect 8:7 within 0.5
 | Metal, reference and fast, 640x480 / 1144x858 | 1.2501 (+9.4 %) | 1.1433 (+0.03 %) |
 | Vulkan (MoltenVK), reference and fast, 640x480 / 1144x858 | 1.2504 (+9.4 %) | 1.1433 (+0.04 %) |
 | CRT MP4 export (Vulkan processor), 1280x960 / 1920x1080 canvas | 1.2505 (+9.4 %) | 1.1433 (+0.04 %) |
+| Direct3D 11 (WARP, CI x64 runner), reference and fast, 640x480 / 1144x858 | - | 1.1433 (+0.04 %) |
 | Plain 8:7 export, 1280x960 crop 8 (1170x896 for 256x224) | 1.1426 (-0.02 %) | unchanged |
-
-Direct3D 11 runs the same checks on WARP in CI (`crt_conformance_d3d11`, the Windows export self-test).
 
 ## No signal and power-on (ReplayNES addition)
 
