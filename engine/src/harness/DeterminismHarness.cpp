@@ -31,6 +31,9 @@ static Status runLoop(ICore& core, const std::vector<InputRecord>& script, uint6
 Status DeterminismHarness::runFromStart(CoreKind kind, const std::vector<uint8_t>& rom,
                                         const std::vector<InputRecord>& script, uint32_t stateEvery, Trace& out,
                                         uint64_t captureAt, std::vector<uint8_t>* captured, const Perturb& perturb) {
+  if (!coreName(kind)) return Error(Err::InvalidArg, "unknown core kind");
+  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat, "selected core is not built");
+  if (!(coreCapabilities(kind) & CapState)) return Error(Err::UnsupportedFormat, "harness requires core state support");
   auto core = createCore(kind);
   RN_TRY(core->loadROM(rom.data(), rom.size()));
   return runLoop(*core, script, 0, stateEvery, out, captureAt, captured, perturb);
@@ -39,6 +42,9 @@ Status DeterminismHarness::runFromStart(CoreKind kind, const std::vector<uint8_t
 Status DeterminismHarness::runFromState(CoreKind kind, const std::vector<uint8_t>& rom,
                                         const std::vector<InputRecord>& script, const std::vector<uint8_t>& state,
                                         uint32_t stateEvery, Trace& out) {
+  if (!coreName(kind)) return Error(Err::InvalidArg, "unknown core kind");
+  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat, "selected core is not built");
+  if (!(coreCapabilities(kind) & CapState)) return Error(Err::UnsupportedFormat, "harness requires core state support");
   auto core = createCore(kind);
   RN_TRY(core->loadROM(rom.data(), rom.size()));
   RN_TRY(core->loadState(state.data(), state.size()));

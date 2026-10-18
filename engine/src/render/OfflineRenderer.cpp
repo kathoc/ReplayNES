@@ -3,6 +3,7 @@
 namespace rn {
 
 Status OfflineRenderer::create(const Session& s, uint64_t start, uint64_t end, std::unique_ptr<OfflineRenderer>& out) {
+  if (s.mode() == Mode::Live) return Error(Err::UnsupportedFormat, "offline export is unavailable in live mode");
   uint64_t len = s.takeLength();
   if (end == 0) end = len;
   if (end > len || start >= end) return Error(Err::OutOfRange, "render range outside the active take");

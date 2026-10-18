@@ -3,9 +3,9 @@
 //  * One instance = one machine. No shared mutable state between instances that can
 //    influence emulation results (see docs/ARCHITECTURE_DECISION.md for Nestopia statics).
 //  * frameIndex() = logical frames emulated since loadROM (NOT reset by power cycle).
-//  * stepFrame emits exactly audioSamplesForFrame(frameIndex) mono int16 samples @48 kHz,
+//  * Full-capability cores: stepFrame emits exactly audioSamplesForFrame(frameIndex) mono int16 samples @48 kHz,
 //    so audio sample positions are a pure function of the frame index.
-//  * saveState/loadState round-trip the complete machine state including frameIndex.
+//  * CapState cores: saveState/loadState round-trip the complete machine state including frameIndex.
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -32,8 +32,9 @@ inline uint32_t audioSamplesForFrame(uint64_t frame) {
 // System event flags (applied before emulating the frame they are recorded on).
 enum : uint8_t { kEvSoftReset = 0x01, kEvPowerCycle = 0x02, kEvMask = 0x03 };
 
-enum class CoreKind : int { Nestopia = 0, Mock = 1 };
+enum class CoreKind : int { Nestopia = 0, Mock = 1, ReplayNEScore = 2 };
 
+// Cores without CapAudio return nullptr/count=0; absent state/reset return UnsupportedFormat.
 class ICore {
  public:
   virtual ~ICore() = default;
@@ -76,6 +77,12 @@ class ICore {
   uint64_t audioHash() const;
 };
 
+enum CoreCapability : uint32_t { CapAudio = 1, CapState = 2, CapSoftReset = 4, CapRecording = 8 };
+const char* coreName(CoreKind kind);
+bool coreAvailable(CoreKind kind);
+uint32_t coreCapabilities(CoreKind kind);
+bool coreForCompatId(const std::string& compat, CoreKind& kind);
+// Unknown or unavailable kinds return nullptr; never substitute a different core.
 std::unique_ptr<ICore> createCore(CoreKind kind);
 std::string coreCompatId(CoreKind kind);
 

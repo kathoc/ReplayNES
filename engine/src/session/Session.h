@@ -19,7 +19,7 @@ class ProjectStore;
 
 // Practice: non-recording play. Emulates frames with live input but writes nothing to the
 // timeline/checkpoints; leaving practice restores the take exactly where it was.
-enum class Mode : int { Record = 0, Replay = 1, Practice = 2 };
+enum class Mode : int { Record = 0, Replay = 1, Practice = 2, Live = 3 };
 
 constexpr int kPracticeSlots = 8;
 
@@ -135,7 +135,7 @@ class Session {
 
   // --- takes
   std::vector<TakeInfo> takes() const;
-  uint64_t activeTake() const { return tl_.head(); }
+  uint64_t activeTake() const { return mode_ == Mode::Live ? 0 : tl_.head(); }
   Status activateTake(uint64_t id);
   Status undoTakeSwitch();
   size_t undoDepth() const { return tl_.undo().size(); }
@@ -164,7 +164,7 @@ class Session {
   Status reset(bool keepPracticeSlots);
   bool hasProject() const { return store_ != nullptr; }
   bool recovered() const { return recovered_; }
-  bool unsavedChanges() const { return changeSeq_ != savedSeq_; }
+  bool unsavedChanges() const { return mode_ != Mode::Live && changeSeq_ != savedSeq_; }
   std::string projectDir() const;
 
   // --- accessors

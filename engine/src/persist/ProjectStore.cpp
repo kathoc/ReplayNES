@@ -581,9 +581,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   // Core compatibility: refuse anything that is not bit-exactly this core.
   const std::string compat = man["coreCompatId"].asString();
   SessionOptions opt = optIn;
-  if (compat == coreCompatId(CoreKind::Nestopia)) opt.core = CoreKind::Nestopia;
-  else if (compat == coreCompatId(CoreKind::Mock)) opt.core = CoreKind::Mock;
-  else
+  if (!coreForCompatId(compat, opt.core) || !(coreCapabilities(opt.core) & CapRecording))
     return Error(Err::CoreMismatch, "project was recorded with core '" + compat + "' (build '" +
                                         man["coreBuild"].asString() + "'); this build provides '" +
                                         coreCompatId(CoreKind::Nestopia) +

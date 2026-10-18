@@ -105,9 +105,20 @@ void rn_string_free(char* s); /* frees strings returned by rn_*_json functions *
 /* ------------------------------------------------------------------ session */
 typedef struct rn_session rn_session;
 
-typedef enum rn_core_kind { RN_CORE_NESTOPIA = 0, RN_CORE_MOCK = 1 } rn_core_kind;
+typedef enum rn_core_kind { RN_CORE_NESTOPIA = 0, RN_CORE_MOCK = 1, RN_CORE_REPLAYNESCORE = 2 } rn_core_kind;
 /* PRACTICE: non-recording play (see "practice" section below). */
-typedef enum rn_mode { RN_MODE_RECORD = 0, RN_MODE_REPLAY = 1, RN_MODE_PRACTICE = 2 } rn_mode;
+/* Live cores expose video/input/power without recording or fabricated PCM/state. */
+#define RN_CORE_CAP_AUDIO 1u
+#define RN_CORE_CAP_STATE 2u
+#define RN_CORE_CAP_SOFT_RESET 4u
+#define RN_CORE_CAP_RECORDING 8u
+const char* rn_core_name(rn_core_kind kind); /* stable name; NULL for unknown */
+int rn_core_available(rn_core_kind kind);
+uint32_t rn_core_capabilities(rn_core_kind kind);
+/* NULL session returns (rn_core_kind)-1. */
+rn_core_kind rn_session_core_kind(const rn_session* session);
+
+typedef enum rn_mode { RN_MODE_RECORD = 0, RN_MODE_REPLAY = 1, RN_MODE_PRACTICE = 2, RN_MODE_LIVE = 3 } rn_mode;
 
 #define RN_OPEN_DROP_CORRUPT_STATES 0x1u   /* discard corrupt checkpoint files (they are a cache) */
 #define RN_OPEN_DROP_CORRUPT_PRACTICE 0x2u /* discard A/B practice slots whose A state is corrupt

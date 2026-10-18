@@ -73,7 +73,7 @@ rn_status guard(F&& f) {
 rn::SessionOptions toOptions(const rn_session_options* o) {
   rn::SessionOptions so;
   if (!o) return so;
-  so.core = o->core == RN_CORE_MOCK ? rn::CoreKind::Mock : rn::CoreKind::Nestopia;
+  so.core = static_cast<rn::CoreKind>(o->core);
   if (o->dense_interval) so.checkpoints.denseInterval = o->dense_interval;
   if (o->dense_capacity) so.checkpoints.denseCapacity = o->dense_capacity;
   if (o->sparse_interval) so.checkpoints.sparseInterval = o->sparse_interval;
@@ -90,7 +90,7 @@ char* dupString(const std::string& s) {
 }
 
 rn_mode toCMode(rn::Mode m) {
-  return m == rn::Mode::Replay ? RN_MODE_REPLAY : m == rn::Mode::Practice ? RN_MODE_PRACTICE : RN_MODE_RECORD;
+  return m == rn::Mode::Live ? RN_MODE_LIVE : m == rn::Mode::Replay ? RN_MODE_REPLAY : m == rn::Mode::Practice ? RN_MODE_PRACTICE : RN_MODE_RECORD;
 }
 template <class Src>
 rn_status videoIndices(const Src* src, rn_video_indices_info* out) {
@@ -108,6 +108,13 @@ rn_status videoIndices(const Src* src, rn_video_indices_info* out) {
 }  // namespace
 
 extern "C" {
+
+const char* rn_core_name(rn_core_kind kind) { return rn::coreName(static_cast<rn::CoreKind>(kind)); }
+int rn_core_available(rn_core_kind kind) { return rn::coreAvailable(static_cast<rn::CoreKind>(kind)) ? 1 : 0; }
+uint32_t rn_core_capabilities(rn_core_kind kind) { return rn::coreCapabilities(static_cast<rn::CoreKind>(kind)); }
+rn_core_kind rn_session_core_kind(const rn_session* s) {
+  return s ? static_cast<rn_core_kind>(s->s->coreKind()) : static_cast<rn_core_kind>(-1);
+}
 
 const char* rn_version(void) { return RN_ENGINE_VERSION; }
 const char* rn_core_compat_id(void) {
@@ -238,8 +245,8 @@ rn_status rn_project_manifest_json(const char* project_dir, char** out_json) {
 rn_status rn_set_mode(rn_session* s, rn_mode mode) {
   return guard([&] {
     if (!s) return invalid("null session");
-    if (mode != RN_MODE_RECORD && mode != RN_MODE_REPLAY && mode != RN_MODE_PRACTICE) return invalid("bad mode");
-    rn::Mode m = mode == RN_MODE_REPLAY ? rn::Mode::Replay : mode == RN_MODE_PRACTICE ? rn::Mode::Practice : rn::Mode::Record;
+    if (mode != RN_MODE_RECORD && mode != RN_MODE_REPLAY && mode != RN_MODE_PRACTICE && mode != RN_MODE_LIVE) return invalid("bad mode");
+    rn::Mode m = mode == RN_MODE_LIVE ? rn::Mode::Live : mode == RN_MODE_REPLAY ? rn::Mode::Replay : mode == RN_MODE_PRACTICE ? rn::Mode::Practice : rn::Mode::Record;
     return ret(s->s->setMode(m));
   });
 }

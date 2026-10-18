@@ -78,3 +78,8 @@ if(TARGET replaynes_frontend)
   rn_add_frontend_test(test_frontend_gamedb)
   target_compile_definitions(test_frontend_gamedb PRIVATE RN_LOCAL_ROMS="${PROJECT_SOURCE_DIR}/roms")
 endif()
+
+rn_add_test(test_core_selection)
+if(REPLAYNES_ENABLE_REPLAYNESCORE)
+  rn_add_test(test_replaynescore_adapter)
+endif()

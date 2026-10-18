@@ -2,6 +2,9 @@
 
 #include "core/MockCore.h"
 #include "core/NestopiaCore.h"
+#ifdef REPLAYNES_HAS_REPLAYNESCORE
+#include "core/ReplayNEScoreAdapter.h"
+#endif
 #include "util/Bytes.h"
 #include "util/Hash.h"
 
@@ -23,13 +26,66 @@ uint64_t ICore::audioHash() const {
   return Hasher64::of(a, n * 2, n);
 }
 
+const char* coreName(CoreKind kind) {
+  switch (kind) {
+    case CoreKind::Nestopia: return "nestopia";
+    case CoreKind::Mock: return "mock";
+    case CoreKind::ReplayNEScore: return "replaynescore";
+  }
+  return nullptr;
+}
+
+bool coreAvailable(CoreKind kind) {
+  if (kind == CoreKind::Nestopia || kind == CoreKind::Mock) return true;
+#ifdef REPLAYNES_HAS_REPLAYNESCORE
+  if (kind == CoreKind::ReplayNEScore) return true;
+#endif
+  return false;
+}
+
+uint32_t coreCapabilities(CoreKind kind) {
+  if (kind == CoreKind::Nestopia || kind == CoreKind::Mock)
+    return uint32_t(CapAudio | CapState | CapSoftReset | CapRecording);
+  if (kind == CoreKind::ReplayNEScore && coreAvailable(kind)) return uint32_t(CapAudio | CapState);
+  return 0;
+}
+
 std::unique_ptr<ICore> createCore(CoreKind kind) {
-  if (kind == CoreKind::Mock) return std::unique_ptr<ICore>(new MockCore());
-  return std::unique_ptr<ICore>(new NestopiaCore());
+  switch (kind) {
+    case CoreKind::Nestopia: return std::unique_ptr<ICore>(new NestopiaCore());
+    case CoreKind::Mock: return std::unique_ptr<ICore>(new MockCore());
+    case CoreKind::ReplayNEScore:
+#ifdef REPLAYNES_HAS_REPLAYNESCORE
+      return std::unique_ptr<ICore>(new ReplayNEScoreAdapter());
+#else
+      return nullptr;
+#endif
+  }
+  return nullptr;
 }
 
 std::string coreCompatId(CoreKind kind) {
-  return kind == CoreKind::Mock ? MockCore::kCompatId : NestopiaCore::staticCompatId();
+  switch (kind) {
+    case CoreKind::Nestopia: return NestopiaCore::staticCompatId();
+    case CoreKind::Mock: return MockCore::kCompatId;
+    case CoreKind::ReplayNEScore:
+#ifdef REPLAYNES_HAS_REPLAYNESCORE
+      return ReplayNEScoreAdapter::staticCompatId();
+#else
+      return {};
+#endif
+  }
+  return {};
+}
+
+bool coreForCompatId(const std::string& compat, CoreKind& kind) {
+  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore}) {
+    if (coreAvailable(candidate) && !compat.empty() && coreCompatId(candidate) == compat) {
+      kind = candidate;
+      return true;
+    }
+  }
+  return false;
 }
 
 namespace stateenv {

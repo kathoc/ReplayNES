@@ -17,7 +17,10 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
   std::unique_ptr<Session> s(new Session());
   s->opt_ = opt;
   s->cps_ = CheckpointStore(opt.checkpoints);
+  if (!coreName(opt.core)) return Error(Err::InvalidArg, "unknown core kind");
+  if (!coreAvailable(opt.core)) return Error(Err::UnsupportedFormat, "selected core is not built");
   s->core_ = createCore(opt.core);
+  if (!(coreCapabilities(opt.core) & CapRecording)) s->mode_ = Mode::Live;
   s->rom_ = std::move(rom);
   s->romPath_ = romPath;
   s->romSha_ = Sha256::hex(s->rom_.data(), s->rom_.size());
@@ -63,6 +66,18 @@ void Session::maybeCheckpoint() {
 Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
   StepInfo si;
   si.mode = mode_;
+  if (mode_ == Mode::Live) {
+    if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
+    if ((events & kEvSoftReset) && !(events & kEvPowerCycle))
+      return Error(Err::UnsupportedFormat, "soft reset is unavailable for this live core");
+    RN_TRY(core_->stepRecord(p1, p2, events, true));
+    ++frame_;
+    audioValid_ = true;
+    si.frame = frame_;
+    si.applied.p1 = p1; si.applied.p2 = p2; si.applied.events = events;
+    if (info) *info = si;
+    return Status::Ok();
+  }
   InputRecord r;
   if (mode_ == Mode::Practice) {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
@@ -160,6 +175,7 @@ Status Session::resync(uint64_t target, bool forceReload) {
 }
 
 Status Session::seek(uint64_t target) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot seek the take while practicing (leave practice first)");
   RN_TRY(resync(target, false));
   touch();
@@ -167,12 +183,14 @@ Status Session::seek(uint64_t target) {
 }
 
 Status Session::rewind(uint64_t n) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return practiceRewind(n);
   return seek(frame_ - (n > frame_ ? frame_ : n));
 }
 
 // ------------------------------------------------------------------ bookmarks
 Status Session::bookmarkAdd(const std::string& name, uint64_t* id) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot add a take bookmark while practicing");
   Bookmark b;
   b.id = nextBookmarkId_++;
@@ -196,6 +214,7 @@ static Bookmark* findBm(std::vector<Bookmark>& v, uint64_t id) {
 }
 
 Status Session::bookmarkRemove(uint64_t id) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   for (size_t i = 0; i < bookmarks_.size(); ++i) {
     if (bookmarks_[i].id != id) continue;
     if (bookmarks_[i].stateId) cps_.remove(bookmarks_[i].stateId);
@@ -207,6 +226,7 @@ Status Session::bookmarkRemove(uint64_t id) {
 }
 
 Status Session::bookmarkRename(uint64_t id, const std::string& name) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Bookmark* b = findBm(bookmarks_, id);
   if (!b) return Error(Err::NotFound, "bookmark not found");
   b->name = name;
@@ -215,6 +235,7 @@ Status Session::bookmarkRename(uint64_t id, const std::string& name) {
 }
 
 Status Session::bookmarkGoto(uint64_t id) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot jump on the take while practicing");
   Bookmark* b = findBm(bookmarks_, id);
   if (!b) return Error(Err::NotFound, "bookmark not found");
@@ -233,6 +254,7 @@ Status Session::bookmarkGoto(uint64_t id) {
 // ------------------------------------------------------------------ takes
 std::vector<TakeInfo> Session::takes() const {
   std::vector<TakeInfo> out;
+  if (mode_ == Mode::Live) return out;
   for (auto& kv : tl_.segments()) {
     const Segment& s = kv.second;
     out.push_back({s.id, s.parent, s.start, s.end(), s.createdSeq, s.id == tl_.head(), tl_.childCount(s.id)});
@@ -241,6 +263,7 @@ std::vector<TakeInfo> Session::takes() const {
 }
 
 Status Session::activateTake(uint64_t id) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
   if (id == tl_.head()) return Status::Ok();
@@ -252,6 +275,7 @@ Status Session::activateTake(uint64_t id) {
 }
 
 Status Session::undoTakeSwitch() {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (tl_.undo().empty()) return Error(Err::NotFound, "nothing to undo");
   UndoEntry e = tl_.undo().back();
@@ -272,6 +296,7 @@ static bool takeReferenced(const std::vector<Bookmark>& bms, const std::array<Pr
 }
 
 Status Session::discardTake(uint64_t id) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
   if (takeReferenced(bookmarks_, slots_, id))
     return Error(Err::InvalidArg, "a bookmark or an A/B section is on take " + std::to_string(id));
@@ -285,6 +310,7 @@ Status Session::discardTake(uint64_t id) {
 }
 
 Status Session::truncateTake() {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot cut the take while practicing");
   if (frame_ >= tl_.length()) return Status::Ok();
   const uint64_t oldId = tl_.head();
@@ -310,6 +336,10 @@ Status Session::truncateTake() {
 
 // ------------------------------------------------------------------ practice
 Status Session::setMode(Mode m) {
+  if (mode_ == Mode::Live || m == Mode::Live) {
+    if (mode_ == m) return Status::Ok();
+    return Error(Err::UnsupportedFormat, "live execution cannot change to a recording mode");
+  }
   if (m == mode_) return Status::Ok();
   if (m == Mode::Practice) return enterPractice();
   if (mode_ == Mode::Practice) return leavePractice(m);
@@ -411,6 +441,7 @@ const PracticeSlot* Session::practiceSlot(int slot) const {
 }
 
 Status Session::practiceSetA(int slot) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   std::vector<uint8_t> st;
@@ -452,6 +483,7 @@ bool Session::practiceBSettable(int slot) const {
 }
 
 Status Session::practiceSetB(int slot) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   PracticeSlot& p = slots_[size_t(slot)];
@@ -492,6 +524,7 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
 }
 
 Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   if (mode_ == Mode::Practice)
@@ -553,6 +586,7 @@ Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
 }
 
 Status Session::practiceGotoA(int slot) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   PracticeSlot& p = slots_[size_t(slot)];
@@ -586,6 +620,7 @@ Status Session::practiceGotoA(int slot) {
 }
 
 Status Session::practiceRename(int slot, const std::string& name) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   PracticeSlot& p = slots_[size_t(slot)];
@@ -597,6 +632,7 @@ Status Session::practiceRename(int slot, const std::string& name) {
 }
 
 Status Session::practiceClear(int slot) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
   if (!slots_[size_t(slot)].used) return Status::Ok();
@@ -624,6 +660,7 @@ PracticeStatus Session::practiceStatus() const {
 
 // ------------------------------------------------------------------ persistence
 Status Session::save() {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
   RN_TRY(store_->fullSave(*this));
   savedSeq_ = changeSeq_;
@@ -631,6 +668,7 @@ Status Session::save() {
 }
 
 Status Session::reset(bool keepPracticeSlots) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot reset the project while practicing (leave practice first)");
   // The previous content, restored if the reset cannot be committed.
   Timeline oldTl = std::move(tl_);
@@ -699,11 +737,13 @@ Status Session::reset(bool keepPracticeSlots) {
 }
 
 Status Session::autosave() {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
   return store_->autosave(*this);
 }
 
 Status Session::saveAs(const std::string& dir) {
+  if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (store_) return Error(Err::AlreadyExists, "session already has a project directory");
   std::unique_ptr<ProjectStore> st;
   RN_TRY(ProjectStore::create(dir, *this, st));
