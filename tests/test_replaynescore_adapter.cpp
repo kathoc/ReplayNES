@@ -91,6 +91,25 @@ TEST_CASE("Experimental core restores noise PCM into a separate instance") {
     CHECK(std::equal(ap,ap+an,bp)); CHECK_EQ(straight.machineHash(),branch.machineHash());
   }
 }
+TEST_CASE("Experimental core restores DMC direct DAC PCM into a separate instance") {
+  // Program DMC registers without starting sample DMA; direct DAC remains live and stateful.
+  auto bytes=rom({0xa9,0,0x8d,0x10,0x40,0xa9,64,0x8d,0x11,0x40,
+    0xa9,0x12,0x8d,0x12,0x40,0xa9,3,0x8d,0x13,0x40,
+    0xad,0x15,0x40,0x85,0,0x4c,0x19,0x80});
+  rn::ReplayNEScoreAdapter straight,branch;
+  REQUIRE(straight.loadROM(bytes.data(),bytes.size()).ok()); REQUIRE(branch.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(straight.stepFrame(0,0,false).ok()); CHECK_EQ(straight.cpuRam()[0]&0x90,0);
+  size_t initialCount=0;const auto* initial=straight.audio(&initialCount);
+  CHECK(std::any_of(initial,initial+initialCount,[](int16_t value){return value!=0;}));
+  std::vector<uint8_t> state; REQUIRE(straight.saveState(state).ok());
+  REQUIRE(branch.loadState(state.data(),state.size()).ok()); CHECK_EQ(branch.frameIndex(),1U);
+  for(unsigned frame=1;frame<4;++frame) {
+    REQUIRE(straight.stepFrame(0,0,false).ok()); REQUIRE(branch.stepFrame(0,0,false).ok());
+    size_t an=0,bn=0;const auto* ap=straight.audio(&an);const auto* bp=branch.audio(&bn);
+    REQUIRE_EQ(an,size_t(rn::audioSamplesForFrame(frame)));REQUIRE_EQ(an,bn);
+    CHECK(std::equal(ap,ap+an,bp));CHECK_EQ(straight.machineHash(),branch.machineHash());
+  }
+}
 TEST_CASE("Experimental core renders real PPU pattern with an exact raster frame") {
   auto bytes=rom({0xa9,0x3f,0x8d,6,0x20,0xa9,0,0x8d,6,0x20,
     0xa9,0x0f,0x8d,7,0x20,0xa9,0x21,0x8d,7,0x20,
