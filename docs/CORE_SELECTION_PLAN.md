@@ -249,6 +249,20 @@ soft resetは無効のまま。compat IDを`replaynescore/nrom-live/state-v7`、
 各frameのcanonical state、RAM、video、PCMが完全一致した。adapter/core selection 2試験成功（9.56秒）、
 独立コア全236試験成功。Sessionの録画・巻戻し・project保存UIはこのstate能力だけでは有効化しない。
 
+## 2026-10-18 ReplayNESCore 0.2.0 / APU status read
+
+ReplayNESCore commit `b1a3792`で`$4015` status readを追加した。pulse 2本・triangleのlength active、
+frame IRQ、bit 5保持とIRQ clearを実装し、noise/DMC bitは未実装のまま0とする。実行可能MMIOと
+再現結果が変わるため、compat IDを`replaynescore/nrom-live/apu-status-v8`、build IDを
+`replaynescore-0.2.0+adapter-v8`へ進める。MACH schemaとadapter state envelopeは変わらないため、
+state format versionは1を維持する。
+
+adapter試験へpulse lengthをreloadして`$4015` bit 0をRAMへ保存するROMを追加する。core selection、
+保存復元、PCMの既存試験も同時に通し、既存Nestopia identityと録画manifestの優先規則は変更しない。
+
+Release統合buildで`test_core_selection`と`test_replaynescore_adapter`が2/2成功（8.63秒）。新しい
+status ROM、既存pad/PCM/state/描画、Live制約を同じbinaryで確認した。
+
 ## 2026-10-18 Claude Codeによる差分レビューと再検証
 
 - **Debug + 新core有効でリンク失敗**（`test_frontend_pacing`ほか）。原因: adapterが`stateenv::read/write`

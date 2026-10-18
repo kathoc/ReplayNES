@@ -40,6 +40,12 @@ TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
   REQUIRE(core.stepFrame(0,0).ok());
   REQUIRE(core.stepFrame(0,0).ok());
+  // $4015 status exposes a live pulse length counter instead of faulting.
+  bytes=rom({0xa9,1,0x8d,0x15,0x40,0xa9,0,0x8d,0x03,0x40,
+    0xad,0x15,0x40,0x85,0,0x4c,0x0f,0x80});
+  REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(core.stepFrame(0,0).ok());
+  CHECK_EQ(core.cpuRam()[0]&1,1);
   // Pulse and implemented triangle registers have stateful side effects; the triangle gap remains unsupported.
   bytes=rom({0xa9,0,
     0x8d,0x00,0x40,0x8d,0x01,0x40,0x8d,0x02,0x40,0x8d,0x03,0x40,
