@@ -71,12 +71,17 @@ TEST_CASE("Experimental core emits deterministic non-silent pulse PCM") {
     CHECK(std::any_of(ap,ap+an,[](int16_t value){return value!=0;}));
   }
 }
-TEST_CASE("Experimental core restores pulse PCM into a separate instance") {
-  auto bytes=rom({0xa9,1,0x8d,0x15,0x40,0xa9,0x9f,0x8d,0x00,0x40,
-    0xa9,0,0x8d,0x02,0x40,0xa9,9,0x8d,0x03,0x40,0x4c,0x14,0x80});
+TEST_CASE("Experimental core restores noise PCM into a separate instance") {
+  // Enable noise, use constant volume and the shortest period, read status, then loop.
+  auto bytes=rom({0xa9,8,0x8d,0x15,0x40,0xa9,0x3f,0x8d,0x0c,0x40,
+    0xa9,0,0x8d,0x0e,0x40,0xa9,0xf8,0x8d,0x0f,0x40,
+    0xad,0x15,0x40,0x85,0,0x4c,0x19,0x80});
   rn::ReplayNEScoreAdapter straight,branch;
   REQUIRE(straight.loadROM(bytes.data(),bytes.size()).ok()); REQUIRE(branch.loadROM(bytes.data(),bytes.size()).ok());
   for(unsigned frame=0;frame<3;++frame) REQUIRE(straight.stepFrame(0,0,false).ok());
+  CHECK_EQ(straight.cpuRam()[0]&8,8);
+  size_t initialCount=0;const auto* initial=straight.audio(&initialCount);
+  CHECK(std::any_of(initial,initial+initialCount,[](int16_t value){return value!=0;}));
   std::vector<uint8_t> state; REQUIRE(straight.saveState(state).ok());
   REQUIRE(branch.loadState(state.data(),state.size()).ok()); CHECK_EQ(branch.frameIndex(),3U);
   for(unsigned frame=3;frame<7;++frame) {

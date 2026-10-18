@@ -280,3 +280,9 @@ status ROM、既存pad/PCM/state/描画、Live制約を同じbinaryで確認し�
 - 未対応の指摘: 音声能力の記述が不一致（adapterはPCMを生成しCapAudioを持つが、デスクトップ/macOSはLiveで
   音声を流さず、表示とREADMEは「音声なし」）。既定buildでもSystem設定に「ReplayNEScore」が出て、選ぶと
   新規ゲームが毎回「このビルドに含まれない」で失敗する（未ビルド時は項目を隠す案）。
+
+## 2026-10-18 ReplayNESCore 0.3.0 / APU noise
+
+ReplayNESCore commit `73ab03c`で`$400C/$400E/$400F`、envelope、15-bit LFSR、noise length/status bit 3、TND mixer、MACH schema 2.0を追加した。adapterはnoise ownerを有効にし、合成ROMで非ゼロPCM、`$4015` bit 3、別instanceへの保存復元継続を検査する。互換IDを`replaynescore/nrom-live/noise-v9`、build IDを`replaynescore-0.3.0+adapter-v9`へ進める。adapter envelopeの構造は変えず、state format versionは1を維持する。
+
+Release統合buildで`test_core_selection`と`test_replaynescore_adapter`が2/2成功（9.69秒）。既存のpulse/pad/描画/state試験に加え、noiseのstatus、PCM、別instance復元を確認した。
