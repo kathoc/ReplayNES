@@ -35,6 +35,7 @@
 // same integers as the straightforward per-pixel formulation (tests/test_flash_filter_exact.cpp
 // compares against a frozen copy of it).
 #pragma once
+#include <cstddef>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -146,7 +147,7 @@ class FlashFilter {
   static PairEntry measurePair(const uint32_t* px, uint64_t key);
   // Pixels of block i whose luminance / red metric changes by at least the thresholds, against the
   // previous output (first) and the block's reference (second). Uses the per-pixel caches.
-  void changedPixels(size_t i, int& vsPrev, int& vsRef) const;
+  void changedPixels(std::size_t i, int& vsPrev, int& vsRef) const;
   // Blend of prev_ and in (weight a/256 of in) for one block, in linear light, quantised to sRGB.
   // prepareBlend() reduces the block to its distinct (prev, in) pixel value pairs ("units");
   // blendStats(a) gives the stats of the quantised blend; writeBlend(a) writes it to out and the
