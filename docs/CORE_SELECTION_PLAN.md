@@ -336,3 +336,16 @@ offscreen UIを新core有効/無効の両buildで実行しPASS、設定画面・
   後者はclean checkoutで判明: GCC 11.4では既定buildでも`FlashFilter.cpp`が`size_t`未宣言で失敗していた。
 - clean checkout検証: ReplayNES `ccb48ac`＋`FlashFilter.h`修正と独立コア`c0e6cfa`を別の場所へ取り出し、
   新core有効Release（警告error ON）build成功・33/33。
+
+## 2026-10-20 Codex への依頼（ReplayNEScore 側）
+
+ReplayNEScore の修正は Codex の担当で、ReplayNES はコミットされた成果物を組み込むだけにする（利用者決定）。
+
+1. clang の `-Wsign-conversion` 5件で、警告 error 扱い（既定）の clang build（Windows llvm-mingw、AppleClang）が止まる:
+   `src/ppu_scroll.cpp:37`、`src/ppu_background_pixel.cpp:36,38,40`、`src/cpu.cpp:1583`。`uint16_t`/`uint8_t` の
+   `<<` が `int` へ整数昇格し、unsigned と `|` するため。シフト前に `std::uint32_t` へ変換すれば値は同一で消える
+   （試作で確認済み。試作は取り消した）。
+2. GCC 11 の `-Wstringop-overread` 誤検知で、独立コア単体の Release + 警告 error が試験2本で止まる:
+   `tests/nrom_cpu_ppu_mmio.cpp:35`、`tests/nrom_cpu_ppu_apu_pulse.cpp:102`（`vector::insert`）。
+3. 速度: Donkey Kong で約 1.2 秒/frame（実時間の約 1/70）。gprof では各段階の状態複製と検証
+   （`CpuPort::export_checkpoint` など）が大半。詳細は `docs/plans/2026-10-19-replaynescore-all-platforms.md`。
