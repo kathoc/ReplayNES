@@ -1,4 +1,5 @@
 #include "support/rn_test.h"
+#include "support/TestUtil.h"
 #include "core/ReplayNEScoreAdapter.h"
 #include <algorithm>
 #include <array>
@@ -126,7 +127,8 @@ TEST_CASE("Experimental core renders real PPU pattern with an exact raster frame
   const auto* pixels=core.video();
   CHECK(pixels[100*256+100]!=pixels[100*256+101]);
   // PPM is the same BGRA buffer exposed to the frontend, not a reference-core picture.
-  std::ofstream capture(std::string(RN_TEST_TMP)+"/replaynescore-display.ppm",std::ios::binary);
+  // tempDir honours $RN_TEST_TMP at run time (the Windows VM has no build-tree path).
+  std::ofstream capture(rntest::tempDir("replaynescore-display")+"/replaynescore-display.ppm",std::ios::binary);
   capture<<"P6\n256 240\n255\n";
   for(unsigned n=0;n<256*240;++n) {
     const char rgb[]{char(pixels[n]>>16),char(pixels[n]>>8),char(pixels[n])};
