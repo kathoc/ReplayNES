@@ -80,8 +80,9 @@ PY
 # confirming with east and going back with south (the defaults): L+R opens the menu, D-pad + east
 # open a page, south goes back, L+R closes (resumes); R held + START pauses (START not the game's,
 # R's release no step), R while paused steps a frame (stays paused), south tapped resumes, L alone
-# does nothing in play (layout 8: no slow, no pause); Esc opens / closes; L held + R pauses and steps;
-# while paused, south held through a D-pad frame step does not resume, a tap does.
+# does nothing in play (layout 8: no slow, no pause); Esc opens / closes; L held + R pauses without a
+# step (R held 0.6 s: its repeats do not step either); while paused, south held through a D-pad frame
+# step does not resume, a tap does; in play R held + L toggles slow 1/2 on, again off.
 input_check() {
   local name="input"
   local pad="3:leftShoulder:d,3.04:rightShoulder:d,3.2:leftShoulder:u,3.2:rightShoulder:u"
@@ -89,13 +90,15 @@ input_check() {
   pad="$pad,7.5:rightShoulder:d,7.53:leftShoulder:d,7.7:leftShoulder:u,7.7:rightShoulder:u"
   pad="$pad,9:rightShoulder:d,9.15:menu:d,9.2:menu:u,9.25:rightShoulder:u,11:rightShoulder:d,11.05:rightShoulder:u,11.8:face.south:d,11.85:face.south:u"
   pad="$pad,12:leftShoulder:d,12.4:leftShoulder:u"
-  pad="$pad,17.4:leftShoulder:d,17.6:rightShoulder:d,17.65:rightShoulder:u,17.7:leftShoulder:u,18.5:face.south:d,18.6:dpad.right:d,18.7:dpad.right:u,18.9:face.south:u"
+  pad="$pad,17.4:leftShoulder:d,17.6:rightShoulder:d,18.2:rightShoulder:u,18.25:leftShoulder:u,18.5:face.south:d,18.6:dpad.right:d,18.7:dpad.right:u,18.9:face.south:u"
   pad="$pad,20:face.south:d,20.1:face.south:u"
+  pad="$pad,22:rightShoulder:d,22.2:leftShoulder:d,22.25:leftShoulder:u,22.3:rightShoulder:u"
+  pad="$pad,24:rightShoulder:d,24.2:leftShoulder:d,24.25:leftShoulder:u,24.3:rightShoulder:u"
   local d="$G/$name"
-  local snaps="4:$d/a.png,6:$d/b.png,7:$d/c.png,8.5:$d/d.png,10:$d/e.png,11.5:$d/f.png,13:$d/g.png,15:$d/h.png,17:$d/i.png,19.5:$d/j.png,21:$d/k.png"
+  local snaps="4:$d/a.png,6:$d/b.png,7:$d/c.png,8.5:$d/d.png,10:$d/e.png,11.5:$d/f.png,13:$d/g.png,15:$d/h.png,17:$d/i.png,17.8:$d/j1.png,18.3:$d/j2.png,19.5:$d/j.png,21:$d/k.png,23:$d/l.png,25:$d/m.png"
   app "$name" --rom "$ROM" --autoplay --library-root "$d/library" --session-root "$d/session" "${COMMON[@]}" \
     --inject-pad "$pad" --inject-keys "14:53:d,14.05:53:u,16:53:d,16.05:53:u" --snapshot-at "$snaps" \
-    --test-actions "0.5:screen:0,2:dumpMenus,22:quit" -AppleLanguages "(en)"
+    --test-actions "0.5:screen:0,2:dumpMenus,26:quit" -AppleLanguages "(en)"
   fetch "$name"
   # Close (⌘W) lives in the Window menu (the File menu is gone).
   grep -q "menu: Window | Close | ⌘w" "$OUT/$name/app.log" && echo "$OUT/$name: ⌘W close ok" || { echo "$OUT/$name: ⌘W close missing"; fail=1; }
@@ -106,7 +109,9 @@ want = {  # snapshot: (menuOpen, page, paused, slow)
     "a": (True, "top", True, "Normal"), "b": (True, "retry", True, "Normal"), "c": (True, "top", True, "Normal"),
     "d": (False, None, False, "Normal"), "e": (False, None, True, "Normal"), "f": (False, None, True, "Normal"),
     "g": (False, None, False, "Normal"), "h": (True, "top", True, "Normal"), "i": (False, None, False, "Normal"),
+    "j1": (False, None, True, "Normal"), "j2": (False, None, True, "Normal"),
     "j": (False, None, True, "Normal"), "k": (False, None, False, "Normal"),
+    "l": (False, None, False, "1/2"), "m": (False, None, False, "Normal"),
 }
 bad, skipped = [], []
 J = {k: json.load(open(f"{d}/{k}.json")) for k in want}
@@ -124,6 +129,12 @@ for k, (menu, page, paused, slow) in want.items():
 # forward (the cursor moved by exactly one).
 if J["f"]["statusFrame"] != J["e"]["statusFrame"] + 1:
     bad.append(f"R step: frame {J['e']['statusFrame']} -> {J['f']['statusFrame']}, want +1")
+# L held + R in play: paused at the press without a step, and R held 0.6 s (repeats) steps nothing;
+# then the paused D-pad step moves exactly one frame.
+if J["j2"]["statusFrame"] != J["j1"]["statusFrame"]:
+    bad.append(f"L held + R: frame {J['j1']['statusFrame']} -> {J['j2']['statusFrame']} while R was held, want no step")
+if J["j"]["statusFrame"] != J["j2"]["statusFrame"] + 1:
+    bad.append(f"paused D-pad step: frame {J['j2']['statusFrame']} -> {J['j']['statusFrame']}, want +1")
 print(f"{d}: input model " + ("ok" if not bad else "FAILED\n  " + "\n  ".join(bad))
       + (f" (Esc steps {', '.join(skipped)} skipped: the app was not frontmost)" if skipped else ""))
 sys.exit(1 if bad else 0)

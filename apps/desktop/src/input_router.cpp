@@ -410,19 +410,20 @@ void InputRouter::pumpChord() {
           setPressed(id, false, ev.time, true);
         }
         break;
-      // Pressed while the other member is held on its own: L held + R = forward, R held + L = back
-      // (pause and step at the press, repeated while held). A member bound to a game button is the game's.
+      // Pressed while the other member is held on its own: L held + R = +1, R held + L = -1 at the press,
+      // repeated while held (EmulationController::followGesture: in play pause / slow, paused a frame
+      // step). A member bound to a game button is the game's.
       case RNF_CHORD_FOLLOW_DOWN:
         if (ui_ || (paused && seekFocus_ == 2)) break;
         if (!pausedStepMode_ && isGameMember(id)) {
           forwardedMembers_.insert(id);
           setPressed(id, true, ev.time, true);
         } else if (onPauseGesture) {
-          onPauseGesture(dir);
+          onPauseGesture(dir, false);
         }
         break;
       case RNF_CHORD_FOLLOW_REPEAT:
-        if (!ui_ && seekFocus_ < 2 && !forwardedMembers_.count(id) && onPauseGesture) onPauseGesture(dir);
+        if (!ui_ && seekFocus_ < 2 && !forwardedMembers_.count(id) && onPauseGesture) onPauseGesture(dir, true);
         break;
       case RNF_CHORD_FOLLOW_UP:
         if (forwardedMembers_.erase(id)) setPressed(id, false, ev.time, true);
@@ -579,7 +580,7 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
       pressed_.insert(id);
       confirmTap_.cancel();
       swallowedStarts_.insert(id);
-      if (onPauseGesture) onPauseGesture(0);
+      if (onPauseGesture) onPauseGesture(0, false);
       return;
     }
   }

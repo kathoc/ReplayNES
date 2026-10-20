@@ -184,10 +184,10 @@ final class SeekMarkers: ObservableObject {
         m.stepFrame(dir)
     }
 
-    /// Pad 1's gestures in play (InputManager.onPauseGesture): 0 = pause (the seek bar), -1 / +1 =
-    /// pause and step one frame back / forward.
-    func pauseGesture(_ dir: Int) {
+    /// Pad 1's gestures (InputManager.onPauseGesture): 0 = pause (the seek bar); -1 / +1 = R held + L /
+    /// L held + R (EmulationController.followGesture: in play slow 1/2 / pause, paused a frame step).
+    func pauseGesture(_ dir: Int, repeated: Bool = false) {
         guard let m = model, m.status.hasSession, !m.quickMenu.isOpen, !m.showLibrary, !editing else { return }
-        if dir == 0 { m.setPaused(true) } else { m.stepFrame(dir) }   // stepFrame pauses first
+        if dir == 0 { m.setPaused(true) } else { m.followGesture(dir, repeated: repeated) }
     }
 }

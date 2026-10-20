@@ -389,6 +389,21 @@ bool EmulationController::replayButtonPressed() {
   return pressed != 0;
 }
 
+void EmulationController::followGesture(int dir, bool repeat) {
+  if (!session_ || dir == 0) return;
+  if (!repeat) {
+    followFromPlay_ = !paused_;
+    if (followFromPlay_) {
+      if (dir > 0) setPaused(true);
+      else toggleSlow();
+      return;
+    }
+  } else if (followFromPlay_) {
+    return;
+  }
+  step(dir);  // paused: frame step (back / forward)
+}
+
 void EmulationController::toggleSlow() {
   slow_ = rnf_slow_toggled(slow_);
   notice(slow_ == 1 ? TR("Normal Speed") : TR("Slow 1/2"));

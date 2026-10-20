@@ -71,9 +71,10 @@ class InputRouter {
   std::function<void(SeekInput in, bool down)> onSeekInput;
   /// L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
   std::function<void(int dir)> onPausedShoulder;
-  /// Pad 1's gestures in play (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L = -1 (pause and
-  /// step one frame; at the press, repeated while held), L or R held + START = 0 (pause: the seek bar).
-  std::function<void(int dir)> onPauseGesture;
+  /// Pad 1's gestures (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L = -1 (at the press,
+  /// repeat = true while held; EmulationController::followGesture decides), L or R held + START = 0
+  /// (pause: the seek bar).
+  std::function<void(int dir, bool repeat)> onPauseGesture;
   /// L / R held while a marker is edited: the marker moves (-1 / +1) until released.
   std::function<void(int dir, bool down)> onMarkerHold;
   /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).

@@ -2570,3 +2570,39 @@ TEST_CASE("development core is a nonpersistent live session in the desktop contr
   CHECK_EQ(rn_session_core_kind(w.emu->session()), RN_CORE_NESTOPIA);
 }
 
+TEST_CASE("pad 1 follow gesture: in play L held + R pauses and R held + L toggles slow; paused they step") {
+  World w(tmpDir("follow-gesture"));
+  w.app->tryRom(testRom(w.root + "/roms"));
+  REQUIRE(w.emu->session());
+  REQUIRE(!w.emu->paused());
+  tickN(*w.emu, 3);
+  rn_session* s = w.emu->session();
+  // R held + L in play: slow 1/2 (still playing); the hold's repeats neither step nor pause.
+  w.emu->followGesture(-1, false);
+  tickN(*w.emu, 1);
+  CHECK_FALSE(w.emu->paused());
+  CHECK_EQ(w.emu->status().slow, 2);
+  w.emu->followGesture(-1, true);
+  CHECK_FALSE(w.emu->paused());
+  w.emu->followGesture(-1, false);  // again: back to normal speed
+  tickN(*w.emu, 1);
+  CHECK_EQ(w.emu->status().slow, 1);
+  // L held + R in play: pause (the seek bar), no frame step - also not from the hold's repeats.
+  w.emu->followGesture(1, false);
+  CHECK(w.emu->paused());
+  const uint64_t at = rn_frame(s);
+  w.emu->followGesture(1, true);
+  tickN(*w.emu, 2);
+  CHECK_EQ(rn_frame(s), at);
+  // Paused: a new follow press steps (forward / back), and its repeats step too.
+  w.emu->followGesture(1, false);
+  tickN(*w.emu, 1);
+  CHECK_EQ(rn_frame(s), at + 1);
+  w.emu->followGesture(1, true);
+  tickN(*w.emu, 1);
+  CHECK_EQ(rn_frame(s), at + 2);
+  w.emu->followGesture(-1, false);
+  CHECK_EQ(rn_frame(s), at + 1);
+  CHECK(w.emu->paused());
+  CHECK_EQ(w.emu->status().slow, 1);  // a paused step never changes the speed
+}

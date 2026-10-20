@@ -49,7 +49,7 @@ input only, typed ahead for the first frame:
   while the game is unpaused, and a direction still held from stepping is handed back to the
   game when play resumes), no seek bar tap, no countdown cancel (neither countdown has a cancel tap; Y stops practice), no hint action.
 - Hotkeys that are not NES buttons keep their meaning: L2 / R2 (rewind / fast-forward; holding
-  one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too), L / R held + START (a pause) and L held + R / R held + L (a step),
+  one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too), L / R held + START (a pause) and L held + R (a pause; R held + L only toggles slow ½ and does not cancel),
   L3 (Undo), the pause hotkey (cancels).
 - **Held through**: a button held when the countdown ends is pressed from the very first frame
   (the normal sample of that frame).

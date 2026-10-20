@@ -57,10 +57,10 @@ final class InputManager {
     var onSeekInput: ((SeekInput, Bool) -> Void)?
     /// Main thread: L / R alone while paused: a frame step (-1 / +1) at the release, repeated while held.
     var onPausedShoulder: ((Int) -> Void)?
-    /// Main thread: pad 1's gestures in play (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L
-    /// = -1 (pause and step one frame; at the press, repeated while held), L or R held + START = 0
-    /// (pause: the seek bar).
-    var onPauseGesture: ((Int) -> Void)?
+    /// Main thread: pad 1's gestures (docs/design/UI_REDESIGN.md): L held + R = +1, R held + L = -1 (at
+    /// the press, repeated = true while held; EmulationController.followGesture decides), L or R held +
+    /// START = 0 (pause: the seek bar).
+    var onPauseGesture: ((Int, Bool) -> Void)?
     /// Main thread: L / R held while a marker is edited: the marker moves (-1 / +1) until released.
     var onMarkerHold: ((Int, Bool) -> Void)?
 
@@ -415,8 +415,9 @@ final class InputManager {
                     setPressed(id, false)
                 }
             case .follow(let id, true, let member, _):
-                // Pressed while the other member is held on its own: L held + R = forward, R held + L =
-                // back (pause and step at the press). A member bound to a game button is the game's.
+                // Pressed while the other member is held on its own: L held + R = +1, R held + L = -1
+                // (EmulationController.followGesture: in play pause / slow, paused a frame step). A
+                // member bound to a game button is the game's.
                 let dir = member == 0 ? -1 : 1
                 stepLock.lock(); let paused = stepModeOn; stepLock.unlock()
                 if isNavMode || (paused && seekFocus == 2) { break }
@@ -425,11 +426,11 @@ final class InputManager {
                     confirmTap.cancel()
                     setPressed(id, true)
                 } else {
-                    onMain { $0.onPauseGesture?(dir) }
+                    onMain { $0.onPauseGesture?(dir, false) }
                 }
             case .followRepeated(let id, let member):
                 let dir = member == 0 ? -1 : 1
-                if !isNavMode && seekFocus < 2 && !forwardedMembers.contains(id) { onMain { $0.onPauseGesture?(dir) } }
+                if !isNavMode && seekFocus < 2 && !forwardedMembers.contains(id) { onMain { $0.onPauseGesture?(dir, true) } }
             case .follow(let id, false, let member, _):
                 let dir = member == 0 ? -1 : 1
                 if forwardedMembers.remove(id) != nil {
@@ -928,7 +929,7 @@ final class InputManager {
                 swallowedStarts.insert(id)
                 confirmTap.cancel()
                 scheduleChordTick()
-                onMain { $0.onPauseGesture?(0) }
+                onMain { $0.onPauseGesture?(0, false) }
                 return
             }
         }

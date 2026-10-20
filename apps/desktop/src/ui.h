@@ -128,9 +128,9 @@ class UI : public DialogHost {
   void seekInput(int input, bool down);  // InputRouter::SeekInput
   void markerHold(int dir, bool down);
   void pausedShoulder(int dir);
-  /// Pad 1's gestures in play (InputRouter::onPauseGesture): 0 = pause (the seek bar), -1 / +1 = pause
-  /// and step one frame back / forward.
-  void pauseGesture(int dir);
+  /// Pad 1's gestures (InputRouter::onPauseGesture): 0 = pause (the seek bar); -1 / +1 = R held + L /
+  /// L held + R (EmulationController::followGesture: in play slow 1/2 / pause, paused a frame step).
+  void pauseGesture(int dir, bool repeat = false);
   /// Y while practicing (InputRouter::onPracticeStop): stop practice.
   void stopPracticeFromPad();
   /// The seek bar's focus for the InputRouter: 0 the bar, 1 a marker, 2 editing.

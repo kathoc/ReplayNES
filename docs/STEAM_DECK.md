@@ -153,7 +153,7 @@ An empty library is one card with the folder, Open Folder and Reload.
 **Playing.** Only the Menu pill is on screen (status badges appear while rewinding, fast-forwarding,
 in slow motion, at the end of the tape or while flashes are reduced). Hold L2 to rewind and release it: a 3-2-1 countdown runs and play resumes from there ("Retrying from here" when that is before the end of the tape); for 10 s a "↶ Undo" chip (bottom right; **L3** on the pad) brings the previous continuation back, and a quick second retry keeps only the latest attempt. The first run shows three one-line hints (hold L2 to rewind, play from here to retry, Make Video).
 
-**Pause (L or R held + START, or L held + R / R held + L: pause and step).** Only the seek bar: the filmstrip timeline with the time and the A/B lane, with hints for Play (Continue at the end of the tape), frame step L / R, L2 / R2 and ↑ Practice sections.
+**Pause (L or R held + START, or L held + R).** Only the seek bar: the filmstrip timeline with the time and the A/B lane, with hints for Play (Continue at the end of the tape), frame step L / R, L2 / R2 and ↑ Practice sections.
 A (the back button) tapped resumes; L / R (released) and the D-pad ←/→ step frames (held: repeat);
 L2 / R2 hold rewind / fast-forward. **A/B markers**: B (confirm) drops a flag at the playhead for the
 selected section ("A/B n", Y picks the next): the first is A, the second makes the range (left = A,
@@ -231,8 +231,8 @@ override it). Japanese text uses the system's CJK font through fontconfig
 | Input | In play | Paused (the seek bar) | In menus (Quick Menu, Settings, library) |
 |---|---|---|---|
 | **L+R together** (within 0.1 s, either order) | open the Quick Menu (pauses) | open the Quick Menu | close it (resume play) |
-| L held, then R (after 0.1 s) | pause + step 1 frame forward (at the press; held ≥ 0.4 s: repeat) | step 1 frame forward | - |
-| R held, then L (after 0.1 s) | pause + step 1 frame back (at the press; held ≥ 0.4 s: repeat) | step 1 frame back | - |
+| L held, then R (after 0.1 s) | pause - the seek bar (at the press; holding R does not step) | step 1 frame forward (held ≥ 0.4 s: repeat) | - |
+| R held, then L (after 0.1 s) | slow 1/2 on / off (keeps playing) | step 1 frame back (held ≥ 0.4 s: repeat) | - |
 | L or R held + Menu (≡, START) | pause (the seek bar only); START does not reach the game | - | - |
 | R alone (on release) | nothing | step 1 frame forward (held ≥ 0.4 s: repeat) | next page (Settings pages, list pages, library pages) |
 | L alone (on release) | nothing | step 1 frame back (held ≥ 0.4 s: repeat) | previous page |

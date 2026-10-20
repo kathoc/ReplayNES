@@ -17,7 +17,7 @@ You can make it into a video (MP4 with audio) as-is.
 - **Flash Reduction (care for flashing lights)**: Detects scenes where the whole screen flashes intensely and tones down only what is displayed (on by default). It does not affect game progress or recording.
 - **Rewind and retry**: You can go back to any frame. Hold L2 to rewind and release it: after a 3-2-1 countdown play resumes from there ("Retrying from here"). For 10 seconds a "↶ Undo" chip brings the previous continuation back.
 - **Practice Mode (A/B sections)**: Mark a tricky section with A and B and practice it over and over without recording. Up to 8 sections are saved per project.
-- **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls; even button remapping works with the controller alone), L2 rewinds, R2 fast-forwards, L held + R steps a frame forward and R held + L a frame back (pausing first), L or R held + START pauses; L or R alone does nothing in play, so they never misfire; while paused L / R and the D-pad step frame by frame and A/B practice markers are dropped and moved on the seek bar. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
+- **Controller-only operation**: L+R together opens the Quick Menu (everything else is there, no page ever scrolls; even button remapping works with the controller alone), L2 rewinds, R2 fast-forwards, L held + R pauses (the seek bar) and R held + L switches slow 1/2 on / off, L or R held + START pauses; L or R alone does nothing in play, so they never misfire; while paused L / R and the D-pad step frame by frame and A/B practice markers are dropped and moved on the seek bar. The controller works even when ReplayNES is not in front (for example while you are operating OBS).
 - **Even Tetris-style randomness is reproduced exactly**: Playback is recomputed from "the console state + the input for every frame", so you get exactly the same result as when you recorded.
 - **Production aids**: Pause, frame advance, advance by N frames, 1/2 slow motion, timeline seeking, bookmarks, soft reset, and power cycling. None of these count toward the final take's duration, and playback is always at normal speed.
 - **Turbo**: Set the cycle and press duration of A/B turbo in frames. What is recorded is the input after turbo has been applied.
@@ -46,14 +46,14 @@ ReplayNES also runs on Steam Deck (SteamOS 3, Gaming Mode and Desktop Mode) and 
 1. **Install** (Desktop Mode, Konsole): `flatpak install --user https://kathoc.github.io/ReplayNES/flatpak/io.github.replaynes.ReplayNES.flatpakref` (the signed ReplayNES repository on GitHub Pages; the runtime comes from Flathub), or download `io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from [Releases](https://github.com/kathoc/ReplayNES/releases) and run `flatpak install --user io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` (it registers the same repository). Nothing is installed into the read-only SteamOS system. **Updates**: the app shows "A new version of ReplayNES is available" on the library; Settings › System › ReplayNES Version has the version, Update → Restart and "Check Now"; `flatpak update` works too. In Gaming Mode the system cannot ask for the one-time update permission: update once in Desktop Mode, or run `flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes` ([details](docs/STEAM_DECK.md#updates)).
 2. **Add to Steam**: in Desktop Mode, close Steam, then run ReplayNES and choose Settings › System › **Add to Steam** (or `flatpak run io.github.replaynes.ReplayNES --add-to-steam`): it adds ReplayNES to the Steam library with its own capsule / hero / logo / icon artwork ([details](docs/STEAM_DECK.md#add-to-steam-with-artwork)). Or the Steam way: Steam → Games → "Add a Non-Steam Game to My Library…" → tick ReplayNES. Start it from the library in Gaming Mode (it opens full screen). On the OLED model, 60 Hz (Quick Access → Performance) gives the most even motion.
 3. **ROMs**: put `.nes` files into `~/Documents/ReplayNES/ROM` (e.g. with Dolphin in Desktop Mode). The start screen is the library: a "Continue" card for the last session (also after a crash), then large game cards with the game's name, maker and year - the confirm button (B) plays (a new project in `~/Documents/ReplayNES/Projects`), Y marks a favourite, X lists a game's projects, View (⧉) changes the sort; up from the cards reaches All / Favorites / Recent, the sort and the search.
-4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, L held + R = pause and step a frame forward (R held + L: back; keep holding: repeat), L or R held + Menu (START) = pause (the seek bar), L2 hold = rewind, R2 hold = fast-forward, L3 = undo a retry (10 s)**. L or R alone does nothing in play (slow 1/2 is in the Quick Menu). In menus **B (east) confirms and A (south) goes back** (Settings › Controls › Confirm Button swaps them).
+4. **Controls** (Steam Input's default gamepad layout): D-pad / left stick = NES D-pad, B / A = NES A / B, Y / X = turbo A / B, Menu / View = START / SELECT, **L+R together = Quick Menu, L held + R = pause (the seek bar), R held + L = slow 1/2 on / off, L or R held + Menu (START) = pause (the seek bar), L2 hold = rewind, R2 hold = fast-forward, L3 = undo a retry (10 s)**. L or R alone does nothing in play. In menus **B (east) confirms and A (south) goes back** (Settings › Controls › Confirm Button swaps them).
 5. **The Quick Menu: press L and R together** (within 0.1 s, either order; or tap the "☰ Menu L+R" pill in the top-right corner, which is always there). The game pauses, dimmed behind six tiles: Resume, Retry (Play from Here, Bookmarks, Playback, Start Over), Practice (the 8 A/B sections as cards), Share (Make Video), Settings (Display / Controls / Sound / System, L / R switch) and Game (choose game, save, save as, open, reset). Nothing scrolls; the focused item has a red frame, one line at the bottom says what it does and the buttons of your controller are shown at the bottom right.
 
    | Button | In play | Paused (seek bar) | In menus |
    |---|---|---|---|
    | L+R together | Quick Menu (pauses) | Quick Menu | close it (resume) |
-   | L held, then R | pause + step 1 frame forward (hold: repeat) | step 1 frame forward | — |
-   | R held, then L | pause + step 1 frame back (hold: repeat) | step 1 frame back | — |
+   | L held, then R | pause (the seek bar) | step 1 frame forward (hold: repeat) | — |
+   | R held, then L | slow 1/2 on / off | step 1 frame back (hold: repeat) | — |
    | L or R held + Menu (START) | pause: only the seek bar shows | — | — |
    | R alone | nothing | step 1 frame forward (hold: repeat) | next page |
    | L alone | nothing | step 1 frame back (hold: repeat) | previous page |
@@ -107,8 +107,8 @@ No page scrolls: a page shows at most six items, longer lists (bookmarks, key as
 | Button | In play | Paused (seek bar) | In menus |
 |---|---|---|---|
 | L+R together / Esc | Quick Menu (pauses) | Quick Menu | close it (resume) |
-| L held, then R | pause + step 1 frame forward (hold: repeat) | step 1 frame forward | — |
-| R held, then L | pause + step 1 frame back (hold: repeat) | step 1 frame back | — |
+| L held, then R | pause (the seek bar) | step 1 frame forward (hold: repeat) | — |
+| R held, then L | slow 1/2 on / off | step 1 frame back (hold: repeat) | — |
 | L or R held + START | pause (the seek bar) | — | — |
 | R alone | nothing | step 1 frame forward (hold: repeat) | next page |
 | L alone | nothing | step 1 frame back (hold: repeat) | previous page |
@@ -172,8 +172,8 @@ Controller buttons are assigned by **position** (right button = Famicom A, botto
 | Rewind (while held) | **Left Trigger** | ZL | LT | L2 | Delete |
 | Fast-forward (while held) | **Right Trigger** | ZR | RT | R2 | Tab |
 | Pause | **L or R held + START** | L / R + + | LB / RB + ≡ | L1 / R1 + OPTIONS | Space (pause / resume) |
-| Pause + frame advance / step back | **L held + R** / **R held + L** (hold for continuous) | L + R | LB + RB | L1 + R1 | — |
-| Slow 1/2 ⇔ normal speed | Quick Menu | | | | L |
+| Pause (the seek bar); paused: frame advance | **L held + R** (paused, hold for continuous) | L + R | LB + RB | L1 + R1 | — |
+| Slow 1/2 ⇔ normal speed; paused: step back | **R held + L** (paused, hold for continuous) | R + L | RB + LB | R1 + L1 | L |
 | Step back / frame advance while paused | **L / R** or **D-pad ← / →** (hold for continuous) | | | | `,` / `.` |
 | Bookmark | — | | | | B |
 | Undo a retry (10 s) | **L3 (left stick click)** | L3 | L3 | L3 | ⌥⌘Z |
@@ -209,7 +209,7 @@ Practice only the tricky section over and over without recording.
 1. Open **Quick Menu › Practice** (⇧⌘P): the 8 sections are cards. At the start of the section, choose **Set A Here** on an empty card.
 2. Choose the card to practice from A. Play to where the section should end, open the menu and choose **Set B** on that card (outside practice: play on from A and use Practice › Set B Here (Timeline), ⌥⌘O). Each section shows its length (minutes:seconds.frames); Y renames, X clears.
 3. Choose a finished section to **practice** it: play starts at A, and **at B the picture holds for 0.5 seconds (the sound fades out naturally), then goes back to A as if rewinding and starts again**.
-4. While practicing you can also use L2 rewind (back to A), pause (L or R held + START), L held + R / R held + L frame steps, and the D-pad frame advance / step back while paused.
+4. While practicing you can also use L2 rewind (back to A), pause (L or R held + START), L held + R (pause) / R held + L (slow 1/2), the L / R frame steps while paused, and the D-pad frame advance / step back while paused.
 5. **■ Stop Practice** (the button at the bottom left while practicing; **Y** on the controller - playing, paused or in the countdown; the active card; ⇧⌘P) returns you exactly to the position in the take from before you started ("Practice stopped"). The countdown has no cancel button: buttons pressed there are game input.
 
 - Nothing is recorded during practice. The take does not change.

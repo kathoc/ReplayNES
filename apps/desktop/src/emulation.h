@@ -192,6 +192,11 @@ class EmulationController {
   /// One frame back (-1) / forward (+1), paused (L / R released while paused).
   void step(int dir) { stepFrame(dir); }
   void toggleSlow();
+  /// Pad 1's sequential shoulder gesture: dir +1 = L held + R, -1 = R held + L; repeat = the follower
+  /// held (every RNF_CHORD_REPEAT_INTERVAL after RNF_CHORD_HOLD_DELAY). In play +1 pauses (the seek bar
+  /// shows) and -1 toggles slow 1/2; that hold's repeats then do nothing, so holding the follower
+  /// never starts stepping. Paused: one frame step per press and repeat (docs/design/UI_REDESIGN.md).
+  void followGesture(int dir, bool repeat);
   void toggleRecord();
   void setRecording(bool rec);
   /// "Play from Here" (Retry menu; a game button while watching the tape; the seek bar's Play in
@@ -328,6 +333,7 @@ class EmulationController {
 
   bool paused_ = true;
   int slow_ = 1;
+  bool followFromPlay_ = false;  // the current follow hold began in play (followGesture)
   int advanceRemaining_ = 0;
   bool uiRewindHeld_ = false, uiFastForwardHeld_ = false;
   bool modalHold_ = false;

@@ -190,6 +190,7 @@ final class EmulationController {
     var fastForwardActive: Bool { ff.active }
     private var ffBlocked = false           // hold started where nothing is recorded ahead
     private var pausedBeforeFF = true
+    private var followFromPlay = false      // the current follow hold began in play (followGesture)
     // Paused D-pad stepping.
     private var stepRepeater = StepRepeater()
     // Practice.
@@ -1427,6 +1428,24 @@ final class EmulationController {
         if s.mode == RN_MODE_PRACTICE { practiceLoop.interrupt() }
         if dir > 0 { advanceRemaining += 1; return }
         stepBack(s, 1)
+    }
+
+    /// Pad 1's sequential shoulder gesture: +1 = L held + R, -1 = R held + L; repeated = the follower held
+    /// (every RNF_CHORD_REPEAT_INTERVAL after RNF_CHORD_HOLD_DELAY). In play +1 pauses (the seek bar
+    /// shows) and -1 toggles slow 1/2; that hold's repeats then do nothing, so holding the follower never
+    /// starts stepping. Paused: one frame step per press and repeat (docs/design/UI_REDESIGN.md).
+    func followGesture(_ dir: Int, repeated: Bool, _ s: EngineSession) {
+        guard dir != 0 else { return }
+        if !repeated {
+            followFromPlay = !paused
+            if followFromPlay {
+                if dir > 0 { paused = true } else { slow = slow.toggled }
+                return
+            }
+        } else if followFromPlay {
+            return
+        }
+        stepFrame(dir, s)
     }
 
     func stepBack(_ s: EngineSession, _ n: UInt64) {

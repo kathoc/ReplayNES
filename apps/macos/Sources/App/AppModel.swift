@@ -196,7 +196,7 @@ final class AppModel: ObservableObject {
         input.onSeekInput = { [weak self] i, down in self?.markers.seekInput(i, down: down) }
         input.onMarkerHold = { [weak self] dir, down in self?.markers.markerHold(dir, down: down) }
         input.onPausedShoulder = { [weak self] dir in self?.markers.pausedShoulder(dir) }
-        input.onPauseGesture = { [weak self] dir in self?.markers.pauseGesture(dir) }
+        input.onPauseGesture = { [weak self] dir, repeated in self?.markers.pauseGesture(dir, repeated: repeated) }
         markers.model = self
         input.onDisconnect = { [weak self] name in
             guard let self else { return }
@@ -354,6 +354,13 @@ final class AppModel: ObservableObject {
         emu.perform { e in
             guard let s = e.session else { return }
             e.stepFrame(dir, s)
+        }
+    }
+    /// L held + R / R held + L (EmulationController.followGesture).
+    func followGesture(_ dir: Int, repeated: Bool) {
+        emu.perform { e in
+            guard let s = e.session else { return }
+            e.followGesture(dir, repeated: repeated, s)
         }
     }
     func setSlow(_ r: SlowRate) { emu.perform { e in e.slow = r } }
