@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.2" date="2026-10-20">
+      <description>
+        <p>Shoulder buttons in play: hold L and press R to pause (the seek bar), hold R and press L to switch slow 1/2 on or off. While paused they still step a frame forward / back. Also: builds with GCC 11 again.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-10-17">
       <description>
         <p>The picture never stays frozen (display watchdog with fallback and an on-screen picture rate), the CRT display shows RF snow with no signal and a power-on effect (also in CRT videos), and the CRT picture is now exactly 8:7. Buttons pressed during the resume countdown reach the game. Shoulder buttons no longer misfire in play: hold L + R to step forward, R + L to step back, L or R + START to pause. Also: a Stop Practice button (Y toggles practice), face buttons shown by position, and a "ReplayNES Version" settings page that includes Updates.</p>
