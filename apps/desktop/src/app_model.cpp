@@ -416,6 +416,7 @@ void AppModel::prepareTempSlot(std::function<void()> then) {
 void AppModel::playFromLibrary(const LibraryROM& rom) {
   LibraryROM r = rom;
   confirmDiscardIfNeeded([this, r] {
+    if (selectedCore != "nestopia") return createSession(r.path, "", false);
     settlePendingTemp([this, r] {
       if (!library_->ensureFolders()) {
         error(TR("The library folder isn’t available"), library_->folderError());
@@ -431,6 +432,7 @@ void AppModel::playFromLibrary(const LibraryROM& rom) {
 
 void AppModel::tryRom(const std::string& romPath) {
   confirmDiscardIfNeeded([this, romPath] {
+    if (selectedCore != "nestopia") return createSession(romPath, "", false);
     if (!persist_) return createSession(romPath, "", true);
     prepareTempSlot([this, romPath] { createSession(romPath, paths_.tempProject(), true); });
   });
@@ -455,6 +457,12 @@ void AppModel::openProjectChooser() {
 }
 
 void AppModel::createSession(const std::string& rom, const std::string& projectDir, bool isTemp) {
+  rn_session_options opt;
+  rn_session_options_init(&opt);
+  if (selectedCore == "nestopia") opt.core = RN_CORE_NESTOPIA;
+  else if (selectedCore == "replaynescore") opt.core = RN_CORE_REPLAYNESCORE;
+  else { error(TR("Couldn’t create the project"), TR("Unknown core; select a supported core")); return; }
+  if (!rn_core_available(opt.core)) { error(TR("Couldn’t create the project"), TR("Selected core is not included in this build")); return; }
   bool dirExisted = projectDir.empty() || exists(projectDir);
   if (isTemp && persist_) {
     std::error_code ec;
@@ -462,7 +470,7 @@ void AppModel::createSession(const std::string& rom, const std::string& projectD
     dirExisted = false;
   }
   rn_session* s = nullptr;
-  rn_status st = rn_session_new(rom.c_str(), projectDir.empty() ? nullptr : projectDir.c_str(), nullptr, &s);
+  rn_status st = rn_session_new(rom.c_str(), projectDir.empty() ? nullptr : projectDir.c_str(), &opt, &s);
   if (st != RN_OK) {
     std::string msg = rn_last_error();
     // A project folder this call created is removed again; existing folders are never touched.
@@ -647,6 +655,7 @@ void AppModel::install(rn_session* s, bool recovered, const std::optional<Resume
 // ------------------------------------------------------------------ save
 
 void AppModel::save() {
+  if (emu_->live()) { host_->notice(TR("Development core: recording and saves are unavailable")); return; }
   if (!emu_->session()) return;
   if (isTempSession()) return saveTempAs([] {});
   if (!*rn_session_project_dir(emu_->session())) return saveAs();
@@ -654,6 +663,7 @@ void AppModel::save() {
 }
 
 void AppModel::saveAs() {
+  if (emu_->live()) { host_->notice(TR("Development core: recording and saves are unavailable")); return; }
   if (!emu_->session()) return;
   if (isTempSession()) return saveTempAs([] {});
   askProjectDestination(romName(), [this](const std::string& dir) {
@@ -717,6 +727,7 @@ void AppModel::closeProject() {
 // ------------------------------------------------------------------ reset
 
 void AppModel::resetProjectPrompt() {
+  if (emu_->live()) { host_->notice(TR("Development core: recording and saves are unavailable")); return; }
   if (!emu_->session() || !current_) return;
   bool saved = !current_->projectPath.empty() && !current_->isTemp;
   Dialog d;

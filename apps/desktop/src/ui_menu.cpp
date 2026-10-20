@@ -586,7 +586,9 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
     textFit(dl, m.label(), ImVec2(labelX, cy - m.label() / 2), std::max(0.0f, valueRight - valueW - S(16) - labelX), fg, txt(it.label));
     if (f) {
       drawFocus(r, m.tileRadius(), now);
-      description_ = txt(it.description);
+      description_ = std::strcmp(it.id, "system.core") == 0
+                         ? std::string(TR("Next new game")) + " · " + itemValue("system.core_status")
+                         : txt(it.description);
       adjustable = it.kind == RNF_MENU_ITEM_TOGGLE || it.kind == RNF_MENU_ITEM_CHOICE || it.kind == RNF_MENU_ITEM_SLIDER;
       if (adjustable && en) prompt({"ui.confirm", "dpad.lr"}, TR("Change"));
       else if (it.kind != RNF_MENU_ITEM_INFO && en) prompt({"ui.confirm"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : TR("Select"));

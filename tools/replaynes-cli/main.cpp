@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -68,9 +69,24 @@ int fail(const Status& st) {
   return 2 + int(st.code);
 }
 
+Status selectedCore(const Args& a, CoreKind& kind) {
+  if (a.has("--mock") && a.has("--core"))
+    return Error(Err::InvalidArg, "--mock and --core cannot be combined");
+  const std::string name = a.has("--mock") ? "mock" : a.get("--core", "nestopia");
+  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore}) {
+    if (name == coreName(candidate)) {
+      if (!coreAvailable(candidate)) return Error(Err::UnsupportedFormat, "selected core is not built: " + name);
+      kind = candidate;
+      return Status::Ok();
+    }
+  }
+  return Error(Err::InvalidArg, "unknown core: " + name);
+}
+
 int usage() {
   std::fprintf(stderr,
                "usage: replaynes-cli <command> ...\n"
+               "  ROM commands accept --core nestopia|replaynescore|mock (--mock is a legacy alias)\n"
                "  make-test-rom [--cartridge] <out.nes>\n"
                "  sha256 <file>\n"
                "  info <project.nesrec> [--rom PATH]\n"
@@ -81,6 +97,8 @@ int usage() {
                "  screenshot <rom> --out PREFIX [--at F1,F2,..] [--press btn@F[+D],..] [--press2 ..] [--ram ADDR:LEN]\n"
                "  bench-flash <rom> [frames=600] [level=0..3, default 2] [--reps R] [--warmup W]\n"
                "  dump-ppu <rom> --out FILE [--frames N] [--skip S] [--press btn@F[+D],..]\n"
+               "  dump-audio <rom> --out FILE.wav [--frames N] [--skip S] [--press btn@F[+D],..]\n"
+               "  verify-state <rom> [--frames N] [--at F] [--press btn@F[+D],..] [--out PREFIX]\n"
                "  version\n");
   return 1;
 }
@@ -155,7 +173,10 @@ int cmdDeterminism(const Args& a) {
   Status st = fs::readFile(a.pos[1], rom);
   if (!st.ok()) return fail(st);
   HarnessConfig cfg;
-  cfg.core = a.has("--mock") ? CoreKind::Mock : CoreKind::Nestopia;
+  st = selectedCore(a, cfg.core);
+  if (!st.ok()) return fail(st);
+  if (!(coreCapabilities(cfg.core) & CapState))
+    return fail(Error(Err::UnsupportedFormat, "determinism requires state-capable core"));
   uint64_t frames = a.num("--frames", 10000);
   cfg.runs = int(a.num("--runs", 3));
   cfg.midFrame = a.num("--mid", frames / 2);
@@ -178,7 +199,8 @@ int cmdRecordRandom(const Args& a) {
   Status st = fs::readFile(a.pos[1], rom);
   if (!st.ok()) return fail(st);
   SessionOptions o;
-  o.core = a.has("--mock") ? CoreKind::Mock : CoreKind::Nestopia;
+  st = selectedCore(a, o.core);
+  if (!st.ok()) return fail(st);
   std::unique_ptr<Session> s;
   st = Session::create(rom, a.pos[1], o, s);
   if (!st.ok()) return fail(st);
@@ -320,7 +342,10 @@ int cmdScreenshot(const Args& a) {
     if (ramAddr >= 0x800) ramAddr = 0x7FF;
     ramLen = std::min<uint32_t>(ramLen, 0x800 - ramAddr);
   }
-  auto core = createCore(a.has("--mock") ? CoreKind::Mock : CoreKind::Nestopia);
+  CoreKind kind;
+  st = selectedCore(a, kind);
+  if (!st.ok()) return fail(st);
+  auto core = createCore(kind);
   st = core->loadROM(rom.data(), rom.size());
   if (!st.ok()) return fail(st);
   uint64_t last = at.empty() ? 0 : *std::max_element(at.begin(), at.end());
@@ -376,7 +401,10 @@ int cmdDumpPpu(const Args& a) {
     uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
     presses.push_back({mask, from, from + dur});
   }
-  auto core = createCore(CoreKind::Nestopia);
+  CoreKind kind;
+  st = selectedCore(a, kind);
+  if (!st.ok()) return fail(st);
+  auto core = createCore(kind);
   st = core->loadROM(rom.data(), rom.size());
   if (!st.ok()) return fail(st);
   std::vector<uint8_t> buf = {'R', 'N', 'P', 'P', 'U', '1', 0, 0};
@@ -404,6 +432,126 @@ int cmdDumpPpu(const Args& a) {
   return 0;
 }
 
+// Deterministic mono 48 kHz signed-16 WAV for cross-core diagnostics.
+int cmdDumpAudio(const Args& a) {
+  std::vector<uint8_t> rom;
+  Status st = fs::readFile(a.pos[1], rom);
+  if (!st.ok()) return fail(st);
+  const std::string out = a.get("--out");
+  if (out.empty()) return usage();
+  const uint64_t frames = uint64_t(a.num("--frames", 600)), skip = uint64_t(a.num("--skip", 0));
+  struct Press { uint8_t mask; uint64_t from, to; };
+  std::vector<Press> presses;
+  static const char* kNames[] = {"a", "b", "select", "start", "up", "down", "left", "right"};
+  for (auto& p : splitList(a.get("--press"))) {
+    const size_t atPos = p.find('@');
+    if (atPos == std::string::npos) return usage();
+    const std::string name = p.substr(0, atPos), rest = p.substr(atPos + 1);
+    uint8_t mask = 0;
+    for (int i = 0; i < 8; ++i) if (name == kNames[i]) mask = uint8_t(1u << i);
+    if (!mask) { std::fprintf(stderr, "unknown button %s\n", name.c_str()); return 1; }
+    const size_t plus = rest.find('+');
+    const uint64_t from = std::strtoull(rest.c_str(), nullptr, 10);
+    const uint64_t dur = plus == std::string::npos ? 6 : std::strtoull(rest.c_str() + plus + 1, nullptr, 10);
+    presses.push_back({mask, from, from + dur});
+  }
+  CoreKind kind;
+  st = selectedCore(a, kind);
+  if (!st.ok()) return fail(st);
+  auto core = createCore(kind);
+  st = core->loadROM(rom.data(), rom.size());
+  if (!st.ok()) return fail(st);
+  std::vector<int16_t> pcm;
+  for (uint64_t f = 0; f < skip + frames; ++f) {
+    uint8_t p1 = 0;
+    for (auto& p : presses) if (f >= p.from && f < p.to) p1 |= p.mask;
+    st = core->stepFrame(p1, 0, false);
+    if (!st.ok()) return fail(st);
+    size_t count = 0;
+    const int16_t* samples = core->audio(&count);
+    if (count != audioSamplesForFrame(f) || (count && !samples)) {
+      std::fprintf(stderr, "audio contract failure at frame %llu: got %zu expected %u\n",
+                   (unsigned long long)f, count, audioSamplesForFrame(f));
+      return 1;
+    }
+    if (f >= skip) pcm.insert(pcm.end(), samples, samples + count);
+  }
+  if (pcm.size() > (std::numeric_limits<uint32_t>::max() - 44U) / 2U) {
+    std::fprintf(stderr, "WAV is too large\n"); return 1;
+  }
+  std::vector<uint8_t> wav;
+  auto put16 = [&](uint16_t v) { wav.push_back(uint8_t(v)); wav.push_back(uint8_t(v >> 8)); };
+  auto put32 = [&](uint32_t v) { put16(uint16_t(v)); put16(uint16_t(v >> 16)); };
+  wav.insert(wav.end(), {'R','I','F','F'}); put32(uint32_t(36U + pcm.size() * 2U));
+  wav.insert(wav.end(), {'W','A','V','E','f','m','t',' '}); put32(16); put16(1); put16(1);
+  put32(kSampleRate); put32(kSampleRate * 2U); put16(2); put16(16);
+  wav.insert(wav.end(), {'d','a','t','a'}); put32(uint32_t(pcm.size() * 2U));
+  for (int16_t sample : pcm) put16(static_cast<uint16_t>(sample));
+  st = fs::writeFileAtomic(out, wav.data(), wav.size());
+  if (!st.ok()) return fail(st);
+  std::printf("%llu frames, %zu samples -> %s\n", (unsigned long long)frames, pcm.size(), out.c_str());
+  return 0;
+}
+
+int cmdVerifyState(const Args& a) {
+  std::vector<uint8_t> rom;
+  Status st=fs::readFile(a.pos[1],rom); if(!st.ok())return fail(st);
+  const uint64_t frames=a.num("--frames",600),at=a.num("--at",frames/2);
+  if(at>=frames)return usage();
+  struct Press{uint8_t mask;uint64_t from,to;}; std::vector<Press> presses;
+  static const char* names[]={"a","b","select","start","up","down","left","right"};
+  for(auto& p:splitList(a.get("--press"))){
+    const size_t sep=p.find('@');if(sep==std::string::npos)return usage();
+    const std::string name=p.substr(0,sep),rest=p.substr(sep+1);uint8_t mask=0;
+    for(int i=0;i<8;++i)if(name==names[i])mask=uint8_t(1u<<i);
+    if(!mask){std::fprintf(stderr,"unknown button %s\n",name.c_str());return 1;}
+    const size_t plus=rest.find('+');const uint64_t from=std::strtoull(rest.c_str(),nullptr,10);
+    const uint64_t dur=plus==std::string::npos?6:std::strtoull(rest.c_str()+plus+1,nullptr,10);
+    presses.push_back({mask,from,from+dur});
+  }
+  auto input=[&](uint64_t frame){uint8_t value=0;for(auto& p:presses)if(frame>=p.from&&frame<p.to)value|=p.mask;return value;};
+  CoreKind kind;st=selectedCore(a,kind);if(!st.ok())return fail(st);
+  auto straight=createCore(kind),branch=createCore(kind);
+  if(!straight||!branch)return fail(Error(Err::UnsupportedFormat,"selected core unavailable"));
+  st=straight->loadROM(rom.data(),rom.size());if(!st.ok())return fail(st);
+  st=branch->loadROM(rom.data(),rom.size());if(!st.ok())return fail(st);
+  for(uint64_t f=0;f<at;++f){st=straight->stepFrame(input(f),0,true);if(!st.ok())return fail(st);}
+  std::vector<uint8_t> checkpoint;st=straight->saveState(checkpoint);if(!st.ok())return fail(st);
+  st=branch->loadState(checkpoint.data(),checkpoint.size());if(!st.ok())return fail(st);
+  if(branch->frameIndex()!=straight->frameIndex()||
+     !std::equal(straight->video(),straight->video()+kVideoWidth*kVideoHeight,branch->video())||
+     !std::equal(straight->cpuRam(),straight->cpuRam()+2048,branch->cpuRam())){
+    std::fprintf(stderr,"state differs immediately after load\n");return 1;
+  }
+  size_t loadedAudio=99;if(branch->audio(&loadedAudio)!=nullptr||loadedAudio!=0){
+    std::fprintf(stderr,"loaded state exposed stale audio\n");return 1;
+  }
+  const std::string out=a.get("--out");
+  if(!out.empty()){
+    st=writePng(out+"-checkpoint-straight.png",straight->video(),kVideoWidth,kVideoHeight);if(!st.ok())return fail(st);
+    st=writePng(out+"-checkpoint-restored.png",branch->video(),kVideoWidth,kVideoHeight);if(!st.ok())return fail(st);
+  }
+  for(uint64_t f=at;f<frames;++f){
+    st=straight->stepFrame(input(f),0,true);if(!st.ok())return fail(st);
+    st=branch->stepFrame(input(f),0,true);if(!st.ok())return fail(st);
+    size_t an=0,bn=0;const int16_t* ap=straight->audio(&an);const int16_t* bp=branch->audio(&bn);
+    std::vector<uint8_t> as,bs;
+    if(an!=bn||!ap||!bp||!std::equal(ap,ap+an,bp)||
+       !std::equal(straight->video(),straight->video()+kVideoWidth*kVideoHeight,branch->video())||
+       !std::equal(straight->cpuRam(),straight->cpuRam()+2048,branch->cpuRam())||
+       !(straight->saveState(as).ok()&&branch->saveState(bs).ok())||as!=bs){
+      std::fprintf(stderr,"restored branch diverged at frame %llu\n",(unsigned long long)(f+1));return 1;
+    }
+  }
+  if(!out.empty()){
+    st=writePng(out+"-final-straight.png",straight->video(),kVideoWidth,kVideoHeight);if(!st.ok())return fail(st);
+    st=writePng(out+"-final-restored.png",branch->video(),kVideoWidth,kVideoHeight);if(!st.ok())return fail(st);
+  }
+  std::printf("state restore verified: checkpoint %llu, final %llu, %llu continuation frames, %zu state bytes\n",
+              (unsigned long long)at,(unsigned long long)frames,(unsigned long long)(frames-at),checkpoint.size());
+  return 0;
+}
+
 int cmdBenchFlash(const Args& a) {
   const int frames = a.pos.size() > 2 ? std::atoi(a.pos[2].c_str()) : 600;
   const int level = a.pos.size() > 3 ? std::atoi(a.pos[3].c_str()) : 2;
@@ -412,6 +560,10 @@ int cmdBenchFlash(const Args& a) {
   if (frames <= 0) return usage();
   rn_session_options opt;
   rn_session_options_init(&opt);
+  CoreKind kind;
+  Status selection = selectedCore(a, kind);
+  if (!selection.ok()) return fail(selection);
+  opt.core = static_cast<rn_core_kind>(kind);
   rn_session* s = nullptr;
   if (rn_session_new(a.pos[1].c_str(), nullptr, &opt, &s) != RN_OK) {
     std::fprintf(stderr, "%s\n", rn_last_error());
@@ -508,6 +660,12 @@ int main(int argc, char** argv) {
       a.pos.push_back(s);
     }
   }
+  if (a.pos.empty()) return usage();
+  if (a.has("--core") || a.has("--mock")) {
+    if (a.has("--core") && a.get("--core").empty()) return fail(Error(Err::InvalidArg, "--core requires a name"));
+    if (a.has("--mock") && a.has("--core"))
+      return fail(Error(Err::InvalidArg, "--mock and --core cannot be combined"));
+  }
   const std::string cmd = a.pos[0];
   if (cmd == "version") {
     std::printf("replaynes %s\ncore %s\nbuild %s\n", rn_version(), rn_core_compat_id(), rn_core_build_id());
@@ -538,5 +696,7 @@ int main(int argc, char** argv) {
   if (cmd == "screenshot") return cmdScreenshot(a);
   if (cmd == "bench-flash") return cmdBenchFlash(a);
   if (cmd == "dump-ppu") return cmdDumpPpu(a);
+  if (cmd == "dump-audio") return cmdDumpAudio(a);
+  if (cmd == "verify-state") return cmdVerifyState(a);
   return usage();
 }

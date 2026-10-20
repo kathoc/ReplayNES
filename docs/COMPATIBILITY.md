@@ -44,6 +44,19 @@ saved in the `Vrc4::Irq` chunk (VRC4/VRC6/VRC7 and two boards reusing it; found 
 mapper 25). Projects recorded with `+p1` are refused by `+p2` builds (core mismatch). These belong upstream (jgemu/nestopia); once merged, the pin
 moves to the upstream commit and the patch level resets — which is a new compat ID.
 
+## Runtime core selection
+
+New sessions can select Nestopia or the optional ReplayNEScore build. Selection does
+not change the identity of an existing session or project. Project loading resolves
+the exact manifest compatibility ID; an unavailable or unknown core is rejected.
+Nestopia's pinned settings and compatibility ID above remain unchanged.
+
+ReplayNEScore is a Live-only development core without recording capability. It has a
+machine state codec (exercised by tests) and pulse/triangle/noise PCM, but no DMC. Its identity is not a promise of persistent replay compatibility;
+projects and state envelopes cannot be created for it. Its RGB display uses a measured
+512-entry reference display table; raw CRT video codes are unavailable because burst
+phase has not been calibrated. See [CORE_SELECTION_PLAN.md](CORE_SELECTION_PLAN.md).
+
 ## Other version numbers
 
 | Field | Meaning |

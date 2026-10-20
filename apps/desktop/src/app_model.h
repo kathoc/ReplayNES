@@ -65,6 +65,7 @@ class AppModel {
   /// resumed then and temporary sessions stay in memory).
   void setupSessionPersistence(bool enabled);
   bool persistSessions() const { return persist_; }
+  std::string selectedCore = "nestopia";  // applies only to newly created games
   /// Launch: --rom opens a temporary session (explicit open); otherwise the library shows and the
   /// last session (resume record: also after a crash / force quit) is offered by its "Continue"
   /// card (resume = false: not offered). Nothing is opened by itself.

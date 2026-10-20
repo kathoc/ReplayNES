@@ -49,6 +49,7 @@ CrtSettings UI::crtSettings() const {
 // ------------------------------------------------------------------ export
 
 void UI::openExportDialog() {
+  if (d_.emu->live()) { notice(TR("Development core: video export is unavailable")); return; }
   const EmuStatus& st = d_.emu->status();
   if (!st.hasSession) return;
   exportDialog_ = true;

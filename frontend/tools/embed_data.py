@@ -6,6 +6,7 @@
 Writes `static const unsigned char <symbol>Data[] = {...}; static const size_t <symbol>Size = N;`.
 """
 import sys
+from pathlib import Path
 
 
 def main():
@@ -23,6 +24,7 @@ def main():
             return
     except OSError:
         pass
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
 

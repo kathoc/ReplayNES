@@ -121,8 +121,9 @@ final class EngineSession {
     }
 
     /// New session for a ROM. projectDir == nil -> in-memory (save later with saveAs).
-    static func create(rom: URL, projectDir: URL?) throws -> EngineSession {
+    static func create(rom: URL, projectDir: URL?, core: rn_core_kind = RN_CORE_NESTOPIA) throws -> EngineSession {
         var opt = defaultOptions()
+        opt.core = core
         var out: OpaquePointer?
         let st = rn_session_new(rom.path, projectDir?.path, &opt, &out)
         if st != RN_OK { throw RNError(st) }

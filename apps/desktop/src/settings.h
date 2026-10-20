@@ -46,6 +46,7 @@ struct Settings {
   // "builtin" (ReplayNES's controller keyboard), "steam" (Steam's only). See osk.h.
   std::string onScreenKeyboard = "auto";
   // System
+  std::string core = "nestopia";  // next new game; existing projects retain their core
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
   std::string language = "auto";  // "auto" (the system's), "ja", "en"
   bool menuHintShown = false;     // the Menu pill pulsed on the first launch

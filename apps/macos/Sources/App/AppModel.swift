@@ -90,6 +90,13 @@ final class AppModel: ObservableObject {
     @Published var snapshotFrame: CGImage?
 
     // Preferences
+    @AppStorage("emulationCore") var selectedCore = "nestopia" { didSet { objectWillChange.send() } }
+    var coreAvailability: String {
+        guard selectedCore == "nestopia" || selectedCore == "replaynescore" else { return String(localized: "Unknown core; select a supported core") }
+        let core = selectedCore == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA
+        guard rn_core_available(core) != 0 else { return String(localized: "Not included in this build") }
+        return core == RN_CORE_REPLAYNESCORE ? String(localized: "Development: no recording or saves") : String(localized: "Available")
+    }
     @AppStorage("showLatency") var showLatency = false { didSet { objectWillChange.send() } }
     /// Off by default since 0.5.1. @AppStorage only stores a value the user set, so an untouched
     /// install picks up the new default and an explicit choice (either way) is kept.
@@ -497,6 +504,7 @@ final class AppModel: ObservableObject {
         open.allowedContentTypes = [.nesROM, .data]
         open.allowsMultipleSelection = false
         guard open.runModal() == .OK, let rom = open.url else { return }
+        if selectedCore != "nestopia" { createSession(rom: rom, projectDir: nil); return }
         let save = NSSavePanel()
         save.title = String(localized: "Where to Save the Project")
         save.nameFieldStringValue = rom.deletingPathExtension().lastPathComponent + ".nesrec"
@@ -525,6 +533,10 @@ final class AppModel: ObservableObject {
     /// projectDir == nil: a session without a project; with session persistence it lives in the
     /// temporary project (SessionResume.swift), otherwise in memory.
     func createSession(rom: URL, projectDir requestedDir: URL?, autoplay: Bool = false) {
+        if selectedCore != "nestopia" {
+            startSession(rom: rom, projectDir: nil, isTemp: false, autoplay: autoplay)
+            return
+        }
         if requestedDir == nil && persistSessions {
             prepareTempSlot { [weak self] in
                 guard let self else { return }
@@ -536,10 +548,17 @@ final class AppModel: ObservableObject {
     }
 
     private func startSession(rom: URL, projectDir: URL?, isTemp: Bool, autoplay: Bool) {
+        guard selectedCore == "nestopia" || selectedCore == "replaynescore" else {
+            showError(String(localized: "Couldn’t create the project"), String(localized: "Unknown core; select a supported core")); return
+        }
+        let core = selectedCore == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA
+        guard rn_core_available(core) != 0 else {
+            showError(String(localized: "Couldn’t create the project"), String(localized: "Selected core is not included in this build")); return
+        }
         let dirExisted = projectDir.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let s = try EngineSession.create(rom: rom, projectDir: projectDir)
+                let s = try EngineSession.create(rom: rom, projectDir: projectDir, core: core)
                 DispatchQueue.main.async {
                     self.install(s, recovered: false)
                     if autoplay { self.emu.perform { e in e.paused = false } }   // a new run: no resume countdown
@@ -781,6 +800,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func saveSync() -> Bool {
+        guard !status.live else { flash(String(localized: "Development core: recording and saves are unavailable")); return false }
         if current?.isTemp == true { return saveTempAs() }
         let inMemory = emu.sync { e in e.session?.projectDir.isEmpty ?? true } ?? true
         if inMemory { return saveAs() }
@@ -797,6 +817,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func saveAs() -> Bool {
+        guard !status.live else { flash(String(localized: "Development core: recording and saves are unavailable")); return false }
         if current?.isTemp == true { return saveTempAs() }
         guard status.hasSession else { return false }
         let save = NSSavePanel()
@@ -1166,6 +1187,7 @@ final class AppModel: ObservableObject {
     // MARK: export
 
     func startExport(_ settings: ExportSettings, to url: URL) {
+        guard !status.live else { flash(String(localized: "Development core: video export is unavailable")); return }
         let job = ExportJob(url: url)
         exportJob = job
         emu.perform { e in

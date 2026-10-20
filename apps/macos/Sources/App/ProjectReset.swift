@@ -42,6 +42,7 @@ extension EmulationController {
 extension AppModel {
     /// Game › Start Over… (menu bar and the Quick Menu: Game › Reset › Start Over).
     func resetProjectPrompt() {
+        guard !status.live else { flash(String(localized: "Development core: recording and saves are unavailable")); return }
         guard status.hasSession, let c = current else { return }
         let dir = status.projectPath
         let saved = !dir.isEmpty && !c.isTemp

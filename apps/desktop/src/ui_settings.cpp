@@ -63,6 +63,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
+  if (id == "system.core") return s.core == "replaynescore" ? 1 : 0;
   if (id == "system.language") return s.language == "ja" ? 1 : s.language == "en" ? 2 : 0;
   if (id == "system.autosave") {
     for (int i = 0; i < 5; ++i)
@@ -76,6 +77,13 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
 std::string UI::itemValue(const std::string& id) const {
   const Settings& s = *d_.settings;
   const InputRouter& in = *d_.input;
+  if (id == "system.core" && s.core != "nestopia" && s.core != "replaynescore") return s.core;
+  if (id == "system.core_status") {
+    if (s.core != "nestopia" && s.core != "replaynescore") return TR("Unknown core; select a supported core");
+    rn_core_kind core = s.core == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA;
+    if (!rn_core_available(core)) return TR("Not included in this build");
+    return core == RN_CORE_REPLAYNESCORE ? TR("Development: no recording or saves") : TR("Available");
+  }
   char b[64];
   rnf_menu_item_info info{};
   size_t page = 0, index = 0;
@@ -154,6 +162,8 @@ float UI::itemFraction(const std::string& id) const {
 
 bool UI::itemEnabled(const std::string& id) const {
   const EmuStatus& st = d_.emu->status();
+  if (st.live && (id.rfind("retry.", 0) == 0 || id == "retry" || id == "practice" ||
+                  id == "share.export" || id == "game.save" || id == "game.save_as" || id == "game.reset")) return false;
   bool crt = d_.renderer->postProcessStatus().crtAvailable;
   if (id == "retry.playback") return !st.practicing && st.takeLength > 0;
   if (id == "retry.rerecord" || id == "retry.bookmarks" || id == "retry.restart") return hasSession();
@@ -219,6 +229,8 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "controls.socd") {
       in.setSOCD(next == 1 ? "last_wins" : next == 2 ? "allow" : "neutral");
       return;
+    } else if (id == "system.core") {
+      s.core = next == 1 ? "replaynescore" : "nestopia";
     } else if (id == "system.language") {
       s.language = next == 1 ? "ja" : next == 2 ? "en" : "auto";
       changed();

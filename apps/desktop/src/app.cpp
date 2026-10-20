@@ -345,6 +345,7 @@ int App::run(const AppOptions& opt) {
     });
   };
   ui_->onSettingsChanged = [this] {
+    app_->selectedCore = settings_.core;
     settings_.save(paths_.settingsFile());
     applySettings();
     if (updates_ && !updates_->ownsDialogs()) updates_->setAutoCheck(settings_.checkForUpdates);
@@ -384,6 +385,7 @@ int App::run(const AppOptions& opt) {
   library_->refresh();
   app_->setupSessionPersistence(true);
   if (!app_->persistSessions()) ui_->notice(TR("Another ReplayNES is running: this one doesn’t resume or keep sessions"));
+  app_->selectedCore = settings_.core;
   app_->startup(opt.rom, opt.resume && opt.rom.empty());
   std::unique_ptr<Script> script;
   if (!opt.script.empty()) {

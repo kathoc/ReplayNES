@@ -91,7 +91,7 @@ void EmulationController::setPaused(bool p) {
 void EmulationController::install(rn_session* s) {
   if (s != session_) closeSession();
   session_ = s;
-  bool fresh = s && rn_take_length(s) == 0 && rn_frame(s) == 0 && rn_get_mode(s) == RN_MODE_RECORD;
+  bool fresh = s && rn_take_length(s) == 0 && rn_frame(s) == 0 && (rn_get_mode(s) == RN_MODE_RECORD || rn_get_mode(s) == RN_MODE_LIVE);
   setPaused(!fresh);
   slow_ = 1;
   advanceRemaining_ = 0;
@@ -264,6 +264,7 @@ void EmulationController::publishVideo(bool continuous) {
 // ------------------------------------------------------------------ seek / step
 
 void EmulationController::seekCommand(uint64_t f) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   if (!session_) return;
   if (rn_get_mode(session_) == RN_MODE_PRACTICE) {
     // The take cursor is frozen while practicing: "Go to Start" means back to A.
@@ -314,6 +315,7 @@ void EmulationController::frameAdvance(int n) {
 }
 
 void EmulationController::stepBack(uint64_t n) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   if (!session_) return;
   setPaused(true);
   advanceRemaining_ = 0;
@@ -421,8 +423,8 @@ EmulationController::Tick EmulationController::tick() {
   }
 
   bool practicing = rn_get_mode(s) == RN_MODE_PRACTICE;
-  bool rewindHeld = uiRewindHeld_ || (held & RN_HK_REWIND) != 0;
-  bool ffHeld = uiFastForwardHeld_ || (held & RN_HK_FAST_FORWARD) != 0;
+  bool rewindHeld = !live() && (uiRewindHeld_ || (held & RN_HK_REWIND) != 0);
+  bool ffHeld = !live() && (uiFastForwardHeld_ || (held & RN_HK_FAST_FORWARD) != 0);
   bool wantRewind = rewindHeld;
   // Rewind / fast-forward held during the resume countdown: back to paused (they then act as when
   // paused; releasing them never starts a countdown).
@@ -573,7 +575,7 @@ EmulationController::Tick EmulationController::tick() {
 bool EmulationController::stepOnce(bool audible, bool frameStep) {
   rn_session* s = session_;
   rn_mode mode = rn_get_mode(s);
-  bool live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE;
+  bool live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE || mode == RN_MODE_LIVE;
   uint8_t p1 = 0, p2 = 0;
   if (live) {
     // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
@@ -589,7 +591,7 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   // Live play goes through the retry bookkeeping (undo window, burst collapse); frame steps replay.
   const bool overwrite = !frameStep && rnf_tape_overwrites(mode, before, rn_take_length(s));
   rn_step_info info{};
-  rn_status st = frameStep ? rnf_transport_step(s, p1, p2, ev, &info)
+  rn_status st = mode == RN_MODE_LIVE ? rn_step(s, p1, p2, ev, &info) : frameStep ? rnf_transport_step(s, p1, p2, ev, &info)
                            : rnf_retry_step(retry_, s, nowSeconds(), p1, p2, ev, &info);
   if (st != RN_OK) {
     setPaused(true);
@@ -623,7 +625,7 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
     if (const int16_t* h = withHiss(pcm, n)) pcm = h;
     if (n) audio_->push(pcm, n);
   }
-  if (mode != RN_MODE_PRACTICE) {
+  if (mode != RN_MODE_PRACTICE && mode != RN_MODE_LIVE) {
     pendingThumb_ = true;
     pendingThumbFrame_ = info.frame;
   }
@@ -863,6 +865,7 @@ void EmulationController::tickVtr() {
 }
 
 void EmulationController::startPractice(int slot) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (fastForward_) {
@@ -947,6 +950,7 @@ void EmulationController::practiceSetA(int slot) {
 }
 
 void EmulationController::practiceSetAAt(int slot, uint64_t frame) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
@@ -973,6 +977,7 @@ void EmulationController::practiceSetAAt(int slot, uint64_t frame) {
 }
 
 void EmulationController::practiceSetB(int slot) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   rn_status st = rn_practice_set_b(s, uint32_t(slot));
@@ -1039,6 +1044,7 @@ std::vector<rnf_timeline_range> EmulationController::visibleRanges() {
 }
 
 void EmulationController::practiceSetRange(int slot, uint64_t a, uint64_t b, bool fromMarkers) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
@@ -1113,6 +1119,7 @@ bool EmulationController::practiceSetBFromTake(int slot) {
 // ------------------------------------------------------------------ operations
 
 void EmulationController::requestEvent(uint8_t ev) {
+  if (live() && (ev & RN_EV_SOFT_RESET)) { notice(TR("Development core: soft reset is unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   rn_mode m = rn_get_mode(s);
@@ -1123,13 +1130,16 @@ void EmulationController::requestEvent(uint8_t ev) {
   pendingEvents_ |= ev;
   if (paused_) advanceRemaining_ += 1;  // apply immediately so the user sees it
   bool power = ev == RN_EV_POWER_CYCLE;
-  if (m == RN_MODE_PRACTICE)
+  if (m == RN_MODE_LIVE)
+    notice(TR("Power cycle (development; not recorded)"));
+  else if (m == RN_MODE_PRACTICE)
     notice(power ? TR("Power cycle (practicing: not recorded)") : TR("Soft reset (practicing: not recorded)"));
   else
     notice(power ? TR("Recording a power cycle") : TR("Recording a soft reset"));
 }
 
 void EmulationController::setRecording(bool rec) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) stopPractice();
@@ -1139,6 +1149,7 @@ void EmulationController::setRecording(bool rec) {
 }
 
 void EmulationController::toggleRecord() {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
@@ -1160,6 +1171,7 @@ void EmulationController::toggleRecord() {
 }
 
 void EmulationController::rerecordHere() {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) stopPractice();
@@ -1176,6 +1188,7 @@ void EmulationController::rerecordHere() {
 }
 
 void EmulationController::addBookmark(const std::string& name) {
+  if (live()) { notice(TR("Development core: recording and rewind are unavailable")); return; }
   rn_session* s = session_;
   if (!s) return;
   if (rn_get_mode(s) == RN_MODE_PRACTICE) {
@@ -1362,6 +1375,7 @@ void EmulationController::updateStatus() {
     return;
   }
   st.hasSession = true;
+  st.live = live();
   st.frame = rn_frame(s);
   st.takeLength = rn_take_length(s);
   st.recording = rnf_fast_forward_shows_recording(ff_, s) != 0;

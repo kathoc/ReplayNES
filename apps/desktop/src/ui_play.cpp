@@ -191,7 +191,7 @@ void UI::pauseGesture(int dir) {
 bool UI::seekBarShown() const {
   if (!hasSession() || menuOpen_) return false;
   const EmuStatus& st = d_.emu->status();
-  return st.paused || st.rewinding || st.fastForward;
+  return !st.live && (st.paused || st.rewinding || st.fastForward);
 }
 
 void UI::buildSeekBar(double now) {
@@ -625,6 +625,7 @@ void UI::buildBadges() {
 std::string UI::statusLabelText(bool practicePart) const {
   if (!hasSession()) return {};
   const EmuStatus& st = d_.emu->status();
+  if (st.live) return TR("ReplayNEScore · Development · No recording");
   rnf_tape_status ts{};
   ts.mode = st.practicing ? (practicePart ? RN_MODE_PRACTICE : RN_MODE_RECORD) : st.recording ? RN_MODE_RECORD : RN_MODE_REPLAY;
   ts.rewinding = st.rewinding;
@@ -747,7 +748,7 @@ void UI::tickCoach(double now) {
     const EmuStatus& st = d_.emu->status();
     rewindStopped = st.rewindStops != lastRewindStops_;
     lastRewindStops_ = st.rewindStops;
-    in.playing = !st.paused && !menuOpen_ && !interactive() && st.countdown == 0 && !st.practicing && !st.rewinding &&
+    in.playing = !st.live && !st.paused && !menuOpen_ && !interactive() && st.countdown == 0 && !st.practicing && !st.rewinding &&
                  !st.fastForward;
     in.rewind_stopped = rewindStopped && !menuOpen_;
     in.paused_at_end = st.paused && st.atTapeEnd && !menuOpen_ && !interactive();

@@ -44,7 +44,7 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_STEAM = RNF_MENU_FEATURE_STEAM, F_OSK = RNF_MENU_FEATURE_OSK, F_UPDATES = RNF_MENU_FEATURE_UPDATES,
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
-                   F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE;
+                   F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -171,6 +171,8 @@ const std::vector<ItemDef>& items() {
       {"settings.sound", "sound.low_latency", RNF_L("Low Latency"), RNF_L("A smaller sound buffer (may crackle)"), "bolt",
        TOGGLE, "", F_LOW_LATENCY, {}},
       // Settings: System.
+      {"settings.system", "system.core", RNF_L("Core"), RNF_L("Applies to the next new game; existing recordings keep their core"),
+       "device-gamepad-2", CHOICE, "", F_CORE, {"=Nestopia", "=ReplayNEScore"}},
       {"settings.system", "system.language", RNF_L("Language"), RNF_L("Automatic follows the system language"), "language",
        CHOICE, "", 0, {RNF_L("Automatic"), RNF_JAPANESE_NAME, "=English"}},
       {"settings.system", "system.steam", RNF_L("Add to Steam"), RNF_L("Adds ReplayNES to the Steam library (close Steam first)"),

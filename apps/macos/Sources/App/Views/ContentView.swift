@@ -149,7 +149,7 @@ struct ContentView: View {
     /// The seek bar: paused, or (read-only) while the tape is rewound / fast-forwarded.
     private var seekBarShown: Bool {
         let st = model.status
-        return st.paused || st.rewinding || st.fastForward
+        return !st.live && (st.paused || st.rewinding || st.fastForward)
     }
 
     private var showSwiftUIPill: Bool {

@@ -82,6 +82,7 @@ struct EmuStatus: Equatable {
     var frame: UInt64 = 0
     var takeLength: UInt64 = 0
     var recording = true
+    var live = false
     var paused = true
     var slow: SlowRate = .normal
     var rewinding = false
@@ -107,11 +108,12 @@ struct EmuStatus: Equatable {
     var canUndo = false              // the Undo chip: a retry started less than 10 s ago
     var endOfTape = false            // paused at the end of the tape (length > 0, not practicing)
 
-    var mode: rn_mode { practicing ? RN_MODE_PRACTICE : recording ? RN_MODE_RECORD : RN_MODE_REPLAY }
+    var mode: rn_mode { live ? RN_MODE_LIVE : practicing ? RN_MODE_PRACTICE : recording ? RN_MODE_RECORD : RN_MODE_REPLAY }
     /// The bottom-left status label ("" in normal play; "End of tape" when playback / fast-forward
     /// stopped there).
     var tapeLabel: String {
-        Tape.statusLabel(mode: mode, rewinding: rewinding, fastForward: fastForward, slow: slow,
+        if live { return String(localized: "ReplayNEScore · Development · No recording") }
+        return Tape.statusLabel(mode: mode, rewinding: rewinding, fastForward: fastForward, slow: slow,
                          endOfTape: endOfTake && !practicing)
     }
     /// Practicing: the label without "Practice (not recorded)" (the "■ Stop Practice" button stands there).
@@ -344,7 +346,7 @@ final class EmulationController {
         session = s
         // A fresh recording (empty take, frame 0) has nothing to review: run immediately so the
         // game boots. Opened projects with recorded input stay paused at their cursor.
-        if let s, s.takeLength == 0, s.frame == 0, s.mode == RN_MODE_RECORD {
+        if let s, s.takeLength == 0, s.frame == 0, (s.mode == RN_MODE_RECORD || s.mode == RN_MODE_LIVE) {
             paused = false
         } else {
             paused = true
@@ -481,6 +483,7 @@ final class EmulationController {
 
     /// Seek helper used by commands: pauses, mutes, refreshes the picture.
     func seekCommand(_ f: UInt64) {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE {
             // The take cursor is frozen while practicing: "Go to Start" means back to A.
@@ -878,7 +881,7 @@ final class EmulationController {
         defer { rewindStoppedTick = false }
         guard let c = coach else { return }
         let len = s.takeLength
-        let playing = !paused && !modalHold && countdown == 0 && !rewinding && !fastForward && mode != RN_MODE_REPLAY
+        let playing = !paused && !modalHold && countdown == 0 && !rewinding && !fastForward && mode != RN_MODE_REPLAY && mode != RN_MODE_LIVE
         let atEnd = paused && mode != RN_MODE_PRACTICE && len > 0 && s.frame >= len && !rewinding
         let tip = c.tick(now: now, playing: playing, rewindStopped: rewindStoppedTick, pausedAtEnd: atEnd, takeLength: len)
         if tip != RNF_COACH_NONE {
@@ -920,8 +923,8 @@ final class EmulationController {
         }
 
         let practicing = s.mode == RN_MODE_PRACTICE
-        let rewindHeld = uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0
-        let ffHeld = uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0
+        let rewindHeld = s.mode != RN_MODE_LIVE && (uiRewindHeld || held & UInt32(RN_HK_REWIND) != 0)
+        let ffHeld = s.mode != RN_MODE_LIVE && (uiFastForwardHeld || held & UInt32(RN_HK_FAST_FORWARD) != 0)
         // Rewind / fast-forward held during the resume countdown: back to paused (they then act as
         // when paused; releasing them never starts a countdown).
         // A retry interrupted by another rewind counts as play (its release counts down again).
@@ -1302,6 +1305,7 @@ final class EmulationController {
 
     /// "Practice This Section": enters practice at the slot's A and autoplays (never records).
     func startPractice(_ slot: Int) {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if fastForward { endFastForward(s); uiFastForwardHeld = false }
         let wasMode = s.mode
@@ -1454,7 +1458,7 @@ final class EmulationController {
     @discardableResult
     func stepOnce(_ s: EngineSession, audible: Bool, publish: Bool = true, frameStep: Bool = false) -> Bool {
         let mode = s.mode
-        let live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE
+        let live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE || mode == RN_MODE_LIVE
         let tSample = HostClock.now()
         lastSample = tSample
         var p1: UInt8 = 0, p2: UInt8 = 0
@@ -1474,7 +1478,7 @@ final class EmulationController {
         let info: rn_step_info
         do {
             // Live play goes through the retry tracker (undo window, burst collapse).
-            info = try frameStep ? s.transportStep(p1: p1, p2: p2, events: ev)
+            info = try mode == RN_MODE_LIVE ? s.step(p1: p1, p2: p2, events: ev) : frameStep ? s.transportStep(p1: p1, p2: p2, events: ev)
                                  : retry.step(s, now: HostClock.seconds(tSample), p1: p1, p2: p2, events: ev)
         } catch {
             paused = true
@@ -1505,7 +1509,7 @@ final class EmulationController {
             }
         }
         if audible { pushAudio(s.audio()); latency.recordAudioRatio(audio.ratio) }
-        if mode != RN_MODE_PRACTICE { pendingThumbnail = info.frame }
+        if mode != RN_MODE_PRACTICE && mode != RN_MODE_LIVE { pendingThumbnail = info.frame }
         lastStep = tEmu
         latency.recordStep(sampleToEmulated: tEmu - tSample)
         statusDirty = true
@@ -1555,6 +1559,9 @@ final class EmulationController {
     // MARK: operations (emulation thread)
 
     func requestEvent(_ ev: UInt8) {
+        if session?.mode == RN_MODE_LIVE && ev & UInt8(RN_EV_SOFT_RESET) != 0 {
+            notice(String(localized: "Development core: soft reset is unavailable")); return
+        }
         guard let s = session else { return }
         if s.mode == RN_MODE_REPLAY {
             notice(String(localized: "Reset is only available in record mode (or while practicing)"))
@@ -1563,7 +1570,9 @@ final class EmulationController {
         pendingEvents |= ev
         if paused { advanceRemaining += 1 } // apply immediately so the user sees it
         let power = ev == UInt8(RN_EV_POWER_CYCLE)
-        if s.mode == RN_MODE_PRACTICE {
+        if s.mode == RN_MODE_LIVE {
+            notice(String(localized: "Power cycle (development; not recorded)"))
+        } else if s.mode == RN_MODE_PRACTICE {
             notice(power ? String(localized: "Power cycle (practicing: not recorded)") : String(localized: "Soft reset (practicing: not recorded)"))
         } else {
             notice(power ? String(localized: "Recording a power cycle") : String(localized: "Recording a soft reset"))
@@ -1571,6 +1580,7 @@ final class EmulationController {
     }
 
     func setRecording(_ rec: Bool) {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice() }
         if fastForward { endFastForward(s) }
@@ -1583,6 +1593,7 @@ final class EmulationController {
 
     /// The "Record" toggle button (see RecordToggle). In practice it leaves practice first.
     func toggleRecord() {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice(); return }
         if fastForward { endFastForward(s) }
@@ -1598,6 +1609,7 @@ final class EmulationController {
 
     /// "Re-record from Here": record from the current frame (branches if before the take end).
     func rerecordHere() {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { stopPractice() }
         setRecording(true)
@@ -1605,6 +1617,7 @@ final class EmulationController {
     }
 
     func addBookmark(name: String?) {
+        guard session?.mode != RN_MODE_LIVE else { notice(String(localized: "Development core: recording and rewind are unavailable")); return }
         guard let s = session else { return }
         if s.mode == RN_MODE_PRACTICE { notice(Self.practiceBlockedText); return }
         let n = name ?? String(localized: "Bookmark \(s.bookmarks().count + 1) (\(Engine.timecode(forFrame: s.frame)))")
@@ -1728,6 +1741,7 @@ final class EmulationController {
             st.hasSession = true
             st.frame = s.frame
             st.takeLength = s.takeLength
+            st.live = s.mode == RN_MODE_LIVE
             st.recording = ff.showsRecording(s)
             st.paused = paused
             st.slow = slow

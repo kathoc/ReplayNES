@@ -58,6 +58,10 @@ struct QMContent {
 
 enum QuickMenuPages {
     static func content(_ p: QMPage, model m: AppModel, menu: QuickMenuController) -> QMContent {
+        if m.status.live && (p == .retry || p == .practice || p == .bookmarks || p == .reset) {
+            return QMContent(items: [QMItem(id: "live", icon: "info.circle", title: String(localized: "Development core"),
+                                          detail: String(localized: "No recording, saves or rewind"), enabled: false)])
+        }
         switch p {
         case .top: return QMContent(items: top(m, menu))
         case .retry: return QMContent(items: retry(m, menu))
@@ -96,9 +100,9 @@ enum QuickMenuPages {
                    detail: String(localized: "Close the menu and keep playing"), enabled: has,
                    confirm: { menu.close(resume: true) }),
             QMItem(id: "retry", icon: "clock.arrow.circlepath", title: String(localized: "Retry"),
-                   detail: String(localized: "Play again from here, watch the tape, start over"), enabled: has, page: .retry),
+                   detail: String(localized: "Play again from here, watch the tape, start over"), enabled: has && !m.status.live, page: .retry),
             QMItem(id: "practice", icon: "target", title: String(localized: "Practice"),
-                   detail: String(localized: "Repeat a section from A to B (nothing is recorded)"), enabled: has, page: .practice),
+                   detail: String(localized: "Repeat a section from A to B (nothing is recorded)"), enabled: has && !m.status.live, page: .practice),
             QMItem(id: "share", icon: "square.and.arrow.up", title: String(localized: "Share"),
                    detail: String(localized: "Make a video or send the picture to other apps"), page: .share),
             QMItem(id: "settings", icon: "gearshape.fill", title: String(localized: "Settings"),
@@ -476,10 +480,16 @@ enum QuickMenuPages {
     }
 
     private static func system(_ m: AppModel) -> [QMItem] {
+        let cores = ["nestopia", "replaynescore"]
         let langs = ["auto", "ja", "en"]
         let current = langs.firstIndex(of: UILanguage.preference) ?? 0
         let intervals: [Double] = [2, 3, 5, 10, 30]
-        return [
+        // Only a build with a second core offers the choice; a stale non-default setting stays visible so it can be fixed.
+        let offerCore = rn_core_available(RN_CORE_REPLAYNESCORE) != 0 || m.selectedCore != "nestopia"
+        let core = offerCore ? [choice("core", "cpu", String(localized: "Core"),
+                   String(localized: "Next new game") + " · " + m.coreAvailability,
+                   [cores.contains(m.selectedCore) ? "Nestopia" : m.selectedCore, "ReplayNEScore"], cores.firstIndex(of: m.selectedCore) ?? 0) { m.selectedCore = cores[$0] }] : []
+        return core + [
             choice("language", "globe", String(localized: "Language"), String(localized: "Applies the next time ReplayNES starts"),
                    [String(localized: "Auto"), UILanguage.nativeName("ja"), UILanguage.nativeName("en")], current) {
                 UILanguage.preference = langs[$0]
@@ -533,12 +543,12 @@ enum QuickMenuPages {
             QMItem(id: "choose", icon: "square.grid.2x2", title: String(localized: "Choose Game"),
                    detail: String(localized: "Open the library of your ROMs"), confirm: { menu.close(resume: false); m.showLibraryScreen() }),
             QMItem(id: "save", icon: "square.and.arrow.down", title: String(localized: "Save"),
-                   detail: String(localized: "Save the project (it is also saved automatically)"), enabled: has,
+                   detail: String(localized: "Save the project (it is also saved automatically)"), enabled: has && !m.status.live,
                    confirm: { m.saveSync() }),
             QMItem(id: "saveAs", icon: "square.and.arrow.down.on.square", title: String(localized: "Save As"),
-                   detail: String(localized: "Save the project to a new place"), enabled: has, confirm: { m.saveAs() }),
+                   detail: String(localized: "Save the project to a new place"), enabled: has && !m.status.live, confirm: { m.saveAs() }),
             QMItem(id: "reset", icon: "power", title: String(localized: "Reset"),
-                   detail: String(localized: "Reset, power cycle, or start the project over"), enabled: has, page: .reset),
+                   detail: String(localized: "Reset, power cycle, or start the project over"), enabled: has && !m.status.live, page: .reset),
             QMItem(id: "close", icon: "xmark.circle", title: String(localized: "Close"),
                    detail: String(localized: "Close this game and return to the library"), enabled: has,
                    confirm: { menu.close(resume: false); m.closeProject() }),

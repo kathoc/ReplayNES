@@ -286,3 +286,53 @@ status ROM、既存pad/PCM/state/描画、Live制約を同じbinaryで確認し�
 ReplayNESCore commit `73ab03c`で`$400C/$400E/$400F`、envelope、15-bit LFSR、noise length/status bit 3、TND mixer、MACH schema 2.0を追加した。adapterはnoise ownerを有効にし、合成ROMで非ゼロPCM、`$4015` bit 3、別instanceへの保存復元継続を検査する。互換IDを`replaynescore/nrom-live/noise-v9`、build IDを`replaynescore-0.3.0+adapter-v9`へ進める。adapter envelopeの構造は変えず、state format versionは1を維持する。
 
 Release統合buildで`test_core_selection`と`test_replaynescore_adapter`が2/2成功（9.69秒）。既存のpulse/pad/描画/state試験に加え、noiseのstatus、PCM、別instance復元を確認した。
+
+## 2026-10-18 0.3.0の音声をUIへ届ける（Claude Code）
+
+ReplayNESCore 0.3.0（core `73ab03c`、adapter `noise-v9`）はengine側へ`e563ea3`で反映済みだったが、
+デスクトップ/macOSのUIがLive modeの音声を捨てていた（`mode != RN_MODE_LIVE`で`push`しない）。
+adapterはpulse/triangle/noiseの実PCMを生成しCapAudioを持つため、音声を捨てる理由はもう無い。
+
+- 採用: Live modeでも`rn_audio`の内容をそのまま流す。音声能力の無いcoreはSessionが0 sampleを返すので、
+  mode判定は不要（判定を残すと能力表と表示が食い違う、が前回指摘の原因）。
+- 表示: 「音声なし」を外した3文字列（status label、設定の状態、macOSのQuick Menu）。xcstringsのkeyと日本語も更新。
+- 設定の「使用するコア」は`RNF_MENU_FEATURE_CORE`で、第2coreを含むbuildだけに出す。保存済み設定が
+  nestopia以外なら、未ビルドでも直せるよう表示を残す。macOSも同じ条件。
+- 見送り: capability bitでUI側の音声を分岐する案（Sessionがすでに0 sampleを返すので重複）。
+- 試験: `test_desktop_frontend`のLive試験とoffscreen UIの音声sinkを「0 sampleであること」から
+  「sampleが届くこと」へ変更。menu試験は機能flag 0でCore行が無いことを確認。
+
+検証: Release既定 32/32、Release新core有効 33/33（core側は`REPLAYNES_WARNINGS_AS_ERRORS=OFF`、下記）。
+offscreen UIを新core有効/無効の両buildで実行しPASS、設定画面・Live画面・日本語画面を目視確認。
+
+残課題:
+- 新core有効のReleaseはcore側既定（警告をerror扱い）だと`ReplayNEScore/src/nrom_cpu_ppu.cpp:679`の
+  `current->`で`-Werror=maybe-uninitialized`停止。`require(current.has_value())`が戻らないことをGCCが
+  知らない誤検知と見られる。Codexの0.3.0検証もOFFで通していた。core側で直す。
+
+- `engine/src/core/ReplayNEScoreDisplayPalette.h`が未追跡のまま、commit済みadapterがincludeしている。
+  次のcommitに含めないとclean checkoutで新core有効buildが通らない。
+- macOSの`build-engine.sh`はadapter/core libをlinkしないため、macOSは常にNestopiaのみ。
+- macOS（Mac実機、Xcode 27.1、作業ツリーを`~/tmp/replaynes-core-check`へ複製）: XCTest 124件中0失敗・1skip。
+  l10n検査でCodex追加の未使用key `Core availability`を検出し削除、再検査0件。macOS UIの目視は未実施。
+
+## 2026-10-19 Release + 警告error扱いでの停止を解消（Claude Code）
+
+- 再現: GCC 11.4、`-O3 -Werror`で`ReplayNEScore/src/nrom_cpu_ppu.cpp`が`-Wmaybe-uninitialized`停止。
+  独立コア単体でも`-fPIC`の有無に関係なく再現（ReplayNES統合固有ではない）。Codexの検証はReleaseを
+  常に`REPLAYNES_WARNINGS_AS_ERRORS=OFF`で回していたため未検出だった。
+- 原因: 665行の`std::optional current`を`require(current.has_value() && …)`の後で`current->`で読む。
+  `require`は失敗時にthrowするので実際は空にならないが、GCC 11はoptional payloadの初期化を追えずに警告する。
+  `current.value()`への置換では消えなかった。
+- 修正: raster位置を全経路で初期化される値`raster`へ写し、以降はそれだけを読む（空なら既定値だが、直後の
+  `require`が従来と同じmessageで失敗するので挙動は不変）。変更はtimed MASK書き込みの1か所。
+- 検証: ReplayNES新core有効Release（警告error ON）build成功・33/33。独立コアRelease 240/240。
+  delayed MASK成功経路は`mask_delay=12`の各試験とsnapshot試験が通る。拒否経路の専用試験は無い。
+- 別件で発見: 独立コア単体のRelease + 警告errorは、試験2本（`tests/nrom_cpu_ppu_mmio.cpp:35`、
+  `tests/nrom_cpu_ppu_apu_pulse.cpp:102`）の`vector::insert`でGCC 11の`-Wstringop-overread`誤検知が出て止まる。
+  ReplayNESはcoreの試験をbuildしないので統合には影響しない。Codex側で対応。
+- コミット: 独立コアの上記修正は作業ツリーからCodexが`94a9b62`として取り込み済み（内容同一）。
+  ReplayNES側は`ccb48ac`（未追跡だったpalette header）と`db5bdd9`（`FlashFilter.h`の`<cstddef>`）。
+  後者はclean checkoutで判明: GCC 11.4では既定buildでも`FlashFilter.cpp`が`size_t`未宣言で失敗していた。
+- clean checkout検証: ReplayNES `ccb48ac`＋`FlashFilter.h`修正と独立コア`c0e6cfa`を別の場所へ取り出し、
+  新core有効Release（警告error ON）build成功・33/33。

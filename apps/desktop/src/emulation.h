@@ -27,6 +27,7 @@ struct EmuStatus {
   uint64_t frame = 0;
   uint64_t takeLength = 0;
   bool recording = true;
+  bool live = false;  // no recording, project saves, rewind or soft reset
   bool paused = true;
   int slow = 1;  // 1 normal, 2 = 1/2
   bool rewinding = false;
@@ -145,6 +146,7 @@ class EmulationController {
   /// Closes the session (no save).
   void closeSession();
   rn_session* session() const { return session_; }
+  bool live() const { return session_ && rn_get_mode(session_) == RN_MODE_LIVE; }
 
   struct Tick {
     bool newPicture = false;  // picture() changed

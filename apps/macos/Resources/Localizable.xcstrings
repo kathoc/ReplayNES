@@ -7644,6 +7644,166 @@
           }
         }
       }
+    },
+    "Applies to the next new game; existing recordings keep their core": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次に開始するゲームに適用。既存の録画は元のコアで開きます"
+          }
+        }
+      }
+    },
+    "Available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用可能"
+          }
+        }
+      }
+    },
+    "Core": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用するコア"
+          }
+        }
+      }
+    },
+    "Development core": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用コア"
+          }
+        }
+      }
+    },
+    "Development core: recording and rewind are unavailable": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用コア：録画・巻戻しは未対応です"
+          }
+        }
+      }
+    },
+    "Development core: recording and saves are unavailable": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用コア：録画・保存は未対応です"
+          }
+        }
+      }
+    },
+    "Development core: soft reset is unavailable": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用コア：ソフトリセットは未対応です"
+          }
+        }
+      }
+    },
+    "Development core: video export is unavailable": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用コア：動画書き出しは未対応です"
+          }
+        }
+      }
+    },
+    "Next new game": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次に開始するゲームに適用"
+          }
+        }
+      }
+    },
+    "Not included in this build": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このビルドには含まれていません"
+          }
+        }
+      }
+    },
+    "Power cycle (development; not recorded)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電源入れ直し（開発用・録画なし）"
+          }
+        }
+      }
+    },
+    "Selected core is not included in this build": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したコアはこのビルドに含まれていません"
+          }
+        }
+      }
+    },
+    "Unknown core; select a supported core": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明なコアです。対応するコアを選択してください"
+          }
+        }
+      }
+    },
+    "ReplayNEScore · Development · No recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ReplayNEScore・開発用・録画未対応"
+          }
+        }
+      }
+    },
+    "Development: no recording or saves": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発用：録画・保存は未対応"
+          }
+        }
+      }
+    },
+    "No recording, saves or rewind": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録画・保存・巻戻しは未対応です"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

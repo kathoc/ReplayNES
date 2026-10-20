@@ -652,7 +652,8 @@ typedef enum rnf_menu_feature {
   RNF_MENU_FEATURE_LOW_LATENCY = 1u << 7, /* Sound > Low latency */
   RNF_MENU_FEATURE_QUIT = 1u << 8,        /* System > Quit */
   RNF_MENU_FEATURE_FULLSCREEN = 1u << 9,  /* System > More > Full screen */
-  RNF_MENU_FEATURE_UI_SCALE = 1u << 10    /* System > More > UI size */
+  RNF_MENU_FEATURE_UI_SCALE = 1u << 10,   /* System > More > UI size */
+  RNF_MENU_FEATURE_CORE = 1u << 11        /* System > Core (a second core is built in) */
 } rnf_menu_feature;
 typedef enum rnf_menu_page_kind {
   RNF_MENU_PAGE_TILES = 0,    /* one row of large icon tiles (Quick Menu, Retry, Share, Game) */

@@ -67,6 +67,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
     else if (k == "onScreenKeyboard" && (v == "auto" || v == "builtin" || v == "steam")) s.onScreenKeyboard = v;
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
+    else if (k == "core") s.core = v;  // preserve unknown IDs: creation reports an error, never silently substitutes
     else if (k == "language" && (v == "auto" || v == "ja" || v == "en")) s.language = v;
     else if (k == "menuHintShown") s.menuHintShown = parseBool(v, s.menuHintShown);
     else if (k == "coachShown" && num && d >= 0 && d <= 0xFFFF) s.coachShown = uint32_t(d);
@@ -109,6 +110,7 @@ std::string Settings::serialize() const {
   o << "southConfirm=" << int(southConfirm) << "\n";
   o << "onScreenKeyboard=" << onScreenKeyboard << "\n";
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";
+  o << "core=" << core << "\n";
   o << "language=" << language << "\n";
   o << "menuHintShown=" << int(menuHintShown) << "\n";
   o << "coachShown=" << coachShown << "\n";
