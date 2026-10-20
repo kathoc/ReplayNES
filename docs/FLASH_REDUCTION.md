@@ -113,20 +113,21 @@ a fade through black is already one flash — for up to a second, showing stale 
 ## CRT snow and power-on
 
 With the CRT display on, a picture without a signal (frame 0: the machine is not powered yet) is
-receiver snow, and a power-on / reset starts with about a second of snow before the picture locks
-in (docs/CRT_PORT.md "No signal and power-on"). Full-contrast snow that changes every frame, a
-rolling picture with its black blanking bar and the AGC catching up are large-area luminance
-changes, so with flash reduction at **any** level (live view and exported video alike) the CRT
+receiver snow, a power-on starts with 0.4 s of snow and cuts to the picture with a brief vertical
+jump and tearing, and a reset flicks the picture for a moment (docs/CRT_PORT.md "No signal and
+power-on", RX-PWR-1..4). Full-contrast snow that changes every frame, a hard cut, a jumping picture
+with its black blanking bar and line tearing are large-area luminance changes, so with flash reduction at **any** level (live view and exported video alike) the CRT
 uses a toned-down version instead, decided in the shared frontend core (`rnf_crt_reception_at`,
 `flash_reduced`):
 
 * the snow is a **static, low-contrast grain** (one fixed noise field; luma sigma 0.07 instead of
   0.32 on a dim grey instead of a mid grey): nothing in it changes from frame to frame;
-* the power-on is **one monotonic fade**: the picture level rises with a smoothstep over 0.6 s
+* the power-on is **one monotonic fade** (no cut): the picture level rises with a smoothstep over 0.33 s
   while the grain (the pinned receiver gain) and the grey lift fall, both monotonically; no
   vertical roll, no tearing, no AGC overshoot. A fade that comes to rest is a single transition,
   never a flash pair;
 * the hiss (audio) is the same as without flash reduction.
+* a **reset shows nothing** (no flick: the picture just continues).
 
 The snow is a display effect after the filter (the filter sees the game's frames, not the snow).
 `tests/test_frontend_crt.cpp` checks that the flash-reduced reception has no deflection, a static

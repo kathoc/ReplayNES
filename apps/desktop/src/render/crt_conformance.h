@@ -35,6 +35,7 @@
 #include "render/crt_model.h"
 #include "render/crt_settings.h"
 #include "render/crt_types.h"
+#include "replaynes/frontend.h"
 
 namespace rnl::crt_conformance {
 
@@ -647,24 +648,29 @@ class Conformance {
     }
     return sum > 1000;  // not a black picture
   }
-  /// powerOnSettles: the power-on sequence (rnf_crt_reception_at steps 0 .. RNF_CRT_POWER_ON_FRAMES-1 on the
-  /// game's pictures, then normal reception): 30 normal frames later the picture is that of
-  /// continuous normal play. Max abs and mean abs difference of the last tube output.
-  StillDiff powerOn(CrtQuality q, bool flashReduced) {
+  /// powerOnSettles / resetSettles: a reception sequence (rnf_crt_reception_at steps step0 .. step0 +
+  /// frames - 1 on the game's pictures: the power-on 0 .. RNF_CRT_POWER_ON_FRAMES-1, the reset
+  /// RNF_CRT_RESET_STEP0 ..), then normal reception: 30 normal frames later the picture is that of
+  /// continuous normal play. Max abs and mean abs difference of the last tube output. requireActive:
+  /// every step must be an active reception (a flash-reduced reset is neutral by design).
+  StillDiff powerOn(CrtQuality q, bool flashReduced, int step0, int frames, bool requireActive = true) {
     StillDiff d;
     CrtSettings st;
     auto p = renderer(st, 256, 192, q), n = renderer(st, 256, 192, q);
     if (!p || !n) return d;
-    const int kOn = 60, kAfter = 30;
+    const int kOn = frames, kAfter = 30;
     bool ok = true;
     for (int f = 1; ok && f <= kOn + kAfter; ++f) {
       CrtInput in = codes(uint32_t(f % 3));
       ok = run(*n, in, uint64_t(f));
       CrtReception rx;
       if (f <= kOn) {
-        ok = ok && crtReceptionAt(f - 1, uint64_t(f), flashReduced, st.antennaDbuv, &rx);
-        if (rx.noSignal) in.kind = CrtInputKind::noSignal;
-        in.reception = &rx;
+        const bool active = crtReceptionAt(step0 + f - 1, uint64_t(f), flashReduced, st.antennaDbuv, &rx);
+        ok = ok && (active || !requireActive);
+        if (active) {
+          if (rx.noSignal) in.kind = CrtInputKind::noSignal;
+          in.reception = &rx;
+        }
       }
       ok = ok && run(*p, in, uint64_t(f));
     }
@@ -856,10 +862,14 @@ int run(Backend& backend, const std::string& fixture, bool deviceFusesMultiplyAd
                   rs.sd, st.sd);
     checker.check(C::identical(r1.output, r2.output) && rs.sd < 0.5 * st.sd, qn + b);
     for (bool reduced : {false, true}) {
-      auto po = c.powerOn(q, reduced);
-      std::snprintf(b, sizeof b, "[powerOnSettles]%s 60 power-on steps + 30 frames == 90 frames of play (max %.3g < 2e-2, mean %.3g < 1e-3)",
-                    reduced ? " flash-reduced:" : "", po.maxAbs, po.meanAbs);
+      auto po = c.powerOn(q, reduced, 0, RNF_CRT_POWER_ON_FRAMES);
+      std::snprintf(b, sizeof b, "[powerOnSettles]%s %d power-on steps + 30 frames == %d frames of play (max %.3g < 2e-2, mean %.3g < 1e-3)",
+                    reduced ? " flash-reduced:" : "", RNF_CRT_POWER_ON_FRAMES, RNF_CRT_POWER_ON_FRAMES + 30, po.maxAbs, po.meanAbs);
       checker.check(po.maxAbs < 2e-2 && po.meanAbs < 1e-3, qn + b);
+      auto rs = c.powerOn(q, reduced, RNF_CRT_RESET_STEP0, RNF_CRT_RESET_FRAMES, !reduced);
+      std::snprintf(b, sizeof b, "[resetSettles]%s %d reset steps + 30 frames == %d frames of play (max %.3g < 2e-2, mean %.3g < 1e-3)",
+                    reduced ? " flash-reduced:" : "", RNF_CRT_RESET_FRAMES, RNF_CRT_RESET_FRAMES + 30, rs.maxAbs, rs.meanAbs);
+      checker.check(rs.maxAbs < 2e-2 && rs.meanAbs < 1e-3, qn + b);
     }
   }
   // Picture geometry: a dot is 8:7 as wide as a line is high on the 4:3 face (the same shape as

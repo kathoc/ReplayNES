@@ -179,20 +179,39 @@ With CRT Display on, a picture without a signal is snow and a power-on / reset g
   to its start): the RF input is the receiver's thermal noise only (carrier level 0, the M3-NOISE
   term unchanged), the gated AGC runs up to its maximum gain, the colour killer is on. The snow
   moves (a new noise field per NES frame, also while paused).
-- **Power-on / reset** (the step from frame 0, or a step that applies a soft reset / power cycle,
-  recorded or live, also in playback): `RNF_CRT_POWER_ON_FRAMES` = 60 frames. 24 frames of snow, then
-  the carrier comes up over ~10 frames (60 dB, logarithmic) and the AGC follows it (the picture
-  emerges from the snow), the clamp keys on the back porch again, the colour killer releases, and
-  the deflection locks: a vertical roll of 1.5 screens slowing into place (the vertical blanking
-  passes as a black bar) and a bending horizontal tearing with line jitter, both decaying. Audio:
-  white noise ("hiss", low-passed, about -24 dBFS RMS) replaces the game sound and fades out as
-  the picture locks.
-- **Flash reduction** (any level): static low-contrast grain and a monotonic fade instead
-  ([FLASH_REDUCTION.md](FLASH_REDUCTION.md#crt-snow-and-power-on)).
-- **MP4 export** with the CRT effect starts with the same power-on over the first 60 frames of the
-  range (snow, then the picture locks, with its hiss), whatever the range's first frame is.
+- **Power-on** (the step from frame 0, or a step that applies a power cycle, recorded or live, also
+  in playback): `RNF_CRT_POWER_ON_FRAMES` = 32 frames. 24 frames of snow with its hiss (the TV is on,
+  the console not yet), then the console's carrier is there **at once** (RX-PWR-1): the snow and the
+  hiss cut to the picture in one frame (no fade), and for 8 frames the deflection pulls in
+  (RX-PWR-2): the picture jumps vertically (a roll starting about half a screen away and settling
+  within ~5 frames), with a short horizontal tear and line jitter in the first 2 frames; the colour
+  killer releases after 3 frames (RX-PWR-3).
+- **Reset** (a step that applies a soft reset): **no snow** - the carrier never goes away. The reset
+  restarts the PPU's timing (Nestopia `Ppu::Reset`, acknowledged soft reset: `hClock = HCLOCK_BOOT`),
+  so the video's vertical sync jumps and the TV loses lock for a moment (RX-PWR-4):
+  `RNF_CRT_RESET_FRAMES` = 6 frames, reception steps `RNF_CRT_RESET_STEP0` ..: one frame of strong
+  line jitter and tearing (the noise that flicks across the picture), a small vertical jump that
+  settles in ~5 frames, colour killed for that one frame. No hiss.
+- **Flash reduction** (any level): static low-contrast grain and a monotonic fade instead of the cut
+  ([FLASH_REDUCTION.md](FLASH_REDUCTION.md#crt-snow-and-power-on)); a reset shows nothing.
+- **MP4 export** with the CRT effect starts with the same power-on over the first 32 frames of the
+  range (snow, then the cut and the picture locking, with its hiss), whatever the range's first frame is.
   Deterministic: fixed noise seeds, picture counter from the export's first frame. Resets inside
   the range are not shown in exports (the export renderer has no per-frame events).
+
+Evidence (docs/ASSUMPTIONS-style records; categories as in the CRT model's evidence policy:
+measured / documented / inferred / assumed / unknown). Revised 2026-10-20 after the user's recollection
+of a real Famicom on an RF TV: snow only before the console is switched on, a hard cut (not a fade) to
+the picture with a brief disturbance as the sync settles, and on reset no snow but a brief flick of
+noise. The previous model (0.6.1: 24 frames snow, a ~10-frame logarithmic carrier ramp, a 1.5-screen
+roll over ~20 frames, the same sequence on reset) is replaced.
+
+| ID | Stage | Value / model | Category | Basis | Open |
+|---|---|---|---|---|---|
+| RX-PWR-1 | RF carrier at power-on | 0 -> 1 in one frame; hiss 1 -> 0 in the same frame | inferred | User recollection (cut, not fade). The RF modulator's oscillator and the supply settle in milliseconds (well under one 16.7 ms field); FM sound quiets at once when a carrier is present (limiter) | The console's supply ramp is not measured |
+| RX-PWR-2 | Deflection pull-in | roll 140 exp(-k/1.2) lines, tear 40 exp(-k/0.9) samples, jitter 14 exp(-k/0.8), k = frames since the cut | assumed (for the look) | User recollection ("the picture was disturbed for an instant, like the sync settling"); horizontal AFC locks within a field, the vertical oscillator pulls in within a few fields (general TV practice) | No measurement of a target TV; amplitudes chosen to read as "a moment" |
+| RX-PWR-3 | Colour killer | chroma 0 for 3 frames after the cut, then 1 (a switch) | assumed | Burst detection and the killer's time constant (tens of ms, general practice) | Not measured |
+| RX-PWR-4 | Reset | no snow; jitter 24 exp(-k/0.6), tear 28 exp(-k/0.7), roll 60 exp(-k/1.0), chroma 0 at k = 0 only, 6 frames | inferred (cause) / assumed (amplitudes) | Nestopia restarts PPU timing on a soft reset (NES front-loader behaviour) -> a vertical-sync phase jump; user recollection of a brief noise flick | Whether a Famicom (HVC-001) reset reaches the PPU is unknown (not checked against a schematic) |
 
 Display / audio output only: the sequence is derived from what is shown (frame numbers and the
 events a step applied, `rnf_crt_power`), never written anywhere; emulation, the input log,

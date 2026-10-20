@@ -13,7 +13,10 @@ namespace {
 
 constexpr int kFrames = RNF_CRT_POWER_ON_FRAMES;
 constexpr int kSnow = RNF_CRT_POWER_ON_SNOW_FRAMES;
-constexpr int kLock = kFrames - kSnow;  // frames from the carrier coming up to the end
+constexpr int kLock = kFrames - kSnow;  // frames from the carrier being there to the end (the pull-in)
+constexpr int kReset0 = RNF_CRT_RESET_STEP0, kReset = RNF_CRT_RESET_FRAMES;
+// Flash reduction: no cut - one gentle fade over the last kFadeReduced frames instead.
+constexpr int kFadeReduced = 20;
 
 // Snow: receiver output noise (luma sigma, before the 2.2 power) at the maximum gain, and the
 // detector's DC lift without a keyed clamp. Flash reduction: static, low-contrast grain.
@@ -47,6 +50,23 @@ void snow(rnf_crt_reception* r, uint64_t counter, bool reduced) {
 
 float clamp01(float x) { return std::min(1.0f, std::max(0.0f, x)); }
 
+uint32_t hash32(uint32_t x);
+
+// Full carrier, the clamp keyed, normal AGC (noise 0: rnf_crt_reception_receiver keeps the model's
+// limits), but the deflection not yet locked k frames after the sync appeared / jumped: exponential
+// decays of the vertical roll (lines), the bending tear and the line jitter (drive samples).
+void unlocked(rnf_crt_reception* r, int k, uint64_t counter, float roll, float rollTau, float tear, float tearTau,
+              float jitter, float jitterTau) {
+  neutral(r);
+  r->active = 1;
+  r->roll = roll * std::exp(-float(k) / rollTau);
+  r->tear = tear * std::exp(-float(k) / tearTau);
+  r->tear_cycles = 1.6f;
+  r->tear_phase = 0.11f * float(k);
+  r->jitter = jitter * std::exp(-float(k) / jitterTau);
+  r->jitter_key = hash32(uint32_t(counter) ^ 0x5eed5eedu);
+}
+
 uint32_t hash32(uint32_t x) {  // lowbias32 (the CRT model's noise hash)
   x ^= x >> 16;
   x *= 0x7feb352du;
@@ -72,18 +92,28 @@ void rnf_crt_reception_at(int step, uint64_t counter, int flash_reduced, rnf_crt
     snow(out, counter, reduced);
     return;
   }
+  if (step >= kReset0 && step < kReset0 + kReset) {
+    // Reset (RX-PWR-4): the carrier stays (no snow, no hiss); the PPU restarts its timing, so the
+    // sync jumps: one frame of strong line jitter and tearing, a small vertical jump that settles.
+    neutral(out);
+    if (reduced) return;  // flash reduction: nothing
+    unlocked(out, step - kReset0, counter, 60.0f, 1.0f, 28.0f, 0.7f, 24.0f, 0.6f);
+    out->chroma = step == kReset0 ? 0.0f : 1.0f;
+    return;
+  }
   if (step < 0 || step >= kFrames) {
     neutral(out);
     return;
   }
   snow(out, counter, reduced);
   out->hiss = 1;
-  if (step < kSnow) return;
-  const int k = step - kSnow;  // 0 .. kLock-1
-  out->no_signal = 0;
   if (reduced) {
-    // One monotonic fade: picture level b up, grain (pinned gain) and lift down, no deflection.
-    float u = clamp01(float(k + 1) / float(kLock));
+    // One monotonic fade over the last kFadeReduced frames: picture level b up, grain (pinned gain)
+    // and lift down, no deflection, no cut.
+    const int f = step - (kFrames - kFadeReduced);
+    if (f < 0) return;
+    out->no_signal = 0;
+    float u = clamp01(float(f + 1) / float(kFadeReduced));
     float b = u * u * (3 - 2 * u);
     out->signal = b;
     out->lift = kLiftReduced * (1 - b);
@@ -92,21 +122,13 @@ void rnf_crt_reception_at(int step, uint64_t counter, int flash_reduced, rnf_crt
     out->hiss = 1 - b;
     return;
   }
-  // The carrier comes up over ~10 frames (60 dB, logarithmic): the AGC follows it, so the picture
-  // emerges from the snow; the clamp keys on the back porch again; the colour killer releases once
-  // the burst is steady; the vertical roll and the horizontal tearing decay as the sync locks.
-  const float up = clamp01(float(k + 1) / 10.0f);
-  out->signal = std::pow(10.0f, -3.0f * (1 - up));
-  out->lift = kLift * std::max(0.0f, 1.0f - float(k + 1) / 8.0f);
-  out->chroma = clamp01(float(k - 8) / 6.0f);
-  out->roll = 393.0f * std::exp(-float(k) / 4.5f);
-  out->tear = 48.0f * std::exp(-float(k) / 6.0f);
-  out->tear_cycles = 1.6f;
-  out->tear_phase = 0.11f * float(k);
-  out->jitter = 10.0f * std::exp(-float(k) / 5.0f);
-  out->jitter_key = hash32(uint32_t(counter) ^ 0x5eed5eedu);
-  out->picture = out->signal;
-  out->hiss = std::max(0.0f, 1.0f - float(k) / 14.0f);
+  if (step < kSnow) return;
+  const int k = step - kSnow;  // 0 .. kLock-1
+  // The carrier is there at once (RX-PWR-1): the snow and the hiss cut to the picture in one frame.
+  // The deflection pulls in (RX-PWR-2): a vertical jump and a short horizontal tear that settle; the
+  // colour killer releases after 3 frames (RX-PWR-3). docs/CRT_PORT.md "No signal and power-on".
+  unlocked(out, k, counter, 140.0f, 1.2f, 40.0f, 0.9f, 14.0f, 0.8f);
+  out->chroma = k < 3 ? 0.0f : 1.0f;
 }
 
 int rnf_crt_reception_deflects(const rnf_crt_reception* r) {
@@ -129,9 +151,11 @@ void rnf_crt_reception_receiver(const rnf_crt_reception* r, double cnr_db, rnf_c
     double gain = std::pow(g, 1.0 - b);
     out->signal_level = float(b / gain);
     out->agc_min_gain = out->agc_max_gain = float(gain);
-  } else {
+  } else if (r->noise > 0) {
     out->signal_level = r->signal;
     out->agc_max_gain = float(std::max(2.0, g));
+  } else {
+    out->signal_level = r->signal;  // the carrier is there: the model's own AGC limits
   }
 }
 
@@ -163,11 +187,15 @@ void rnf_crt_power_start(rnf_crt_power* p) {
 int rnf_crt_power_step(rnf_crt_power* p, uint64_t frame_before, uint64_t frame, uint8_t events) {
   if (!p) return RNF_CRT_RECEPTION_NORMAL;
   p->counter++;
-  const bool power = frame_before == 0 || (events & (RN_EV_SOFT_RESET | RN_EV_POWER_CYCLE)) != 0;
+  const bool power = frame_before == 0 || (events & RN_EV_POWER_CYCLE) != 0;
   if (p->started || power) {
     p->started = false;
     p->step = 0;
-  } else if (p->step >= 0) {
+  } else if (events & RN_EV_SOFT_RESET) {
+    p->step = kReset0;
+  } else if (p->step >= kReset0 && p->step < kReset0 + kReset) {
+    p->step = p->step + 1 < kReset0 + kReset ? p->step + 1 : RNF_CRT_RECEPTION_NORMAL;
+  } else if (p->step >= 0 && p->step < kFrames) {
     p->step = p->step + 1 < kFrames ? p->step + 1 : RNF_CRT_RECEPTION_NORMAL;
   } else {
     p->step = RNF_CRT_RECEPTION_NORMAL;

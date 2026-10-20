@@ -1625,15 +1625,21 @@ double rnf_crt_pixel_aspect(double active_width);
  * applied), never fed back into emulation, the input log or .nesrec.
  *   - No signal (the machine is not powered: frame 0 / no game): the RF input is receiver noise
  *     only, the AGC runs to its maximum gain and the colour killer is on = snow.
- *   - Power-on / reset (the step from frame 0, or a step applying RN_EV_SOFT_RESET /
- *     RN_EV_POWER_CYCLE): RNF_CRT_POWER_ON_FRAMES frames (~1 s) of snow, then the carrier comes up,
- *     the AGC follows it and the deflection locks (horizontal tearing and a vertical roll that settle).
- *     Audio: white noise ("hiss") that fades as the picture locks.
+ *   - Power-on (the step from frame 0, or a step applying RN_EV_POWER_CYCLE): RNF_CRT_POWER_ON_SNOW_FRAMES
+ *     frames of snow with hiss (the console not yet on), then the carrier at once: snow and hiss cut to
+ *     the picture in one frame, and the deflection pulls in for the remaining frames (a vertical jump
+ *     and a short horizontal tear that settle; colour after 3 frames). docs/CRT_PORT.md RX-PWR-1..3.
+ *   - Reset (a step applying RN_EV_SOFT_RESET): no snow (the carrier stays); the PPU restarts its
+ *     timing, so the sync jumps: RNF_CRT_RESET_FRAMES frames of a brief noise flick that settles
+ *     (steps RNF_CRT_RESET_STEP0 ..). RX-PWR-4.
  *   - Flash reduction (any level): the snow is static, low-contrast grain and the picture fades in
- *     monotonically (gain and grain both monotonic, no roll / tearing / AGC overshoot).
+ *     monotonically (gain and grain both monotonic, no roll / tearing / AGC overshoot); a reset shows
+ *     nothing.
  * Everything is a pure function of (step, counter, flash_reduced): reproducible (MP4 export). */
-#define RNF_CRT_POWER_ON_FRAMES 60
-#define RNF_CRT_POWER_ON_SNOW_FRAMES 24 /* frames of snow before the carrier comes up */
+#define RNF_CRT_POWER_ON_FRAMES 32
+#define RNF_CRT_POWER_ON_SNOW_FRAMES 24 /* frames of snow before the carrier is there */
+#define RNF_CRT_RESET_STEP0 1000        /* reset steps: RNF_CRT_RESET_STEP0 .. + RNF_CRT_RESET_FRAMES - 1 */
+#define RNF_CRT_RESET_FRAMES 6
 #define RNF_CRT_RECEPTION_NORMAL (-1)
 #define RNF_CRT_RECEPTION_NO_SIGNAL (-2)
 typedef struct rnf_crt_reception {
@@ -1654,8 +1660,9 @@ typedef struct rnf_crt_reception {
   float picture; /* picture gain for input that has no RF path (the RGB input): the fade */
   float hiss;    /* audio: hiss level 0..1 (output = game * (1 - hiss) + noise * hiss) */
 } rnf_crt_reception;
-/* step: 0 .. RNF_CRT_POWER_ON_FRAMES-1 (power-on), RNF_CRT_RECEPTION_NO_SIGNAL, anything else =
- * normal (active 0). counter: increments per picture (snow animation, tearing jitter). */
+/* step: 0 .. RNF_CRT_POWER_ON_FRAMES-1 (power-on), RNF_CRT_RESET_STEP0 .. +RNF_CRT_RESET_FRAMES-1
+ * (reset), RNF_CRT_RECEPTION_NO_SIGNAL, anything else = normal (active 0). counter: increments per
+ * picture (snow animation, tearing jitter). */
 void rnf_crt_reception_at(int step, uint64_t counter, int flash_reduced, rnf_crt_reception* out);
 /* 1 when the deflection stage is needed (roll / tearing / RGB fade not neutral). */
 int rnf_crt_reception_deflects(const rnf_crt_reception* r);
@@ -1675,7 +1682,7 @@ void rnf_crt_reception_receiver(const rnf_crt_reception* r, double cnr_db, rnf_c
  * (seek, rewind, load: a jump) at frame; tick() for a repeat of the current picture (animated snow
  * while nothing is emulated). start() makes the next step() / show() picture power-on step 0 (the
  * export intro). Each call returns the reception step of the picture (0..RNF_CRT_POWER_ON_FRAMES-1,
- * RNF_CRT_RECEPTION_NO_SIGNAL at frame 0, else RNF_CRT_RECEPTION_NORMAL); counter() is the picture
+ * a reset step, RNF_CRT_RECEPTION_NO_SIGNAL at frame 0, else RNF_CRT_RECEPTION_NORMAL); counter() is the picture
  * counter for rnf_crt_reception_at (incremented by every call). */
 typedef struct rnf_crt_power rnf_crt_power;
 rnf_crt_power* rnf_crt_power_new(void);

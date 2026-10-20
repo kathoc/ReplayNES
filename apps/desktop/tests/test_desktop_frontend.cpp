@@ -1061,9 +1061,16 @@ TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, 
   CHECK_EQ(emu.signal().receptionStep, RNF_CRT_POWER_ON_FRAMES - 1);
   emu.tick();
   CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
-  CHECK(pushedIsGame());  // the hiss has faded out: the game's sound as is
-  // A reset shows the transition again.
+  CHECK(pushedIsGame());  // the hiss is gone: the game's sound as is
+  // A reset: no snow, its own brief disturbance (RX-PWR-4), no hiss; then normal.
   emu.requestEvent(RN_EV_SOFT_RESET);
+  emu.tick();
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RESET_STEP0);
+  CHECK(pushedIsGame());  // no hiss on a reset
+  tickN(emu, RNF_CRT_RESET_FRAMES);
+  CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
+  // A power cycle goes through the snow again.
+  emu.requestEvent(RN_EV_POWER_CYCLE);
   emu.tick();
   CHECK_EQ(emu.signal().receptionStep, 0);
   tickN(emu, RNF_CRT_POWER_ON_FRAMES);

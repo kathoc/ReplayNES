@@ -56,34 +56,53 @@ TEST_CASE("crt reception: no signal is snow (noise only, AGC to its maximum, col
   CHECK(same(at(RNF_CRT_RECEPTION_NO_SIGNAL, 42), r));
 }
 
-TEST_CASE("crt reception: power-on sequence") {
+TEST_CASE("crt reception: power-on sequence (snow, then a cut and a short pull-in)") {
   const int n = RNF_CRT_POWER_ON_FRAMES, snow = RNF_CRT_POWER_ON_SNOW_FRAMES;
-  CHECK(n >= 50 && n <= 70);  // ~1 s at 60.1 Hz
+  CHECK(snow >= 12 && n - snow >= 4 && n - snow <= 12);  // ~0.4 s of snow, a pull-in of a few frames
   for (int s = 0; s < snow; s++) {
     rnf_crt_reception r = at(s, 100 + s);
     CHECK(r.active && r.no_signal && r.signal == 0 && r.hiss == 1 && r.noise_frame == uint32_t(100 + s));
   }
-  float lastSignal = 0, lastHiss = 1, lastTear = 1e9f, lastRoll = 1e9f, lastChroma = 0;
+  // The cut (RX-PWR-1): the very first frame after the snow has the full carrier, no lift, no hiss.
+  rnf_crt_reception cut = at(snow);
+  CHECK(cut.active && !cut.no_signal && cut.signal == 1 && cut.lift == 0 && cut.hiss == 0 && cut.noise == 0);
+  rnf_crt_receiver x = receiver(cut);  // the model's own AGC limits once the carrier is there
+  CHECK(x.signal_level == 1 && x.agc_min_gain == 1.0f / 16 && x.agc_max_gain == 16.0f);
+  // The pull-in (RX-PWR-2): disturbed at the cut, decaying, locked by the end; colour after 3 frames.
+  CHECK(cut.roll > 100 && cut.tear > 20 && cut.jitter > 5 && rnf_crt_reception_deflects(&cut) == 1);
+  float lastTear = 1e9f, lastRoll = 1e9f, lastJitter = 1e9f;
   for (int s = snow; s < n; s++) {
     rnf_crt_reception r = at(s);
-    CHECK(r.active && !r.no_signal);
-    CHECK(r.signal >= lastSignal && r.signal > 0 && r.signal <= 1);
-    CHECK(r.hiss <= lastHiss);
-    CHECK(r.tear <= lastTear && r.roll <= lastRoll && r.roll >= 0);
-    CHECK(r.chroma >= lastChroma);
-    lastSignal = r.signal, lastHiss = r.hiss, lastTear = r.tear, lastRoll = r.roll, lastChroma = r.chroma;
+    CHECK(r.signal == 1 && r.hiss == 0);
+    CHECK(r.tear < lastTear && r.roll < lastRoll && r.jitter < lastJitter && r.roll >= 0);
+    CHECK(r.chroma == (s - snow < 3 ? 0.0f : 1.0f));
+    lastTear = r.tear, lastRoll = r.roll, lastJitter = r.jitter;
   }
-  // Locked by the end: full carrier, colour on, deflection within a fraction of a line / sample.
   rnf_crt_reception end = at(n - 1);
-  CHECK(end.signal == 1 && end.chroma == 1 && end.hiss == 0 && end.lift == 0);
   CHECK(end.roll < 0.5f && end.tear < 0.5f && end.jitter < 0.1f);
-  // The vertical roll passes more than a whole screen (the picture rolls, then catches).
-  CHECK(at(snow).roll > 262);
-  CHECK(rnf_crt_reception_deflects(&end) == 1);
-  // The carrier is up within ~10 frames while the gated AGC may still go up to the snow gain.
-  CHECK(at(snow + 9).signal == 1);
-  rnf_crt_receiver x = receiver(at(snow + 3));
-  CHECK(x.agc_max_gain > 200 && x.signal_level == at(snow + 3).signal && x.agc_min_gain == 1.0f / 16);
+  CHECK(at(snow + 5).roll < 3 && at(snow + 2).tear < 5);  // "an instant": within ~1 % of the screen after 5 frames
+}
+
+TEST_CASE("crt reception: reset = no snow, a brief noise flick that settles") {
+  const int r0 = RNF_CRT_RESET_STEP0, n = RNF_CRT_RESET_FRAMES;
+  CHECK(r0 >= RNF_CRT_POWER_ON_FRAMES && n >= 3 && n <= 10);
+  rnf_crt_reception first = at(r0, 7);
+  CHECK(first.active && !first.no_signal && first.signal == 1 && first.hiss == 0 && first.lift == 0 && first.noise == 0);
+  CHECK(first.jitter > 15 && first.tear > 15 && first.chroma == 0);
+  float lastJitter = 1e9f, lastRoll = 1e9f;
+  for (int s = r0; s < r0 + n; s++) {
+    rnf_crt_reception r = at(s);
+    CHECK(r.active && !r.no_signal && r.signal == 1 && r.hiss == 0);
+    CHECK(r.jitter < lastJitter && r.roll < lastRoll);
+    if (s > r0) CHECK(r.chroma == 1);
+    lastJitter = r.jitter, lastRoll = r.roll;
+  }
+  CHECK(at(r0 + 1).jitter < first.jitter / 3);  // the flick is one frame
+  rnf_crt_reception end = at(r0 + n - 1);
+  CHECK(end.roll < 0.5f && end.tear < 0.5f && end.jitter < 0.1f);
+  CHECK(at(r0 + n).active == 0 && at(r0 - 1).active == 0);  // outside the range: normal
+  // Flash reduction: a reset shows nothing.
+  for (int s = r0; s < r0 + n; s++) CHECK(at(s, 3, 1).active == 0);
 }
 
 TEST_CASE("crt reception: flash reduction = static low-contrast grain, monotonic fade") {
@@ -107,7 +126,7 @@ TEST_CASE("crt reception: flash reduction = static low-contrast grain, monotonic
     CHECK(level >= lastLevel - 1e-6);
     CHECK(x.agc_max_gain <= lastGain);
     CHECK(r.lift <= lastLift);
-    if (s < snow) CHECK(level == 0);
+    if (s < n - 20) CHECK(level == 0);  // the gentle fade takes the last 20 frames (no cut)
     lastLevel = level, lastGain = x.agc_max_gain, lastLift = r.lift;
   }
   CHECK(std::fabs(lastLevel - 1) < 1e-6 && lastGain == 1 && lastLift == 0);
@@ -124,13 +143,18 @@ TEST_CASE("crt power tracker: power-on, resets, jumps") {
   // The step from frame 0 is the power-on.
   CHECK(rnf_crt_power_step(p, 0, 1, 0) == 0);
   for (int i = 1; i < RNF_CRT_POWER_ON_FRAMES; i++) CHECK(rnf_crt_power_step(p, uint64_t(i), uint64_t(i + 1), 0) == i);
-  CHECK(rnf_crt_power_step(p, 60, 61, 0) == RNF_CRT_RECEPTION_NORMAL);
-  CHECK(rnf_crt_power_step(p, 61, 62, 0) == RNF_CRT_RECEPTION_NORMAL);
+  CHECK(rnf_crt_power_step(p, RNF_CRT_POWER_ON_FRAMES, RNF_CRT_POWER_ON_FRAMES + 1, 0) == RNF_CRT_RECEPTION_NORMAL);
+  CHECK(rnf_crt_power_step(p, RNF_CRT_POWER_ON_FRAMES + 1, RNF_CRT_POWER_ON_FRAMES + 2, 0) == RNF_CRT_RECEPTION_NORMAL);
   CHECK(rnf_crt_power_counter(p) == c + RNF_CRT_POWER_ON_FRAMES + 2);
   // A soft reset / power cycle applied on a step restarts it.
-  CHECK(rnf_crt_power_step(p, 500, 501, RN_EV_SOFT_RESET) == 0);
-  CHECK(rnf_crt_power_step(p, 501, 502, 0) == 1);
-  CHECK(rnf_crt_power_step(p, 502, 503, RN_EV_POWER_CYCLE) == 0);
+  // A reset: its own short sequence (no snow), then normal; a power cycle: the power-on (snow).
+  CHECK(rnf_crt_power_step(p, 500, 501, RN_EV_SOFT_RESET) == RNF_CRT_RESET_STEP0);
+  for (int i = 1; i < RNF_CRT_RESET_FRAMES; i++)
+    CHECK(rnf_crt_power_step(p, uint64_t(500 + i), uint64_t(501 + i), 0) == RNF_CRT_RESET_STEP0 + i);
+  CHECK(rnf_crt_power_step(p, 520, 521, 0) == RNF_CRT_RECEPTION_NORMAL);
+  CHECK(rnf_crt_power_step(p, 521, 522, RN_EV_SOFT_RESET) == RNF_CRT_RESET_STEP0);
+  CHECK(rnf_crt_power_step(p, 522, 523, RN_EV_POWER_CYCLE) == 0);  // a power cycle overrides the reset
+  CHECK(rnf_crt_power_step(p, 523, 524, RN_EV_SOFT_RESET) == RNF_CRT_RESET_STEP0);
   // A jump (seek, rewind) ends it; a jump to frame 0 is no signal again.
   CHECK(rnf_crt_power_show(p, 300) == RNF_CRT_RECEPTION_NORMAL);
   CHECK(rnf_crt_power_step(p, 300, 301, 0) == RNF_CRT_RECEPTION_NORMAL);

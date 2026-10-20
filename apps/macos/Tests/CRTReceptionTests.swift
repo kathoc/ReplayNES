@@ -4,6 +4,8 @@
 // shifts / fades the drive exactly, and a power-on settles into the picture of continuous play.
 // The same checks run on Vulkan / Direct3D 11 (apps/desktop/src/render/crt_conformance.h).
 // SPDX-License-Identifier: GPL-2.0-or-later
+import CoreGraphics
+import ImageIO
 import XCTest
 
 final class CRTReceptionTests: XCTestCase {
@@ -126,7 +128,7 @@ final class CRTReceptionTests: XCTestCase {
         XCTAssertEqual(maxErr, 0, "RGB input faded by the picture gain")
     }
 
-    /// powerOnSettles: 60 power-on frames then normal play end on the picture of continuous play.
+    /// powerOnSettles: the power-on frames then normal play end on the picture of continuous play.
     func testPowerOnSettlesIntoContinuousPlay() throws {
         for q in [CRTRenderer.Quality.reference, .fast] {
             for reduced in [false, true] {
@@ -158,5 +160,75 @@ final class CRTReceptionTests: XCTestCase {
             if f == 0 { firstChroma = r.read(.receiver).prefix(512 * 240).map { max(abs($0.x - $0.y), abs($0.y - $0.z)) }.max() ?? -1 }
         }
         XCTAssertEqual(firstChroma, 0, "snow: colour killed")
+    }
+
+    /// resetSettles: a reset (no snow: RX-PWR-4) disturbs the picture for RNF_CRT_RESET_FRAMES frames,
+    /// then normal play ends on the picture of continuous play; with flash reduction a reset is nothing.
+    func testResetSettlesIntoContinuousPlay() throws {
+        let r0 = Int(RNF_CRT_RESET_STEP0), n = Int(RNF_CRT_RESET_FRAMES)
+        for s in r0..<(r0 + n) {
+            XCTAssertNil(CRTRenderer.Reception(step: Int32(s), counter: 1, flashReduced: true, antennaDbuv: 65))
+        }
+        let a = try c.renderer(CRTRenderer.Settings(), ow: 320, oh: 240)
+        let b = try c.renderer(CRTRenderer.Settings(), ow: 320, oh: 240)
+        var disturbed: Float = 0
+        for f in 0..<(n + 30) {
+            codes(a, f, ordinal: UInt64(f + 1), nil)
+            let rx = f < n ? CRTRenderer.Reception(step: Int32(r0 + f), counter: UInt64(f), flashReduced: false, antennaDbuv: 65) : nil
+            if f < n { XCTAssertNotNil(rx) }
+            codes(b, f, ordinal: UInt64(f + 1), rx)
+            if f == 0 {  // the flick is visible: the first reset frame differs from continuous play
+                let x = a.read(.output), y = b.read(.output)
+                for i in 0..<min(x.count, y.count) { for ch in 0..<3 { disturbed = max(disturbed, abs(x[i][ch] - y[i][ch])) } }
+            }
+        }
+        XCTAssertGreaterThan(disturbed, 0.1, "the reset's first frame is disturbed")
+        let x = a.read(.output), y = b.read(.output)
+        var maxAbs: Float = 0, sum = 0.0
+        for i in 0..<min(x.count, y.count) { for ch in 0..<3 { let d = abs(x[i][ch] - y[i][ch]); maxAbs = max(maxAbs, d); sum += Double(d) } }
+        XCTAssertLessThan(sum / Double(3 * min(x.count, y.count)), 1e-3)
+        XCTAssertLessThan(maxAbs, 2e-2)
+    }
+
+    /// Pictures of the power-on cut and the reset flick for looking at (docs/CRT_PORT.md RX-PWR-1..4):
+    /// only with RN_CRT_DUMP=<dir> (scripts/test-macos.sh: TEST_RUNNER_RN_CRT_DUMP). PNG per frame.
+    func testDumpPowerOnAndResetFrames() throws {
+        guard let dir = ProcessInfo.processInfo.environment["RN_CRT_DUMP"], !dir.isEmpty else {
+            throw XCTSkip("RN_CRT_DUMP not set")
+        }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let snow = Int(RNF_CRT_POWER_ON_SNOW_FRAMES), on = Int(RNF_CRT_POWER_ON_FRAMES)
+        let r0 = Int(RNF_CRT_RESET_STEP0), rn = Int(RNF_CRT_RESET_FRAMES)
+        let r = try c.renderer(CRTRenderer.Settings(), ow: 512, oh: 384)
+        // Power-on: the last snow frames, the cut, the pull-in and a few locked frames; then (frame
+        // 100 onwards) a reset with a frame before it and a few after.
+        var f = 0
+        func shot(_ name: String) throws { try writePNG(r.read(.output), 512, 384, "\(dir)/\(name).png") }
+        for s in 0..<(on + 4) {
+            let rx = s < on ? CRTRenderer.Reception(step: Int32(s), counter: UInt64(f), flashReduced: false, antennaDbuv: 65) : nil
+            codes(r, f, ordinal: UInt64(f + 1), rx); f += 1
+            if s >= snow - 2 { try shot(String(format: "power-%02d", s)) }
+        }
+        while f < 100 { codes(r, f, ordinal: UInt64(f + 1), nil); f += 1 }
+        try shot("reset-before")
+        for k in 0..<(rn + 2) {
+            let rx = k < rn ? CRTRenderer.Reception(step: Int32(r0 + k), counter: UInt64(f), flashReduced: false, antennaDbuv: 65) : nil
+            codes(r, f, ordinal: UInt64(f + 1), rx); f += 1
+            try shot(String(format: "reset-%02d", k))
+        }
+    }
+
+    private func writePNG(_ px: [SIMD4<Float>], _ w: Int, _ h: Int, _ path: String) throws {
+        var bytes = [UInt8](repeating: 255, count: w * h * 4)
+        for i in 0..<min(px.count, w * h) {
+            for ch in 0..<3 { bytes[i * 4 + ch] = UInt8(max(0, min(255, (px[i][ch] * 255).rounded()))) }
+        }
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        let img = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, img, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
     }
 }
