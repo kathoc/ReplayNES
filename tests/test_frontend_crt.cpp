@@ -185,7 +185,7 @@ TEST_CASE("crt hiss: deterministic, fades, leaves silence alone when off") {
   rnf_crt_hiss_mix(h2, b.data(), b.size(), 1);
   CHECK(a == b);
   CHECK(rnf_crt_hiss_level(h1) == 1.0f);
-  // Full hiss: the game sound is gone (ramps in from 0 over the first call), noise of modest level.
+  // Full hiss: the game sound is gone (ramps in from 0 over the first call), noise barely audible.
   std::vector<int16_t> c(4000, 1000);
   rnf_crt_hiss_mix(h1, c.data(), c.size(), 1);
   double mean = 0, sq = 0;
@@ -194,7 +194,7 @@ TEST_CASE("crt hiss: deterministic, fades, leaves silence alone when off") {
   mean /= c.size();
   double rms = std::sqrt(sq / c.size() - mean * mean);
   CHECK(std::fabs(mean) < 300);                              // game DC (1000) replaced by noise
-  CHECK(rms > 0.03 * 32767 && rms < 0.12 * 32767);           // modest volume
+  CHECK(rms > 0.006 * 32767 && rms < 0.025 * 32767);         // barely audible (~-38 dBFS RMS)
   CHECK(peak < 32767);
   // Fading out to 0 ends exactly on the game sound.
   std::vector<int16_t> d(800, 1000);

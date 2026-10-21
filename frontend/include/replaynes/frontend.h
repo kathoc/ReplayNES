@@ -1699,7 +1699,7 @@ uint64_t rnf_crt_power_counter(const rnf_crt_power* p);
  * one-pole low-pass, mixed into mono int16 PCM: out = in * (1 - h) + noise * h * RNF_CRT_HISS_VOLUME
  * (saturating), h going linearly over the n samples from the level of the previous call (0 after
  * new / reset) to hiss. Both 0: the samples are left untouched. */
-#define RNF_CRT_HISS_VOLUME 0.16
+#define RNF_CRT_HISS_VOLUME 0.032 /* ~-38 dBFS RMS: barely audible (2026-10-21: 20 % of the former 0.16) */
 typedef struct rnf_crt_hiss rnf_crt_hiss;
 rnf_crt_hiss* rnf_crt_hiss_new(void);
 void rnf_crt_hiss_free(rnf_crt_hiss* h);

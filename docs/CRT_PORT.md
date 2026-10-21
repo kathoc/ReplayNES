@@ -186,6 +186,9 @@ With CRT Display on, a picture without a signal is snow and a power-on / reset g
   (RX-PWR-2): the picture jumps vertically (a roll starting about half a screen away and settling
   within ~5 frames), with a short horizontal tear and line jitter in the first 2 frames; the colour
   killer releases after 3 frames (RX-PWR-3).
+- **Hiss** (the snow's sound): low-passed white noise at about -38 dBFS RMS (`RNF_CRT_HISS_VOLUME`
+  0.032), barely audible - lowered to 20 % of the former 0.16 (about -24 dBFS) on 2026-10-21 at the
+  user's request. It replaces the game sound while there is no carrier.
 - **Reset** (a step that applies a soft reset): **no snow** - the carrier never goes away. The reset
   restarts the PPU's timing (Nestopia `Ppu::Reset`, acknowledged soft reset: `hClock = HCLOCK_BOOT`),
   so the video's vertical sync jumps and the TV loses lock for a moment (RX-PWR-4):
