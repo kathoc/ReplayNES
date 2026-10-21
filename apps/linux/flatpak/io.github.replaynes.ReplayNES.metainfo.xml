@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.3" date="2026-10-21">
+      <description>
+        <p>CRT display: switching the console on now cuts from the snow to the picture at once, with a brief jump while the TV's sync settles; a reset shows no snow, only a short flicker. The snow's hiss is much quieter.</p>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-10-20">
       <description>
         <p>Shoulder buttons in play: hold L and press R to pause (the seek bar), hold R and press L to switch slow 1/2 on or off. While paused they still step a frame forward / back. Also: builds with GCC 11 again.</p>
