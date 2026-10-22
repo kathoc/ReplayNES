@@ -20,6 +20,7 @@
 #   APPCAST=<path>         output feed (default $DIST/appcast-windows.xml)
 #   SPARKLE_ACCOUNT=<a>    keychain account of the signing key (default ReplayNES)
 #   ED_KEY_FILE=<file>     sign with this private key file (base64 ed25519 seed) instead of the keychain
+#                          (default: ~/.config/replaynes/sparkle-ed25519.key when it exists)
 #   EXTRA_CMAKE_ARGS       passed to scripts/build-windows.sh (e.g. -DRNW_UPDATE_PUBLIC_KEY=<test key>)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -45,14 +46,11 @@ fi
 # Sparkle's CLI tools (the macOS release build resolves them: scripts/build-macos.sh).
 BIN="$ROOT/build/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin"
 [ -x "$BIN/sign_update" ] || { echo "Sparkle tools not found in $BIN (run scripts/build-macos.sh once)"; exit 1; }
-if [ -n "${ED_KEY_FILE:-}" ]; then
-  SIGN=("$BIN/sign_update" --ed-key-file "$ED_KEY_FILE")
-else
-  SIGN=("$BIN/sign_update" --account "$SPARKLE_ACCOUNT")
-  KEY="$("$BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p)" || { echo "no Sparkle key for account $SPARKLE_ACCOUNT in the keychain"; exit 1; }
-  APP_KEY="$(sed -n 's/^ *SUPublicEDKey: *"\{0,1\}\([A-Za-z0-9+\/=]*\)"\{0,1\}.*/\1/p' "$ROOT/apps/macos/project.yml" | head -1)"
-  [ "$KEY" = "$APP_KEY" ] || { echo "SUPublicEDKey in project.yml ($APP_KEY) != keychain key ($KEY)"; exit 1; }
-fi
+# The key file (ED_KEY_FILE or ~/.config/replaynes/sparkle-ed25519.key) or the keychain; its public
+# half must be SUPublicEDKey in project.yml (scripts/lib/sparkle-key.sh, docs/RELEASE.md).
+APP_KEY="$(sed -n 's/^ *SUPublicEDKey: *"\{0,1\}\([A-Za-z0-9+\/=]*\)"\{0,1\}.*/\1/p' "$ROOT/apps/macos/project.yml" | head -1)"
+. "$ROOT/scripts/lib/sparkle-key.sh"
+rn_sparkle_signer "$BIN" "$APP_KEY"
 
 ENCLOSURES=""
 for zarch in x64 arm64; do

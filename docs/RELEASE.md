@@ -46,6 +46,17 @@
   new machine with `generate_keys --account ReplayNES -f <file>`.
   Sparkle tools live in `build/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin/`
   after a build.
+- **Signing key file** (2026-10-22, so the release can be signed over ssh: the login keychain is
+  locked in an ssh session): the private key also lives in `~/.config/replaynes/sparkle-ed25519.key`
+  on the release Mac only (directory 700, file 600; never in the repository, never copied to other
+  machines). `scripts/release.sh` and `scripts/release-windows.sh` use it when it exists (or
+  `ED_KEY_FILE=<file>`), else the keychain (`scripts/lib/sparkle-key.sh`). Either way the key's public
+  half is derived (OpenSSL 3) and must equal `SUPublicEDKey`, or the script stops. Export it once on
+  the Mac (asks for the login password):
+  `security unlock-keychain ~/Library/Keychains/login.keychain-db && mkdir -p ~/.config/replaynes && chmod 700 ~/.config/replaynes && (umask 077; build/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account ReplayNES -x ~/.config/replaynes/sparkle-ed25519.key)`.
+  Trade-off: anyone who can read that file can sign updates for every installed copy; it is as
+  sensitive as the keychain item (FileVault on, no backups of it outside the offline key backup).
+  Delete the file to go back to keychain-only signing.
 - Ad-hoc code signing: Sparkle accepts an update if its EdDSA signature verifies against the
   *installed* app's `SUPublicEDKey`; the Apple code signature only has to be valid (the ad-hoc,
   cdhash-based identity is allowed to change between versions). It refuses an update that is unsigned

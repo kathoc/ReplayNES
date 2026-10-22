@@ -19,6 +19,8 @@
 #   DOWNLOAD_URL=<url>    enclosure URL (default: the GitHub release asset URL)
 #   APPCAST=<path>        output feed (default dist/appcast.xml)
 #   SPARKLE_ACCOUNT=<a>   keychain account of the signing key (default ReplayNES)
+#   ED_KEY_FILE=<file>    sign with this private key file instead (default: ~/.config/replaynes/sparkle-ed25519.key
+#                         when it exists; docs/RELEASE.md "Signing key file"): signing works over ssh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="kathoc/ReplayNES"
@@ -50,14 +52,16 @@ MINOS="$(plist LSMinimumSystemVersion)"
 APP_KEY="$(plist SUPublicEDKey)"
 [ "$SHORT" = "$VERSION" ] || { echo "app version $SHORT != $VERSION"; exit 1; }
 
-KEY="$("$BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p)" || { echo "no Sparkle key for account $SPARKLE_ACCOUNT in the keychain"; exit 1; }
-[ "$KEY" = "$APP_KEY" ] || { echo "SUPublicEDKey in the app ($APP_KEY) != keychain key ($KEY)"; exit 1; }
+# The key file (ED_KEY_FILE or ~/.config/replaynes/sparkle-ed25519.key) or the keychain; its public
+# half must be the app's SUPublicEDKey (scripts/lib/sparkle-key.sh, docs/RELEASE.md).
+. "$ROOT/scripts/lib/sparkle-key.sh"
+rn_sparkle_signer "$BIN" "$APP_KEY"
 codesign --verify --deep --strict "$APP"
 
 echo "==> sign_update $(basename "$ZIP")"
-SIG="$("$BIN/sign_update" --account "$SPARKLE_ACCOUNT" -p "$ZIP")"
+SIG="$("${SIGN[@]}" -p "$ZIP")"
 LEN="$(stat -f %z "$ZIP")"
-"$BIN/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$ZIP" "$SIG" >/dev/null || { echo "signature verification failed"; exit 1; }
+"${SIGN[@]}" --verify "$ZIP" "$SIG" >/dev/null || { echo "signature verification failed"; exit 1; }
 
 mkdir -p "$(dirname "$APPCAST")"
 PUBDATE="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')"
