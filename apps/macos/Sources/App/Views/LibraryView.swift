@@ -471,7 +471,7 @@ struct LibraryHome: View {
             .frame(width: width, height: height)
             .contentShape(Rectangle())
             .onTapGesture { nav.flip(dir, count: list.count) }
-            .onAppear { requestPicture(rom) }
+            .task(id: rom.sha256) { requestPicture(rom) }  // by SHA: a card can appear before its ROM is hashed
         } else {
             Color.clear.frame(width: width, height: height)
         }
@@ -524,7 +524,7 @@ struct LibraryHome: View {
         .contentShape(Rectangle())
         .onHover { if $0 { nav.focus = i } }
         .onTapGesture { nav.focus = i; Self.play(rom, model: model) }
-        .onAppear { requestPicture(rom) }
+        .task(id: rom.sha256) { requestPicture(rom) }  // by SHA: a card can appear before its ROM is hashed
         .contextMenu {
             Button(favorite ? "Unfavorite" : "Favorite") { library.toggleFavorite(rom) }
             Button("Projects…") { nav.projectsFocus = 0; nav.projectsOf = rom }
