@@ -339,6 +339,12 @@ offscreen UIを新core有効/無効の両buildで実行しPASS、設定画面・
 ReplayNESCore commit `602f8df`でDMC sample DMA、CPU read停止、OAM DMA競合仲裁、DMC IRQ/status、MACH schema 5を完成した。adapterは既存のDMA/APU有効化を維持し、`$4015` D4で17-byte sampleを開始する合成ROMについて、別instanceへのstate復元後3 frameのmachine hashとPCM列が一致する試験を追加した。
 
 再現結果とmachine stateが変わるためcompat IDを`replaynescore/nrom-live/dmc-dma-v11`、build IDを`replaynescore-0.5.0+adapter-v11`へ更新した。adapter envelope自体は変わらないためstate format versionは1を維持する。Release統合build後、`test_core_selection`と`test_replaynescore_adapter`の2/2が成功した。ReplayNES反映commitは`ecd76b0`。
+
+## 2026-10-23 ReplayNESCore 0.6.0 / soft reset
+
+ReplayNESCoreは実行中RESET線、7-read列後の保持、OAM/DMC DMA取消、APU reset、MACH schema 6を実装した。adapterの`softReset()`はRESETをassertして7 CPU slot進め、release後にhost tick、音声slot、RAM観測をmachine stateへ同期する。frame番号、RAM、映像は保持し、古い音声bufferは破棄する。
+
+machine stateと再現条件が変わるためcompat IDを`replaynescore/nrom-live/reset-v12`、build IDを`replaynescore-0.6.0+adapter-v12`へ更新した。adapter envelopeはschema 1を維持する。4081-byte DMC sample DMA中の別instance復元後、両instanceをsoft resetし、machine hashと以後3 frameのPCM一致を確認した。Debug統合buildで`test_core_selection`と`test_replaynescore_adapter`の2/2が成功した。
   後者はclean checkoutで判明: GCC 11.4では既定buildでも`FlashFilter.cpp`が`size_t`未宣言で失敗していた。
 - clean checkout検証: ReplayNES `ccb48ac`＋`FlashFilter.h`修正と独立コア`c0e6cfa`を別の場所へ取り出し、
   新core有効Release（警告error ON）build成功・33/33。

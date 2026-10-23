@@ -36,9 +36,6 @@ ppu::FramePipelineState initialFrame() {
   p.background_enabled=p.sprites_enabled=p.background_left=p.sprites_left=false;
   return {1,p};
 }
-Status unsupported(const char* operation) {
-  return Error(Err::UnsupportedFormat,std::string("ReplayNEScore: ")+operation+" is not implemented");
-}
 uint32_t displayRgb(uint16_t code) { return kReplayNEScoreDisplayRgb[code]; }
 }
 struct ReplayNEScoreAdapter::Impl {
@@ -151,7 +148,30 @@ Status ReplayNEScoreAdapter::stepFrame(uint8_t p1,uint8_t p2,bool renderVideo) {
   }
   s.fault=Error(Err::Internal,"ReplayNEScore raster frame deadline exceeded"); return s.fault;
 }
-Status ReplayNEScoreAdapter::softReset(){return unsupported("soft reset");}
+Status ReplayNEScoreAdapter::softReset() {
+  auto& s=*impl_;
+  if(!s.machine) return Error(Err::StateError,"No ROM loaded");
+  if(!s.fault) return s.fault;
+  if(!s.machine->set_reset_line(true))
+    return Error(Err::Internal,"ReplayNESCore RESET assertion was rejected");
+  const auto result=s.machine->run_cycles(7);
+  s.tick=result.last_committed;
+  if(!result.ok) return s.fail(result);
+  if(!s.machine->set_reset_line(false)) {
+    s.fault=Error(Err::Internal,"ReplayNESCore RESET release was rejected");
+    return s.fault;
+  }
+  const auto state=s.machine->export_state();
+  if(!state) {
+    s.fault=Error(Err::Internal,"ReplayNESCore RESET state is unavailable");
+    return s.fault;
+  }
+  s.tick=state->scheduler.last_committed;
+  s.lastAudioSlot=state->cpu_cycles;
+  s.ram=state->bus.ram.cpu;
+  s.audio.clear();
+  return Status::Ok();
+}
 Status ReplayNEScoreAdapter::saveState(std::vector<uint8_t>& out) {
   const auto& s=*impl_;
   if(!s.machine) return Error(Err::StateError,"No ROM loaded");

@@ -32,7 +32,9 @@ TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   CHECK(std::equal(core.video(),core.video()+rn::kVideoWidth*rn::kVideoHeight,restored.video()));
   auto corrupt=state; corrupt.back()^=1; const auto before=restored.frameIndex();
   CHECK_EQ(restored.loadState(corrupt.data(),corrupt.size()).code,rn::Err::StateError);
-  CHECK_EQ(restored.frameIndex(),before); CHECK_EQ(core.softReset().code,rn::Err::UnsupportedFormat);
+  CHECK_EQ(restored.frameIndex(),before); REQUIRE(core.softReset().ok());
+  CHECK_EQ(core.frameIndex(),before);
+  size_t resetAudio=99; CHECK(core.audio(&resetAudio)==nullptr); CHECK_EQ(resetAudio,0U);
   REQUIRE(core.powerCycle().ok()); CHECK_EQ(core.frameIndex(),2U);
   REQUIRE(core.stepFrame(0,0).ok()); CHECK_EQ(core.frameIndex(),3U);
   // Both control registers work; disabling channels preserves their settings.
@@ -112,9 +114,9 @@ TEST_CASE("Experimental core restores DMC direct DAC PCM into a separate instanc
   }
 }
 TEST_CASE("Experimental core runs and restores DMC sample DMA") {
-  // Inhibit frame IRQ, start a 17-byte fastest-rate DMC sample at $C000, then loop.
+  // Inhibit frame IRQ, start a 4081-byte fastest-rate DMC sample at $C000, then loop.
   auto bytes=rom({0xa9,0xc0,0x8d,0x17,0x40,0xa9,0x0f,0x8d,0x10,0x40,
-    0xa9,0,0x8d,0x12,0x40,0xa9,1,0x8d,0x13,0x40,
+    0xa9,0,0x8d,0x12,0x40,0xa9,0xff,0x8d,0x13,0x40,
     0xa9,0x10,0x8d,0x15,0x40,0x4c,0x19,0x80});
   rn::ReplayNEScoreAdapter straight,branch;
   REQUIRE(straight.loadROM(bytes.data(),bytes.size()).ok());
@@ -122,6 +124,8 @@ TEST_CASE("Experimental core runs and restores DMC sample DMA") {
   REQUIRE(straight.stepFrame(0,0,false).ok());
   std::vector<uint8_t> state;REQUIRE(straight.saveState(state).ok());
   REQUIRE(branch.loadState(state.data(),state.size()).ok());
+  REQUIRE(straight.softReset().ok());REQUIRE(branch.softReset().ok());
+  CHECK_EQ(straight.machineHash(),branch.machineHash());
   for(unsigned frame=1;frame<4;++frame) {
     REQUIRE(straight.stepFrame(0,0,false).ok());REQUIRE(branch.stepFrame(0,0,false).ok());
     size_t an=0,bn=0;const auto* ap=straight.audio(&an);const auto* bp=branch.audio(&bn);

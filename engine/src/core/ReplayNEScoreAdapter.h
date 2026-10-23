@@ -6,7 +6,7 @@ class ReplayNEScoreAdapter final : public ICore {
  public:
   ReplayNEScoreAdapter();
   ~ReplayNEScoreAdapter() override;
-  static std::string staticCompatId() { return "replaynescore/nrom-live/dmc-dma-v11"; }
+  static std::string staticCompatId() { return "replaynescore/nrom-live/reset-v12"; }
   Status loadROM(const uint8_t*, size_t) override;
   Status powerCycle() override;
   Status softReset() override;
@@ -18,7 +18,7 @@ class ReplayNEScoreAdapter final : public ICore {
   Status saveState(std::vector<uint8_t>&) override;
   Status loadState(const uint8_t*, size_t) override;
   std::string compatId() const override { return staticCompatId(); }
-  std::string buildId() const override { return "replaynescore-0.5.0+adapter-v11"; }
+  std::string buildId() const override { return "replaynescore-0.6.0+adapter-v12"; }
   uint32_t stateFormatVersion() const override { return 1; }
   CoreKind kind() const override { return CoreKind::ReplayNEScore; }
  private:

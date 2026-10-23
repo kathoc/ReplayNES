@@ -356,9 +356,9 @@ ctest --test-dir build-core --output-on-failure
 Choose the core in the System settings before opening a new game, or pass
 `--core nestopia` / `--core replaynescore` to a CLI ROM command. The choice applies to
 the next session; existing recordings always use their recorded core identity.
-ReplayNEScore currently supports development-only NROM execution in Live mode, with
-pulse/triangle/noise sound (no DMC yet) but without recording, rewind, project saves,
-export or soft reset. The System setting appears only in builds that include it. Unsupported
+ReplayNESCore currently supports development-only NROM execution in Live mode, with
+pulse/triangle/noise/DMC sound, DMA arbitration, snapshots, and soft reset, but without
+recording, rewind, project saves, or export. The System setting appears only in builds that include it. Unsupported
 hardware accesses stop with a diagnostic; commercial-game title/input completion
 is still pending. See [the integration plan](docs/CORE_SELECTION_PLAN.md).
 
