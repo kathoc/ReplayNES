@@ -23,7 +23,7 @@
 # Signing key: GnuPG home ~/.local/share/replaynes-signing/gnupg on the Deck (no passphrase; see
 # docs/RELEASE.md "Flatpak repository" for backup / restore). Its public key is
 # apps/linux/flatpak/replaynes-repo.gpg. The private key is never copied anywhere by this script.
-# Env: HOST (deck@steamdeck.local), REMOTE_DIR (ReplayNES-dev), KEEP (3), GPG_KEY, SIGN_HOME,
+# Env: HOST (deck@steamdeck.local, or "local": this machine), REMOTE_DIR (ReplayNES-dev), KEEP (3), GPG_KEY, SIGN_HOME,
 #      REPO_URL (TARGET=pages: the Pages URL; TARGET=test: file://<host home>/<REMOTE_DIR>/test-repo/).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,7 +43,15 @@ BUNDLE="$APP_ID-$VERSION-x86_64.flatpak"
 [ -f "$PUBKEY" ] || { echo "missing $PUBKEY" >&2; exit 1; }
 [ "$KEEP" -ge 1 ] || { echo "KEEP must be >= 1" >&2; exit 1; }
 
-HOST_HOME="$(ssh "$HOST" 'echo $HOME')"
+# HOST=local: build, sign and publish on this machine (flatpak + the signing key here; docs/RELEASE.md).
+if [ "$HOST" = local ]; then
+  hrun() { (cd ~ && bash -c "$1"); }   # like ssh: in the home folder
+  hpath() { echo "$HOME/$1"; }
+else
+  hrun() { ssh "$HOST" "$1"; }
+  hpath() { echo "$HOST:$1"; }
+fi
+HOST_HOME="$(hrun 'echo $HOME')"
 case "$TARGET" in
   pages)
     REPO_URL="${REPO_URL:-$PAGES_URL}"
@@ -79,13 +87,13 @@ if [ "$TARGET" = pages ]; then
   fi
   mkdir -p "$PAGES_DIR/flatpak"
   echo "==> published repository -> $HOST:~/$DEST"
-  ssh "$HOST" "mkdir -p ~/$DEST"
-  rsync -a --delete --exclude=/tmp/ -e ssh "$PAGES_DIR/flatpak/" "$HOST:$DEST/"
+  hrun "mkdir -p ~/$DEST"
+  rsync -a --delete --exclude=/tmp/ -e ssh "$PAGES_DIR/flatpak/" "$(hpath "$DEST")/"
 fi
 
 echo "==> sign + commit + summary + deltas (keep $KEEP commits)"
-scp -q "$PUBKEY" "$HOST:$RDIR/replaynes-repo.gpg"
-ssh "$HOST" "set -e; cd ~  # paths are relative to the home folder
+rsync -a -e ssh "$PUBKEY" "$(hpath "$RDIR")/replaynes-repo.gpg"
+hrun "set -e; cd ~  # paths are relative to the home folder
 G=\$HOME/$SIGN_HOME
 [ -d \"\$G\" ] || { echo 'no signing key at '\$G' (docs/RELEASE.md: Flatpak repository)' >&2; exit 1; }
 [ -f $DEST/config ] || ostree init --mode=archive-z2 --repo=$DEST
@@ -129,11 +137,11 @@ if [ "$TARGET" = test ]; then
 fi
 
 mkdir -p "$ROOT/dist"
-scp -q "$HOST:$RDIR/$BUNDLE" "$ROOT/dist/"
+rsync -a -e ssh "$(hpath "$RDIR/$BUNDLE")" "$ROOT/dist/"
 echo "    $ROOT/dist/$BUNDLE"
 
 echo "==> repository -> $PAGES_DIR/flatpak"
-rsync -a --delete --exclude=/tmp/ --exclude=/index.html -e ssh "$HOST:$DEST/" "$PAGES_DIR/flatpak/"
+rsync -a --delete --exclude=/tmp/ --exclude=/index.html -e ssh "$(hpath "$DEST")/" "$PAGES_DIR/flatpak/"
 touch "$PAGES_DIR/.nojekyll"  # Jekyll would drop files starting with "_" (static delta names)
 index_html() {  # $1: path of flatpak/ relative to the page
   cat <<EOF
