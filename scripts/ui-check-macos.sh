@@ -13,7 +13,9 @@
 #   scripts/ui-check-macos.sh [app]          (default build/ReplayNES.app; generated test ROM)
 #   EMPTY=1 ...                              also the empty library (no game open)
 #   ONLY="input flows" ...                   a subset: input, step (paused frame step), countdown (resume
-#                                            countdown type-ahead), flows (pad flows), walk
+#                                            countdown type-ahead), flows (pad flows), walk, library
+#                                            (two pages of cartridges: the peek and the ROM pictures; not
+#                                            in the default set)
 #   LOCAL=1 ...                              run the app on this Mac instead (needs a GUI login session;
 #                                            no flows by default: they change the bindings / settings)
 set -euo pipefail
@@ -293,6 +295,15 @@ PY
   done
 }
 
+# The library with two pages: 12 copies of the test ROM. The next page peeks in at the right edge
+# and the cards get the ROMs' frame-300 pictures (docs/design/UI_REDESIGN.md, library).
+library_walk() {  # lang
+  local name="$1-1280x800-library"
+  local mk="mkdir -p '$G/$name/library/ROM'; for i in \$(seq 1 12); do cp '$ROM' '$G/$name/library/ROM/Game '\$i'.nes'; done"
+  if [ "${LOCAL:-0}" = 1 ]; then sh -c "$mk"; else vm_ssh "$mk"; fi
+  TAG=-library walk "$1" 1280x800
+}
+
 want input && input_check
 want step && step_check
 want countdown && countdown_check
@@ -305,4 +316,5 @@ if want walk; then
     if [ "${EMPTY:-0}" = "1" ]; then TAG=-empty walk "$lang" 1280x800; fi
   done
 fi
+want library && library_walk ja
 [ "$fail" = 0 ] && echo "ui-check: all checks passed" || { echo "ui-check: FAILED"; exit 1; }
