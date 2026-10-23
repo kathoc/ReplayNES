@@ -35,8 +35,8 @@ TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   CHECK_EQ(restored.frameIndex(),before); REQUIRE(core.softReset().ok());
   CHECK_EQ(core.frameIndex(),before);
   size_t resetAudio=99; CHECK(core.audio(&resetAudio)==nullptr); CHECK_EQ(resetAudio,0U);
-  REQUIRE(core.powerCycle().ok()); CHECK_EQ(core.frameIndex(),2U);
-  REQUIRE(core.stepFrame(0,0).ok()); CHECK_EQ(core.frameIndex(),3U);
+  REQUIRE(core.powerCycle().ok()); CHECK_EQ(core.frameIndex(),0U);
+  REQUIRE(core.stepFrame(0,0).ok()); CHECK_EQ(core.frameIndex(),1U);
   // Both control registers work; disabling channels preserves their settings.
   bytes=rom({0xa9,0xbf,0x8d,0x00,0x40,0xa9,0x65,0x8d,0x04,0x40,
     0xa9,0,0x8d,0x15,0x40,0x4c,0,0x80});
@@ -72,6 +72,35 @@ TEST_CASE("Experimental core emits deterministic non-silent pulse PCM") {
     REQUIRE_EQ(an,size_t(rn::audioSamplesForFrame(frame))); REQUIRE_EQ(an,bn);
     CHECK(std::equal(ap,ap+an,bp));
     CHECK(std::any_of(ap,ap+an,[](int16_t value){return value!=0;}));
+  }
+}
+TEST_CASE("Experimental hard power restores fresh machine and host state while RESET retains RAM and video") {
+  auto bytes=rom({0xa9,0x5a,0x85,0x10,0xa9,1,0x8d,0x15,0x40,
+    0xa9,0x9f,0x8d,0x00,0x40,0xa9,0,0x8d,0x02,0x40,
+    0xa9,9,0x8d,0x03,0x40,0x4c,24,0x80});
+  rn::ReplayNEScoreAdapter used,fresh;
+  REQUIRE(used.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(fresh.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(used.stepFrame(0,0).ok()); REQUIRE(used.stepFrame(0,0).ok());
+  CHECK_EQ(used.cpuRam()[0x10],0x5a);
+  size_t n=0; const auto* samples=used.audio(&n);
+  REQUIRE(n>0); CHECK(std::any_of(samples,samples+n,[](int16_t v){return v!=0;}));
+  const std::vector<uint32_t> video(used.video(),used.video()+rn::kVideoWidth*rn::kVideoHeight);
+  REQUIRE(used.softReset().ok()); CHECK_EQ(used.frameIndex(),2U);
+  CHECK_EQ(used.cpuRam()[0x10],0x5a);
+  CHECK(std::equal(video.begin(),video.end(),used.video()));
+  REQUIRE(used.powerCycle().ok()); CHECK_EQ(used.frameIndex(),0U);
+  CHECK(std::all_of(used.cpuRam(),used.cpuRam()+2048,[](uint8_t v){return v==0;}));
+  CHECK(std::all_of(used.video(),used.video()+rn::kVideoWidth*rn::kVideoHeight,
+    [](uint32_t v){return v==0xff000000;}));
+  n=99; CHECK(used.audio(&n)==nullptr); CHECK_EQ(n,0U);
+  std::vector<uint8_t> a,b;
+  REQUIRE(used.saveState(a).ok()); REQUIRE(fresh.saveState(b).ok()); CHECK(a==b);
+  for(unsigned frame=0;frame<2;++frame) {
+    REQUIRE(used.stepFrame(0,0).ok()); REQUIRE(fresh.stepFrame(0,0).ok());
+    REQUIRE(used.saveState(a).ok()); REQUIRE(fresh.saveState(b).ok()); CHECK(a==b);
+    size_t an=0,bn=0; const auto* ap=used.audio(&an); const auto* bp=fresh.audio(&bn);
+    REQUIRE_EQ(an,bn); CHECK(std::equal(ap,ap+an,bp));
   }
 }
 TEST_CASE("Experimental core restores noise PCM into a separate instance") {
@@ -134,10 +163,12 @@ TEST_CASE("Experimental core runs and restores DMC sample DMA") {
   }
 }
 TEST_CASE("Experimental core renders real PPU pattern with an exact raster frame") {
-  auto bytes=rom({0xa9,0x3f,0x8d,6,0x20,0xa9,0,0x8d,6,0x20,
+  // Wait through two vblanks before writing registers inhibited at hard power.
+  auto bytes=rom({0x2c,2,0x20,0x10,0xfb,0x2c,2,0x20,0x10,0xfb,
+    0xa9,0x3f,0x8d,6,0x20,0xa9,0,0x8d,6,0x20,
     0xa9,0x0f,0x8d,7,0x20,0xa9,0x21,0x8d,7,0x20,
     0xa9,0,0x8d,6,0x20,0x8d,6,0x20,
-    0x2c,2,0x20,0x10,0xfb,0xa9,0x0a,0x8d,1,0x20,0x4c,38,0x80});
+    0xa9,0x0a,0x8d,1,0x20,0x4c,43,0x80});
   for(unsigned row=0;row<8;++row) bytes[16+16384+row]=0xaa;
   rn::ReplayNEScoreAdapter core;
   REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());

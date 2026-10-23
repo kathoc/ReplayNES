@@ -53,9 +53,9 @@ struct ReplayNEScoreAdapter::Impl {
     machine=std::make_unique<replaynes::machine::NromCpuPpu>(
       image,replaynes::cpu::Registers{0,0,0,0,4,0},replaynes::machine::RamState{},
       image->chr().empty()?std::span<const uint8_t>(chr):std::span<const uint8_t>{},
-      initialPort(),replaynes::machine::CpuPpuTiming{4,4,12},initialFrame(),
+      initialPort(),replaynes::machine::CpuPpuTiming{4,4,12,true},initialFrame(),
       replaynes::dma::Cadence::get,true,replaynes::apu::Phase::clock,true,true,true,true,true);
-    tick=0; ram.fill(0); pixels.fill(0xff000000); audio.clear(); lastAudioSlot=0;
+    frames=0; tick=0; ram.fill(0); pixels.fill(0xff000000); audio.clear(); lastAudioSlot=0;
     dcInput=dcOutput=0; fault=Status::Ok();
   }
   Status fail(const replaynes::time::RunResult& result) {
