@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.4" date="2026-10-23">
+      <description>
+        <p>Library: the cards of the next and previous pages peek in at the screen edges, so it shows that the pages go sideways (click one to turn the page). A game you have not played yet now shows a picture: its screen 5 seconds after power-on, made in the background.</p>
+      </description>
+    </release>
     <release version="0.6.3" date="2026-10-21">
       <description>
         <p>CRT display: switching the console on now cuts from the snow to the picture at once, with a brief jump while the TV's sync settles; a reset shows no snow, only a short flicker. The snow's hiss is much quieter.</p>
