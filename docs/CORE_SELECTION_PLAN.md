@@ -342,7 +342,7 @@ ReplayNESCore commit `602f8df`でDMC sample DMA、CPU read停止、OAM DMA競合
 
 ## 2026-10-23 ReplayNESCore 0.6.0 / soft reset
 
-ReplayNESCoreは実行中RESET線、7-read列後の保持、OAM/DMC DMA取消、APU reset、MACH schema 6を実装した。adapterの`softReset()`はRESETをassertして7 CPU slot進め、release後にhost tick、音声slot、RAM観測をmachine stateへ同期する。frame番号、RAM、映像は保持し、古い音声bufferは破棄する。
+ReplayNESCore 0.6.0（機能commit `cc9edd2`、版上げcommit `2c13a17`）は実行中RESET線、7-read列後の保持、OAM/DMC DMA取消、APU reset、MACH schema 6を実装した。adapterの`softReset()`はRESETをassertして7 CPU slot進め、release後にhost tick、音声slot、RAM観測をmachine stateへ同期する。frame番号、RAM、映像は保持し、古い音声bufferは破棄する。
 
 machine stateと再現条件が変わるためcompat IDを`replaynescore/nrom-live/reset-v12`、build IDを`replaynescore-0.6.0+adapter-v12`へ更新した。adapter envelopeはschema 1を維持する。4081-byte DMC sample DMA中の別instance復元後、両instanceをsoft resetし、machine hashと以後3 frameのPCM一致を確認した。Debug統合buildで`test_core_selection`と`test_replaynescore_adapter`の2/2が成功した。
   後者はclean checkoutで判明: GCC 11.4では既定buildでも`FlashFilter.cpp`が`size_t`未宣言で失敗していた。
