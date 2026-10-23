@@ -76,6 +76,11 @@ struct LibraryGeometry {
   LRect hero;                // "Continue" card (h = 0 without one)
   std::vector<LRect> cards;  // one page of game cards
   int columns = 4, rows = 2;
+  // The neighbouring pages peek in at the sides (which way the pages go): the next page's first
+  // column right of the grid and the previous page's last column left of it, one card per row,
+  // drawn clipped to the screen. The grid is inset by `peek` on both sides to leave room for them.
+  float peek = 0;
+  std::vector<LRect> nextPeek, prevPeek;
   LRect emptyCard;           // the empty-library card
 };
 LibraryGeometry layoutLibrary(const UiMetrics& m, bool hero);

@@ -7,6 +7,8 @@
 #include <fstream>
 #include <vector>
 
+#include "replaynes/replaynes.h"
+
 namespace rnl {
 
 namespace {
@@ -40,6 +42,13 @@ bool writeFile(const std::string& path, const uint32_t* px) {
 LibraryThumbs::LibraryThumbs(std::string dir) : dir_(std::move(dir)) {}
 
 LibraryThumbs::~LibraryThumbs() {
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    picStop_ = true;
+    picQueue_.clear();
+  }
+  picCv_.notify_all();
+  if (picThread_.joinable()) picThread_.join();
   if (writer_.joinable()) writer_.join();
   for (auto& [k, img] : cache_)
     if (img) img->release();
@@ -95,6 +104,54 @@ void LibraryThumbs::save(const std::string& projectPath, const std::string& romP
     for (const auto& [path, px] : writes)
       if (!writeFile(path, px.data())) std::fprintf(stderr, "cannot write %s\n", path.c_str());
   });
+}
+
+void LibraryThumbs::requestRomPicture(const std::string& romPath) {
+  if (romPath.empty() || !asked_.insert(romPath).second) return;
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    picQueue_.push_back(romPath);
+  }
+  if (!picThread_.joinable()) picThread_ = std::thread([this] { pictureWorker(); });
+  picCv_.notify_one();
+}
+
+bool LibraryThumbs::pollRomPictures() {
+  std::vector<std::pair<std::string, std::vector<uint32_t>>> done;
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    done.swap(picDone_);
+  }
+  for (const auto& [rom, frame] : done) save("", rom, frame.data());
+  return !done.empty();
+}
+
+void LibraryThumbs::pictureWorker() {
+  for (;;) {
+    std::string rom;
+    {
+      std::unique_lock<std::mutex> lk(picMutex_);
+      picCv_.wait(lk, [this] { return picStop_ || !picQueue_.empty(); });
+      if (picStop_) return;
+      rom = std::move(picQueue_.front());
+      picQueue_.pop_front();
+    }
+    // Power-on, no input, kRomPictureFrame frames: in memory only (no project directory).
+    rn_session* s = nullptr;
+    if (rn_session_new(rom.c_str(), nullptr, nullptr, &s) != RN_OK || !s) continue;
+    bool ok = true;
+    for (int f = 0; ok && f < kRomPictureFrame; ++f) {
+      ok = rn_step(s, 0, 0, 0, nullptr) == RN_OK;
+      std::lock_guard<std::mutex> lk(picMutex_);
+      if (picStop_) ok = false;
+    }
+    const uint32_t* v = ok ? rn_video(s) : nullptr;
+    if (v) {
+      std::lock_guard<std::mutex> lk(picMutex_);
+      picDone_.emplace_back(rom, std::vector<uint32_t>(v, v + 256 * 240));
+    }
+    rn_session_close(s);
+  }
 }
 
 }  // namespace rnl

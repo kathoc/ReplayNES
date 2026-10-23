@@ -1,8 +1,11 @@
 // Bounded screenshot/interaction check: production UI::build, SDL software draw backend.
 // Does not validate the platform Vulkan/D3D presenter or CRT. SPDX-License-Identifier: GPL-2.0-or-later
+#include <map>
 #include "app_model.h"
 #include "fonts.h"
 #include "input_router.h"
+#include "library.h"
+#include "library_thumbs.h"
 #include "png_writer.h"
 #include "renderer.h"
 #include "settings.h"
@@ -46,7 +49,18 @@ struct SoftwareRenderer : Renderer {
   const DisplayPostProcess& postProcess() const override { return pp; }
   PostProcessStatus postProcessStatus() const override { return {}; }
   void beginUIFrame() override {}
-  bool thumbTexture(uint64_t,const uint32_t*,uint64_t*,float[4]) override { return false; }
+  // Library card pictures (128x120 BGRA), one texture per thumbnail serial, as the real renderers do.
+  std::map<uint64_t,SDL_Texture*> thumbs;
+  bool thumbTexture(uint64_t key,const uint32_t* px,uint64_t* texId,float uv[4]) override {
+    SDL_Texture*& t=thumbs[key];
+    if(!t) {
+      t=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_BGRA32,SDL_TEXTUREACCESS_STATIC,RNF_THUMB_WIDTH,RNF_THUMB_HEIGHT);
+      if(!t || !SDL_UpdateTexture(t,nullptr,px,RNF_THUMB_WIDTH*4)) return false;
+      SDL_SetTextureScaleMode(t,SDL_SCALEMODE_LINEAR);
+    }
+    *texId=uint64_t(reinterpret_cast<uintptr_t>(t)); uv[0]=0; uv[1]=0; uv[2]=1; uv[3]=1;
+    return true;
+  }
   void requestScreenshot(const std::string& path) override {
     SDL_FlushRenderer(renderer);
     if(!writePNG(path,width(),height(),static_cast<uint8_t*>(surface->pixels))) throw std::runtime_error("PNG write failed");
@@ -99,7 +113,7 @@ struct SoftwareRenderer : Renderer {
     SDL_SetRenderClipRect(renderer,nullptr); SDL_RenderPresent(renderer); return 1;
   }
   static void checkSDL(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); }
-  ~SoftwareRenderer() { SDL_DestroyTexture(game); SDL_DestroyRenderer(renderer); SDL_DestroySurface(surface); }
+  ~SoftwareRenderer() { for(auto& kv:thumbs) SDL_DestroyTexture(kv.second); SDL_DestroyTexture(game); SDL_DestroyRenderer(renderer); SDL_DestroySurface(surface); }
 };
 struct CountingAudio : AudioSink { size_t samples=0; void setMuted(bool) override {} void push(const int16_t*,size_t n) override { samples+=n; } };
 static void check(bool ok,const char* why) { if(!ok) throw std::runtime_error(why); }
@@ -117,7 +131,8 @@ int main(int argc,char** argv) {
       CountingAudio audio; EmulationController emu(input.input(),&audio); ThumbnailManager thumbs; thumbs.enabled=false;
       Paths paths; paths.setLibraryRoot((out/"library").string()); paths.sessionRoot=(out/"session").string(); paths.configDir=(out/"config").string(); paths.ensure();
       LibraryModel library(paths.libraryRoot); library.ensureFolders(); SoftwareRenderer renderer; check(renderer.renderer,SDL_GetError());
-      UI ui({nullptr,&emu,&library,&input,&thumbs,&renderer,&settings,window});
+      LibraryThumbs libraryThumbs((out/"thumbs").string());
+      UI ui({nullptr,&emu,&library,&input,&thumbs,&renderer,&settings,window,nullptr,&libraryThumbs});
       AppModel app(paths,&emu,&library,&ui); ui.setApp(&app);
       emu.onNotice=[&](const std::string& text) { ui.notice(text); };
       emu.onError=[&](const std::string& title,const std::string& text) {
@@ -161,6 +176,26 @@ int main(int argc,char** argv) {
       check(settings.core=="nestopia","UI key did not switch back");
       rnf_l10n_set_language("ja"); ui.loadFonts(true); ui.updateScale(1280,800); draw(); draw();
       renderer.requestScreenshot((out/"core-japanese.png").string());
+      // The library with two pages of cartridges: the next page peeks in at the right edge, and the
+      // cards without a picture get their frame-300 picture from a background run.
+      ui.setMenu(false);
+      std::string err; const std::string cart=library.addTestCartridge(&err); check(!cart.empty(),"test cartridge not written");
+      for(int i=1;i<12;++i) fs::copy_file(cart, fs::path(cart).parent_path()/("Test Copy "+std::to_string(i)+".nes"), fs::copy_options::overwrite_existing);
+      library.refresh();
+      bool ready=false;
+      for(int i=0;i<1000 && !ready;++i) {
+        library.poll(); draw(); SDL_Delay(10);
+        // The cards on screen ask for pictures: page 1 (8) + the next page's peeking column (12 ROMs: only its top card).
+        size_t pictured=0;
+        for(const auto& r : library.roms()) if(libraryThumbs.forRom(r.path)) ++pictured;
+        ready=!library.scanning() && library.roms().size()>=12 && pictured>=9;
+      }
+      if(!ready) {
+        size_t pictured=0; for(const auto& r : library.roms()) if(libraryThumbs.forRom(r.path)) ++pictured;
+        std::fprintf(stderr,"library: roms=%zu scanning=%d pictured=%zu hasSession=%d\n", library.roms().size(), int(library.scanning()), pictured, int(emu.session()!=nullptr));
+      }
+      check(ready,"library cards did not get their pictures");
+      draw(); draw(); renderer.requestScreenshot((out/"library-peek.png").string());
       std::printf("PASS: real UI choice keys, preference persistence, screenshots; experimental core available=%d\n", rn_core_available(RN_CORE_REPLAYNESCORE));
     }
     ImGui::DestroyContext(); SDL_DestroyWindow(window); SDL_Quit(); return 0;

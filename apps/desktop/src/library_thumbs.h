@@ -5,11 +5,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "thumbnails.h"
 
@@ -29,6 +34,15 @@ class LibraryThumbs {
   ThumbRef forProject(const std::string& projectPath) { return get("p:" + projectPath); }
   ThumbRef forRom(const std::string& romPath) { return get("r:" + romPath); }
 
+  /// A ROM with no picture yet: a worker thread emulates it from power-on for kRomPictureFrame
+  /// frames without input (the engine, no project, nothing written but the thumbnail) and that
+  /// picture becomes the ROM's thumbnail. Asked by the library for the cards it shows; one ROM at a
+  /// time, each ROM at most once per run (a ROM the engine cannot run stays a name tile).
+  static constexpr int kRomPictureFrame = 300;
+  void requestRomPicture(const std::string& romPath);
+  /// Frame thread: stores the finished pictures (as save(): file + cache). True if any arrived.
+  bool pollRomPictures();
+
   /// File of a key (tests).
   std::string fileFor(const std::string& key) const;
 
@@ -40,6 +54,15 @@ class LibraryThumbs {
   std::map<std::string, ThumbImage*> cache_;  // nullptr: no file (looked up once)
   std::mutex writeMutex_;
   std::thread writer_;
+  // ROM pictures (requestRomPicture): queue, results and the worker.
+  void pictureWorker();
+  std::set<std::string> asked_;  // frame thread only
+  std::mutex picMutex_;
+  std::condition_variable picCv_;
+  std::deque<std::string> picQueue_;
+  std::vector<std::pair<std::string, std::vector<uint32_t>>> picDone_;
+  bool picStop_ = false;
+  std::thread picThread_;
 };
 
 }  // namespace rnl

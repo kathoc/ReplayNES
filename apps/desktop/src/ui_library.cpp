@@ -8,7 +8,7 @@
 // View / Select (Tab) cycles the sort, L / R turn the pages, the Menu pill (L+R / Esc) opens
 // Settings. An empty library is one card saying where the games go. "Add Test Cartridge" (the last
 // item of the row; Y on the empty card) writes the ReplayNES Test Cartridge into the ROM folder (once)
-// and focuses it. Nothing scrolls.
+// and focuses it. Nothing scrolls: the cards of the neighbouring pages peek in at the screen edges.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
@@ -347,6 +347,7 @@ void UI::buildSearchField(const LRect& r) {
 void UI::buildLibrary(double now) {
   LibraryModel* lib = d_.library;
   lib->watch(now);
+  if (d_.libraryThumbs) d_.libraryThumbs->pollRomPictures();  // ROM pictures made in the background
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
   const std::vector<const LibraryROM*> roms = libraryRoms();  // a copy: actions below may re-sort
@@ -485,7 +486,19 @@ void UI::buildLibrary(double now) {
         description_ = TR("Pick up where you left off");
       }
     }
-    // Game cards.
+    // Game cards. A card's picture: the ROM's own thumbnail, else that of its latest project.
+    auto romThumb = [&](const LibraryROM& rom, const std::vector<LibraryProject>& projects) {
+      ThumbRef img = d_.libraryThumbs ? d_.libraryThumbs->forRom(rom.path) : ThumbRef();
+      if (!img && d_.libraryThumbs && !projects.empty()) {
+        const LibraryProject* lp = &projects.front();
+        for (const LibraryProject& p : projects)
+          if (p.modified > lp->modified) lp = &p;
+        img = d_.libraryThumbs->forProject(lp->path);
+      }
+      // No picture at all: make one (the ROM's frame 300, in the background; it appears when done).
+      if (!img && d_.libraryThumbs) d_.libraryThumbs->requestRomPicture(rom.path);
+      return img;
+    };
     int first = libPage_ * perPage;
     float textH = libraryCardTextHeight(m);
     bool recentView = lib->filter() == RNF_LIBRARY_FILTER_RECENT || lib->sort() == RNF_LIBRARY_SORT_RECENT;
@@ -506,13 +519,7 @@ void UI::buildLibrary(double now) {
       dl->AddRectFilled(tl(r), br(r), f ? kTileFocus : kTile, m.tileRadius());
       LRect pic{r.x + S(8), r.y + S(8), r.w - S(16), r.h - textH - S(8)};
       std::vector<LibraryProject> projects = lib->projectsFor(rom);
-      ThumbRef img = d_.libraryThumbs ? d_.libraryThumbs->forRom(rom.path) : ThumbRef();
-      if (!img && d_.libraryThumbs && !projects.empty()) {
-        const LibraryProject* lp = &projects.front();
-        for (const LibraryProject& p : projects)
-          if (p.modified > lp->modified) lp = &p;
-        img = d_.libraryThumbs->forProject(lp->path);
-      }
+      ThumbRef img = romThumb(rom, projects);
       std::string title = rom.title();
       ImTextureID tex{};
       ImVec2 uv0, uv1;
@@ -544,6 +551,35 @@ void UI::buildLibrary(double now) {
                                                                            : std::string(TR("Nothing played yet"));
       textCentered(dl, m.label(), g.content, g.cards.front().y + S(40), kTextDim, empty);
     }
+    // The neighbouring pages peek in at the screen edges (dimmed, clipped by the screen): the next
+    // page's first column on the right, the previous page's last column on the left - so it shows
+    // that the pages go sideways. A click on one turns to that page.
+    auto peekCard = [&](int idx, const LRect& r, int dir) {
+      if (idx < 0 || idx >= n) return;
+      const LibraryROM& rom = *roms[size_t(idx)];
+      ImGui::SetCursorScreenPos(tl(r));
+      ImGui::PushID(1000000 + idx);
+      bool clicked = ImGui::InvisibleButton("##peek", ImVec2(r.w, r.h));
+      ImGui::PopID();
+      if (clicked) {
+        libPage_ = std::clamp(libPage_ + dir, 0, pages - 1);
+        libFocus_ = kFocusPageStart;
+        libMoved_ = true;
+      }
+      dl->AddRectFilled(tl(r), br(r), kTile, m.tileRadius());
+      LRect pic{r.x + S(8), r.y + S(8), r.w - S(16), r.h - textH - S(8)};
+      ThumbRef img = romThumb(rom, lib->projectsFor(rom));
+      ImTextureID tex{};
+      ImVec2 uv0, uv1;
+      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4));
+      else nameTile(dl, pic, rom.title(), m.tileRadius() - S(4), pic.h * 0.45f);
+      dl->AddRectFilled(tl(r), br(r), IM_COL32(16, 16, 19, 150), m.tileRadius());  // dimmed: not this page
+    };
+    if (n > perPage)
+      for (int r = 0; r < g.rows; ++r) {
+        if (libPage_ + 1 < pages) peekCard(first + perPage + r * g.columns, g.nextPeek[size_t(r)], +1);
+        if (libPage_ > 0) peekCard(first - perPage + r * g.columns + g.columns - 1, g.prevPeek[size_t(r)], -1);
+      }
     // Pages: dots under the grid.
     if (pages > 1) {
       float dot = S(7), gap = S(10), total = float(pages) * dot + float(pages - 1) * gap;

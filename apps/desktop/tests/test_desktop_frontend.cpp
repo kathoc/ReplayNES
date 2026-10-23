@@ -34,6 +34,7 @@
 #include "export/mp4_retime.h"
 #include "l10n.h"
 #include "library.h"
+#include "library_thumbs.h"
 #include "manifest.h"
 #include "osk.h"
 #include "paths.h"
@@ -773,6 +774,14 @@ TEST_CASE("menu layout: no screen scrolls (every page of the menu model fits)") 
         CHECK(c.h - libraryCardTextHeight(m) >= m.label() * 2);
       }
       CHECK(screen.contains(layoutLibrary(m, false).cards.back()));
+      // The neighbouring pages peek in at the sides: a visible sliver of at least 40 px (x1 scale)
+      // between the grid and the screen edge, the cards' own height and rows.
+      for (size_t r = 0; r < lib.nextPeek.size(); ++r) {
+        CHECK(m.W - lib.nextPeek[r].x >= 40 * m.s);
+        CHECK(lib.prevPeek[r].right() >= 40 * m.s);
+        CHECK_EQ(lib.nextPeek[r].y, lib.cards[r * size_t(lib.columns)].y);
+        CHECK(lib.nextPeek[r].x > lib.cards[r * size_t(lib.columns) + size_t(lib.columns) - 1].right());
+      }
       SeekGeometry seek = layoutSeek(m);
       CHECK(screen.contains(seek.panel));
       CHECK(seek.panel.contains(seek.strip));
@@ -2612,4 +2621,40 @@ TEST_CASE("pad 1 follow gesture: in play L held + R pauses and R held + L toggle
   CHECK_EQ(rn_frame(s), at + 1);
   CHECK(w.emu->paused());
   CHECK_EQ(w.emu->status().slow, 1);  // a paused step never changes the speed
+}
+
+TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture from a background run") {
+  std::string d = tmpDir("rom-picture");
+  std::string rom = testRom(d + "/roms");
+  LibraryThumbs thumbs(d + "/thumbs");
+  CHECK_FALSE(thumbs.forRom(rom));
+  thumbs.requestRomPicture(rom);
+  thumbs.requestRomPicture(rom);  // asked once per run
+  bool arrived = false;
+  for (int i = 0; i < 500 && !arrived; ++i) {
+    arrived = thumbs.pollRomPictures();
+    if (!arrived) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  REQUIRE(arrived);
+  ThumbRef img = thumbs.forRom(rom);
+  REQUIRE(img);
+  // The same picture as emulating the ROM for 300 frames without input.
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), nullptr, nullptr, &s) == RN_OK);
+  for (int f = 0; f < LibraryThumbs::kRomPictureFrame; ++f) REQUIRE(rn_step(s, 0, 0, 0, nullptr) == RN_OK);
+  ThumbRef want(ThumbImage::make(rn_video(s)));
+  rn_session_close(s);
+  CHECK(std::memcmp(img.get()->px, want.get()->px, sizeof img.get()->px) == 0);
+  // Written for the next run, and a second request does nothing.
+  CHECK(fs::exists(thumbs.fileFor("r:" + rom)));
+  thumbs.requestRomPicture(rom);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  CHECK_FALSE(thumbs.pollRomPictures());
+  // A file that is not a ROM: no picture, no crash.
+  std::string bad = d + "/roms/bad.nes";
+  { std::ofstream f(bad); f << "not a rom"; }
+  thumbs.requestRomPicture(bad);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  thumbs.pollRomPictures();
+  CHECK_FALSE(thumbs.forRom(bad));
 }

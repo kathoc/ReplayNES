@@ -92,11 +92,16 @@ LibraryGeometry layoutLibrary(const UiMetrics& m, bool hero) {
   }
   g.columns = 4;
   g.rows = 2;
-  float w = (c.w - gap * 3) / 4;
+  g.peek = 36 * s;
+  const float x0 = c.x + g.peek, gw = c.w - 2 * g.peek;
+  float w = (gw - gap * 3) / 4;
   float gridH = c.bottom() - y;
   float h = std::min((gridH - gap) / 2, w * 0.8f);
-  for (int r = 0; r < g.rows; ++r)
-    for (int col = 0; col < g.columns; ++col) g.cards.push_back({c.x + float(col) * (w + gap), y + float(r) * (h + gap), w, h});
+  for (int r = 0; r < g.rows; ++r) {
+    for (int col = 0; col < g.columns; ++col) g.cards.push_back({x0 + float(col) * (w + gap), y + float(r) * (h + gap), w, h});
+    g.nextPeek.push_back({x0 + gw + gap, y + float(r) * (h + gap), w, h});
+    g.prevPeek.push_back({x0 - gap - w, y + float(r) * (h + gap), w, h});
+  }
   float ew = std::min(720 * s, c.w), eh = std::min(300 * s, c.h);
   g.emptyCard = {c.x + (c.w - ew) / 2, c.y + (c.h - eh) * 0.4f, ew, eh};
   return g;
