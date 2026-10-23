@@ -165,10 +165,10 @@ git branch -D gh-pages-publish >/dev/null 2>&1 || true
 git branch -m gh-pages-publish
 git log --oneline -1
 if [ "${NO_PUSH:-0}" = "1" ]; then
-  echo "==> NO_PUSH=1: not pushed (git -C $PAGES_DIR push -f origin gh-pages-publish:gh-pages)"
+  echo "==> NO_PUSH=1: not pushed (scripts/push-gh-pages.sh publishes it)"
   exit 0
 fi
-git push -q -f origin gh-pages-publish:gh-pages
+"$ROOT/scripts/push-gh-pages.sh"
 if ! gh api "repos/$GH_REPO/pages" >/dev/null 2>&1; then
   # GitHub may enable Pages by itself for a new gh-pages branch (then this answers 409).
   echo "==> enable GitHub Pages (gh-pages /)"

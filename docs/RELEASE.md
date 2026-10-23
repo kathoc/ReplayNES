@@ -139,6 +139,7 @@ remote. The app's update notice (Flatpak portal) and `flatpak update` both use i
 HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv: build, sign, update the repo, bundle, push gh-pages (no Deck needed)
 scripts/publish-flatpak-repo.sh            # the same on the Deck (deck@steamdeck.local)
 NO_PUSH=1 scripts/publish-flatpak-repo.sh  # stop before the push (inspect build/gh-pages first)
+scripts/push-gh-pages.sh                   # then publish that prepared commit (the forced push, checked)
 SKIP_BUILD=1 ...                           # reuse the Deck's last build (~/ReplayNES-dev/repo)
 TARGET=test scripts/publish-flatpak-repo.sh   # local test repo on the Deck (~/ReplayNES-dev/test-repo, file://)
 ```
@@ -152,7 +153,7 @@ extension is never published); writes `ReplayNES.flatpakrepo` and
 `io.github.replaynes.ReplayNES.flatpakref` (base64 public key embedded, `RuntimeRepo` = Flathub);
 builds `dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from the signed commit with
 `--repo-url` + `--gpg-keys`; copies the repository back and commits gh-pages as **one orphan commit,
-force-pushed** (old repository objects never pile up in git history; the repo is ~10 MB). It enables
+force-pushed** by `scripts/push-gh-pages.sh` (checks: one orphan commit titled "Flatpak repository: ...", with `flatpak/summary` and `ReplayNES.flatpakrepo`; https with gh's login, since rtxsrv's ssh key is a read-only deploy key; allowed in Claude Code's settings as a fixed step, 2026-10-23) (old repository objects never pile up in git history; the repo is ~10 MB). It enables
 Pages on the first push (`gh api -X POST repos/kathoc/ReplayNES/pages`). Pages takes a minute or two
 to deploy and its CDN caches files ~10 minutes, so clients can see the new summary a little later.
 
