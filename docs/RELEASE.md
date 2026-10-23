@@ -177,7 +177,12 @@ Self-updates must not need new sandbox permissions: the portal refuses an update
   backup or sync folder unencrypted, and **never commit the private key**.
 - rtxsrv build host: flatpak (1.18) from the system, Flathub remote, `org.freedesktop.Sdk//25.08`,
   `org.freedesktop.Platform//25.08` and `org.flatpak.Builder` installed `--user`; the build tree is
-  `~/ReplayNES-dev` like on the Deck.
+  `~/ReplayNES-dev` like on the Deck. Verified 2026-10-23: `HOST=local TARGET=test` built, signed (the key's
+  signature checked by a remote with only `replaynes-repo.gpg`) and bundled 0.6.3 without the Deck.
+  The very first run on a fresh `~/ReplayNES-dev` failed while mirroring Nestopia ("Failed to
+  download sources: module replaynes: Directory not empty", right after `git lfs fetch`); the second
+  run, with the mirror in place, passed. Cause not determined (flatpak-builder 1.4.9); if it recurs on
+  a fresh tree, run again.
 - Backup (store it offline / in a password manager, then delete the file):
   ```
   ssh deck@steamdeck.local 'GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --export-secret-keys --armor 5267770BF84CC0DA2FB9B8D093BCD9083B5DF142' > replaynes-repo-secret.asc
