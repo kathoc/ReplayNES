@@ -49,16 +49,15 @@ TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
   REQUIRE(core.stepFrame(0,0).ok());
   CHECK_EQ(core.cpuRam()[0]&1,1);
-  // Pulse and implemented triangle registers have stateful side effects; the triangle gap remains unsupported.
+  // Pulse/triangle registers have stateful side effects; the unused $4009 write is accepted and ignored.
   bytes=rom({0xa9,0,
     0x8d,0x00,0x40,0x8d,0x01,0x40,0x8d,0x02,0x40,0x8d,0x03,0x40,
     0x8d,0x04,0x40,0x8d,0x05,0x40,0x8d,0x06,0x40,0x8d,0x07,0x40,
     0x8d,0x08,0x40,0x8d,0x0a,0x40,0x8d,0x0b,0x40,
     0x8d,0x09,0x40,0x4c,0,0x80});
   REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
-  const auto failure=core.stepFrame(0,0);
-  CHECK_FALSE(failure.ok()); CHECK(failure.message.find("$4009")!=std::string::npos);
-  CHECK_EQ(core.frameIndex(),0U); CHECK_EQ(core.stepFrame(0,0).message,failure.message);
+  REQUIRE(core.stepFrame(0,0).ok());
+  CHECK_EQ(core.frameIndex(),1U);
 }
 TEST_CASE("Experimental core emits deterministic non-silent pulse PCM") {
   // Enable pulse 1, constant volume, duty 50%, period $100, long length, then loop.
