@@ -178,7 +178,7 @@ Status ReplayNEScoreAdapter::saveState(std::vector<uint8_t>& out) {
   const auto core=replaynes::state::save_nrom_cpu_ppu(*s.machine);
   if(!core || !core.value) return Error(Err::StateError,"ReplayNEScore machine snapshot failed");
   ByteWriter payload;
-  payload.u32(0x31484e52U); payload.u32(1U); // RNH1, adapter payload schema 1.
+  payload.u32(0x31484e52U); payload.u32(2U); // RNH1, adapter payload schema 2.
   payload.u64(s.tick); payload.u64(s.lastAudioSlot);
   const auto& audioState=s.audioPipeline.state();
   payload.u32(audioState.version); payload.u32(audioState.profile);
@@ -204,7 +204,7 @@ Status ReplayNEScoreAdapter::loadState(const uint8_t* data,size_t size) {
   if(!envelope.ok()) return envelope;
   try {
     ByteReader reader(payload,payloadLen);
-    if(reader.u32()!=0x31484e52U || reader.u32()!=1U)
+    if(reader.u32()!=0x31484e52U || reader.u32()!=2U)
       return Error(Err::StateError,"Unsupported ReplayNEScore adapter state schema");
     const uint64_t tick=reader.u64(),lastSlot=reader.u64();
     replaynes_audio::State audioState{};
