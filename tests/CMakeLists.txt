@@ -81,5 +81,6 @@ endif()
 
 rn_add_test(test_core_selection)
 if(REPLAYNES_ENABLE_REPLAYNESCORE)
+  rn_add_test(test_replaynescore_audio)
   rn_add_test(test_replaynescore_adapter)
 endif()
