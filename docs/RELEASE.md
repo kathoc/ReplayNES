@@ -136,7 +136,8 @@ or with the release bundle, which is built with `--repo-url` and the key, so it 
 remote. The app's update notice (Flatpak portal) and `flatpak update` both use it.
 
 ```
-scripts/publish-flatpak-repo.sh            # build on the Deck, sign, update the repo, bundle, push gh-pages
+HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv: build, sign, update the repo, bundle, push gh-pages (no Deck needed)
+scripts/publish-flatpak-repo.sh            # the same on the Deck (deck@steamdeck.local)
 NO_PUSH=1 scripts/publish-flatpak-repo.sh  # stop before the push (inspect build/gh-pages first)
 SKIP_BUILD=1 ...                           # reuse the Deck's last build (~/ReplayNES-dev/repo)
 TARGET=test scripts/publish-flatpak-repo.sh   # local test repo on the Deck (~/ReplayNES-dev/test-repo, file://)
@@ -167,11 +168,16 @@ Self-updates must not need new sandbox permissions: the portal refuses an update
 - Dedicated key "ReplayNES Flatpak Repo", RSA 4096, no expiry, fingerprint
   `5267770BF84CC0DA2FB9B8D093BCD9083B5DF142`. Public key: `apps/linux/flatpak/replaynes-repo.gpg`
   (also embedded in the `.flatpakrepo` / `.flatpakref` and in every bundle).
-- Private key: **only on the Steam Deck**, GnuPG home `~/.local/share/replaynes-signing/gnupg`
-  (mode 700), **without a passphrase** so that the publish script can sign unattended. Risk: anyone
-  with access to that account (or a copy of the folder) can sign repository updates that every
-  installed ReplayNES accepts. Keep the Deck's account protected, never copy the folder into a repo,
+- Private key: on **rtxsrv** (since 2026-10-23, the release host: `HOST=local`, so a release no longer
+  needs the Deck awake) and on the **Steam Deck**, GnuPG home `~/.local/share/replaynes-signing/gnupg`
+  (mode 700 on both), **without a passphrase** so that the publish script can sign unattended. Moved
+  over ssh by a pipe (`gpg --export-secret-keys | gpg --import`, never written to a file). Risk: anyone
+  with access to either account (or a copy of the folder) can sign repository updates that every
+  installed ReplayNES accepts. Keep both accounts protected, never copy the folder into a repo,
   backup or sync folder unencrypted, and **never commit the private key**.
+- rtxsrv build host: flatpak (1.18) from the system, Flathub remote, `org.freedesktop.Sdk//25.08`,
+  `org.freedesktop.Platform//25.08` and `org.flatpak.Builder` installed `--user`; the build tree is
+  `~/ReplayNES-dev` like on the Deck.
 - Backup (store it offline / in a password manager, then delete the file):
   ```
   ssh deck@steamdeck.local 'GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --export-secret-keys --armor 5267770BF84CC0DA2FB9B8D093BCD9083B5DF142' > replaynes-repo-secret.asc
