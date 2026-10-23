@@ -349,6 +349,16 @@ machine stateと再現条件が変わるためcompat IDを`replaynescore/nrom-li
 - clean checkout検証: ReplayNES `ccb48ac`＋`FlashFilter.h`修正と独立コア`c0e6cfa`を別の場所へ取り出し、
   新core有効Release（警告error ON）build成功・33/33。
 
+## 2026-10-24 ReplayNESCore 0.7.0 / PPU C3
+
+ReplayNESCore 0.7.0（版上げcommit `1df5782`）は描画中`$2000/$2003/$2004/$2005/$2006/$2007`、
+scroll copy競合、非0 OAMADDR、OAM corruption、render fetchとのPPUDATA共有をownerへ統合した。
+portable port stateはPPC3、machine stateはMACH schema 6.2。adapter envelopeはschema 1を維持する。
+
+再現結果とmachine stateが変わるためcompat IDを`replaynescore/nrom-live/ppu-c3-v13`、build IDを
+`replaynescore-0.7.0+adapter-v13`へ更新した。Debug統合buildで`test_core_selection`と
+`test_replaynescore_adapter`の2/2が成功した（162.88秒）。
+
 ## 2026-10-20 Codex への依頼（ReplayNEScore 側）
 
 ReplayNEScore の修正は Codex の担当で、ReplayNES はコミットされた成果物を組み込むだけにする（利用者決定）。
