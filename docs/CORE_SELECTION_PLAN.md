@@ -371,6 +371,23 @@ machine stateとhard power後の再現結果が変わるためcompat IDを
 adapter envelopeはschema 1を維持する。hard power後のfresh instanceとのstate/PCM一致、
 soft resetの保持差、既存描画fixtureとの画素差分0を確認した。
 
+## 2026-10-24 ReplayNESCore 0.9.0 / accuracy C5
+
+ReplayNESCore 0.9.0（版上げcommit `7a51a94`）へ同期した。C5はMASK OFF後の発行済み
+PPU read完了、STATUS/NMIの有限11位相、pre-renderを跨ぐ遅延PPUDATA、APUのQ/H-MMIO・
+DMC/OAM競合と整数mixer oracleを閉じ、所有ROM 3本の有限実行とsnapshot forkを通した。
+
+host audioはframe-local平均をNTSC CPU clock `39375000/22 Hz`から48 kHzへの連続整数面積
+resamplerへ変更した。phase、area、入力値、出力cursor、DC blocker履歴、pending PCMをadapter
+stateへ保存し、frameごとの798/799 sample列を`audioSamplesForFrame()`と一致させる。DC blockerは
+実機analog modelとはせず、従来係数を固定したprofile 1として保持する。
+
+compat IDを`replaynescore/nrom-live/accuracy-c5-v15`、build IDを
+`replaynescore-0.9.0+adapter-v15`、公開state formatとadapter内部payload schemaを2へ更新した。
+連続resamplerの状態追加によりv14/schema 1のaudio payloadとは非互換で、旧stateを暗黙に
+読み替えない。Release相当で`test_core_selection` 4件、`test_replaynescore_audio` 3件、
+`test_replaynescore_adapter` 8件（計15件、assertion failure 0）を実行し、ctest 3/3が成功した。
+
 ## 2026-10-20 Codex への依頼（ReplayNEScore 側）
 
 ReplayNEScore の修正は Codex の担当で、ReplayNES はコミットされた成果物を組み込むだけにする（利用者決定）。
