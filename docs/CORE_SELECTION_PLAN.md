@@ -359,6 +359,18 @@ portable port stateはPPC3、machine stateはMACH schema 6.2。adapter envelope�
 `replaynescore-0.7.0+adapter-v13`へ更新した。Debug統合buildで`test_core_selection`と
 `test_replaynescore_adapter`の2/2が成功した（162.88秒）。
 
+## 2026-10-24 ReplayNESCore 0.8.0 / power・reset・state C4
+
+ReplayNESCore 0.8.0（版上げcommit `6819dea`）はpower-on/RESET時のPPU write inhibit、
+MACH schema 6.3、RESET途中state行列、複数所有NROMのsnapshot fork gateを追加した。
+adapterはhardware profileを選び、hard powerで残存していたframe番号を0へ戻す。soft resetは
+RAM/video/frameを保持する。
+
+machine stateとhard power後の再現結果が変わるためcompat IDを
+`replaynescore/nrom-live/power-c4-v14`、build IDを`replaynescore-0.8.0+adapter-v14`へ更新した。
+adapter envelopeはschema 1を維持する。hard power後のfresh instanceとのstate/PCM一致、
+soft resetの保持差、既存描画fixtureとの画素差分0を確認した。
+
 ## 2026-10-20 Codex への依頼（ReplayNEScore 側）
 
 ReplayNEScore の修正は Codex の担当で、ReplayNES はコミットされた成果物を組み込むだけにする（利用者決定）。
