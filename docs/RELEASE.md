@@ -144,6 +144,16 @@ SKIP_BUILD=1 ...                           # reuse the Deck's last build (~/Repl
 TARGET=test scripts/publish-flatpak-repo.sh   # local test repo on the Deck (~/ReplayNES-dev/test-repo, file://)
 ```
 
+**Updates on the Deck come from where the app was installed.** `scripts/build-linux-flatpak.sh` without
+`NO_INSTALL=1` installs the Deck's own build from its local repo (origin `replaynes1-origin`,
+`file:///home/deck/ReplayNES-dev/repo`); that install then only "updates" from the Deck's builds and
+never sees the published repository (2026-10-23: the Deck stayed on 0.6.3 while 0.6.4 was published
+from rtxsrv). For a device that should follow releases, install from the published repo:
+`flatpak install --user --reinstall -y replaynes io.github.replaynes.ReplayNES` (after
+`flatpak install --user …/io.github.replaynes.ReplayNES.flatpakref` has added the `replaynes` remote;
+app data in `~/.var/app/` is kept). `flatpak list --user --app --columns=application,version,origin`
+shows the origin.
+
 What it does: builds with `scripts/build-linux-flatpak.sh` (no install, no bundle) on the Deck;
 copies the published repository (gh-pages `flatpak/`, worktree `build/gh-pages`) to the Deck; adds
 the build as a new commit with `flatpak build-commit-from --gpg-sign` (subject "ReplayNES
