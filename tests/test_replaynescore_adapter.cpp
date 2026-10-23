@@ -14,6 +14,12 @@ std::vector<uint8_t> rom(std::initializer_list<uint8_t> code) {
   return out;
 }
 }
+TEST_CASE("ReplayNESCore C5 identity and state format are synchronized") {
+  rn::ReplayNEScoreAdapter core;
+  CHECK_EQ(core.compatId(),std::string("replaynescore/nrom-live/accuracy-c5-v15"));
+  CHECK_EQ(core.buildId(),std::string("replaynescore-0.9.0+adapter-v15"));
+  CHECK_EQ(core.stateFormatVersion(),2U);
+}
 TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   rn::ReplayNEScoreAdapter core;
   // Strobe then read both pad ports into RAM, loop. A is bit 0.

@@ -6,7 +6,7 @@ class ReplayNEScoreAdapter final : public ICore {
  public:
   ReplayNEScoreAdapter();
   ~ReplayNEScoreAdapter() override;
-  static std::string staticCompatId() { return "replaynescore/nrom-live/power-c4-v14"; }
+  static std::string staticCompatId() { return "replaynescore/nrom-live/accuracy-c5-v15"; }
   Status loadROM(const uint8_t*, size_t) override;
   Status powerCycle() override;
   Status softReset() override;
@@ -18,8 +18,8 @@ class ReplayNEScoreAdapter final : public ICore {
   Status saveState(std::vector<uint8_t>&) override;
   Status loadState(const uint8_t*, size_t) override;
   std::string compatId() const override { return staticCompatId(); }
-  std::string buildId() const override { return "replaynescore-0.8.0+adapter-v14"; }
-  uint32_t stateFormatVersion() const override { return 1; }
+  std::string buildId() const override { return "replaynescore-0.9.0+adapter-v15"; }
+  uint32_t stateFormatVersion() const override { return 2; }
   CoreKind kind() const override { return CoreKind::ReplayNEScore; }
  private:
   struct Impl;
