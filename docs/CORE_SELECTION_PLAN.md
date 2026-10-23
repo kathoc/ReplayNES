@@ -333,6 +333,12 @@ offscreen UIを新core有効/無効の両buildで実行しPASS、設定画面・
   ReplayNESはcoreの試験をbuildしないので統合には影響しない。Codex側で対応。
 - コミット: 独立コアの上記修正は作業ツリーからCodexが`94a9b62`として取り込み済み（内容同一）。
   ReplayNES側は`ccb48ac`（未追跡だったpalette header）と`db5bdd9`（`FlashFilter.h`の`<cstddef>`）。
+
+## 2026-10-23 ReplayNESCore 0.5.0 / DMC sample DMA
+
+ReplayNESCore commit `602f8df`でDMC sample DMA、CPU read停止、OAM DMA競合仲裁、DMC IRQ/status、MACH schema 5を完成した。adapterは既存のDMA/APU有効化を維持し、`$4015` D4で17-byte sampleを開始する合成ROMについて、別instanceへのstate復元後3 frameのmachine hashとPCM列が一致する試験を追加した。
+
+再現結果とmachine stateが変わるためcompat IDを`replaynescore/nrom-live/dmc-dma-v11`、build IDを`replaynescore-0.5.0+adapter-v11`へ更新した。adapter envelope自体は変わらないためstate format versionは1を維持する。Release統合build後、`test_core_selection`と`test_replaynescore_adapter`の2/2が成功した。ReplayNES反映commitは`ecd76b0`。
   後者はclean checkoutで判明: GCC 11.4では既定buildでも`FlashFilter.cpp`が`size_t`未宣言で失敗していた。
 - clean checkout検証: ReplayNES `ccb48ac`＋`FlashFilter.h`修正と独立コア`c0e6cfa`を別の場所へ取り出し、
   新core有効Release（警告error ON）build成功・33/33。
