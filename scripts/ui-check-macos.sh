@@ -18,9 +18,10 @@
 #                                            no flows by default: they change the bindings / settings)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="${1:-$ROOT/build/ReplayNES.app}"
-CLI="$ROOT/build/tools/replaynes-cli/replaynes-cli"
-OUT="${OUT:-$ROOT/build/ui-check}"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
+APP="${1:-$BUILD/ReplayNES.app}"
+CLI="$BUILD/tools/replaynes-cli/replaynes-cli"
+OUT="${OUT:-$BUILD/ui-check}"
 if [ "${LOCAL:-0}" = 1 ]; then ONLY="${ONLY:-input step countdown walk}"; else ONLY="${ONLY:-input step countdown flows walk}"; fi
 [ -d "$APP" ] || { echo "app not found: $APP"; exit 1; }
 [ -x "$CLI" ] || { echo "replaynes-cli not found: $CLI (cmake --build build)"; exit 1; }

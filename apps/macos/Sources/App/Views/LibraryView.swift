@@ -151,7 +151,7 @@ final class LibraryNav: ObservableObject {
         }
     }
 
-    private func flip(_ by: Int, count: Int) {
+    func flip(_ by: Int, count: Int) {
         let pages = pageCount(count)
         guard pages > 1 else { return }
         withAnimation(QMStyle.anim) {
@@ -183,6 +183,9 @@ struct LibraryHome: View {
     @FocusState private var searchFocused: Bool
 
     static let gap: CGFloat = 14
+    /// The grid is inset by this on both sides: the neighbouring pages' cards peek in at the window
+    /// edges (which way the pages go; docs/design/UI_REDESIGN.md "Which way the cards go").
+    static let peek: CGFloat = 36
     static let heroHeight: CGFloat = 140
 
     struct ContinueItem {
@@ -197,7 +200,7 @@ struct LibraryHome: View {
             let list = nav.entries(library)
             let hero = Self.continueItem(model)
             let inner = geo.size.width - 2 * QMStyle.margin
-            let cardW = (inner - 3 * Self.gap) / 4
+            let cardW = (inner - 2 * Self.peek - 3 * Self.gap) / 4
             let cardH = cardW * 0.56 + 52
             let fixed: CGFloat = 2 * QMStyle.margin + 34 + 18 + (hero != nil ? Self.heroHeight + 18 : 0) + 28 + 18
             let rows = max(1, Int((geo.size.height - fixed + Self.gap) / (cardH + Self.gap)))
@@ -432,16 +435,52 @@ struct LibraryHome: View {
             if list.isEmpty {
                 Text(empty).foregroundStyle(.white.opacity(0.6)).frame(height: cardH)
             }
-            ForEach(rows, id: \.first) { row in
+            ForEach(Array(rows.enumerated()), id: \.element.first) { r, row in
+                // The previous page's last column and the next page's first column peek in at the
+                // edges; the row is shifted so only a sliver of them is inside the window.
+                let prev = nav.page > 0 ? (nav.page - 1) * perPage + r * 4 + 3 : nil
+                let next = range.upperBound < list.count ? (nav.page + 1) * perPage + r * 4 : nil
                 HStack(spacing: Self.gap) {
+                    peekCard(prev, list: list, width: cardW, height: cardH, dir: -1)
                     ForEach(row, id: \.self) { i in
                         gameCard(list[i], index: i, width: cardW, artHeight: cardH - 52).frame(width: cardW, height: cardH)
                     }
+                    ForEach(row.count..<4, id: \.self) { _ in Color.clear.frame(width: cardW, height: cardH) }
+                    peekCard(next, list: list, width: cardW, height: cardH, dir: +1)
                 }
+                .offset(x: Self.peek - cardW - Self.gap)
             }
         }
         .id(nav.page)
         .transition(.opacity)
+    }
+
+    /// A neighbouring page's card: its picture only, dimmed; a click turns to that page.
+    @ViewBuilder private func peekCard(_ i: Int?, list: [LibraryROM], width: CGFloat, height: CGFloat, dir: Int) -> some View {
+        if let i, list.indices.contains(i) {
+            let rom = list[i]
+            VStack(spacing: 0) {
+                GameArt(image: ThumbnailStore.image(romSHA: rom.sha256), name: rom.title)
+                    .frame(width: width, height: height - 52)
+                    .clipped()
+                Color.clear.frame(height: 52)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: QMStyle.tileRadius))
+            .background(RoundedRectangle(cornerRadius: QMStyle.tileRadius).fill(QMStyle.tile))
+            .overlay(RoundedRectangle(cornerRadius: QMStyle.tileRadius).fill(Color.black.opacity(0.55)))
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .onTapGesture { nav.flip(dir, count: list.count) }
+            .onAppear { requestPicture(rom) }
+        } else {
+            Color.clear.frame(width: width, height: height)
+        }
+    }
+
+    /// No picture yet: make the ROM's frame-300 picture in the background (ThumbnailStore).
+    private func requestPicture(_ rom: LibraryROM) {
+        guard ThumbnailStore.image(romSHA: rom.sha256) == nil else { return }
+        ThumbnailStore.requestRomPicture(path: rom.url.path, sha: rom.sha256) { [library] in library.objectWillChange.send() }
     }
 
     static func playTime(_ seconds: Double) -> String {
@@ -485,6 +524,7 @@ struct LibraryHome: View {
         .contentShape(Rectangle())
         .onHover { if $0 { nav.focus = i } }
         .onTapGesture { nav.focus = i; Self.play(rom, model: model) }
+        .onAppear { requestPicture(rom) }
         .contextMenu {
             Button(favorite ? "Unfavorite" : "Favorite") { library.toggleFavorite(rom) }
             Button("Projects…") { nav.projectsFocus = 0; nav.projectsOf = rom }

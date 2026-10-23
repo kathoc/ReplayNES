@@ -47,6 +47,29 @@ enum ThumbnailStore {
         }
     }
 
+    /// A ROM with no picture of its own: emulate it from power-on for `romPictureFrame` frames without
+    /// input (in memory, no project; nothing written but the thumbnail) and save that picture as its
+    /// thumbnail; `done` runs on the main thread when it is there. Asked by the library for the cards
+    /// on screen; each ROM at most once per run (a ROM the engine cannot run keeps its name tile).
+    /// docs/design/UI_REDESIGN.md "A picture for every ROM".
+    static let romPictureFrame = 300
+    private static var asked = Set<String>()  // main thread
+    private static let pictureQueue = DispatchQueue(label: "replaynes.rom-picture", qos: .utility)
+    static func requestRomPicture(path: String, sha: String?, done: @escaping () -> Void) {
+        guard dir != nil, let sha, !sha.isEmpty, image(romSHA: sha) == nil, asked.insert(sha).inserted else { return }
+        pictureQueue.async {
+            var s: OpaquePointer?
+            guard rn_session_new(path, nil, nil, &s) == RN_OK, let s else { return }
+            defer { rn_session_close(s) }
+            for _ in 0..<romPictureFrame {
+                if rn_step(s, 0, 0, 0, nil) != RN_OK { return }
+            }
+            guard let v = rn_video(s) else { return }
+            let px = Array(UnsafeBufferPointer(start: v, count: Int(RN_VIDEO_WIDTH) * Int(RN_VIDEO_HEIGHT)))
+            save(pixels: px, project: nil, romSHA: sha, on: pictureQueue, done: done)
+        }
+    }
+
     static func image(project path: String) -> CGImage? { load(url(project: path)) }
     static func image(romSHA sha: String?) -> CGImage? { sha.flatMap { load(url(romSHA: $0)) } }
 

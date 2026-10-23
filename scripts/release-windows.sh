@@ -24,6 +24,7 @@
 #   EXTRA_CMAKE_ARGS       passed to scripts/build-windows.sh (e.g. -DRNW_UPDATE_PUBLIC_KEY=<test key>)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
 REPO="kathoc/ReplayNES"
 VERSION="${1:?usage: scripts/release-windows.sh <version>}"
 SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-ReplayNES}"
@@ -44,7 +45,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
 fi
 
 # Sparkle's CLI tools (the macOS release build resolves them: scripts/build-macos.sh).
-BIN="$ROOT/build/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin"
+BIN="$BUILD/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin"
 [ -x "$BIN/sign_update" ] || { echo "Sparkle tools not found in $BIN (run scripts/build-macos.sh once)"; exit 1; }
 # The key file (ED_KEY_FILE or ~/.config/replaynes/sparkle-ed25519.key) or the keychain; its public
 # half must be SUPublicEDKey in project.yml (scripts/lib/sparkle-key.sh, docs/RELEASE.md).

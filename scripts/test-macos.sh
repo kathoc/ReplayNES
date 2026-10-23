@@ -6,8 +6,9 @@
 #     String Catalog entry translated, and catalog keys == strings extracted by this build.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
 APPDIR="$ROOT/apps/macos"
-SMOKE_DIR="$ROOT/build/smoke"
+SMOKE_DIR="$BUILD/smoke"
 mkdir -p "$SMOKE_DIR"
 SMOKE="$SMOKE_DIR/smoke-export.mp4"
 rm -f "$SMOKE"
@@ -15,12 +16,12 @@ rm -f "$SMOKE"
 (cd "$APPDIR" && "$(command -v xcodegen || echo /opt/homebrew/bin/xcodegen)" generate --quiet)
 # TEST_RUNNER_ prefixed variables are forwarded to the test process.
 TEST_RUNNER_RN_SMOKE_MP4="$SMOKE" xcodebuild -project "$APPDIR/ReplayNES.xcodeproj" -scheme ReplayNES \
-  -destination 'platform=macOS,arch=arm64' -derivedDataPath "$ROOT/build/DerivedData" test \
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD/DerivedData" RN_ENGINE_BUILD_DIR="$BUILD/xcode-engine" test \
   | grep -E "Test Case .*(passed|failed)|error:|Executed|\*\* TEST" \
   || { echo "xcodebuild test failed"; exit 1; } # pipefail: xcodebuild's status (PIPESTATUS after "|| true" was always 0)
 
 echo "==> localization check"
-python3 "$ROOT/scripts/check-l10n.py" --stringsdata "$ROOT/build/DerivedData/Build/Intermediates.noindex/ReplayNES.build"
+python3 "$ROOT/scripts/check-l10n.py" --stringsdata "$BUILD/DerivedData/Build/Intermediates.noindex/ReplayNES.build"
 
 [ -f "$SMOKE" ] || { echo "smoke export missing: $SMOKE"; exit 1; }
 if command -v ffprobe >/dev/null; then

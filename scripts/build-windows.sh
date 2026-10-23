@@ -17,7 +17,7 @@ ARCHS="${1:-all}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 VERSION="$(sed -n 's/^project(ReplayNES VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")"
 [ -n "${VERSION_OVERRIDE:-}" ] && VERSION="$VERSION_OVERRIDE"
-BUILD_BASE="${BUILD_BASE:-$ROOT/build}"
+BUILD_BASE="${BUILD_BASE:-$("$ROOT/scripts/lib/build-root.sh" "$ROOT")}"
 DIST="${DIST:-$ROOT/dist}"
 [ -f "$ROOT/third_party/SDL/CMakeLists.txt" ] || { echo "third_party/SDL missing: git submodule update --init third_party/SDL" >&2; exit 1; }
 

@@ -23,11 +23,12 @@
 #                         when it exists; docs/RELEASE.md "Signing key file"): signing works over ssh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
 REPO="kathoc/ReplayNES"
 VERSION="${1:?usage: scripts/release.sh <version>}"
 SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-ReplayNES}"
 PROJECT_VERSION="$(sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p' "$ROOT/apps/macos/project.yml" | head -1)"
-APP="${APP:-$ROOT/build/ReplayNES.app}"
+APP="${APP:-$BUILD/ReplayNES.app}"
 ZIP="${ZIP:-$ROOT/dist/ReplayNES-$VERSION-macOS-arm64.zip}"
 APPCAST="${APPCAST:-$ROOT/dist/appcast.xml}"
 TAG="v$VERSION"
@@ -42,7 +43,7 @@ fi
 [ -d "$APP" ] || { echo "missing $APP"; exit 1; }
 
 # Sparkle CLI tools come with the resolved SPM package (same version as the embedded framework).
-BIN="$ROOT/build/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin"
+BIN="$BUILD/DerivedData-release/SourcePackages/artifacts/sparkle/Sparkle/bin"
 [ -x "$BIN/sign_update" ] || { echo "Sparkle tools not found in $BIN (run scripts/build-macos.sh first)"; exit 1; }
 
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Contents/Info.plist"; }
