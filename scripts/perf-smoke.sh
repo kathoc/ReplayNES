@@ -28,12 +28,13 @@
 # are only overridden through the volatile argument domain (-integerScale NO ...).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="${1:-$ROOT/build/ReplayNES.app}"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
+APP="${1:-$BUILD/ReplayNES.app}"
 DUR="${2:-60}"
 ROM="${3:-}"
 BIN="$APP/Contents/MacOS/ReplayNES"
-CLI="$ROOT/build/tools/replaynes-cli/replaynes-cli"
-WORK="${WORK:-$ROOT/build/perf-smoke}"
+CLI="$BUILD/tools/replaynes-cli/replaynes-cli"
+WORK="${WORK:-$BUILD/perf-smoke}"
 WARMUP="${WARMUP:-8}"
 [ -x "$BIN" ] || { echo "app not found: $APP"; exit 1; }
 rm -rf "$WORK" && mkdir -p "$WORK/library" "$WORK/session"

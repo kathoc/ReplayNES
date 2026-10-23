@@ -6,7 +6,8 @@
 # (raw PPU output only; ROMs are never committed). Without --ppu a synthetic scroll is used.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/build/crt-bench"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
+OUT="$BUILD/crt-bench"
 mkdir -p "$OUT"
 CRT="$ROOT/apps/macos/Sources/Core/CRT"
 SRC=("$CRT/CRTModel.swift" "$CRT/CRTShaders.swift" "$CRT/CRTRenderer.swift" "$ROOT/apps/macos/Tools/CRTBench/main.swift")

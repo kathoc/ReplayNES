@@ -7,6 +7,7 @@ VM="${WINDOWS_VM:-Windows 11}"
 PRLCTL="${PRLCTL:-$(command -v prlctl || echo /usr/local/bin/prlctl)}"
 [ -x "$PRLCTL" ] || { echo "prlctl not found (Parallels Desktop required, see docs/WINDOWS.md)" >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
 
 # Guest working directory (inside the logged-in user's profile; delete it to undo everything).
 GUEST_DIR='%USERPROFILE%\ReplayNES-dev'

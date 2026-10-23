@@ -9,10 +9,10 @@ set -euo pipefail
 . "$(dirname "$0")/common.sh"
 need_running
 ARCHS="${1:-all}"
-[ "$ARCHS" = all ] && ARCHS="$(for a in x86_64 aarch64; do [ -d "$ROOT/build/windows-$a" ] && echo "$a"; done)"
+[ "$ARCHS" = all ] && ARCHS="$(for a in x86_64 aarch64; do [ -d "$BUILD/windows-$a" ] && echo "$a"; done)"
 [ -n "$ARCHS" ] || { echo "nothing built (scripts/build-windows.sh)" >&2; exit 1; }
 for arch in $ARCHS; do
-  B="$ROOT/build/windows-$arch"
+  B="$BUILD/windows-$arch"
   [ -f "$B/tests/test_core.exe" ] || { echo "$B not built (scripts/build-windows.sh $arch)" >&2; exit 1; }
   SRC="$(host_unc "$B")"
   DST="$GUEST_DIR\\$arch"

@@ -14,7 +14,7 @@ ARCH="${1:-aarch64}"; shift || true
 EXTRA="$*"
 command -v ffprobe >/dev/null || { echo "ffprobe missing (brew install ffmpeg)"; exit 1; }
 "$(dirname "$0")/deploy.sh" "$ARCH" >/dev/null
-OUT="$ROOT/build/windows-$ARCH/export-selftest"
+OUT="$BUILD/windows-$ARCH/export-selftest"
 rm -rf "$OUT"; mkdir -p "$OUT"
 GT="%TEMP%\\replaynes-export-selftest"
 win_cmd "(if exist \"$GT\" rmdir /s /q \"$GT\") & cd /d \"$GUEST_DIR\\$ARCH\" & replaynes-export.exe --self-test \"$GT\" $EXTRA" | tee "$OUT/self-test.log"

@@ -11,7 +11,7 @@ set -euo pipefail
 need_running
 GUEST=0
 if [ "${1:-}" = --guest ]; then GUEST=1; shift; fi
-OUT="${1:-$ROOT/build/vm-shots/windows-$(date +%Y%m%d-%H%M%S).png}"
+OUT="${1:-$BUILD/vm-shots/windows-$(date +%Y%m%d-%H%M%S).png}"
 mkdir -p "$(dirname "$OUT")"
 OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 if [ "$GUEST" = 1 ]; then

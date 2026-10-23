@@ -9,11 +9,11 @@ set -euo pipefail
 need_running
 ARCHS="${1:-all}"
 FILTER="${2:-}"
-[ "$ARCHS" = all ] && ARCHS="$(for a in x86_64 aarch64; do [ -d "$ROOT/build/windows-$a" ] && echo "$a"; done)"
+[ "$ARCHS" = all ] && ARCHS="$(for a in x86_64 aarch64; do [ -d "$BUILD/windows-$a" ] && echo "$a"; done)"
 "$(dirname "$0")/deploy.sh" "${1:-all}"
 failed=0
 for arch in $ARCHS; do
-  B="$ROOT/build/windows-$arch"
+  B="$BUILD/windows-$arch"
   LOGS="$B/vm-test-logs"
   rm -rf "$LOGS"; mkdir -p "$LOGS"
   TMP="%TEMP%\\replaynes-tests-$arch"

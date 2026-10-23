@@ -10,7 +10,8 @@
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SRC="${1:-$ROOT/build/ReplayNES.app}"; shift || true
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
+SRC="${1:-$BUILD/ReplayNES.app}"; shift || true
 [ -e "$SRC" ] || { echo "not found: $SRC" >&2; exit 1; }
 vm_running "$VM" || { echo "$VM is not running (scripts/macos-vm/start.sh)" >&2; exit 1; }
 IP="$(vm_ip)"

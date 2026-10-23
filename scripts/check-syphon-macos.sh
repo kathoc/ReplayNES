@@ -9,10 +9,11 @@
 # root points to a temp dir, so the user's preferences and ~/Documents are not touched.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="${1:-$ROOT/build/ReplayNES.app}"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
+APP="${1:-$BUILD/ReplayNES.app}"
 BIN="$APP/Contents/MacOS/ReplayNES"
-CLI="$ROOT/build/tools/replaynes-cli/replaynes-cli"
-WORK="$ROOT/build/syphon-check"
+CLI="$BUILD/tools/replaynes-cli/replaynes-cli"
+WORK="$BUILD/syphon-check"
 [ -x "$BIN" ] || { echo "app not found: $APP"; exit 1; }
 [ -x "$CLI" ] || { echo "replaynes-cli not found: $CLI (cmake --build build)"; exit 1; }
 rm -rf "$WORK" && mkdir -p "$WORK/library"
@@ -22,7 +23,7 @@ rm -rf "$WORK" && mkdir -p "$WORK/library"
 # the framework inside the app.
 FW="$APP/Contents/Frameworks"
 HDR=""
-for d in "$(dirname "$APP")" "$ROOT/build/DerivedData-release/Build/Products/Release" "$ROOT/build/DerivedData/Build/Products/Debug"; do
+for d in "$(dirname "$APP")" "$BUILD/DerivedData-release/Build/Products/Release" "$BUILD/DerivedData/Build/Products/Debug"; do
   if [ -d "$d/Syphon.framework/Modules" ]; then HDR="$d"; break; fi
 done
 [ -n "$HDR" ] || { echo "Syphon.framework with module map not found (build the app first)"; exit 1; }

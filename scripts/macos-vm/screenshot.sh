@@ -6,8 +6,9 @@
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+BUILD="$("$ROOT/scripts/lib/build-root.sh" "$ROOT")"  # build/, or outside iCloud Drive (scripts/lib/build-root.sh)
 vm_running || { echo "$VM is not running (scripts/macos-vm/start.sh)" >&2; exit 1; }
-OUT="${1:-$ROOT/build/vm-shots/$(date +%Y%m%d-%H%M%S).png}"
+OUT="${1:-$BUILD/vm-shots/$(date +%Y%m%d-%H%M%S).png}"
 mkdir -p "$(dirname "$OUT")"
 "$PRLCTL" capture "$VM" --file "$OUT" >/dev/null
 [ -s "$OUT" ] || { echo "capture failed" >&2; exit 1; }
