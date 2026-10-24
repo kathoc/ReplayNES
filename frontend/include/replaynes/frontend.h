@@ -349,6 +349,8 @@ typedef struct rnf_action_info {
 rn_status rnf_input_set_layout_json(const char* json);
 const char* rnf_input_layout_name(void);
 char* rnf_input_bindings_filename(void);
+/* NES ignores kind; nonzero selects the arcade stick profile. */
+char* rnf_input_bindings_filename_for_kind(int stick);
 uint8_t rnf_input_record_directions(const rn_input_record* record);
 int rnf_input_record_buttons_pressed(const rn_input_record* now, const rn_input_record* previous);
 size_t rnf_input_button_count(void);
@@ -372,6 +374,7 @@ size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
 /* Engine config JSON (rn_input_load_json) of the defaults. */
 char* rnf_input_default_config_json(rnf_keyboard_scheme scheme);
+char* rnf_input_default_config_json_for_kind(rnf_keyboard_scheme scheme, int stick);
 /* Controller hotkeys of layout 1 (<= 0.1.x) and layouts 2-7 (pairs in a = input, b = action). */
 rnf_list* rnf_input_legacy_controller_hotkeys(void);
 rnf_list* rnf_input_controller_hotkeys(void);

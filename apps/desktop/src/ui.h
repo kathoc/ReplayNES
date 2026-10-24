@@ -369,6 +369,7 @@ class UI : public DialogHost {
   bool thumbSaveWanted_ = false;
   // Settings.
   int diagramFocus_ = 0;
+  bool controlsEditingSelected_ = false;
   std::vector<std::string> diagramIds_;  // this frame's diagram elements (physical ids) ...
   std::vector<ImVec2> diagramCenters_;   // ... and where they are (D-pad navigation)
   std::string assignElement_;  // physical id whose action is picked on "controls.assign"

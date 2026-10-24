@@ -287,6 +287,15 @@ void UI::buildMenu(double now) {
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
   syncMenuCounts();
+  const std::string currentPage = menuPageId();
+  if (d_.input->usesDeviceKinds() &&
+      (currentPage == "settings.controls" || currentPage.rfind("controls.", 0) == 0)) {
+    if (!controlsEditingSelected_) {
+      d_.settings->diagramSlot = std::max(0, d_.input->lastSlot());
+      controlsEditingSelected_ = true;
+    }
+    d_.input->setEditingSlot(d_.settings->diagramSlot);
+  }
   handleMenuInput(now);
   if (!menuOpen_ || !rnf_menu_depth(menu_)) return;
   size_t page = rnf_menu_current(menu_);
@@ -303,7 +312,9 @@ void UI::buildMenu(double now) {
     header = sheets || id == "controls.keyboard" || id == "controls.assign" || id == "library.projects";
     if (sheets) reserve = RNF_MENU_MAX_ITEMS;
   }
-  PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header, reserve);
+  const bool profileHeader = d_.input->usesDeviceKinds() && std::strcmp(pi.id, "settings.controls") == 0;
+  PageGeometry g = layoutPage(m, pi.kind, count, pi.columns, header, reserve,
+                              profileHeader ? m.hint() + S(16) : 0);
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -321,6 +332,21 @@ void UI::buildMenu(double now) {
   else dl->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(16, 16, 19, 255));
   int vtx0 = dl->VtxBuffer.Size;
   buildBreadcrumb(m.topBar());
+  if (profileHeader) {
+    const std::string path = d_.emu->status().romPath;
+    std::string title;
+    for (const auto& rom : d_.library->roms())
+      if (LibraryModel::samePath(rom.path, path)) { title = rom.title(); break; }
+    if (title.empty()) {
+      const std::string filename = path.substr(path.find_last_of("/\\") + 1);
+      rnf_game_info info{};
+      const bool known = rnf_gamedb_find_name(filename.c_str(), &info) != 0;
+      title = str(rnf_game_title(known ? &info : nullptr, filename.empty() ? rnf_input_layout_name() : filename.c_str()));
+    }
+    const std::string kind = d_.input->editingKind() == DeviceKind::stick ? TR("Arcade Stick") : TR("Pad");
+    textFit(dl, m.hint(), tl(m.content()), m.content().w, kTextDim,
+            TRF("%@ · %@ Settings", {title, kind}));
+  }
   layoutRecord(g.content);
   switch (pi.kind) {
     case RNF_MENU_PAGE_TILES: buildTilesPage(g, page, now); break;
@@ -855,8 +881,33 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
                       (pad.pad ? pad.name : std::string(TR("Not Connected")) + "  ·  " + str(rnf_controller_family_title(fam)));
   textFit(dl, m.label(), ImVec2(g.panel.x + S(20), g.panel.y + S(16)), g.panel.w - S(40), kText, title);
   LRect area{g.panel.x + S(20), g.panel.y + S(16) + m.label() * 1.8f, g.panel.w - S(40), 0};
+  LRect kindRow{};
+  if (d_.input->usesDeviceKinds()) {
+    kindRow = {area.x, area.y, area.w, m.label() + S(18)};
+    area.y += kindRow.h + S(8);
+  }
   area.h = g.panel.bottom() - area.y - S(16);
   buildDiagram(fam, slot, area, now);
+  if (d_.input->usesDeviceKinds()) {
+    const int index = int(diagramIds_.size());
+    diagramIds_.push_back("__kind__");
+    diagramCenters_.push_back(ImVec2(kindRow.x + kindRow.w / 2, kindRow.y + kindRow.h / 2));
+    const KindOverride choice = d_.input->kindOverride(slot);
+    std::string value = choice == KindOverride::stick ? TR("Arcade Stick") : TR("Pad");
+    if (choice == KindOverride::automatic)
+      value = TRF("Automatic (%@)", {std::string(pad.detectedKind == DeviceKind::stick ? TR("Arcade Stick") : TR("Pad"))});
+    const std::string label = TRF("Kind: %@", {value});
+    dl->AddRectFilled(tl(kindRow), br(kindRow), kTile, S(8));
+    textFit(dl, m.label(), ImVec2(kindRow.x + S(12), kindRow.y + S(9)), kindRow.w - S(24), kText, label);
+    ImGui::SetCursorScreenPos(tl(kindRow));
+    const bool clicked = ImGui::InvisibleButton("##controllerkind", ImVec2(kindRow.w, kindRow.h));
+    if (ImGui::IsItemHovered() && (clicked || ImGui::GetIO().MouseDelta.x || ImGui::GetIO().MouseDelta.y)) diagramFocus_ = index;
+    if (clicked) activateRow("controls.controller", size_t(index));
+    if (diagramFocus_ == index) {
+      drawFocus(kindRow, S(8), now);
+      description_ = label;
+    }
+  }
   prompt({"ui.confirm"}, TR("Change"));
   prompt({"face.west"}, TR("Next Pad"));
   prompt({"face.north"}, TR("Reset"));
@@ -925,7 +976,15 @@ void UI::activateRow(const std::string& page, size_t row) {
     else if (row == 1) d_.app->tryRom(r.path);
     else if (row - 2 < projects.size()) d_.app->continueProject(projects[row - 2].path);
   } else if (page == "controls.controller") {
-    if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) openAssign(diagramIds_[size_t(diagramFocus_)]);
+    if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) {
+      if (diagramIds_[size_t(diagramFocus_)] == "__kind__") {
+        const int slot = d_.settings->diagramSlot;
+        const KindOverride current = d_.input->kindOverride(slot);
+        const KindOverride next = current == KindOverride::automatic ? KindOverride::pad :
+                                  current == KindOverride::pad ? KindOverride::stick : KindOverride::automatic;
+        d_.input->setKindOverride(slot, next);
+      } else openAssign(diagramIds_[size_t(diagramFocus_)]);
+    }
   } else if (page == "controls.assign") {
     int slot = 0;
     rnf_input_controller_slot(assignElement_.c_str(), &slot);
@@ -969,16 +1028,21 @@ void UI::rowAction(const std::string& page, size_t row, char key) {
     int slot = std::clamp(d_.settings->diagramSlot, 0, InputRouter::kSlots - 1);
     if (key == 'x') {
       d_.settings->diagramSlot = (slot + 1) % InputRouter::kSlots;
+      if (d_.input->usesDeviceKinds()) d_.input->setEditingSlot(d_.settings->diagramSlot);
       diagramFocus_ = 0;
       changed();
     } else {
       Dialog d;
-      d.title = TRF("Reset Pad %lld to Defaults", {slot + 1});
+      d.title = d_.input->usesDeviceKinds() ? TR("Reset Controls") : TRF("Reset Pad %lld to Defaults", {slot + 1});
+      if (d_.input->usesDeviceKinds()) d.message = TR("Reset only this title and controller kind to defaults");
       d.buttons = {TR("Reset"), TR("Cancel")};
       d.destructiveIndex = 0;
       d.cancelIndex = 1;
       d.onResult = [this, slot](int b, bool) {
-        if (b == 0) d_.input->resetController(slot);
+        if (b == 0) {
+          if (d_.input->usesDeviceKinds()) d_.input->resetToDefaults();
+          else d_.input->resetController(slot);
+        }
       };
       showDialog(std::move(d));
     }

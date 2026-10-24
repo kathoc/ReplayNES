@@ -35,10 +35,15 @@ namespace rnl {
 
 struct Settings;
 
+enum class DeviceKind { pad, stick };
+enum class KindOverride { automatic, pad, stick };
+
 struct PadInfo {
   SDL_JoystickID id = 0;
   SDL_Gamepad* pad = nullptr;
   std::string name;
+  std::string guid;
+  DeviceKind detectedKind = DeviceKind::pad;
   rnf_controller_family family = RNF_FAMILY_GENERIC;
   std::map<std::string, std::string> labels;  // printed face labels by element ("face.east" -> "B")
   bool lt = false, rt = false;
@@ -59,6 +64,14 @@ class InputRouter {
   /// Saved bindings (or the defaults) + the core's layout migrations.
   void load();
   void setLayout(const char* json);
+  bool usesDeviceKinds() const { return !nesLayout_; }
+  static DeviceKind detectDeviceKind(SDL_JoystickType type, const std::string& name);
+  DeviceKind deviceKind(int slot) const;
+  KindOverride kindOverride(int slot) const;
+  void setKindOverride(int slot, KindOverride kind);
+  void setEditingSlot(int slot);
+  DeviceKind editingKind() const;
+
   bool buttonTurbo(const std::string& action, int& period, int& duty) const;
   void setButtonTurbo(const std::string& action, int period, int duty);
 
@@ -146,7 +159,14 @@ class InputRouter {
 
  private:
   void persist();
-  void refreshBindings();
+  rn_input* editingInput() const;
+  std::string kindFile(DeviceKind kind) const;
+  void rebuildRuntime();
+  void loadKindOverrides();
+  void persistKindOverrides();
+  void configureRuntimeBindings();
+  void refreshBindings(bool configureRuntime = true);
+  void noteLastSlot(int slot);
   void setPressed(const std::string& id, bool down, double t, bool game);
   void padButton(int slot, int button, bool down, double t);
   void padAxis(int slot, int axis, float v, double t);
@@ -166,6 +186,9 @@ class InputRouter {
   void detach(SDL_JoystickID id);
 
   rn_input* in_ = nullptr;
+  rn_input* profiles_[2] = {nullptr, nullptr};
+  int editingSlot_ = -1;
+  std::map<std::string, KindOverride> kindOverrides_;
   std::string file_;
   std::string baseFile_;
   std::string layoutJson_;

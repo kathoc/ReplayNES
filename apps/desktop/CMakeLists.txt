@@ -94,3 +94,20 @@ if(RNL_DESKTOP_TESTS)
   add_test(NAME test_desktop_frontend COMMAND test_desktop_frontend)
   set_tests_properties(test_desktop_frontend PROPERTIES TIMEOUT 300)
 endif()
+
+# Integration coverage for SDL device identity, routing, and per-kind persistence.
+# The portable logic suite remains available when SDL is not installed.
+if(RNL_DESKTOP_TESTS)
+  find_package(SDL3 QUIET CONFIG)
+  if(TARGET SDL3::SDL3)
+    add_executable(test_input_profiles tests/test_input_profiles.cpp src/input_router.cpp
+      ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp)
+    target_include_directories(test_input_profiles PRIVATE ${RNL_REPO_ROOT}/tests)
+    target_link_libraries(test_input_profiles PRIVATE rnl_logic SDL3::SDL3)
+    target_compile_definitions(test_input_profiles PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}")
+    target_compile_options(test_input_profiles PRIVATE ${RNL_WARNINGS})
+    rnl_windows_manifest(test_input_profiles)
+    add_test(NAME test_input_profiles COMMAND test_input_profiles)
+    set_tests_properties(test_input_profiles PROPERTIES TIMEOUT 60)
+  endif()
+endif()

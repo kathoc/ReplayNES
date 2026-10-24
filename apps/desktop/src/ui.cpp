@@ -255,6 +255,7 @@ void UI::setMenu(bool open) {
   double now = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0;
   (void)now;
   if (open) {
+    controlsEditingSelected_ = false;
     // Nothing reaches the game while the menu is up; the emulation waits paused.
     d_.emu->setRewindHeld(false);
     d_.emu->setFastForwardHeld(false);
@@ -505,7 +506,10 @@ void UI::buildMenuPill(double now) {
   ImGuiIO& io = ImGui::GetIO();
   const UiMetrics& m = metrics_;
   rnf_controller_family fam = promptFamily();
-  std::string chord = menuChordGlyph(fam, controllerConnected());
+  std::string chord = d_.input->usesDeviceKinds() && controllerConnected() &&
+                              d_.input->deviceKind(std::max(0, d_.input->lastSlot())) == DeviceKind::stick
+      ? padGlyph(fam, "leftShoulder") + "+" + padGlyph(fam, "leftTrigger")
+      : menuChordGlyph(fam, controllerConnected());
   std::string icon = icons::glyph("menu-2");
   std::string label = TR("Menu");
   float fs = m.label(), hs = m.hint();

@@ -481,3 +481,61 @@ TEST_CASE("S5b layout Turbo pages are opt-in and legacy Controls retain their ex
   CHECK(enabledControls.size() <= RNF_MENU_MAX_ITEMS);
   CHECK(enabledDetail.size() <= RNF_MENU_MAX_ITEMS);
 }
+
+TEST_CASE("P stick defaults use arcade rows turbo and dedicated hotkeys") {
+  LayoutScope scope;
+  for (int count : {1, 2, 3, 6}) {
+    rn::InputLayout layout;
+    layout.name = "fbneo:profile-test";
+    layout.recordBytes = 5;
+    for (int player = 1; player <= 2; ++player) {
+      const auto prefix = "p" + std::to_string(player) + ".";
+      for (int n = 1; n <= count; ++n)
+        layout.buttons.push_back({prefix + "b" + std::to_string(n), "", uint16_t(player - 1), uint8_t(n - 1)});
+      layout.buttons.push_back({prefix + "coin", "", uint16_t(player + 2), 0});
+      layout.buttons.push_back({prefix + "start", "", uint16_t(player + 2), 1});
+      layout.buttons.push_back({prefix + "up", "", uint16_t(player + 2), 2});
+    }
+    REQUIRE_EQ(rnf_input_set_layout_json(layout.toJson().c_str()), RN_OK);
+    CHECK_EQ(take(rnf_input_bindings_filename_for_kind(0)), "bindings-fbneo%3Aprofile-test.json");
+    CHECK_EQ(take(rnf_input_bindings_filename_for_kind(1)), "bindings-fbneo%3Aprofile-test@stick.json");
+    rnf_input_config* config = nullptr;
+    REQUIRE_EQ(rnf_input_config_parse(take(rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, 1)).c_str(), &config), RN_OK);
+    std::set<std::string> pairs;
+    for (size_t i = 0; i < rnf_input_config_binding_count(config); ++i) {
+      rnf_binding b{};
+      REQUIRE(rnf_input_config_binding_get(config, i, &b));
+      pairs.insert(std::string(b.input) + "=" + b.action);
+    }
+    rnf_input_config_free(config);
+    const char* elements[] = {"face.west", "face.north", "rightShoulder", "face.south", "face.east", "rightTrigger"};
+    for (int slot = 0; slot < 2; ++slot) {
+      const auto gc = "gc" + std::to_string(slot) + ":";
+      const auto player = "p" + std::to_string(slot + 1) + ".";
+      for (int n = 0; n < count; ++n) CHECK(pairs.count(gc + elements[n] + "=" + player + "b" + std::to_string(n + 1)));
+      if (count <= 3) for (int n = 0; n < count; ++n)
+        CHECK(pairs.count(gc + elements[n + 3] + "=" + player + "b" + std::to_string(n + 1) + ".turbo"));
+      CHECK(pairs.count(gc + "options=" + player + "coin"));
+      CHECK(pairs.count(gc + "menu=" + player + "start"));
+      CHECK(pairs.count(gc + "dpad.up=" + player + "up"));
+      CHECK(pairs.count(gc + "lstick.up=" + player + "up"));
+    }
+    CHECK(pairs.count("gc0:leftTrigger=hk.rewind"));
+    CHECK(pairs.count("gc0:leftShoulder=hk.fast_forward"));
+    CHECK(pairs.count("gc0:leftShoulder+gc0:leftTrigger=hk.menu") || pairs.count("gc0:leftTrigger+gc0:leftShoulder=hk.menu"));
+    CHECK_FALSE(pairs.count("gc0:leftShoulder+gc0:rightShoulder=hk.menu"));
+    CHECK_FALSE(pairs.count("gc0:rightTrigger=hk.fast_forward"));
+    CHECK_EQ(take(rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, 0)), take(rnf_input_default_config_json(RNF_KEYBOARD_SDL)));
+  }
+}
+
+TEST_CASE("P NES ignores device kind for filenames and complete defaults") {
+  LayoutScope scope;
+  REQUIRE_EQ(rnf_input_set_layout_json(nullptr), RN_OK);
+  for (auto scheme : {RNF_KEYBOARD_SDL, RNF_KEYBOARD_MACOS}) {
+    CHECK_EQ(take(rnf_input_default_config_json_for_kind(scheme, 1)), take(rnf_input_default_config_json(scheme)));
+    CHECK_EQ(take(rnf_input_default_config_json_for_kind(scheme, 0)), take(rnf_input_default_config_json(scheme)));
+  }
+  CHECK_EQ(take(rnf_input_bindings_filename_for_kind(1)), "bindings.json");
+  CHECK_EQ(take(rnf_input_bindings_filename_for_kind(0)), "bindings.json");
+}

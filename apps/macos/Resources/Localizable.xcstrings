@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Reset only this title and controller kind to defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタイトル・この種類の設定だけを初期設定に戻します"
+          }
+        }
+      }
+    },
+    "%@ · %@ Settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@ の設定"
+          }
+        }
+      }
+    },
+    "Kind: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "種類: %@"
+          }
+        }
+      }
+    },
+    "Automatic (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動（%@）"
+          }
+        }
+      }
+    },
+    "Pad": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッド"
+          }
+        }
+      }
+    },
+    "Arcade Stick": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アケコン"
+          }
+        }
+      }
+    },
     " (Unsaved)": {
       "localizations": {
         "ja": {

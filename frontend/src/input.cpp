@@ -200,7 +200,7 @@ Pair defaultAt(rnf_keyboard_scheme scheme, size_t i) {
   return kController[i - kKeyboardCount];
 }
 
-Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
+Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS, bool stick = false) {
   Pairs out;
   if (!activeLayout.isNes()) {
     const Pair* keyboard = scheme == RNF_KEYBOARD_SDL ? kKeyboardSDL : kKeyboardMac;
@@ -208,6 +208,14 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
       if (std::string(keyboard[i].action).find("hk.") == 0) out.emplace_back(keyboard[i].input, keyboard[i].action);
     for (auto& pair : kController)
       if (std::string(pair.action).find("hk.") == 0) out.emplace_back(pair.input, pair.action);
+    if (stick) {
+      out.erase(std::remove_if(out.begin(), out.end(), [](const auto& p) {
+        return p.first.find("gc0:") == 0 && p.second != "hk.undo_take";
+      }), out.end());
+      out.emplace_back("gc0:leftTrigger", "hk.rewind");
+      out.emplace_back("gc0:leftShoulder", "hk.fast_forward");
+      out.emplace_back("gc0:leftShoulder+gc0:leftTrigger", "hk.menu");
+    }
     // Numbered buttons ("b<n>") take the face buttons in arcade order (button 1 at the bottom, as
     // FinalBurn Neo and MAME lay them out on a pad), then, except for player 1 (whose shoulders are
     // hotkeys), the shoulders. Gaps in the numbering do not leave a button unbound: Galaxy Force II
@@ -237,6 +245,14 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
     for (auto& [slot, list] : fire) {
       std::stable_sort(list.begin(), list.end());
       const std::string pre = "gc" + std::to_string(slot) + ":";
+      if (stick) {
+        static const char* const elements[] = {"face.west", "face.north", "rightShoulder",
+                                               "face.south", "face.east", "rightTrigger"};
+        for (size_t i = 0; i < list.size() && i < 6; ++i) out.emplace_back(pre + elements[i], list[i].id);
+        if (list.size() <= 3)
+          for (size_t i = 0; i < list.size(); ++i) out.emplace_back(pre + elements[i + 3], list[i].turbo);
+        continue;
+      }
       size_t elements = slot == 0 ? kFaces : 6;
       for (size_t i = 0; i < list.size() && i < elements; ++i) out.emplace_back(pre + kFireElements[i], list[i].id);
       for (size_t i = list.size(), t = 0; i < kFaces && t < list.size(); ++i, ++t)
@@ -634,7 +650,8 @@ rn_status rnf_input_set_layout_json(const char* json) {
   RNF_GUARD_END(RN_ERR_INTERNAL)
 }
 const char* rnf_input_layout_name(void) { return activeLayout.name.c_str(); }
-char* rnf_input_bindings_filename(void) {
+char* rnf_input_bindings_filename(void) { return rnf_input_bindings_filename_for_kind(0); }
+char* rnf_input_bindings_filename_for_kind(int stick) {
   if (activeLayout.isNes()) return dup("bindings.json");
   std::string safe;
   const char* hex = "0123456789ABCDEF";
@@ -642,7 +659,7 @@ char* rnf_input_bindings_filename(void) {
     if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') safe += c;
     else { safe += '%'; safe += hex[c >> 4]; safe += hex[c & 15]; }
   }
-  return dup("bindings-" + safe + ".json");
+  return dup("bindings-" + safe + (stick ? "@stick.json" : ".json"));
 }
 uint8_t rnf_input_record_directions(const rn_input_record* record) {
   if (!record) return 0;
@@ -729,13 +746,14 @@ int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t i, rnf_bind
   return 1;
 }
 
-char* rnf_input_default_config_json(rnf_keyboard_scheme scheme) {
+char* rnf_input_default_config_json(rnf_keyboard_scheme scheme) { return rnf_input_default_config_json_for_kind(scheme, 0); }
+char* rnf_input_default_config_json_for_kind(rnf_keyboard_scheme scheme, int stick) {
   RNF_GUARD_BEGIN
   // Same object as the original JSONSerialization output (sorted keys).
   rn::Json root = rn::Json::object();
   root.set("analogThreshold", 0.5);
   rn::Json b = rn::Json::array();
-  for (auto& p : defaults(scheme)) {
+  for (auto& p : defaults(scheme, stick != 0)) {
     rn::Json e = rn::Json::object();
     e.set("action", p.second);
     e.set("input", p.first);
