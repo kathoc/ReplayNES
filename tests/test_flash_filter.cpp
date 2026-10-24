@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "replaynes/replaynes.h"
@@ -622,4 +624,151 @@ TEST_CASE("flash filter: local ROMs (skipped without <repo>/roms)") {
     // Normal play must be (almost) untouched: < 2% of the frames at the default level.
     CHECK(alteredStd * 50 < c.frames);
   }
+}
+
+namespace {
+using OwnedFlashFilter = std::unique_ptr<rn_flash_filter, decltype(&rn_flash_filter_free)>;
+OwnedFlashFilter sizedFilter(uint32_t width, uint32_t height) {
+  return OwnedFlashFilter(rn_flash_filter_new_sized(RN_FLASH_STANDARD, width, height), rn_flash_filter_free);
+}
+void equalFlashInfo(const rn_flash_info& a, const rn_flash_info& b) {
+  REQUIRE_EQ(a.altered, b.altered);
+  REQUIRE_EQ(a.altered_blocks, b.altered_blocks);
+  REQUIRE_EQ(a.event_area_permille, b.event_area_permille);
+  REQUIRE_EQ(a.large_area, b.large_area);
+}
+}  // namespace
+
+TEST_CASE("flash filter: arcade sizes reduce flashing deterministically with padded rows") {
+  for (uint32_t width : {320u, 384u}) {
+    constexpr uint32_t height = 224;
+    const uint32_t stride = width + 13;
+    const size_t pixels = size_t(width) * height;
+    auto packedFilter = sizedFilter(width, height);
+    auto duplicateFilter = sizedFilter(width, height);
+    auto paddedFilter = sizedFilter(width, height);
+    REQUIRE(packedFilter && duplicateFilter && paddedFilter);
+    Frame input(pixels), padded(size_t(stride) * height), output(pixels), duplicate(pixels), paddedOut(pixels);
+    Frame previousInput(pixels), previousOutput(pixels);
+    uint64_t inputMotion = 0, outputMotion = 0;
+    int alteredFrames = 0;
+    for (int f = 0; f < 120; ++f) {
+      // Most of the screen flashes; nonuniform pixels also catch row-addressing mistakes.
+      for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          int v = ((x / 16 + y / 16) % 7 == 0) ? int((x + y) % 256) : (f % 2 ? 255 : 0);
+          input[size_t(y) * width + x] = rgb(v, v, v);
+          padded[size_t(y) * stride + x] = input[size_t(y) * width + x];
+        }
+        std::fill(padded.begin() + size_t(y) * stride + width,
+                  padded.begin() + size_t(y + 1) * stride, f % 2 ? 0xFF00FF00u : 0xFFFF0000u);
+      }
+      rn_video_frame_info packedFrame{input.data(), width, height, width};
+      rn_video_frame_info paddedFrame{padded.data(), width, height, stride};
+      rn_flash_info a{}, b{}, c{};
+      REQUIRE_EQ(rn_flash_filter_process_frame(packedFilter.get(), &packedFrame, output.data(), &a), RN_OK);
+      REQUIRE_EQ(rn_flash_filter_process_frame(duplicateFilter.get(), &packedFrame, duplicate.data(), &b), RN_OK);
+      REQUIRE_EQ(rn_flash_filter_process_frame(paddedFilter.get(), &paddedFrame, paddedOut.data(), &c), RN_OK);
+      REQUIRE(output == duplicate);
+      REQUIRE(output == paddedOut);
+      equalFlashInfo(a, b);
+      equalFlashInfo(a, c);
+      REQUIRE(a.altered_blocks <= pixels / 256);
+      REQUIRE_EQ(a.altered != 0, output != input);
+      alteredFrames += a.altered;
+      if (f > 0) {
+        // Independent temporal contrast measurement, without using the filter's metrics.
+        for (size_t i = 0; i < pixels; ++i) {
+          inputMotion += std::abs(int(input[i] & 255) - int(previousInput[i] & 255));
+          outputMotion += std::abs(int(output[i] & 255) - int(previousOutput[i] & 255));
+        }
+      }
+      previousInput = input;
+      previousOutput = output;
+    }
+    MESSAGE(width << "x" << height << ": altered frames = " << alteredFrames
+                  << ", input/output temporal contrast = " << inputMotion << "/" << outputMotion);
+    // Dark frames may pass unchanged: suppression need not alter a majority of frames.
+    // Require suppression to occur, and measure its effect independently below.
+    CHECK(alteredFrames > 0);
+    CHECK(outputMotion * 2 < inputMotion);
+
+    rn_flash_filter_reset(packedFilter.get());
+    rn_flash_filter_reset(paddedFilter.get());
+    // The textured last input must remain bit-exact for a long static sequence.
+    for (int f = 0; f < 70; ++f) {
+      rn_video_frame_info packedFrame{input.data(), width, height, width};
+      rn_video_frame_info paddedFrame{padded.data(), width, height, stride};
+      rn_flash_info a{}, b{};
+      REQUIRE_EQ(rn_flash_filter_process_frame(packedFilter.get(), &packedFrame, output.data(), &a), RN_OK);
+      REQUIRE_EQ(rn_flash_filter_process_frame(paddedFilter.get(), &paddedFrame, paddedOut.data(), &b), RN_OK);
+      REQUIRE(output == input);
+      REQUIRE(paddedOut == input);
+      REQUIRE_EQ(a.altered, 0);
+      equalFlashInfo(a, b);
+    }
+  }
+}
+
+TEST_CASE("flash filter: sized C API rejects invalid arguments and resize resets") {
+  CHECK(rn_flash_filter_new_sized(rn_flash_level(7), 320, 224) == nullptr);
+  for (auto size : {std::pair<uint32_t, uint32_t>{0, 224}, {320, 0}, {319, 224}, {320, 225},
+                    {0xFFFFFFF0u, 0xFFFFFFF0u}}) {
+    CHECK(rn_flash_filter_new_sized(RN_FLASH_STANDARD, size.first, size.second) == nullptr);
+  }
+  auto filter = sizedFilter(320, 224);
+  auto control = sizedFilter(320, 224);
+  REQUIRE(filter && control);
+  Frame input(384 * 240, rgb(0, 0, 0)), output(input.size()), expected(input.size());
+  std::vector<uint16_t> codes(input.size());
+  rn_video_frame_info frame{input.data(), 320, 224, 320};
+  CHECK_EQ(rn_flash_filter_process(filter.get(), input.data(), output.data(), nullptr), RN_ERR_INVALID_ARG);
+  CHECK_EQ(rn_flash_filter_process_codes(filter.get(), input.data(), output.data(), codes.data(), codes.data(),
+                                        nullptr, nullptr), RN_ERR_INVALID_ARG);
+  CHECK_EQ(rn_flash_filter_process_frame(nullptr, &frame, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), nullptr, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), &frame, nullptr, nullptr), RN_ERR_INVALID_ARG);
+  rn_video_frame_info bad = frame;
+  bad.pixels = nullptr;
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), &bad, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  bad = frame;
+  bad.stride = 319;
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), &bad, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  bad = frame;
+  bad.width = 304;
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), &bad, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  bad = frame;
+  bad.height = 208;
+  CHECK_EQ(rn_flash_filter_process_frame(filter.get(), &bad, output.data(), nullptr), RN_ERR_INVALID_ARG);
+  CHECK_EQ(rn_flash_filter_set_size(nullptr, 320, 224), RN_ERR_INVALID_ARG);
+  for (int f = 0; f < 30; ++f) {
+    std::fill(input.begin(), input.end(), f % 2 ? rgb(255, 255, 255) : rgb(0, 0, 0));
+    if (f == 15) {
+      // Failed resize must preserve the active picture and all temporal state.
+      CHECK_EQ(rn_flash_filter_set_size(filter.get(), 321, 224), RN_ERR_INVALID_ARG);
+      CHECK_EQ(rn_flash_filter_set_size(filter.get(), 320, 0), RN_ERR_INVALID_ARG);
+    }
+    rn_flash_info a{}, b{};
+    REQUIRE_EQ(rn_flash_filter_process_frame(filter.get(), &frame, output.data(), &a), RN_OK);
+    REQUIRE_EQ(rn_flash_filter_process_frame(control.get(), &frame, expected.data(), &b), RN_OK);
+    REQUIRE(output == expected);
+    equalFlashInfo(a, b);
+  }
+  // Both unchanged and changed dimensions are explicit discontinuities.
+  for (uint32_t width : {320u, 384u, 256u}) {
+    uint32_t height = width == 256 ? 240 : 224;
+    REQUIRE_EQ(rn_flash_filter_set_size(filter.get(), width, height), RN_OK);
+    auto fresh = sizedFilter(width, height);
+    REQUIRE(fresh != nullptr);
+    frame = {input.data(), width, height, width};
+    for (int f = 0; f < 20; ++f) {
+      std::fill(input.begin(), input.end(), f % 2 ? rgb(255, 255, 255) : rgb(0, 0, 0));
+      rn_flash_info a{}, b{};
+      REQUIRE_EQ(rn_flash_filter_process_frame(filter.get(), &frame, output.data(), &a), RN_OK);
+      REQUIRE_EQ(rn_flash_filter_process_frame(fresh.get(), &frame, expected.data(), &b), RN_OK);
+      REQUIRE(std::equal(output.begin(), output.begin() + size_t(width) * height, expected.begin()));
+      equalFlashInfo(a, b);
+    }
+  }
+  CHECK_EQ(rn_flash_filter_process(filter.get(), input.data(), output.data(), nullptr), RN_OK);
 }

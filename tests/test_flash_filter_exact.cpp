@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -241,5 +242,46 @@ TEST_CASE("flash filter exact: generated test ROM frames") {
             std::to_string(d.alteredFrames) + " altered, " + std::to_string(d.largeFrames) + " large-area");
     if (d.mismatches) FAIL("test ROM level " + std::to_string(lvl) + ": first mismatch at frame " + std::to_string(d.firstBad));
     if (lvl >= 2) CHECK(d.alteredFrames > 100);  // the heavy suppression path is really exercised
+  }
+}
+
+// Repeat the existing synthetic streams through the additive C frame API. Keep the original
+// direct C++ comparisons above unchanged so both entry points have an independent reference.
+TEST_CASE("flash filter exact: sized C API at 256x240") {
+  struct Case { Generator gen; uint64_t seed; int frames; };
+  const Case cases[] = {{genStrobe, 1, 1500}, {genPartial, 2, 1500}, {genRed, 3, 1500},
+                        {genNoise, 4, 900}, {genFade, 5, 1200}, {genChaos, 6, 1500}};
+  for (const auto& c : cases) {
+    for (int lvl = 0; lvl <= 3; ++lvl) {
+      Rng rng(c.seed * 31 + uint64_t(lvl));
+      std::unique_ptr<rn_flash_filter, decltype(&rn_flash_filter_free)> filter(
+          rn_flash_filter_new_sized(rn_flash_level(lvl), W, H), rn_flash_filter_free);
+      REQUIRE(filter != nullptr);
+      rnref::FlashFilter ref{rnref::FlashLevel(lvl)};
+      Frame state, out(NPX), expected(NPX);
+      for (int f = 0; f < c.frames; ++f) {
+        Frame input = c.gen(rng, f, state);
+        if (rng.range(400) == 0) {
+          rn_flash_filter_reset(filter.get());
+          ref.reset();
+        }
+        if (rng.range(900) == 0) {
+          int next = rng.range(4);
+          REQUIRE_EQ(rn_flash_filter_set_level(filter.get(), rn_flash_level(next)), RN_OK);
+          ref.setLevel(rnref::FlashLevel(next));
+        }
+        bool inPlace = rng.range(4) == 0;
+        auto referenceInfo = ref.process(input.data(), expected.data());
+        rn_video_frame_info frame{input.data(), W, H, W};
+        rn_flash_info info{};
+        REQUIRE_EQ(rn_flash_filter_process_frame(filter.get(), &frame,
+                                                inPlace ? input.data() : out.data(), &info), RN_OK);
+        REQUIRE((inPlace ? input : out) == expected);
+        REQUIRE_EQ(info.altered, int(referenceInfo.altered));
+        REQUIRE_EQ(info.altered_blocks, uint32_t(referenceInfo.alteredBlocks));
+        REQUIRE_EQ(info.event_area_permille, uint32_t(referenceInfo.eventAreaPermille));
+        REQUIRE_EQ(info.large_area, int(referenceInfo.largeArea));
+      }
+    }
   }
 }

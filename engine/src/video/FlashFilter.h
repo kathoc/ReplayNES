@@ -5,7 +5,7 @@
 // they *display* (live view, exported video) and reset it on discontinuities (seek, load, ...).
 //
 // Algorithm (details and rationale: docs/FLASH_REDUCTION.md):
-//   * The 256x240 frame is split into 16x15 blocks of 16x16 px. Per block we measure the mean WCAG
+//   * The picture is split into blocks of 16x16 px (16x15 blocks by default). Per block we measure the mean WCAG
 //     relative luminance L (linear light) and a "saturated red" metric M = mean(max(0, R-G-B))
 //     (linear light; WCAG's (R-G-B)*320 scale = M*320).
 //   * Per block, an extremum tracker on the *displayed* values counts WCAG transitions: a change
@@ -74,11 +74,15 @@ class FlashFilter {
   static constexpr int kRecent = 3;    // frames over which simultaneous transitions add up
   static constexpr int kHistory = 16;  // transition frames remembered per block (>= any budget)
 
-  explicit FlashFilter(FlashLevel level = FlashLevel::Standard);
+  explicit FlashFilter(FlashLevel level = FlashLevel::Standard, uint32_t width = kWidth, uint32_t height = kHeight);
+  static bool validSize(uint32_t width, uint32_t height);
+  void setSize(uint32_t width, uint32_t height);  // also resets; throws on invalid size
+  uint32_t width() const { return uint32_t(width_); }
+  uint32_t height() const { return uint32_t(height_); }
   void setLevel(FlashLevel level);  // also resets
   FlashLevel level() const { return level_; }
   void reset();
-  // in/out: 256x240 BGRA8 (0xAARRGGBB little-endian). in may equal out.
+  // in/out: width() x height() tightly packed BGRA8 (0xAARRGGBB little-endian). in may equal out.
   // inCodes/outCodes (optional, both or neither; may be the same buffer): the PPU codes of `in`
   // (rn_video_indices) and a code picture of the output for the CRT signal path. Pixels passed
   // through keep their codes. A pixel the filter changed is encoded back into codes: the colour of
@@ -156,6 +160,7 @@ class FlashFilter {
   Stats blendStats(int a) const;
   Stats writeBlend(uint32_t* out, int bx, int by, int a);
 
+  int width_, height_, cols_, rows_, blockCount_;
   FlashLevel level_;
   FlashParams p_;
   bool primed_ = false;
@@ -180,15 +185,17 @@ class FlashFilter {
   std::vector<uint16_t> knownCodes_;
   uint32_t codeGen_ = 1;
   std::vector<CodeChoice> codeCache_;
-  std::array<Block, kBlocks> blocks_;
+  std::vector<Block> blocks_;
+  std::vector<int> want_, changed_;
+  std::vector<char> flashLike_, held_;
 
   // Per-pixel luminance | red metric << 16, block-major (block i = [i*kBlockPx, (i+1)*kBlockPx)),
   // of the current input, the last displayed frame (prev_) and, per block, the reference: the
   // displayed block when its luminance extremum was set.
   std::vector<uint32_t> inM_, prevM_, refM_;
   // Speed-only caches (pure functions of pixel content; they never change the output).
-  std::array<Stats, kBlocks> inS_{};       // stats of the input block that inM_ describes
-  std::array<char, kBlocks> prevIsLastIn_{};  // prev_ block == input block inS_/inM_ describe
+  std::vector<Stats> inS_;       // stats of the input block that inM_ describes
+  std::vector<char> prevIsLastIn_;  // prev_ block == input block inS_/inM_ describe
   int directBlocks_ = 0;                   // blocks left to measure without the pair cache
   int identityBlocks_ = 0;                 // blocks left to blend without deduplication
   std::vector<PairEntry> pairCache_;

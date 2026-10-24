@@ -5,7 +5,9 @@
 #include <cstring>
 #include <exception>
 #include <new>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include "core/ICore.h"
 #include "core/NestopiaCore.h"
@@ -42,6 +44,7 @@ struct rn_renderer {
 };
 struct rn_flash_filter {
   rn::FlashFilter f;
+  std::vector<uint32_t> packed;
 };
 
 namespace {
@@ -543,16 +546,27 @@ void rn_renderer_free(rn_renderer* r) { delete r; }
 static bool validFlashLevel(rn_flash_level l) { return int(l) >= RN_FLASH_OFF && int(l) <= RN_FLASH_HIGH; }
 
 rn_flash_filter* rn_flash_filter_new(rn_flash_level level) {
-  if (!validFlashLevel(level)) {
-    invalid("invalid flash reduction level");
+  return rn_flash_filter_new_sized(level, 256, 240);
+}
+rn_flash_filter* rn_flash_filter_new_sized(rn_flash_level level, uint32_t width, uint32_t height) {
+  if (!validFlashLevel(level) || !rn::FlashFilter::validSize(width, height)) {
+    invalid("invalid flash reduction level or picture size");
     return nullptr;
   }
   try {
-    return new rn_flash_filter{rn::FlashFilter(rn::FlashLevel(int(level)))};
+    return new rn_flash_filter{rn::FlashFilter(rn::FlashLevel(int(level)), width, height), {}};
   } catch (...) {
     fail(rn::Error(rn::Err::Internal, "out of memory"));
     return nullptr;
   }
+}
+rn_status rn_flash_filter_set_size(rn_flash_filter* f, uint32_t width, uint32_t height) {
+  return guard([&] {
+    if (!f || !rn::FlashFilter::validSize(width, height)) return invalid("invalid filter or picture size");
+    f->f.setSize(width, height);
+    f->packed.clear();
+    return RN_OK;
+  });
 }
 void rn_flash_filter_free(rn_flash_filter* f) { delete f; }
 void rn_flash_filter_reset(rn_flash_filter* f) {
@@ -577,7 +591,29 @@ static void fillFlashInfo(const rn::FlashFrameInfo& r, rn_flash_info* info) {
 rn_status rn_flash_filter_process(rn_flash_filter* f, const uint32_t* in, uint32_t* out, rn_flash_info* info) {
   return guard([&] {
     if (!f || !in || !out) return invalid("null argument");
+    if (f->f.width() != 256 || f->f.height() != 240) return invalid("legacy flash API requires 256x240");
     fillFlashInfo(f->f.process(in, out), info);
+    return RN_OK;
+  });
+}
+rn_status rn_flash_filter_process_frame(rn_flash_filter* f, const rn_video_frame_info* in,
+                                       uint32_t* out, rn_flash_info* info) {
+  return guard([&] {
+    if (!f || !in || !in->pixels || !out) return invalid("null argument");
+    if (in->width != f->f.width() || in->height != f->f.height() || in->stride < in->width)
+      return invalid("invalid flash frame dimensions or stride");
+    const uint64_t span = uint64_t(in->height - 1) * in->stride + in->width;
+    if (span > uint64_t(std::numeric_limits<std::ptrdiff_t>::max()) / sizeof(uint32_t))
+      return invalid("flash frame stride overflows address range");
+    const uint32_t* pixels = in->pixels;
+    if (in->stride != in->width) {
+      f->packed.resize(size_t(in->width) * in->height);
+      for (uint32_t y = 0; y < in->height; ++y)
+        std::memcpy(f->packed.data() + size_t(y) * in->width,
+                    in->pixels + size_t(y) * in->stride, size_t(in->width) * sizeof(uint32_t));
+      pixels = f->packed.data();
+    }
+    fillFlashInfo(f->f.process(pixels, out), info);
     return RN_OK;
   });
 }
@@ -585,6 +621,7 @@ rn_status rn_flash_filter_process_codes(rn_flash_filter* f, const uint32_t* in, 
                                         uint16_t* codes_out, rn_flash_info* info, int* codes_ok) {
   return guard([&] {
     if (!f || !in || !out || !codes_in || !codes_out) return invalid("null argument");
+    if (f->f.width() != 256 || f->f.height() != 240) return invalid("flash codes API requires 256x240");
     rn::FlashFrameInfo r = f->f.process(in, out, codes_in, codes_out);
     fillFlashInfo(r, info);
     if (codes_ok) *codes_ok = r.codesOk ? 1 : 0;

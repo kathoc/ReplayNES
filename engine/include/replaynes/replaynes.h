@@ -453,19 +453,29 @@ typedef enum rn_flash_level {
 
 typedef struct rn_flash_info {
   int altered;                  /* 1 if the output differs from the input this frame */
-  uint32_t altered_blocks;      /* 16x16 blocks changed (of 240) */
+  uint32_t altered_blocks;      /* 16x16 blocks changed (of the picture's blocks) */
   uint32_t event_area_permille; /* screen share of simultaneous same-direction transitions */
   int large_area;               /* 1 if a large-area flash candidate was detected */
 } rn_flash_info;
 
-rn_flash_filter* rn_flash_filter_new(rn_flash_level level); /* NULL on invalid level */
+rn_flash_filter* rn_flash_filter_new(rn_flash_level level); /* 256x240; NULL on invalid level */
+/* Positive multiples of 16; NULL on invalid level/size or allocation failure. */
+rn_flash_filter* rn_flash_filter_new_sized(rn_flash_level level, uint32_t width, uint32_t height);
+/* Resets even when the size is unchanged. Invalid sizes leave the filter unchanged. */
+rn_status rn_flash_filter_set_size(rn_flash_filter* f, uint32_t width, uint32_t height);
 void rn_flash_filter_free(rn_flash_filter* f);
 void rn_flash_filter_reset(rn_flash_filter* f);
 rn_status rn_flash_filter_set_level(rn_flash_filter* f, rn_flash_level level); /* also resets */
 rn_flash_level rn_flash_filter_get_level(const rn_flash_filter* f);
-/* in/out: 256x240 BGRA8 like rn_video (in == out allowed). info may be NULL. */
+/* in/out: 256x240 BGRA8 like rn_video (in == out allowed). info may be NULL.
+ * Returns RN_ERR_INVALID_ARG if the filter is not 256x240. */
 rn_status rn_flash_filter_process(rn_flash_filter* f, const uint32_t* in, uint32_t* out, rn_flash_info* info);
-/* Same, also producing the PPU codes of the shown picture for a CRT signal path (RF / composite):
+/* Input dimensions must match the filter; stride is in pixels and must be >= width.
+ * Output is tightly packed width*height BGRA8; in->pixels == out is allowed. info may be NULL.
+ * Returns RN_ERR_INVALID_ARG on null buffers, mismatched dimensions or invalid stride. */
+rn_status rn_flash_filter_process_frame(rn_flash_filter* f, const rn_video_frame_info* in,
+                                       uint32_t* out, rn_flash_info* info);
+/* 256x240 only (RN_ERR_INVALID_ARG for other filter sizes), also producing the PPU codes of the shown picture for a CRT signal path (RF / composite):
  * codes_in = rn_video_indices(...).codes of `in`, codes_out = 256x240 codes (codes_in == codes_out
  * allowed). Blocks passed through keep their codes; a reduced block is an ordered dither of the new
  * codes and the codes shown before whose mean light matches the reduced RGB picture, so the CRT keeps

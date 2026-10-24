@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
+#include <utility>
 
 #if defined(RN_FLASH_NO_SIMD)  // portable scalar code only (tests)
 #elif defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
@@ -154,19 +157,34 @@ FlashParams FlashFilter::params(FlashLevel level) {
   return p;
 }
 
-FlashFilter::FlashFilter(FlashLevel level)
-    : level_(level),
-      p_(params(level)),
-      prev_(size_t(kWidth) * kHeight, 0xFF000000u),
-      // Black has luminance 0 and red metric 0: the caches of prev_ (and the reference) start in sync.
-      inM_(size_t(kWidth) * kHeight, 0),
-      prevM_(inM_),
-      refM_(inM_),
-      pairCache_(size_t(1) << kPairCacheBits),
-      codeColour_(512),
-      codeCache_(4096),
-      blend_(1) {
+bool FlashFilter::validSize(uint32_t width, uint32_t height) {
+  if (!width || !height || width % kBlock || height % kBlock) return false;
+  if (width > uint32_t(std::numeric_limits<int>::max()) || height > uint32_t(std::numeric_limits<int>::max())) return false;
+  const uint64_t pixels = uint64_t(width) * height;
+  // Block indices and the majority test use int; pixel offsets must fit pointer arithmetic.
+  return pixels / kBlockPx <= uint64_t(std::numeric_limits<int>::max() / 5) &&
+         pixels <= uint64_t(std::numeric_limits<std::ptrdiff_t>::max()) / sizeof(uint32_t);
+}
+
+FlashFilter::FlashFilter(FlashLevel level, uint32_t width, uint32_t height)
+    : width_(validSize(width, height) ? int(width) : throw std::invalid_argument("invalid flash picture size")),
+      height_(int(height)), cols_(width_ / kBlock), rows_(height_ / kBlock), blockCount_(cols_ * rows_),
+      level_(level), p_(params(level)),
+      prev_(size_t(width_) * height_, 0xFF000000u),
+      codeColour_(512), codeCache_(4096),
+      blocks_(size_t(blockCount_)), want_(size_t(blockCount_)), changed_(size_t(blockCount_)),
+      flashLike_(size_t(blockCount_)), held_(size_t(blockCount_)),
+      // Black has luminance 0 and red metric 0: the caches start in sync.
+      inM_(size_t(width_) * height_, 0), prevM_(inM_), refM_(inM_),
+      inS_(size_t(blockCount_)), prevIsLastIn_(size_t(blockCount_)),
+      pairCache_(size_t(1) << kPairCacheBits), blend_(1) {
   luts();
+}
+
+void FlashFilter::setSize(uint32_t width, uint32_t height) {
+  // Construct first so invalid sizes and allocation failures leave this filter unchanged.
+  FlashFilter replacement(level_, width, height);
+  *this = std::move(replacement);
 }
 
 void FlashFilter::setLevel(FlashLevel level) {
@@ -178,7 +196,7 @@ void FlashFilter::setLevel(FlashLevel level) {
 void FlashFilter::reset() {
   primed_ = false;
   frame_ = 0;
-  blocks_.fill(Block{});
+  std::fill(blocks_.begin(), blocks_.end(), Block{});
 }
 
 FlashFilter::PairEntry FlashFilter::measurePair(const uint32_t* px, uint64_t key) {
@@ -197,8 +215,8 @@ FlashFilter::PairEntry FlashFilter::measurePair(const uint32_t* px, uint64_t key
 }
 
 void FlashFilter::measureBlock(const uint32_t* in, int bx, int by) {
-  const size_t i = size_t(by * kCols + bx);
-  const size_t off0 = size_t(by * kBlock) * kWidth + size_t(bx) * kBlock;
+  const size_t i = size_t(by * cols_ + bx);
+  const size_t off0 = size_t(by * kBlock) * width_ + size_t(bx) * kBlock;
   const uint32_t* src = in + off0;
   if (prevIsLastIn_[i]) {
     // The displayed block is the last input block, which inS_[i] / inM_ describe: reuse them if
@@ -206,7 +224,7 @@ void FlashFilter::measureBlock(const uint32_t* in, int bx, int by) {
     const uint32_t* prev = prev_.data() + off0;
     bool same = true;
     for (int y = 0; y < kBlock && same; ++y)
-      same = std::memcmp(src + size_t(y) * kWidth, prev + size_t(y) * kWidth, kBlock * sizeof(uint32_t)) == 0;
+      same = std::memcmp(src + size_t(y) * width_, prev + size_t(y) * width_, kBlock * sizeof(uint32_t)) == 0;
     if (same) return;
   }
   PairEntry* cache = pairCache_.data();
@@ -221,7 +239,7 @@ void FlashFilter::measureBlock(const uint32_t* in, int bx, int by) {
   if (directBlocks_ > 0) {  // many distinct colours (e.g. noise): the cache would thrash
     --directBlocks_;
     for (int y = 0; y < kBlock; ++y) {
-      const uint32_t* row = src + size_t(y) * kWidth;
+      const uint32_t* row = src + size_t(y) * width_;
       for (int x = 0; x < kBlock; x += 2) {
         const PairEntry e = measurePair(row + x, pairKey(row + x));
         std::memcpy(M + y * kBlock + x, e.lr, sizeof(e.lr));
@@ -232,7 +250,7 @@ void FlashFilter::measureBlock(const uint32_t* in, int bx, int by) {
   } else {
     int misses = 0;
     for (int y = 0; y < kBlock; ++y) {
-      const uint32_t* row = src + size_t(y) * kWidth;
+      const uint32_t* row = src + size_t(y) * width_;
       for (int x = 0; x < kBlock; x += 2) {
         const uint64_t key = pairKey(row + x);
         PairEntry& e = cache[(key * 0x9E3779B97F4A7C15ull) >> (64 - kPairCacheBits)];
@@ -268,7 +286,7 @@ void FlashFilter::prepareBlend(const uint32_t* in, int bx, int by) {
     // the same integer sums.
     --identityBlocks_;
     for (int y = 0; y < kBlock; ++y) {
-      const size_t off = size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+      const size_t off = size_t(by * kBlock + y) * width_ + size_t(bx) * kBlock;
       for (int x = 0; x < kBlock; ++x) {
         const int u = y * kBlock + x;
         const uint32_t pp = prev_[off + size_t(x)], pi = in[off + size_t(x)];
@@ -318,7 +336,7 @@ void FlashFilter::prepareBlend(const uint32_t* in, int bx, int by) {
   // Horizontally adjacent pixels are deduplicated as pairs (half the hashing; writeBlend then
   // writes two pixels at a time).
   for (int y = 0; y < kBlock; ++y) {
-    const size_t off = size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+    const size_t off = size_t(by * kBlock + y) * width_ + size_t(bx) * kBlock;
     const uint32_t* ri = in + off;
     const uint32_t* rp = prev_.data() + off;
     for (int x = 0; x < kBlock; x += 2) {
@@ -415,7 +433,7 @@ FlashFilter::Stats FlashFilter::writeBlend(uint32_t* out, int bx, int by, int a)
     sg += c * g;
     sb += c * b;
   }
-  const size_t i = size_t(by * kCols + bx);
+  const size_t i = size_t(by * cols_ + bx);
   // Per pixel-pair unit: both output pixels and both metrics, in memory order.
   uint32_t color2[kBlockPx / 2][2], lr2[kBlockPx / 2][2];
   for (int q = 0; q < s.pairs; ++q) {
@@ -427,7 +445,7 @@ FlashFilter::Stats FlashFilter::writeBlend(uint32_t* out, int bx, int by, int a)
   }
   uint32_t* M = prevM_.data() + i * kBlockPx;
   for (int y = 0; y < kBlock; ++y) {
-    uint32_t* ro = out + size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+    uint32_t* ro = out + size_t(by * kBlock + y) * width_ + size_t(bx) * kBlock;
     for (int x = 0; x < kBlock; x += 2) {
       const int q = s.pairOf[y * (kBlock / 2) + x / 2];
       std::memcpy(ro + x, color2[q], 2 * sizeof(uint32_t));
@@ -582,7 +600,7 @@ const Bayer16& bayer() {
 
 void FlashFilter::learnCodes(const uint32_t* in, const uint16_t* codes) {
   const Luts& t = luts();
-  const size_t npx = size_t(kWidth) * kHeight;
+  const size_t npx = size_t(width_) * height_;
   for (size_t k = 0; k < npx; ++k) {
     const uint32_t rgb = in[k] & 0xFFFFFFu;
     CodeColour& cc = codeColour_[codes[k] & 511];
@@ -632,7 +650,7 @@ bool FlashFilter::encodePixel(uint32_t px, int x, int y, uint16_t* code) {
 
 FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uint16_t* inCodes, uint16_t* outCodes) {
   FlashFrameInfo info;
-  const size_t npx = size_t(kWidth) * kHeight;
+  const size_t npx = size_t(width_) * height_;
   const bool codes = inCodes && outCodes;
   if (level_ == FlashLevel::Off) {
     if (in != out) std::memcpy(out, in, npx * sizeof(uint32_t));
@@ -641,12 +659,12 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
   }
 
   if (codes) learnCodes(in, inCodes);
-  for (int by = 0; by < kRows; ++by) {
+  for (int by = 0; by < rows_; ++by) {
     // The input is read block by block; fetch the next 16 scanlines (contiguous) ahead of time.
-    if (by + 1 < kRows) prefetchRange(in + size_t(by + 1) * kBlock * kWidth, size_t(kBlock) * kWidth * sizeof(uint32_t));
-    for (int bx = 0; bx < kCols; ++bx) measureBlock(in, bx, by);
+    if (by + 1 < rows_) prefetchRange(in + size_t(by + 1) * kBlock * width_, size_t(kBlock) * width_ * sizeof(uint32_t));
+    for (int bx = 0; bx < cols_; ++bx) measureBlock(in, bx, by);
   }
-  const std::array<Stats, kBlocks>& inS = inS_;
+  const auto& inS = inS_;
 
   if (!primed_) {
     // First frame after a reset: shown as is; it is the reference for the trackers.
@@ -655,8 +673,8 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
     if (codes && inCodes != outCodes) std::memcpy(outCodes, inCodes, npx * sizeof(uint16_t));
     prevM_ = inM_;
     refM_ = inM_;
-    prevIsLastIn_.fill(1);
-    for (int i = 0; i < kBlocks; ++i) {
+    std::fill(prevIsLastIn_.begin(), prevIsLastIn_.end(), 1);
+    for (int i = 0; i < blockCount_; ++i) {
       Block& b = blocks_[size_t(i)];
       const Stats& s = inS[size_t(i)];
       b = Block{};
@@ -683,12 +701,14 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
   // within pairFrames: in the input (the game is flashing now) or against the block's previous
   // displayed transition. Isolated changes (a scene cut, a fade that rests on its new level) and
   // alternation slower than the level's limit are not flashes and are never held.
-  std::array<int, kBlocks> want{}, changed{};
-  std::array<char, kBlocks> flashLike{};
+  auto& want = want_;
+  auto& changed = changed_;
+  auto& flashLike = flashLike_;
+  std::fill(changed.begin(), changed.end(), 0);
   int64_t up = 0, down = 0;
-  for (int by = 0; by < kRows; ++by) {
-    for (int bx = 0; bx < kCols; ++bx) {
-      const size_t i = size_t(by * kCols + bx);
+  for (int by = 0; by < rows_; ++by) {
+    for (int bx = 0; bx < cols_; ++bx) {
+      const size_t i = size_t(by * cols_ + bx);
       Block& b = blocks_[i];
       const Stats& s = inS[i];
       {
@@ -726,16 +746,17 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
     }
   }
   bool anyWant = std::any_of(want.begin(), want.end(), [](int w) { return w != 0; });
-  info.eventAreaPermille = int(std::max(up, down) * 1000 / (int64_t(kWidth) * kHeight));
+  info.eventAreaPermille = int(std::max(up, down) * 1000 / (int64_t(width_) * height_));
   info.largeArea = anyWant && info.eventAreaPermille >= p_.areaPermille;
 
   // 2. Budget check for a large-area event. Keep one transition in reserve for going darker, so
   //    a suppressed screen rests on the darker state.
-  std::array<char, kBlocks> held{};
+  auto& held = held_;
+  std::fill(held.begin(), held.end(), 0);
   if (info.largeArea) {
     int64_t heldPx = 0, allowedPx = 0;
     int exhausted = 0, heldOnly = 0;
-    for (int i = 0; i < kBlocks; ++i) {
+    for (int i = 0; i < blockCount_; ++i) {
       const Block& b = blocks_[size_t(i)];
       int n = transitionsInWindow(b);
       if (n >= p_.budget) ++exhausted;
@@ -759,15 +780,15 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
     // a scene cut right after a title animation) would leave stale patches behind. Let them follow
     // the majority as long as the blocks over budget stay a small part of the screen (< 20%, below
     // the large-area threshold of every level), so no large area can exceed the budget.
-    if (heldPx > 0 && heldPx * 1000 <= int64_t(kWidth) * kHeight * 100 && allowedPx >= 4 * heldPx &&
-        (exhausted + heldOnly) * 5 < kBlocks)
-      held.fill(0);
+    if (heldPx > 0 && heldPx * 1000 <= int64_t(width_) * height_ * 100 && allowedPx >= 4 * heldPx &&
+        (exhausted + heldOnly) * 5 < blockCount_)
+      std::fill(held.begin(), held.end(), 0);
   }
 
   // 3. Per block: pass through, or hold / smooth by blending with the previous output.
-  for (int by = 0; by < kRows; ++by) {
-    for (int bx = 0; bx < kCols; ++bx) {
-      const size_t i = size_t(by * kCols + bx);
+  for (int by = 0; by < rows_; ++by) {
+    for (int bx = 0; bx < cols_; ++bx) {
+      const size_t i = size_t(by * cols_ + bx);
       Block& b = blocks_[i];
       const Stats& s = inS[i];
       enum { Pass, Hold, Smooth } mode = Pass;
@@ -807,7 +828,7 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
       // The displayed block becomes prev_ (pixels and per-pixel metrics).
       const size_t o = i * kBlockPx;
       for (int y = 0; y < kBlock; ++y) {
-        const size_t off = size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+        const size_t off = size_t(by * kBlock + y) * width_ + size_t(bx) * kBlock;
         if (a == 256 && in != out) std::memcpy(out + off, in + off, kBlock * sizeof(uint32_t));
         std::memcpy(prev_.data() + off, out + off, kBlock * sizeof(uint32_t));
       }
@@ -816,7 +837,7 @@ FlashFrameInfo FlashFilter::process(const uint32_t* in, uint32_t* out, const uin
       prevIsLastIn_[i] = a == 256;
       if (codes) {
         for (int y = 0; y < kBlock; ++y) {
-          const size_t off = size_t(by * kBlock + y) * kWidth + size_t(bx) * kBlock;
+          const size_t off = size_t(by * kBlock + y) * width_ + size_t(bx) * kBlock;
           if (a == 256) {
             if (outCodes != inCodes) std::memcpy(outCodes + off, inCodes + off, kBlock * sizeof(uint16_t));
             continue;
