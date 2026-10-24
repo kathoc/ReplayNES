@@ -160,9 +160,10 @@ TEST_CASE("S5b catalog and defaults follow the external session layout") {
   for (int slot = 0; slot < 2; ++slot) {
     const std::string gc = "gc" + std::to_string(slot) + ":";
     const std::string p = "p" + std::to_string(slot + 1) + ".";
-    CHECK(bindings.count(gc + "face.east=" + p + "b1"));
-    CHECK(bindings.count(gc + "face.south=" + p + "b2"));
-    CHECK(bindings.count(gc + "face.north=" + p + "b3"));
+    CHECK(bindings.count(gc + "face.south=" + p + "b1"));
+    CHECK(bindings.count(gc + "face.east=" + p + "b2"));
+    CHECK(bindings.count(gc + "face.west=" + p + "b3"));
+    for (const auto& b : bindings) CHECK_FALSE(b.rfind(gc + "face.north=", 0) == 0);
     CHECK(bindings.count(gc + "options=" + p + "coin"));
     CHECK(bindings.count(gc + "menu=" + p + "start"));
     for (const char* dir : {"up", "down", "left", "right"}) {
@@ -174,6 +175,41 @@ TEST_CASE("S5b catalog and defaults follow the external session layout") {
   CHECK(bindings.count("gc1:lstick.-y=p2.axis.y"));
   CHECK_FALSE(actions.count("p1.a"));
   std::filesystem::remove(path);
+}
+
+TEST_CASE("Numbered buttons with gaps take the face buttons in order") {
+  LayoutScope scope;
+  rn::InputLayout l;
+  l.name = "gaps";
+  l.recordBytes = 5;
+  for (int player = 1; player <= 2; ++player) {
+    const std::string p = "p" + std::to_string(player) + ".";
+    const uint16_t byte = player == 1 ? 0 : 1;
+    // Galaxy Force II: shoot, missile, brake (b7), accelerator (b8), listed out of order.
+    l.buttons.push_back({p + "b8", "Accelerate", byte, 0});
+    l.buttons.push_back({p + "b1", "Shoot", byte, 1});
+    l.buttons.push_back({p + "b7", "Brake", byte, 2});
+    l.buttons.push_back({p + "b2", "Missile", byte, 3});
+    l.buttons.push_back({p + "b9", "", byte, 4});
+    l.buttons.push_back({p + "b10", "", byte, 5});
+    l.buttons.push_back({p + "b11", "", byte, 6});
+  }
+  REQUIRE_EQ(rnf_input_set_layout_json(l.toJson().c_str()), RN_OK);
+  auto bindings = defaults();
+  for (int slot = 0; slot < 2; ++slot) {
+    const std::string gc = "gc" + std::to_string(slot) + ":";
+    const std::string p = "p" + std::to_string(slot + 1) + ".";
+    CHECK(bindings.count(gc + "face.south=" + p + "b1"));
+    CHECK(bindings.count(gc + "face.east=" + p + "b2"));
+    CHECK(bindings.count(gc + "face.west=" + p + "b7"));
+    CHECK(bindings.count(gc + "face.north=" + p + "b8"));
+  }
+  // Player 1's shoulders stay hotkeys; player 2's take the next buttons (b10 after b9, not before).
+  for (const auto& b : bindings) CHECK_FALSE(b.rfind("gc0:leftShoulder=p1.", 0) == 0);
+  for (const auto& b : bindings) CHECK_FALSE(b.rfind("gc0:rightShoulder=p1.", 0) == 0);
+  CHECK(bindings.count("gc1:leftShoulder=p2.b9"));
+  CHECK(bindings.count("gc1:rightShoulder=p2.b10"));
+  for (const auto& b : bindings) CHECK(b.find("=p2.b11") == std::string::npos);
 }
 
 TEST_CASE("S5b NES catalog defaults and bindings filename survive layout switching exactly") {

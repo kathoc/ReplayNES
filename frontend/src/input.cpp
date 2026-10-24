@@ -208,24 +208,33 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
       if (std::string(keyboard[i].action).find("hk.") == 0) out.emplace_back(keyboard[i].input, keyboard[i].action);
     for (auto& pair : kController)
       if (std::string(pair.action).find("hk.") == 0) out.emplace_back(pair.input, pair.action);
+    // Numbered buttons ("b<n>") take the face buttons in arcade order (button 1 at the bottom, as
+    // FinalBurn Neo and MAME lay them out on a pad), then, except for player 1 (whose shoulders are
+    // hotkeys), the shoulders. Gaps in the numbering do not leave a button unbound: Galaxy Force II
+    // has b1, b2, b7 (brake) and b8 (accelerator).
+    static const char* const kFireElements[] = {"face.south", "face.east", "face.west", "face.north",
+                                                "leftShoulder", "rightShoulder"};
+    std::map<int, std::vector<std::pair<int, std::string>>> fire;  // slot -> (number, action)
     for (auto& b : activeLayout.buttons) {
       if (actionGroup(b.id) == RNF_GROUP_SYSTEM) continue;
       int slot = b.id[1] - '1';
-      std::string pre = "gc" + std::to_string(slot) + ":", name = b.id.substr(3), element;
+      std::string pre = "gc" + std::to_string(slot) + ":", name = b.id.substr(3);
       if (name == "up" || name == "down" || name == "left" || name == "right") {
         out.emplace_back(pre + "dpad." + name, b.id);
         out.emplace_back(pre + "lstick." + name, b.id);
-      } else {
-        if (name == "b1") element = "face.east";
-        else if (name == "b2") element = "face.south";
-        else if (name == "b3") element = "face.north";
-        else if (name == "b4") element = "face.west";
-        else if (name == "b5" && slot != 0) element = "leftShoulder";
-        else if (name == "b6" && slot != 0) element = "rightShoulder";
-        else if (name == "coin") element = "options";
-        else if (name == "start") element = "menu";
-        if (!element.empty()) out.emplace_back(pre + element, b.id);
+      } else if (name == "coin") {
+        out.emplace_back(pre + "options", b.id);
+      } else if (name == "start") {
+        out.emplace_back(pre + "menu", b.id);
+      } else if (name.size() > 1 && name[0] == 'b' && name.find_first_not_of("0123456789", 1) == std::string::npos) {
+        fire[slot].emplace_back(std::atoi(name.c_str() + 1), b.id);
       }
+    }
+    for (auto& [slot, list] : fire) {
+      std::sort(list.begin(), list.end());
+      size_t elements = slot == 0 ? 4 : 6;
+      for (size_t i = 0; i < list.size() && i < elements; ++i)
+        out.emplace_back("gc" + std::to_string(slot) + ":" + kFireElements[i], list[i].second);
     }
     for (auto& a : activeLayout.axes) {
       if (actionGroup(a.id) == RNF_GROUP_SYSTEM) continue;
