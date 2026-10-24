@@ -202,32 +202,30 @@ Status Timeline::validate() const {
   return Status::Ok();
 }
 
-void encodeRecords(const InputRecord* recs, size_t n, std::vector<uint8_t>& out) {
+void encodeRecords(const InputRecord* recs, size_t n, std::vector<uint8_t>& out, uint32_t recordBytes) {
   ByteWriter w;
   size_t i = 0;
   while (i < n) {
     size_t j = i + 1;
     while (j < n && recs[j] == recs[i]) ++j;
     w.varint(j - i);
-    w.u8(recs[i].p1);
-    w.u8(recs[i].p2);
-    w.u8(recs[i].events);
+    for (uint32_t b = 0; b < recordBytes; ++b) w.u8(recs[i].byte(b));
     i = j;
   }
   out.insert(out.end(), w.buf.begin(), w.buf.end());
 }
 
-bool decodeRecords(const uint8_t* data, size_t n, uint64_t expectCount, std::vector<InputRecord>& out) {
+bool decodeRecords(const uint8_t* data, size_t n, uint64_t expectCount, std::vector<InputRecord>& out,
+                   uint32_t recordBytes) {
+  if (recordBytes < 3 || recordBytes > kInputRecordBytes) return false;
   ByteReader r(data, n);
   out.clear();
   while (r.ok() && r.remaining() > 0) {
     uint64_t run = r.varint();
     InputRecord rec;
-    rec.p1 = r.u8();
-    rec.p2 = r.u8();
-    rec.events = r.u8();
+    for (uint32_t b = 0; b < recordBytes; ++b) rec.setByte(b, r.u8());
     if (!r.ok() || run == 0 || out.size() + run > expectCount) return false;
-    if (rec.events & ~0x03) return false;  // unknown event bits in inputFormatVersion 1
+    if (rec.events & ~0x03) return false;  // unknown event bits
     out.insert(out.end(), size_t(run), rec);
   }
   return r.ok() && out.size() == expectCount;

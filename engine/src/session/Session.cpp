@@ -33,6 +33,7 @@ std::string Session::projectDir() const { return store_ ? store_->dir() : std::s
 
 Status Session::powerOnFresh() {
   RN_TRY(core_->loadROM(rom_.data(), rom_.size()));
+  layout_ = core_->inputLayout();
   frame_ = 0;
   audioValid_ = false;
   return Status::Ok();
@@ -72,27 +73,33 @@ void Session::maybeCheckpoint() {
 }
 
 Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
+  return stepInput(InputRecord{p1, p2, events}, info);
+}
+
+Status Session::stepInput(const InputRecord& in, StepInfo* info) {
+  const uint8_t events = in.events;
+  if (mode_ != Mode::Replay)
+    for (size_t b = layout_.recordBytes; b < kInputRecordBytes; ++b)
+      if (in.byte(b)) return Error(Err::InvalidArg, "input uses bytes the core's input layout does not have");
   StepInfo si;
   si.mode = mode_;
   if (mode_ == Mode::Live) {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
     if ((events & kEvSoftReset) && !(events & kEvPowerCycle))
       return Error(Err::UnsupportedFormat, "soft reset is unavailable for this live core");
-    RN_TRY(core_->stepRecord(p1, p2, events, true));
+    RN_TRY(core_->stepRecord(in, true));
     ++frame_;
     audioValid_ = true;
     si.frame = frame_;
-    si.applied.p1 = p1; si.applied.p2 = p2; si.applied.events = events;
+    si.applied = in;
     if (info) *info = si;
     return Status::Ok();
   }
   InputRecord r;
   if (mode_ == Mode::Practice) {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
-    r.p1 = p1;
-    r.p2 = p2;
-    r.events = events;
-    RN_TRY(core_->stepRecord(r.p1, r.p2, r.events, true));
+    r = in;
+    RN_TRY(core_->stepRecord(r, true));
     // Nothing is recorded: no timeline, no take checkpoints, no change counter.
     pInputs_.push_back(r);
     ++emuCount_;
@@ -128,12 +135,10 @@ Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
     r = *rec;
   } else {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
-    r.p1 = p1;
-    r.p2 = p2;
-    r.events = events;
+    r = in;
   }
   // Emulate first; only a frame that was really emulated gets recorded.
-  RN_TRY(core_->stepRecord(r.p1, r.p2, r.events, true));
+  RN_TRY(core_->stepRecord(r, true));
   if (mode_ == Mode::Record) {
     bool branched = false;
     Status st = tl_.record(frame_, r, branched);
@@ -174,7 +179,7 @@ Status Session::resync(uint64_t target, bool forceReload) {
   while (frame_ < target) {
     const InputRecord* r = tl_.recordAt(frame_);
     if (!r) return Error(Err::Internal, "missing record during seek");
-    RN_TRY(core_->stepRecord(r->p1, r->p2, r->events, frame_ + 1 == target));
+    RN_TRY(core_->stepRecord(*r, frame_ + 1 == target));
     ++frame_;
     maybeCheckpoint();
   }
@@ -425,7 +430,7 @@ Status Session::practiceRewind(uint64_t n) {
   RN_TRY(core_->loadState(snap.state.data(), snap.state.size()));
   for (uint64_t c = snap.count; c < target; ++c) {
     const InputRecord& r = pInputs_[size_t(c - inputBase)];
-    RN_TRY(core_->stepRecord(r.p1, r.p2, r.events, c + 1 == target));
+    RN_TRY(core_->stepRecord(r, c + 1 == target));
   }
   pSnaps_.erase(pSnaps_.begin() + ptrdiff_t(k), pSnaps_.end());
   pInputs_.resize(size_t(target - inputBase));
@@ -524,7 +529,7 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
   while (frame_ < target) {
     const InputRecord* r = tl_.recordAt(frame_);
     if (!r) return Error(Err::Internal, "missing record while locating A");
-    RN_TRY(core_->stepRecord(r->p1, r->p2, r->events, false));
+    RN_TRY(core_->stepRecord(*r, false));
     ++frame_;
     maybeCheckpoint();
   }

@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "input/InputLayout.h"
 #include "util/Status.h"
 
 namespace rn {
@@ -62,6 +63,10 @@ class ICore {
   virtual Status softReset() = 0;
   // renderVideo=false skips only the final pixel conversion; emulation is identical.
   virtual Status stepFrame(uint8_t p1, uint8_t p2, bool renderVideo = true) = 0;
+  // One frame with the game input of `r` (the bytes inputLayout() declares; events are applied by
+  // stepRecord). Default: the NES pads. A core with another layout overrides both.
+  virtual Status stepInput(const InputRecord& r, bool renderVideo = true) { return stepFrame(r.p1, r.p2, renderVideo); }
+  virtual InputLayout inputLayout() const { return InputLayout::nes(); }
   virtual uint64_t frameIndex() const = 0;
   virtual const uint32_t* video() const = 0;  // kVideoWidth*kVideoHeight BGRA8 (0xAARRGGBB LE), alpha=255
   // Sample frames of the last stepFrame: *count frames of mediaInfo().audioChannels int16 values.
@@ -93,6 +98,11 @@ class ICore {
   virtual CoreKind kind() const = 0;
 
   // Convenience: apply event flags then step. Power cycle wins over soft reset.
+  Status stepRecord(const InputRecord& r, bool renderVideo = true) {
+    if (r.events & kEvPowerCycle) RN_TRY(powerCycle());
+    else if (r.events & kEvSoftReset) RN_TRY(softReset());
+    return stepInput(r, renderVideo);
+  }
   Status stepRecord(uint8_t p1, uint8_t p2, uint8_t events, bool renderVideo = true) {
     if (events & kEvPowerCycle) RN_TRY(powerCycle());
     else if (events & kEvSoftReset) RN_TRY(softReset());

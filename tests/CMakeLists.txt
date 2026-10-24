@@ -41,6 +41,8 @@ endif()
 rn_add_test(test_golden)
 # Media info and the external core registration with a non-NES test core (size, stride, rate, stereo).
 rn_add_test(test_media)
+# Input layouts of other cores: pipeline (turbo on any button, axes), records, projects.
+rn_add_test(test_input_layout)
 target_compile_definitions(test_golden PRIVATE RN_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden")
 # Practice mode + A/B repeat slots (engine + persistence + C API).
 rn_add_test(test_practice)

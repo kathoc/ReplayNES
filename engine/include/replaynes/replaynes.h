@@ -178,6 +178,14 @@ rn_status rn_project_manifest_json(const char* project_dir, char** out_json);
 rn_status rn_set_mode(rn_session* s, rn_mode mode);
 rn_mode rn_get_mode(const rn_session* s);
 
+/* One frame of game input for any core: bytes 0, 1, 2 are the NES pads p1, p2 and the events
+ * (RN_EV_*); further bytes as the core's input layout (rn_session_input_layout_json) declares.
+ * Bytes beyond the layout's recordBytes must be zero. */
+#define RN_INPUT_RECORD_BYTES 32
+typedef struct rn_input_record {
+  uint8_t bytes[RN_INPUT_RECORD_BYTES];
+} rn_input_record;
+
 typedef struct rn_step_info {
   uint64_t frame;       /* rn_frame() after the call */
   rn_mode mode;
@@ -185,6 +193,7 @@ typedef struct rn_step_info {
   int end_of_take;      /* REPLAY: cursor is at the take end (no frame was emulated if frame unchanged) */
   uint8_t p1, p2, events; /* input actually applied */
   uint64_t take_id;     /* active take after the call */
+  rn_input_record applied_record; /* the whole input actually applied (p1, p2, events are its bytes 0-2) */
 } rn_step_info;
 
 /* RECORD: emulates one frame with (p1,p2,events) and records it at rn_frame(). Recording at a
@@ -195,6 +204,13 @@ typedef struct rn_step_info {
  * takes, checkpoints and the unsaved-changes flag are unchanged); rn_practice_frame() += 1.
  * info may be NULL. */
 rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info);
+/* rn_step for any core's input layout (RN_ERR_INVALID_ARG for bytes beyond the layout). */
+rn_status rn_step_record(rn_session* s, const rn_input_record* in, rn_step_info* info);
+/* The core's input layout as JSON (free with rn_string_free): {"name", "recordBytes", "buttons":
+ * [{"id", "label"?, "byte", "bit", "turbo"?}], "axes": [{"id", "label"?, "byte"}], "opposite":
+ * [[id, id]]}. Action names are the button ids, their turbo actions ("turbo", else id + ".turbo")
+ * and the axis ids. The NES layout is named "nes". */
+char* rn_session_input_layout_json(const rn_session* s);
 
 const uint32_t* rn_video(const rn_session* s); /* 256x240 BGRA8 (B,G,R,A bytes), alpha 255 */
 /* Display-only side channel for signal-level display models (the CRT / composite path): the raw
@@ -395,6 +411,14 @@ void rn_input_clear_bindings(rn_input* in);
 rn_status rn_input_load_json(rn_input* in, const char* json);
 char* rn_input_save_json(const rn_input* in); /* free with rn_string_free */
 rn_status rn_input_set_turbo(rn_input* in, uint32_t period, uint32_t duty); /* frames; 1<=duty<=period */
+/* The game actions come from an input layout (rn_session_input_layout_json; NULL = the NES pads).
+ * Bindings to actions the layout does not have are dropped. */
+rn_status rn_input_set_layout_json(rn_input* in, const char* layout_json);
+/* Turbo timing of one button (used by its turbo action); period 0 = the global rn_input_set_turbo. */
+rn_status rn_input_set_button_turbo(rn_input* in, const char* button, uint32_t period, uint32_t duty);
+/* An analog source other than a stick (trigger, dial), -1..1, bindable to axis actions. Sticks set
+ * with rn_input_set_axis also provide "<stick>.x", "<stick>.y" and the inverted "<stick>.-x", "<stick>.-y". */
+void rn_input_set_axis_value(rn_input* in, const char* source_id, float value);
 rn_status rn_input_set_socd(rn_input* in, rn_socd policy);
 rn_status rn_input_set_analog_threshold(rn_input* in, float threshold); /* 0..1, default 0.5 */
 void rn_input_set_pressed(rn_input* in, const char* physical_id, int pressed);
@@ -406,6 +430,8 @@ void rn_input_release_all(rn_input* in);
 /* Final game bitfields for logical frame `frame` (pass rn_frame(session)); taps shorter than a
  * frame are latched once. Feed the result to rn_step - that output is what gets recorded. */
 void rn_input_sample_game(rn_input* in, uint64_t frame, uint8_t* p1, uint8_t* p2);
+/* The whole game input for the layout (feed it to rn_step_record). */
+void rn_input_sample_record(rn_input* in, uint64_t frame, rn_input_record* out);
 /* Hotkey press edges since the previous poll + currently held hotkeys (works while paused). */
 void rn_input_poll_hotkeys(rn_input* in, uint32_t* pressed_edges, uint32_t* held);
 

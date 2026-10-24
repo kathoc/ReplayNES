@@ -92,7 +92,10 @@ class Session {
   // Entering Practice keeps the current machine state; leaving it (Record/Replay) restores the
   // take state at the return frame (== frame(), which never moves during practice).
   Status setMode(Mode m);
-  Status step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info = nullptr);
+  Status step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info = nullptr);  // NES pads
+  // One frame of any core's input: bytes beyond inputLayout().recordBytes must be zero.
+  Status stepInput(const InputRecord& in, StepInfo* info = nullptr);
+  const InputLayout& inputLayout() const { return layout_; }
   uint64_t frame() const { return frame_; }  // take cursor (the return frame while practicing)
   uint64_t takeLength() const { return tl_.length(); }
   Status seek(uint64_t frame);  // WrongMode in practice
@@ -203,6 +206,7 @@ class Session {
 
   SessionOptions opt_;
   std::unique_ptr<ICore> core_;
+  InputLayout layout_ = InputLayout::nes();  // core_->inputLayout() of the loaded content
   std::vector<uint8_t> rom_;
   std::string romPath_, romSha_;
   Timeline tl_;

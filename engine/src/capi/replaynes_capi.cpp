@@ -255,11 +255,19 @@ rn_status rn_set_mode(rn_session* s, rn_mode mode) {
 }
 rn_mode rn_get_mode(const rn_session* s) { return s ? toCMode(s->s->mode()) : RN_MODE_RECORD; }
 
-rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info) {
-  return guard([&] {
-    if (!s) return invalid("null session");
+static rn::InputRecord fromC(const rn_input_record& c) {
+  rn::InputRecord r;
+  for (size_t i = 0; i < rn::kInputRecordBytes; ++i) r.setByte(i, c.bytes[i]);
+  return r;
+}
+static void toC(const rn::InputRecord& r, rn_input_record& c) {
+  for (size_t i = 0; i < rn::kInputRecordBytes; ++i) c.bytes[i] = r.byte(i);
+}
+static_assert(RN_INPUT_RECORD_BYTES == rn::kInputRecordBytes, "input record sizes must match");
+
+static rn_status stepWith(rn_session* s, const rn::InputRecord& in, rn_step_info* info) {
     rn::StepInfo si;
-    rn::Status st = s->s->step(p1, p2, events, &si);
+    rn::Status st = s->s->stepInput(in, &si);
     if (!st.ok()) return fail(st);
     if (info) {
       info->frame = si.frame;
@@ -270,9 +278,24 @@ rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step
       info->p2 = si.applied.p2;
       info->events = si.applied.events;
       info->take_id = si.take;
+      toC(si.applied, info->applied_record);
     }
     return RN_OK;
-  });
+}
+
+rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info) {
+  return guard([&] { return s ? stepWith(s, rn::InputRecord{p1, p2, events}, info) : invalid("null session"); });
+}
+rn_status rn_step_record(rn_session* s, const rn_input_record* in, rn_step_info* info) {
+  return guard([&] { return s && in ? stepWith(s, fromC(*in), info) : invalid("null argument"); });
+}
+char* rn_session_input_layout_json(const rn_session* s) {
+  if (!s) return nullptr;
+  try {
+    return dupString(s->s->inputLayout().toJson());
+  } catch (...) {
+    return nullptr;
+  }
 }
 
 const uint32_t* rn_video(const rn_session* s) { return s ? s->s->video() : nullptr; }
@@ -463,6 +486,32 @@ char* rn_input_save_json(const rn_input* in) {
 }
 rn_status rn_input_set_turbo(rn_input* in, uint32_t period, uint32_t duty) {
   return guard([&] { return in ? ret(in->p.setTurbo(period, duty)) : invalid("null input"); });
+}
+rn_status rn_input_set_layout_json(rn_input* in, const char* json) {
+  return guard([&] {
+    if (!in) return invalid("null input");
+    rn::InputLayout layout = rn::InputLayout::nes();
+    if (json) {
+      rn::Status st = rn::InputLayout::fromJson(json, layout);
+      if (!st.ok()) return fail(st);
+    }
+    return ret(in->p.setLayout(layout));
+  });
+}
+rn_status rn_input_set_button_turbo(rn_input* in, const char* button, uint32_t period, uint32_t duty) {
+  return guard([&] { return in && button ? ret(in->p.setButtonTurbo(button, period, duty)) : invalid("null argument"); });
+}
+void rn_input_set_axis_value(rn_input* in, const char* source, float value) {
+  if (!in || !source) return;
+  try { in->p.setAxisValue(source, value); } catch (...) {}
+}
+void rn_input_sample_record(rn_input* in, uint64_t frame, rn_input_record* out) {
+  if (!out) return;
+  rn::InputRecord r;
+  if (in) {
+    try { in->p.sampleRecord(frame, r); } catch (...) {}
+  }
+  toC(r, *out);
 }
 rn_status rn_input_set_socd(rn_input* in, rn_socd policy) {
   if (!in) return invalid("null input");

@@ -17,7 +17,7 @@ static Status runLoop(ICore& core, const std::vector<InputRecord>& script, uint6
     if (captured && f == captureAt) RN_TRY(core.saveState(*captured));
     InputRecord r = script[size_t(f)];
     if (perturb) perturb(f, r);
-    RN_TRY(core.stepRecord(r.p1, r.p2, r.events, true));
+    RN_TRY(core.stepRecord(r, true));
     size_t cnt;
     const int16_t* a = core.audio(&cnt);
     out.video.push_back(core.videoHash());

@@ -82,7 +82,7 @@ std::vector<uint8_t> encodePracticeFile(int slot, const PracticeSlot& p) {
   return w.buf;
 }
 
-std::vector<uint8_t> encodeSegment(const Segment& s) {
+std::vector<uint8_t> encodeSegment(const Segment& s, uint32_t recordBytes) {
   ByteWriter w;
   w.u32(kSegMagic);
   w.u32(kBinVersion);
@@ -91,12 +91,12 @@ std::vector<uint8_t> encodeSegment(const Segment& s) {
   w.u64(s.start);
   w.u64(s.createdSeq);
   w.u64(s.records.size());
-  encodeRecords(s.records.data(), s.records.size(), w.buf);
+  encodeRecords(s.records.data(), s.records.size(), w.buf, recordBytes);
   w.u32(crc32(w.buf.data(), w.buf.size()));
   return w.buf;
 }
 
-Status decodeSegment(const std::string& name, const std::vector<uint8_t>& b, Segment& s) {
+Status decodeSegment(const std::string& name, const std::vector<uint8_t>& b, Segment& s, uint32_t recordBytes) {
   if (b.size() < 4 + 4 + 8 * 5 + 4) return Error(Err::Corrupt, "segment file truncated: " + name);
   uint32_t stored = uint32_t(b[b.size() - 4]) | uint32_t(b[b.size() - 3]) << 8 | uint32_t(b[b.size() - 2]) << 16 |
                     uint32_t(b[b.size() - 1]) << 24;
@@ -111,7 +111,7 @@ Status decodeSegment(const std::string& name, const std::vector<uint8_t>& b, Seg
   uint64_t count = r.u64();
   if (!r.ok() || count > (uint64_t(1) << 32)) return Error(Err::Corrupt, "bad segment header: " + name);
   size_t pos = r.pos();
-  if (!decodeRecords(b.data() + pos, b.size() - 4 - pos, count, s.records))
+  if (!decodeRecords(b.data() + pos, b.size() - 4 - pos, count, s.records, recordBytes))
     return Error(Err::Corrupt, "bad segment records: " + name);
   return Status::Ok();
 }
@@ -379,7 +379,7 @@ Status ProjectStore::fullSave(Session& s) {
   for (auto& kv : s.tl_.mutableSegments()) {
     Segment& seg = kv.second;
     if (seg.fileCount == seg.records.size() && seg.journalCreated && fs::exists(path(segRel(seg.id)))) continue;
-    std::vector<uint8_t> b = encodeSegment(seg);
+    std::vector<uint8_t> b = encodeSegment(seg, s.layout_.recordBytes);
     RN_TRY(fs::writeFileAtomic(path(segRel(seg.id)), b.data(), b.size()));
   }
   for (auto& kv : s.cps_.all()) {
@@ -471,8 +471,15 @@ Status ProjectStore::fullSave(Session& s) {
   man.set("coreCompatId", s.core_->compatId());
   man.set("coreBuild", s.core_->buildId());
   man.set("stateFormatVersion", s.core_->stateFormatVersion());
-  man.set("inputFormatVersion", kInputFormatVersion);
-  man.set("region", "NTSC");
+  if (s.layout_.isNes()) {  // inputFormatVersion 1: the NES pads, exactly as always
+    man.set("inputFormatVersion", kInputFormatVersion);
+    man.set("region", "NTSC");
+  } else {  // the core's own input layout travels with the project
+    Json layout;
+    Json::parse(s.layout_.toJson(), layout);
+    man.set("inputFormatVersion", kInputFormatVersionLayout);
+    man.set("inputLayout", layout);
+  }
   Json rom = Json::object();
   rom.set("sha256", s.romSha_);
   rom.set("size", uint64_t(s.rom_.size()));
@@ -523,7 +530,7 @@ Status ProjectStore::autosave(Session& s) {
         p.u64(seg.id);
         p.u64(off);
         p.u64(n);
-        encodeRecords(seg.records.data() + off, size_t(n), p.buf);
+        encodeRecords(seg.records.data() + off, size_t(n), p.buf, s.layout_.recordBytes);
         putRecord(w, J_SEG_APPEND, p.buf);
       }
     }
@@ -575,9 +582,16 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   if (fv > int64_t(kProjectFormatVersion))  // 1..kProjectFormatVersion are read
     return Error(Err::UnsupportedFormat, "project format " + std::to_string(fv) + " is newer than supported " +
                                              std::to_string(kProjectFormatVersion));
-  if (man["inputFormatVersion"].asInt(-1) != kInputFormatVersion)
+  InputLayout storedLayout = InputLayout::nes();
+  const int64_t ifv = man["inputFormatVersion"].asInt(-1);
+  if (ifv == kInputFormatVersion) {
+    if (man["region"].asString() != "NTSC") return Error(Err::UnsupportedFormat, "unsupported region");
+  } else if (ifv == kInputFormatVersionLayout) {
+    Status ls = InputLayout::fromJson(man["inputLayout"].dump(0), storedLayout);
+    if (!ls.ok()) return Error(Err::Corrupt, "bad inputLayout in manifest: " + ls.message);
+  } else {
     return Error(Err::UnsupportedFormat, "unsupported inputFormatVersion");
-  if (man["region"].asString() != "NTSC") return Error(Err::UnsupportedFormat, "unsupported region");
+  }
 
   // Core compatibility: refuse anything that is not bit-exactly this core.
   const std::string compat = man["coreCompatId"].asString();
@@ -620,6 +634,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   s->rom_ = std::move(rom);
   s->romPath_ = romPath;
   s->romSha_ = gotSha;
+  s->layout_ = storedLayout;  // decodes the records; checked against the core after power-on
 
   for (auto& e : idx["segments"].items()) {
     uint64_t id = uint64_t(e["id"].asInt());
@@ -629,7 +644,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
     Status st = fs::readFile(ps->path(rel), b);
     if (!st.ok()) return Error(Err::Corrupt, "cannot read " + rel + ": " + st.message);
     Segment seg;
-    RN_TRY(decodeSegment(rel, b, seg));
+    RN_TRY(decodeSegment(rel, b, seg, s->layout_.recordBytes));
     if (seg.id != id || seg.parent != uint64_t(e["parent"].asInt()) || seg.start != uint64_t(e["start"].asInt()))
       return Error(Err::Corrupt, "segment header disagrees with index: " + rel);
     if (seg.records.size() < count) return Error(Err::Corrupt, "segment shorter than index says: " + rel);
@@ -764,7 +779,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
             uint64_t id = p.u64(), off = p.u64(), n = p.u64();
             if (!p.ok() || n > (uint64_t(1) << 32)) return Error(Err::Corrupt, "bad journal SEG_APPEND");
             std::vector<InputRecord> recs;
-            if (!decodeRecords(body + 1 + p.pos(), len - 1 - p.pos(), n, recs))
+            if (!decodeRecords(body + 1 + p.pos(), len - 1 - p.pos(), n, recs, s->layout_.recordBytes))
               return Error(Err::Corrupt, "bad journal records");
             RN_TRY(s->tl_.appendLoaded(id, off, recs));
             Segment& seg = s->tl_.mutableSegments().at(id);
@@ -825,6 +840,9 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   uint64_t cursor = s->frame_;
   s->frame_ = 0;
   RN_TRY(s->powerOnFresh());
+  if (s->layout_ != storedLayout)
+    return Error(Err::CoreMismatch, "the project's input layout '" + storedLayout.name +
+                                        "' differs from the core's '" + s->layout_.name + "'");
   RN_TRY(s->resync(cursor, true));
 
   s->recovered_ = rep.journalApplied;

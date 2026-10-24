@@ -1,61 +1,71 @@
 #include "input/InputPipeline.h"
 
+#include <algorithm>
+#include <cmath>
+#include <set>
+
 #include "util/Json.h"
 
 namespace rn {
 
 namespace {
-const char* kBtn[8] = {"a", "b", "select", "start", "up", "down", "left", "right"};
 const char* kHk[HK_COUNT] = {"pause", "frame_advance", "rewind", "slow", "bookmark", "soft_reset",
                              "power_cycle", "toggle_mode", "save", "undo_take", "fast_forward", "step_back", "menu"};
-enum : uint8_t { B_UP = 0x10, B_DOWN = 0x20, B_LEFT = 0x40, B_RIGHT = 0x80 };
+
+int hotkeyIndex(const std::string& action) {
+  for (int h = 0; h < HK_COUNT; ++h)
+    if (action == std::string("hk.") + kHk[h]) return h;
+  return -1;
+}
+
+void setBit(InputRecord& r, const InputLayout::Button& b) { r.setByte(b.byte, uint8_t(r.byte(b.byte) | (1u << b.bit))); }
+void clearBit(InputRecord& r, const InputLayout::Button& b) { r.setByte(b.byte, uint8_t(r.byte(b.byte) & ~(1u << b.bit))); }
+bool hasBit(const InputRecord& r, const InputLayout::Button& b) { return (r.byte(b.byte) >> b.bit) & 1; }
 }  // namespace
 
-bool actionFromName(const std::string& n, int& a) {
-  for (int p = 0; p < 2; ++p) {
-    std::string pre = p == 0 ? "p1." : "p2.";
-    for (int b = 0; b < 8; ++b)
-      if (n == pre + kBtn[b]) { a = p * 8 + b; return true; }
-    if (n == pre + "turbo_a") { a = p == 0 ? kActP1TurboA : kActP2TurboA; return true; }
-    if (n == pre + "turbo_b") { a = p == 0 ? kActP1TurboB : kActP2TurboB; return true; }
-  }
-  for (int h = 0; h < HK_COUNT; ++h)
-    if (n == std::string("hk.") + kHk[h]) { a = kActHotkeyBase + h; return true; }
+bool InputPipeline::knownAction(const std::string& a) const {
+  if (hotkeyIndex(a) >= 0) return true;
+  for (const auto& b : layout_.buttons)
+    if (a == b.id || a == layout_.turboOf(b)) return true;
+  for (const auto& x : layout_.axes)
+    if (a == x.id) return true;
   return false;
 }
 
-std::string actionName(int a) {
-  if (a >= 0 && a < 16) return std::string(a < 8 ? "p1." : "p2.") + kBtn[a % 8];
-  switch (a) {
-    case kActP1TurboA: return "p1.turbo_a";
-    case kActP1TurboB: return "p1.turbo_b";
-    case kActP2TurboA: return "p2.turbo_a";
-    case kActP2TurboB: return "p2.turbo_b";
-  }
-  if (a >= kActHotkeyBase && a < kActHotkeyBase + HK_COUNT) return std::string("hk.") + kHk[a - kActHotkeyBase];
-  return "";
+Status InputPipeline::setLayout(const InputLayout& layout) {
+  RN_TRY(layout.validate());
+  std::lock_guard<std::mutex> g(m_);
+  layout_ = layout;
+  for (auto it = bind_.begin(); it != bind_.end();) it = knownAction(it->second) ? std::next(it) : bind_.erase(it);
+  for (auto it = buttonTurbo_.begin(); it != buttonTurbo_.end();) it = knownAction(it->first) ? std::next(it) : buttonTurbo_.erase(it);
+  latched_.clear();
+  turboStart_.clear();
+  return Status::Ok();
+}
+
+InputLayout InputPipeline::layout() const {
+  std::lock_guard<std::mutex> g(m_);
+  return layout_;
 }
 
 Status InputPipeline::bind(const std::string& physical, const std::string& action) {
-  int a;
   if (physical.empty()) return Error(Err::InvalidArg, "empty physical input id");
-  if (!actionFromName(action, a)) return Error(Err::InvalidArg, "unknown action '" + action + "'");
   std::lock_guard<std::mutex> g(m_);
+  if (!knownAction(action)) return Error(Err::InvalidArg, "unknown action '" + action + "'");
   auto range = bind_.equal_range(physical);
   for (auto it = range.first; it != range.second; ++it)
-    if (it->second == a) return Status::Ok();
-  bind_.emplace(physical, a);
+    if (it->second == action) return Status::Ok();
+  bind_.emplace(physical, action);
   return Status::Ok();
 }
 
 Status InputPipeline::unbind(const std::string& physical, const std::string& action) {
   std::lock_guard<std::mutex> g(m_);
   if (action.empty()) { bind_.erase(physical); return Status::Ok(); }
-  int a;
-  if (!actionFromName(action, a)) return Error(Err::InvalidArg, "unknown action '" + action + "'");
+  if (!knownAction(action)) return Error(Err::InvalidArg, "unknown action '" + action + "'");
   auto range = bind_.equal_range(physical);
   for (auto it = range.first; it != range.second; ++it)
-    if (it->second == a) { bind_.erase(it); return Status::Ok(); }
+    if (it->second == action) { bind_.erase(it); return Status::Ok(); }
   return Error(Err::NotFound, "binding not found");
 }
 
@@ -66,9 +76,7 @@ void InputPipeline::clearBindings() {
 
 std::vector<std::pair<std::string, std::string>> InputPipeline::bindings() const {
   std::lock_guard<std::mutex> g(m_);
-  std::vector<std::pair<std::string, std::string>> v;
-  for (auto& kv : bind_) v.emplace_back(kv.first, actionName(kv.second));
-  return v;
+  return std::vector<std::pair<std::string, std::string>>(bind_.begin(), bind_.end());
 }
 
 Status InputPipeline::setTurbo(uint32_t period, uint32_t duty) {
@@ -76,6 +84,17 @@ Status InputPipeline::setTurbo(uint32_t period, uint32_t duty) {
   std::lock_guard<std::mutex> g(m_);
   period_ = period;
   duty_ = duty;
+  return Status::Ok();
+}
+
+Status InputPipeline::setButtonTurbo(const std::string& button, uint32_t period, uint32_t duty) {
+  std::lock_guard<std::mutex> g(m_);
+  bool known = false;
+  for (const auto& b : layout_.buttons) known = known || b.id == button;
+  if (!known) return Error(Err::InvalidArg, "unknown button '" + button + "'");
+  if (period == 0) { buttonTurbo_.erase(button); return Status::Ok(); }
+  if (duty < 1 || duty > period) return Error(Err::InvalidArg, "turbo needs 1 <= duty <= period");
+  buttonTurbo_[button] = Timing{period, duty};
   return Status::Ok();
 }
 
@@ -99,9 +118,9 @@ void InputPipeline::setPressedLocked(const std::string& physical, bool pressed) 
     pressed_[physical] = s;
     auto range = bind_.equal_range(physical);
     for (auto b = range.first; b != range.second; ++b) {
-      int a = b->second;
-      if (a >= kActHotkeyBase) hkEdges_ |= 1u << (a - kActHotkeyBase);
-      else if (a < 32) { latch_ |= uint64_t(1) << a; latchSeq_[a] = s; }
+      int h = hotkeyIndex(b->second);
+      if (h >= 0) hkEdges_ |= 1u << h;
+      else latched_[b->second] = s;
     }
   } else if (it != pressed_.end()) {
     pressed_.erase(it);
@@ -119,23 +138,35 @@ void InputPipeline::setAxis(const std::string& stick, float x, float y) {
   setPressedLocked(stick + ".right", x >= threshold_);
   setPressedLocked(stick + ".up", y >= threshold_);
   setPressedLocked(stick + ".down", y <= -threshold_);
+  analog_[stick + ".x"] = x;
+  analog_[stick + ".y"] = y;
+  analog_[stick + ".-x"] = -x;
+  analog_[stick + ".-y"] = -y;
+}
+
+void InputPipeline::setAxisValue(const std::string& source, float value) {
+  std::lock_guard<std::mutex> g(m_);
+  analog_[source] = value;
 }
 
 void InputPipeline::releasePrefix(const std::string& prefix) {
   std::lock_guard<std::mutex> g(m_);
   for (auto it = pressed_.begin(); it != pressed_.end();)
     it = it->first.compare(0, prefix.size(), prefix) == 0 ? pressed_.erase(it) : std::next(it);
+  for (auto it = analog_.begin(); it != analog_.end();)
+    it = it->first.compare(0, prefix.size(), prefix) == 0 ? analog_.erase(it) : std::next(it);
 }
 
 void InputPipeline::releaseAll() {
   std::lock_guard<std::mutex> g(m_);
   pressed_.clear();
-  latch_ = 0;
+  analog_.clear();
+  latched_.clear();
   hkEdges_ = 0;
   turboStart_.clear();
 }
 
-bool InputPipeline::actionHeld(int action, uint64_t* lastSeq) const {
+bool InputPipeline::actionHeld(const std::string& action, uint64_t* lastSeq) const {
   bool held = false;
   uint64_t best = 0;
   for (auto& kv : pressed_) {
@@ -147,46 +178,68 @@ bool InputPipeline::actionHeld(int action, uint64_t* lastSeq) const {
   return held;
 }
 
-void InputPipeline::sampleGame(uint64_t frame, uint8_t& p1, uint8_t& p2) {
+// Sum of the analog sources bound to the axis action (a digital input bound to it counts 1).
+float InputPipeline::axisValue(const std::string& action) const {
+  float v = 0;
+  for (auto& kv : bind_) {
+    if (kv.second != action) continue;
+    auto a = analog_.find(kv.first);
+    if (a != analog_.end()) v += a->second;
+    else if (pressed_.count(kv.first)) v += 1.f;
+  }
+  return std::max(-1.f, std::min(1.f, v));
+}
+
+void InputPipeline::sampleRecord(uint64_t frame, InputRecord& out) {
   std::lock_guard<std::mutex> g(m_);
-  uint8_t out[2] = {0, 0};
-  uint64_t seqOf[16] = {};
-  for (int a = 0; a < 16; ++a) {
+  out = InputRecord{};
+  std::map<std::string, uint64_t> seqOf;
+  for (const auto& b : layout_.buttons) {
     uint64_t s = 0;
-    bool held = actionHeld(a, &s);
-    bool latched = (latch_ >> a) & 1;
-    if (held || latched) {
-      out[a / 8] |= uint8_t(1u << (a % 8));
-      seqOf[a] = held ? s : latchSeq_[a];
+    bool held = actionHeld(b.id, &s);
+    auto l = latched_.find(b.id);
+    if (held || l != latched_.end()) {
+      setBit(out, b);
+      seqOf[b.id] = held ? s : l->second;
     }
   }
-  const int turbo[4] = {kActP1TurboA, kActP1TurboB, kActP2TurboA, kActP2TurboB};
-  for (int i = 0; i < 4; ++i) {
-    int a = turbo[i];
-    bool on = actionHeld(a, nullptr) || ((latch_ >> a) & 1);
-    if (!on) { turboStart_.erase(a); continue; }
-    auto it = turboStart_.find(a);
-    if (it == turboStart_.end() || frame < it->second) it = turboStart_.insert_or_assign(a, frame).first;
-    uint64_t phase = (frame - it->second) % period_;
-    if (phase < duty_) out[i / 2] |= uint8_t(i % 2 == 0 ? 0x01 : 0x02);
+  for (const auto& b : layout_.buttons) {
+    const std::string t = layout_.turboOf(b);
+    bool on = actionHeld(t, nullptr) || latched_.count(t);
+    if (!on) { turboStart_.erase(t); continue; }
+    auto it = turboStart_.find(t);
+    if (it == turboStart_.end() || frame < it->second) it = turboStart_.insert_or_assign(t, frame).first;
+    auto own = buttonTurbo_.find(b.id);
+    const uint32_t period = own != buttonTurbo_.end() ? own->second.period : period_;
+    const uint32_t duty = own != buttonTurbo_.end() ? own->second.duty : duty_;
+    if ((frame - it->second) % period < duty) setBit(out, b);
   }
-  for (int p = 0; p < 2; ++p) {
-    auto resolve = [&](uint8_t m1, uint8_t m2, int a1, int a2) {
-      if ((out[p] & (m1 | m2)) != (m1 | m2)) return;
-      switch (socd_) {
-        case Socd::Neutral: out[p] &= uint8_t(~(m1 | m2)); break;
-        case Socd::LastWins:
-          out[p] &= uint8_t(~(seqOf[p * 8 + a1] >= seqOf[p * 8 + a2] ? m2 : m1));
-          break;
-        case Socd::Allow: break;
-      }
-    };
-    resolve(B_UP, B_DOWN, 4, 5);
-    resolve(B_LEFT, B_RIGHT, 6, 7);
+  for (const auto& pr : layout_.opposite) {
+    const InputLayout::Button *x = nullptr, *y = nullptr;
+    for (const auto& b : layout_.buttons) {
+      if (b.id == pr.first) x = &b;
+      if (b.id == pr.second) y = &b;
+    }
+    if (!x || !y || !hasBit(out, *x) || !hasBit(out, *y)) continue;
+    switch (socd_) {
+      case Socd::Neutral: clearBit(out, *x); clearBit(out, *y); break;
+      case Socd::LastWins: clearBit(out, seqOf[x->id] >= seqOf[y->id] ? *y : *x); break;
+      case Socd::Allow: break;
+    }
   }
-  latch_ = 0;
-  p1 = out[0];
-  p2 = out[1];
+  for (const auto& a : layout_.axes) {
+    int16_t v = int16_t(std::lround(axisValue(a.id) * 32767.f));
+    out.setByte(a.byte, uint8_t(uint16_t(v) & 0xFF));
+    out.setByte(a.byte + 1u, uint8_t(uint16_t(v) >> 8));
+  }
+  latched_.clear();
+}
+
+void InputPipeline::sampleGame(uint64_t frame, uint8_t& p1, uint8_t& p2) {
+  InputRecord r;
+  sampleRecord(frame, r);
+  p1 = r.p1;
+  p2 = r.p2;
 }
 
 void InputPipeline::pollHotkeys(uint32_t& pressedEdges, uint32_t& held) {
@@ -195,7 +248,7 @@ void InputPipeline::pollHotkeys(uint32_t& pressedEdges, uint32_t& held) {
   hkEdges_ = 0;
   held = 0;
   for (int h = 0; h < HK_COUNT; ++h)
-    if (actionHeld(kActHotkeyBase + h, nullptr)) held |= 1u << h;
+    if (actionHeld(std::string("hk.") + kHk[h], nullptr)) held |= 1u << h;
 }
 
 static const char* socdName(Socd s) {
@@ -210,7 +263,7 @@ std::string InputPipeline::toJson() const {
   for (auto& kv : bind_) {
     Json e = Json::object();
     e.set("input", kv.first);
-    e.set("action", actionName(kv.second));
+    e.set("action", kv.second);
     b.push(e);
   }
   j.set("bindings", b);
@@ -218,6 +271,17 @@ std::string InputPipeline::toJson() const {
   t.set("period", period_);
   t.set("duty", duty_);
   j.set("turbo", t);
+  if (!buttonTurbo_.empty()) {  // only when set, so configurations without it read back unchanged
+    Json bt = Json::array();
+    for (auto& kv : buttonTurbo_) {
+      Json e = Json::object();
+      e.set("button", kv.first);
+      e.set("period", kv.second.period);
+      e.set("duty", kv.second.duty);
+      bt.push(e);
+    }
+    j.set("buttonTurbo", bt);
+  }
   j.set("socd", socdName(socd_));
   j.set("analogThreshold", double(threshold_));
   return j.dump();
@@ -228,25 +292,34 @@ Status InputPipeline::fromJson(const std::string& text) {
   std::string err;
   if (!Json::parse(text, j, &err) || !j.isObject()) return Error(Err::InvalidArg, "invalid input config JSON: " + err);
   if (j["version"].asInt() != 1) return Error(Err::UnsupportedFormat, "unsupported input config version");
+  std::lock_guard<std::mutex> g(m_);
   // Validate everything before mutating.
-  std::multimap<std::string, int> nb;
+  std::multimap<std::string, std::string> nb;
   for (auto& e : j["bindings"].items()) {
-    int a;
-    if (!actionFromName(e["action"].asString(), a) || e["input"].asString().empty())
+    if (!knownAction(e["action"].asString()) || e["input"].asString().empty())
       return Error(Err::InvalidArg, "bad binding entry");
-    nb.emplace(e["input"].asString(), a);
+    nb.emplace(e["input"].asString(), e["action"].asString());
   }
   int64_t period = j["turbo"]["period"].asInt(2), duty = j["turbo"]["duty"].asInt(1);
   if (period < 1 || duty < 1 || duty > period) return Error(Err::InvalidArg, "bad turbo settings");
+  std::map<std::string, Timing> bt;
+  for (auto& e : j["buttonTurbo"].items()) {
+    const std::string id = e["button"].asString();
+    int64_t p = e["period"].asInt(0), d = e["duty"].asInt(0);
+    bool known = false;
+    for (const auto& b : layout_.buttons) known = known || b.id == id;
+    if (!known || p < 1 || d < 1 || d > p) return Error(Err::InvalidArg, "bad button turbo entry");
+    bt[id] = Timing{uint32_t(p), uint32_t(d)};
+  }
   std::string s = j["socd"].asString();
   Socd so = s == "last_wins" ? Socd::LastWins : s == "allow" ? Socd::Allow : Socd::Neutral;
   if (!s.empty() && s != "last_wins" && s != "allow" && s != "neutral") return Error(Err::InvalidArg, "bad socd policy");
   double th = j["analogThreshold"].asDouble(0.5);
   if (!(th > 0 && th < 1)) return Error(Err::InvalidArg, "bad analog threshold");
-  std::lock_guard<std::mutex> g(m_);
   bind_ = std::move(nb);
   period_ = uint32_t(period);
   duty_ = uint32_t(duty);
+  buttonTurbo_ = std::move(bt);
   socd_ = so;
   threshold_ = float(th);
   return Status::Ok();

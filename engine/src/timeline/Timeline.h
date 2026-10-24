@@ -1,5 +1,6 @@
 // Timeline: per-frame input log organised as a DAG of append-only segments.
-//  * InputRecord = final NES bitfields actually given to the core + system event flags.
+//  * InputRecord = the final input actually given to the core + system event flags: the NES pads
+//    (p1, p2), the events, then further bytes when the core's InputLayout uses them.
 //  * Segment = {id, parent, startFrame, records}. Records are never modified once written;
 //    a segment may only grow at its end. Branching creates a new child segment.
 //  * A take is the path root..segment; the active head selects one take. On a path, each
@@ -12,15 +13,11 @@
 #include <string>
 #include <vector>
 
+#include "input/InputLayout.h"
 #include "util/Status.h"
 
 namespace rn {
 
-struct InputRecord {
-  uint8_t p1 = 0, p2 = 0, events = 0;
-  bool operator==(const InputRecord& o) const { return p1 == o.p1 && p2 == o.p2 && events == o.events; }
-  bool operator!=(const InputRecord& o) const { return !(*this == o); }
-};
 
 struct Segment {
   uint64_t id = 0;
@@ -102,7 +99,10 @@ class Timeline {
 
 // Run-length encoding used by segment files and journal records:
 //   repeated { varint runLength>=1, u8 p1, u8 p2, u8 events }
-void encodeRecords(const InputRecord* recs, size_t n, std::vector<uint8_t>& out);
-bool decodeRecords(const uint8_t* data, size_t n, uint64_t expectCount, std::vector<InputRecord>& out);
+// Run-length coded records: {varint run, recordBytes bytes}. recordBytes 3 = the NES layout and
+// inputFormatVersion 1 ({varint run, p1, p2, events}).
+void encodeRecords(const InputRecord* recs, size_t n, std::vector<uint8_t>& out, uint32_t recordBytes = 3);
+bool decodeRecords(const uint8_t* data, size_t n, uint64_t expectCount, std::vector<InputRecord>& out,
+                   uint32_t recordBytes = 3);
 
 }  // namespace rn
