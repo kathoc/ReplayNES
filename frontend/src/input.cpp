@@ -211,10 +211,14 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
     // Numbered buttons ("b<n>") take the face buttons in arcade order (button 1 at the bottom, as
     // FinalBurn Neo and MAME lay them out on a pad), then, except for player 1 (whose shoulders are
     // hotkeys), the shoulders. Gaps in the numbering do not leave a button unbound: Galaxy Force II
-    // has b1, b2, b7 (brake) and b8 (accelerator).
+    // has b1, b2, b7 (brake) and b8 (accelerator). Face buttons left over take the turbo of
+    // button 1, 2, ... (Gradius: the top button is button 1's turbo), as the NES layout has turbo
+    // on its spare face buttons.
     static const char* const kFireElements[] = {"face.south", "face.east", "face.west", "face.north",
                                                 "leftShoulder", "rightShoulder"};
-    std::map<int, std::vector<std::pair<int, std::string>>> fire;  // slot -> (number, action)
+    const size_t kFaces = 4;
+    struct Fire { int number; std::string id, turbo; bool operator<(const Fire& o) const { return number < o.number; } };
+    std::map<int, std::vector<Fire>> fire;  // by slot
     for (auto& b : activeLayout.buttons) {
       if (actionGroup(b.id) == RNF_GROUP_SYSTEM) continue;
       int slot = b.id[1] - '1';
@@ -227,14 +231,16 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
       } else if (name == "start") {
         out.emplace_back(pre + "menu", b.id);
       } else if (name.size() > 1 && name[0] == 'b' && name.find_first_not_of("0123456789", 1) == std::string::npos) {
-        fire[slot].emplace_back(std::atoi(name.c_str() + 1), b.id);
+        fire[slot].push_back({std::atoi(name.c_str() + 1), b.id, activeLayout.turboOf(b)});
       }
     }
     for (auto& [slot, list] : fire) {
-      std::sort(list.begin(), list.end());
-      size_t elements = slot == 0 ? 4 : 6;
-      for (size_t i = 0; i < list.size() && i < elements; ++i)
-        out.emplace_back("gc" + std::to_string(slot) + ":" + kFireElements[i], list[i].second);
+      std::stable_sort(list.begin(), list.end());
+      const std::string pre = "gc" + std::to_string(slot) + ":";
+      size_t elements = slot == 0 ? kFaces : 6;
+      for (size_t i = 0; i < list.size() && i < elements; ++i) out.emplace_back(pre + kFireElements[i], list[i].id);
+      for (size_t i = list.size(), t = 0; i < kFaces && t < list.size(); ++i, ++t)
+        out.emplace_back(pre + kFireElements[i], list[t].turbo);
     }
     for (auto& a : activeLayout.axes) {
       if (actionGroup(a.id) == RNF_GROUP_SYSTEM) continue;

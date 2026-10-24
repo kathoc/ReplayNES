@@ -163,7 +163,7 @@ TEST_CASE("S5b catalog and defaults follow the external session layout") {
     CHECK(bindings.count(gc + "face.south=" + p + "b1"));
     CHECK(bindings.count(gc + "face.east=" + p + "b2"));
     CHECK(bindings.count(gc + "face.west=" + p + "b3"));
-    for (const auto& b : bindings) CHECK_FALSE(b.rfind(gc + "face.north=", 0) == 0);
+    CHECK(bindings.count(gc + "face.north=" + p + "b1.turbo"));
     CHECK(bindings.count(gc + "options=" + p + "coin"));
     CHECK(bindings.count(gc + "menu=" + p + "start"));
     for (const char* dir : {"up", "down", "left", "right"}) {
@@ -210,6 +210,27 @@ TEST_CASE("Numbered buttons with gaps take the face buttons in order") {
   CHECK(bindings.count("gc1:leftShoulder=p2.b9"));
   CHECK(bindings.count("gc1:rightShoulder=p2.b10"));
   for (const auto& b : bindings) CHECK(b.find("=p2.b11") == std::string::npos);
+}
+
+TEST_CASE("Spare face buttons take the turbo of the numbered buttons") {
+  LayoutScope scope;
+  for (int count = 1; count <= 2; ++count) {
+    rn::InputLayout l;
+    l.name = "spare";
+    l.recordBytes = 5;
+    for (int i = 1; i <= count; ++i) l.buttons.push_back({"p1.b" + std::to_string(i), "", 0, uint8_t(i)});
+    REQUIRE_EQ(rnf_input_set_layout_json(l.toJson().c_str()), RN_OK);
+    auto bindings = defaults();
+    CHECK(bindings.count("gc0:face.south=p1.b1"));
+    if (count == 1) {
+      CHECK(bindings.count("gc0:face.east=p1.b1.turbo"));
+      for (const auto& b : bindings) CHECK(b.rfind("gc0:face.west=", 0) != 0 && b.rfind("gc0:face.north=", 0) != 0);
+    } else {
+      CHECK(bindings.count("gc0:face.east=p1.b2"));
+      CHECK(bindings.count("gc0:face.west=p1.b1.turbo"));
+      CHECK(bindings.count("gc0:face.north=p1.b2.turbo"));
+    }
+  }
 }
 
 TEST_CASE("S5b NES catalog defaults and bindings filename survive layout switching exactly") {
