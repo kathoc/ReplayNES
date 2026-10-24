@@ -3,11 +3,13 @@
 //  * One instance = one machine. No shared mutable state between instances that can
 //    influence emulation results (see docs/ARCHITECTURE_DECISION.md for Nestopia statics).
 //  * frameIndex() = logical frames emulated since loadROM (NOT reset by power cycle).
-//  * Full-capability cores: stepFrame emits exactly audioSamplesForFrame(frameIndex) mono int16 samples @48 kHz,
-//    so audio sample positions are a pure function of the frame index.
+//  * Full-capability cores: stepFrame emits exactly samplesForFrame(frameIndex) sample frames
+//    (mediaInfo().audioChannels interleaved int16 values each; the NES cores: mono 48 kHz), so
+//    audio sample positions are a pure function of the frame index.
 //  * CapState cores: saveState/loadState round-trip the complete machine state including frameIndex.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,10 +31,27 @@ inline uint32_t audioSamplesForFrame(uint64_t frame) {
   return uint32_t(audioSamplesBefore(frame + 1) - audioSamplesBefore(frame));
 }
 
+// What a core produces for the loaded content. The defaults are the NES values above; a core for
+// another system overrides ICore::mediaInfo / videoFrame / samplesBefore.
+struct MediaInfo {
+  uint32_t maxWidth = kVideoWidth, maxHeight = kVideoHeight;  // capacity of video(); fixed per content
+  uint64_t fpsNum = kFpsNum, fpsDen = kFpsDen;                // exact emulated frame rate
+  uint32_t audioChannels = 1;                                 // interleaved int16 values per sample frame
+  uint32_t pixelAspectNum = 8, pixelAspectDen = 7;            // display width / height of one pixel
+  uint32_t rotation = 0;                                      // display rotation, quarter turns clockwise
+};
+// The picture of the last emulated frame: width x height pixels, rows `stride` pixels apart.
+struct VideoFrame {
+  const uint32_t* pixels = nullptr;
+  uint32_t width = 0, height = 0, stride = 0;
+};
+
 // System event flags (applied before emulating the frame they are recorded on).
 enum : uint8_t { kEvSoftReset = 0x01, kEvPowerCycle = 0x02, kEvMask = 0x03 };
 
-enum class CoreKind : int { Nestopia = 0, Mock = 1, ReplayNEScore = 2 };
+// External: a core the product registers at start-up (registerExternalCore), for example an arcade
+// core in another product built from these sources.
+enum class CoreKind : int { Nestopia = 0, Mock = 1, ReplayNEScore = 2, External = 3 };
 
 // Cores without CapAudio return nullptr/count=0; absent state/reset return UnsupportedFormat.
 class ICore {
@@ -45,7 +64,14 @@ class ICore {
   virtual Status stepFrame(uint8_t p1, uint8_t p2, bool renderVideo = true) = 0;
   virtual uint64_t frameIndex() const = 0;
   virtual const uint32_t* video() const = 0;  // kVideoWidth*kVideoHeight BGRA8 (0xAARRGGBB LE), alpha=255
-  virtual const int16_t* audio(size_t* count) const = 0;  // samples of the last stepFrame
+  // Sample frames of the last stepFrame: *count frames of mediaInfo().audioChannels int16 values.
+  virtual const int16_t* audio(size_t* count) const = 0;
+  virtual MediaInfo mediaInfo() const { return MediaInfo{}; }
+  virtual VideoFrame videoFrame() const { return VideoFrame{video(), kVideoWidth, kVideoHeight, kVideoWidth}; }
+  // Sample frames emitted before logical frame `frame`: a pure function of the frame index, so
+  // audio positions follow from frame numbers alone. Default: the NTSC formula above.
+  virtual uint64_t samplesBefore(uint64_t frame) const { return audioSamplesBefore(frame); }
+  uint32_t samplesForFrame(uint64_t frame) const { return uint32_t(samplesBefore(frame + 1) - samplesBefore(frame)); }
   // Display-only side channel for the CRT signal model: the raw PPU output codes of the frame in
   // video() (kVideoWidth*kVideoHeight, bits 0-5 = palette index after greyscale, bits 6-8 =
   // $2001 emphasis bits 5-7), the colour-burst phase of that frame (0..2, a function of the
@@ -76,6 +102,21 @@ class ICore {
   uint64_t videoHash() const;
   uint64_t audioHash() const;
 };
+
+// The product's own core (CoreKind::External). Register once at start-up, before any session or
+// renderer exists; not thread-safe against concurrent core creation.
+struct ExternalCore {
+  std::string name;      // stable name (coreName)
+  std::string compatId;  // changes whenever replay results could change (coreCompatId)
+  uint32_t capabilities = 0;
+  std::function<std::unique_ptr<ICore>()> create;
+};
+void registerExternalCore(ExternalCore core);
+void unregisterExternalCore();
+
+// Hashes used for verification: the visible picture, and sample frames of `channels` values.
+uint64_t videoFrameHash(const VideoFrame& v);
+uint64_t audioFramesHash(const int16_t* a, size_t frames, uint32_t channels);
 
 enum CoreCapability : uint32_t { CapAudio = 1, CapState = 2, CapSoftReset = 4, CapRecording = 8 };
 const char* coreName(CoreKind kind);

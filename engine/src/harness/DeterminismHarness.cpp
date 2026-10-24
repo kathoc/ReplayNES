@@ -21,7 +21,7 @@ static Status runLoop(ICore& core, const std::vector<InputRecord>& script, uint6
     size_t cnt;
     const int16_t* a = core.audio(&cnt);
     out.video.push_back(core.videoHash());
-    out.audio.push_back(Session::audioHashOf(a, cnt));
+    out.audio.push_back(Session::audioHashOf(a, cnt, core.mediaInfo().audioChannels));
     uint64_t sf = f + 1;
     if (sf % stateEvery == 0 || sf == n) out.state[sf] = core.machineHash();
   }

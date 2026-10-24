@@ -38,7 +38,15 @@ Status Session::powerOnFresh() {
   return Status::Ok();
 }
 
-uint64_t Session::audioHashOf(const int16_t* a, size_t n) { return Hasher64::of(a, n * 2, n); }
+namespace {
+// The restored picture differs from the one saved before a walk (size included).
+bool pictureChanged(const VideoFrame& now, const VideoFrame& before, const std::vector<uint32_t>& saved) {
+  return now.width != before.width || now.height != before.height || now.stride != before.stride ||
+         std::memcmp(now.pixels, saved.data(), saved.size() * 4) != 0;
+}
+}  // namespace
+
+uint64_t Session::audioHashOf(const int16_t* a, size_t n, uint32_t channels) { return audioFramesHash(a, n, channels); }
 
 const int16_t* Session::audio(size_t* count) const {
   const int16_t* a = core_->audio(count);
@@ -538,7 +546,8 @@ Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
     // Walk to A on the take, then put the cursor state back exactly (state, frame, video,
     // continuity epoch). Only the audio of the last frame is lost (reported as 0 samples).
     std::vector<uint8_t> saved;
-    std::vector<uint32_t> savedVideo(core_->video(), core_->video() + size_t(kVideoWidth) * kVideoHeight);
+    const VideoFrame vf = core_->videoFrame();
+    std::vector<uint32_t> savedVideo(vf.pixels, vf.pixels + size_t(vf.stride) * vf.height);
     RN_TRY(captureState(saved));
     const uint64_t savedFrame = frame_, savedEpoch = emuEpoch_;
     Status walk = takeStateAt(a, stA);
@@ -547,7 +556,7 @@ Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
     frame_ = savedFrame;
     audioValid_ = false;
     bool rebuild = !back.ok() ||  // never leave the session on a wrong state
-                   std::memcmp(core_->video(), savedVideo.data(), savedVideo.size() * 4) != 0;  // picture cleared
+                   pictureChanged(core_->videoFrame(), vf, savedVideo);  // picture cleared
     if (rebuild) {
       // Rebuild the cursor (state + picture) from the input log. The machine state equals the
       // one before the call, so emulation continuity (A/B anchors) is kept.

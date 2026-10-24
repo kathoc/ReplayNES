@@ -276,6 +276,27 @@ const uint32_t* rn_video(const rn_session* s) { return s ? s->s->video() : nullp
 rn_status rn_video_indices(const rn_session* s, rn_video_indices_info* out) {
   return guard([&] { return videoIndices(s ? s->s.get() : nullptr, out); });
 }
+static void mediaToC(const rn::MediaInfo& m, rn_media_info* out) {
+  *out = rn_media_info{m.maxWidth, m.maxHeight, m.fpsNum, m.fpsDen, m.audioChannels,
+                       m.pixelAspectNum, m.pixelAspectDen, m.rotation};
+}
+static rn_status frameToC(const rn::VideoFrame& v, rn_video_frame_info* out) {
+  if (!v.pixels) return fail(rn::Error(rn::Err::NotFound, "no picture yet"));
+  *out = rn_video_frame_info{v.pixels, v.width, v.height, v.stride};
+  return RN_OK;
+}
+rn_status rn_session_media_info(const rn_session* s, rn_media_info* out) {
+  return guard([&] {
+    if (!s || !out) return invalid("null argument");
+    mediaToC(s->s->mediaInfo(), out);
+    return RN_OK;
+  });
+}
+rn_status rn_session_video_frame(const rn_session* s, rn_video_frame_info* out) {
+  return guard([&] { return s && out ? frameToC(s->s->videoFrame(), out) : invalid("null argument"); });
+}
+uint64_t rn_session_samples_before(const rn_session* s, uint64_t frame) { return s ? s->s->samplesBefore(frame) : 0; }
+
 const int16_t* rn_audio(const rn_session* s, size_t* count) {
   size_t n = 0;
   const int16_t* a = s ? s->s->audio(&n) : nullptr;
@@ -506,6 +527,16 @@ rn_status rn_renderer_video_indices(const rn_renderer* r, rn_video_indices_info*
   return guard([&] { return videoIndices(r ? r->r.get() : nullptr, out); });
 }
 uint64_t rn_renderer_hash(const rn_renderer* r) { return r ? r->r->hash() : 0; }
+rn_status rn_renderer_media_info(const rn_renderer* r, rn_media_info* out) {
+  return guard([&] {
+    if (!r || !out) return invalid("null argument");
+    mediaToC(r->r->mediaInfo(), out);
+    return RN_OK;
+  });
+}
+rn_status rn_renderer_video_frame(const rn_renderer* r, rn_video_frame_info* out) {
+  return guard([&] { return r && out ? frameToC(r->r->videoFrame(), out) : invalid("null argument"); });
+}
 void rn_renderer_free(rn_renderer* r) { delete r; }
 
 // ------------------------------------------------------------------ flash reduction

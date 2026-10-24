@@ -105,7 +105,14 @@ void rn_string_free(char* s); /* frees strings returned by rn_*_json functions *
 /* ------------------------------------------------------------------ session */
 typedef struct rn_session rn_session;
 
-typedef enum rn_core_kind { RN_CORE_NESTOPIA = 0, RN_CORE_MOCK = 1, RN_CORE_REPLAYNESCORE = 2 } rn_core_kind;
+/* RN_CORE_EXTERNAL: the core a product built from these sources registers at start-up (C++:
+ * rn::registerExternalCore); unavailable otherwise. */
+typedef enum rn_core_kind {
+  RN_CORE_NESTOPIA = 0,
+  RN_CORE_MOCK = 1,
+  RN_CORE_REPLAYNESCORE = 2,
+  RN_CORE_EXTERNAL = 3
+} rn_core_kind;
 /* PRACTICE: non-recording play (see "practice" section below). */
 /* Live cores expose video/input/power without recording or fabricated PCM/state. */
 #define RN_CORE_CAP_AUDIO 1u
@@ -202,8 +209,31 @@ typedef struct rn_video_indices_info {
 } rn_video_indices_info;
 /* RN_ERR_UNSUPPORTED_FORMAT when the core has no raw PPU output (mock core). */
 rn_status rn_video_indices(const rn_session* s, rn_video_indices_info* out);
-/* PCM of the last emulated frame. count = 0 after seek/rewind/take switch (seeking is silent). */
+/* PCM of the last emulated frame: count sample frames of rn_media_info.audio_channels interleaved
+ * int16 values (the NES cores: mono). count = 0 after seek/rewind/take switch (seeking is silent). */
 const int16_t* rn_audio(const rn_session* s, size_t* count);
+
+/* Picture size, frame rate and sound format of the loaded content. rn_video / RN_VIDEO_* /
+ * RN_FPS_* / RN_SAMPLE_RATE / rn_audio_samples_* describe the NES cores; a core for another system
+ * reports its own values here, and frontends that support such cores use these calls instead. */
+typedef struct rn_media_info {
+  uint32_t max_width, max_height;               /* capacity of the picture; fixed for the content */
+  uint64_t fps_num, fps_den;                    /* exact emulated frame rate */
+  uint32_t audio_channels;                      /* 1 = mono, 2 = interleaved stereo */
+  uint32_t pixel_aspect_num, pixel_aspect_den;  /* display width / height of one pixel (NES 8/7) */
+  uint32_t rotation;                            /* display rotation, quarter turns clockwise */
+} rn_media_info;
+/* The picture of the last emulated frame (rn_video for any size): width x height BGRA8 pixels,
+ * rows stride pixels apart; valid like rn_video. */
+typedef struct rn_video_frame_info {
+  const uint32_t* pixels;
+  uint32_t width, height, stride;
+} rn_video_frame_info;
+rn_status rn_session_media_info(const rn_session* s, rn_media_info* out);
+rn_status rn_session_video_frame(const rn_session* s, rn_video_frame_info* out);
+/* Sample frames emitted before logical frame `frame` (a pure function of the frame number; for
+ * the NES cores the same as rn_audio_samples_before). */
+uint64_t rn_session_samples_before(const rn_session* s, uint64_t frame);
 
 uint64_t rn_frame(const rn_session* s);       /* take cursor; frozen at the return frame in PRACTICE */
 uint64_t rn_take_length(const rn_session* s);
@@ -397,6 +427,10 @@ rn_status rn_renderer_next(rn_renderer* r, const uint32_t** video, const int16_t
 /* rn_video_indices for the frame returned by the last rn_renderer_next. */
 rn_status rn_renderer_video_indices(const rn_renderer* r, rn_video_indices_info* out);
 uint64_t rn_renderer_hash(const rn_renderer* r); /* running hash of output (compare with replay) */
+/* The session's media info at rn_renderer_new, and the picture returned by the last
+ * rn_renderer_next with its size (use instead of the 256x240 video pointer for other systems). */
+rn_status rn_renderer_media_info(const rn_renderer* r, rn_media_info* out);
+rn_status rn_renderer_video_frame(const rn_renderer* r, rn_video_frame_info* out);
 void rn_renderer_free(rn_renderer* r);
 
 /* ------------------------------------------------------------------ photosensitive flash reduction */

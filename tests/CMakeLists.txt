@@ -39,6 +39,8 @@ endif()
 # Fixed per-frame video/audio digests (Nestopia + Test Cartridge through the C API): any change of
 # an emulated frame fails here. RN_GOLDEN_UPDATE=1 rewrites tests/fixtures/golden/ when a change is intended.
 rn_add_test(test_golden)
+# Media info and the external core registration with a non-NES test core (size, stride, rate, stereo).
+rn_add_test(test_media)
 target_compile_definitions(test_golden PRIVATE RN_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden")
 # Practice mode + A/B repeat slots (engine + persistence + C API).
 rn_add_test(test_practice)

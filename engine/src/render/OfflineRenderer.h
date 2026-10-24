@@ -1,7 +1,8 @@
 // OfflineRenderer: re-executes a SNAPSHOT of the active take on a fresh core instance from
 // power-on at logical time, yielding video + PCM per frame (for MP4 export). It shares nothing
 // mutable with the Session, so it may run on another thread while the session keeps playing.
-// Output frame i has video PTS i*655171/39375000 s; its audio starts at sample audioSamplesBefore(i).
+// Output frame i has video PTS i*fpsDen/fpsNum s and its audio starts at sample frame samplesBefore(i)
+// of the session's core (NES: i*655171/39375000 s and audioSamplesBefore(i)).
 #pragma once
 #include <memory>
 #include <vector>
@@ -28,6 +29,10 @@ class OfflineRenderer {
     return core_ ? core_->videoCodes(burstPhase, frame) : nullptr;
   }
   uint64_t hash() const { return running_.digest(); }  // over all (videoHash, audioHash) pairs output so far
+  // The session's media info, copied at create() (the core itself is made on the rendering thread).
+  const MediaInfo& mediaInfo() const { return media_; }
+  // Picture of the frame returned by the last next().
+  VideoFrame videoFrame() const { return core_ ? core_->videoFrame() : VideoFrame{}; }
 
  private:
   OfflineRenderer() = default;
@@ -37,6 +42,7 @@ class OfflineRenderer {
   std::vector<uint8_t> rom_;
   std::vector<uint8_t> seed_;      // machine state after recBase_ frames (empty: power-on)
   CoreKind kind_ = CoreKind::Nestopia;
+  MediaInfo media_;
   std::unique_ptr<ICore> core_;
   uint64_t start_ = 0, end_ = 0, pos_ = 0;
   bool started_ = false;

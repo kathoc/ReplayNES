@@ -101,12 +101,15 @@ class Session {
   Status rewind(uint64_t n);
 
   const uint32_t* video() const { return core_->video(); }
+  MediaInfo mediaInfo() const { return core_->mediaInfo(); }
+  VideoFrame videoFrame() const { return core_->videoFrame(); }
+  uint64_t samplesBefore(uint64_t frame) const { return core_->samplesBefore(frame); }
   const uint16_t* videoCodes(uint32_t* burstPhase, uint64_t* frame) const { return core_->videoCodes(burstPhase, frame); }
   const int16_t* audio(size_t* count) const;
   uint64_t stateHash() { return core_->machineHash(); }
   uint64_t videoHash() const { return core_->videoHash(); }
-  uint64_t audioHash() const { size_t n; const int16_t* a = audio(&n); return audioHashOf(a, n); }
-  static uint64_t audioHashOf(const int16_t* a, size_t n);
+  uint64_t audioHash() const { size_t n; const int16_t* a = audio(&n); return audioHashOf(a, n, core_->mediaInfo().audioChannels); }
+  static uint64_t audioHashOf(const int16_t* a, size_t n, uint32_t channels = 1);
 
   // --- bookmarks
   Status bookmarkAdd(const std::string& name, uint64_t* id);

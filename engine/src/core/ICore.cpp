@@ -17,18 +17,39 @@ uint64_t ICore::machineHash() {
   return Hasher64::of(s.data(), s.size());
 }
 
-uint64_t ICore::videoHash() const {
-  return Hasher64::of(video(), size_t(kVideoWidth) * kVideoHeight * 4);
-}
+uint64_t ICore::videoHash() const { return videoFrameHash(videoFrame()); }
 
 uint64_t ICore::audioHash() const {
   size_t n = 0;
   const int16_t* a = audio(&n);
-  return Hasher64::of(a, n * 2, n);
+  return audioFramesHash(a, n, mediaInfo().audioChannels);
 }
+
+// Rows of the visible picture only (stride padding is not part of the picture). Hasher64 does not
+// depend on chunking, so a tightly packed 256x240 frame hashes exactly as it always did.
+uint64_t videoFrameHash(const VideoFrame& v) {
+  Hasher64 h;
+  for (uint32_t y = 0; y < v.height; ++y) h.update(v.pixels + size_t(y) * v.stride, size_t(v.width) * 4);
+  return h.digest();
+}
+
+uint64_t audioFramesHash(const int16_t* a, size_t frames, uint32_t channels) {
+  return Hasher64::of(a, frames * channels * 2, frames);
+}
+
+namespace {
+ExternalCore& externalCore() {
+  static ExternalCore core;
+  return core;
+}
+}  // namespace
+
+void registerExternalCore(ExternalCore core) { externalCore() = std::move(core); }
+void unregisterExternalCore() { externalCore() = ExternalCore{}; }
 
 const char* coreName(CoreKind kind) {
   switch (kind) {
+    case CoreKind::External: return externalCore().create ? externalCore().name.c_str() : nullptr;
     case CoreKind::Nestopia: return "nestopia";
     case CoreKind::Mock: return "mock";
     case CoreKind::ReplayNEScore: return "replaynescore";
@@ -38,6 +59,7 @@ const char* coreName(CoreKind kind) {
 
 bool coreAvailable(CoreKind kind) {
   if (kind == CoreKind::Nestopia || kind == CoreKind::Mock) return true;
+  if (kind == CoreKind::External) return bool(externalCore().create);
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
   if (kind == CoreKind::ReplayNEScore) return true;
 #endif
@@ -48,6 +70,7 @@ uint32_t coreCapabilities(CoreKind kind) {
   if (kind == CoreKind::Nestopia || kind == CoreKind::Mock)
     return uint32_t(CapAudio | CapState | CapSoftReset | CapRecording);
   if (kind == CoreKind::ReplayNEScore && coreAvailable(kind)) return uint32_t(CapAudio | CapState);
+  if (kind == CoreKind::External && coreAvailable(kind)) return externalCore().capabilities;
   return 0;
 }
 
@@ -55,6 +78,7 @@ std::unique_ptr<ICore> createCore(CoreKind kind) {
   switch (kind) {
     case CoreKind::Nestopia: return std::unique_ptr<ICore>(new NestopiaCore());
     case CoreKind::Mock: return std::unique_ptr<ICore>(new MockCore());
+    case CoreKind::External: return externalCore().create ? externalCore().create() : nullptr;
     case CoreKind::ReplayNEScore:
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
       return std::unique_ptr<ICore>(new ReplayNEScoreAdapter());
@@ -69,6 +93,7 @@ std::string coreCompatId(CoreKind kind) {
   switch (kind) {
     case CoreKind::Nestopia: return NestopiaCore::staticCompatId();
     case CoreKind::Mock: return MockCore::kCompatId;
+    case CoreKind::External: return externalCore().create ? externalCore().compatId : std::string();
     case CoreKind::ReplayNEScore:
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
       return ReplayNEScoreAdapter::staticCompatId();
@@ -80,7 +105,7 @@ std::string coreCompatId(CoreKind kind) {
 }
 
 bool coreForCompatId(const std::string& compat, CoreKind& kind) {
-  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore}) {
+  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore, CoreKind::External}) {
     if (coreAvailable(candidate) && !compat.empty() && coreCompatId(candidate) == compat) {
       kind = candidate;
       return true;

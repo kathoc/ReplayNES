@@ -25,6 +25,7 @@ Status OfflineRenderer::create(const Session& s, uint64_t start, uint64_t end, s
   }
   r->rom_ = s.rom();
   r->kind_ = s.coreKind();
+  r->media_ = s.mediaInfo();
   r->start_ = start;
   r->end_ = end;
   r->pos_ = r->recBase_;
@@ -59,7 +60,7 @@ Status OfflineRenderer::next(const uint32_t** video, const int16_t** audio, size
   size_t n = 0;
   const int16_t* a = core_->audio(&n);
   running_.u64(core_->videoHash());
-  running_.u64(Session::audioHashOf(a, n));
+  running_.u64(Session::audioHashOf(a, n, core_->mediaInfo().audioChannels));
   if (video) *video = core_->video();
   if (audio) *audio = a;
   if (samples) *samples = n;
