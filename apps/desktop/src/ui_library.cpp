@@ -10,6 +10,7 @@
 // item of the row; Y on the empty card) writes the ReplayNES Test Cartridge into the ROM folder (once)
 // and focuses it. Nothing scrolls: the cards of the neighbouring pages peek in at the screen edges.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -396,10 +397,17 @@ void UI::buildLibrary(double now) {
   LRect bar = m.topBar();
   float cy = bar.y + bar.h / 2;
   float x = bar.x;
-  dl->AddText(ImGui::GetFont(), m.title(), ImVec2(x, cy - m.title() / 2), kText, "Replay");
-  x += measure(m.title(), "Replay").x;
-  dl->AddText(ImGui::GetFont(), m.title(), ImVec2(x, cy - m.title() / 2), kBrand, "NES");
-  x += measure(m.title(), "NES").x + S(24);
+  // The product name: "Replay" in the text colour, the rest ("NES", "Arcade") in the brand colour.
+  const std::string product = RN_PRODUCT_NAME;
+  const bool replay = product.compare(0, 6, "Replay") == 0 && product.size() > 6;
+  const std::string head = replay ? "Replay" : product, tail = replay ? product.substr(6) : "";
+  dl->AddText(ImGui::GetFont(), m.title(), ImVec2(x, cy - m.title() / 2), kText, head.c_str());
+  x += measure(m.title(), head.c_str()).x;
+  if (!tail.empty()) {
+    dl->AddText(ImGui::GetFont(), m.title(), ImVec2(x, cy - m.title() / 2), kBrand, tail.c_str());
+    x += measure(m.title(), tail.c_str()).x;
+  }
+  x += S(24);
   if (update_.noticeVisible()) {
     std::string t = updateStatusText();
     float w = std::min(measure(m.hint(), t.c_str()).x + S(48), std::max(0.0f, pill_.x - x - S(300)));
