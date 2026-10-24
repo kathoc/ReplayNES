@@ -80,6 +80,7 @@ if(TARGET replaynes_frontend)
   rn_add_frontend_test(test_frontend_tape)
   rn_add_frontend_test(test_frontend_export)
   rn_add_frontend_test(test_frontend_menu)
+  target_compile_definitions(test_frontend_menu PRIVATE RN_MENU_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/menu-desktop-before-noflash.txt")
   rn_add_frontend_test(test_frontend_seekbar)
   rn_add_frontend_test(test_frontend_crt)
   # Game database + library catalog; also identifies the developer's own ROMs in <repo>/roms.

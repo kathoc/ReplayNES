@@ -1,6 +1,8 @@
 // Frontend core: the L+R chord detector, the Quick Menu binding (hk.menu, layout 4 -> 5) and the
 // quick menu model (docs/design/UI_REDESIGN.md): tree, features, navigation, no-scroll invariant.
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -481,7 +483,11 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK(rnf_menu_page_find(m, "takes") < 0);  // docs/design/VTR_UX.md: takes are never shown
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.export"}));
   CHECK((itemIds(m, "game") == std::vector<std::string>{"game.library", "game.save", "game.save_as", "game.open", "game.reset"}));
-  CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt", "display.flash", "display.vtr",
+  CHECK((itemIds(m, "settings.display") == std::vector<std::string>{"display.size", "display.crt",
+#if RN_PRODUCT_FLASH_FILTER
+                                                                   "display.flash",
+#endif
+                                                                   "display.vtr",
                                                                    "display.shape", "display.crt_detail"}));
   CHECK((itemIds(m, "display.shape") == std::vector<std::string>{"display.par87", "display.overscan"}));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume"}));
@@ -491,7 +497,11 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK((itemIds(m, "quick") == std::vector<std::string>{"resume", "retry", "practice", "settings", "game"}));
   CHECK(rnf_menu_page_find(m, "display.crt") < 0);
   CHECK((itemIds(m, "settings.display") ==
-        std::vector<std::string>{"display.size", "display.flash", "display.vtr", "display.shape"}));
+        std::vector<std::string>{"display.size",
+#if RN_PRODUCT_FLASH_FILTER
+                                 "display.flash",
+#endif
+                                 "display.vtr", "display.shape"}));
   CHECK((itemIds(m, "settings.system") == std::vector<std::string>{"system.language", "system.about", "system.detail"}));
   CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "about.folders"}));
   rnf_menu_free(m);
@@ -593,8 +603,9 @@ TEST_CASE("menu: navigation, back stack with focus, L / R, breadcrumb") {
   CHECK_EQ(pageId(m), "settings.system");
   CHECK_EQ(rnf_menu_switch(m, 1), RNF_MENU_EVENT_SWITCHED);
   // Display > CRT details: depth 3 below the Quick Menu.
-  for (int i = 0; i < 5; ++i) rnf_menu_move(m, 0, 1, nullptr);
-  CHECK_EQ(rnf_menu_focus(m), size_t(5));
+  const size_t crtDetailsRow = RN_PRODUCT_FLASH_FILTER ? 5 : 4;
+  for (size_t i = 0; i < crtDetailsRow; ++i) rnf_menu_move(m, 0, 1, nullptr);
+  CHECK_EQ(rnf_menu_focus(m), crtDetailsRow);
   CHECK_EQ(rnf_menu_move(m, 0, 1, nullptr), RNF_MENU_EVENT_NONE);
   CHECK_EQ(rnf_menu_move(m, 1, 0, nullptr), RNF_MENU_EVENT_NONE);  // a page row: nothing to adjust
   CHECK_EQ(rnf_menu_confirm(m), RNF_MENU_EVENT_PUSHED);
@@ -603,7 +614,7 @@ TEST_CASE("menu: navigation, back stack with focus, L / R, breadcrumb") {
   CHECK(rnf_menu_depth(m) <= size_t(RNF_MENU_MAX_DEPTH));
   CHECK_EQ(rnf_menu_switch(m, 1), RNF_MENU_EVENT_NONE);  // not a group page
   CHECK_EQ(rnf_menu_back(m), RNF_MENU_EVENT_POPPED);
-  CHECK_EQ(rnf_menu_focus(m), size_t(5));  // focus restored
+  CHECK_EQ(rnf_menu_focus(m), crtDetailsRow);  // focus restored
   CHECK_EQ(rnf_menu_back(m), RNF_MENU_EVENT_POPPED);
   CHECK_EQ(pageId(m), "quick");
   CHECK_EQ(rnf_menu_focus(m), size_t(4));  // the Settings tile
@@ -678,5 +689,33 @@ TEST_CASE("menu: toggles flip with A, info rows do nothing, literal choices") {
   REQUIRE(lang >= 0);
   CHECK_EQ(std::string(rnf_menu_text(rnf_menu_item_choice(m, size_t(sys), size_t(lang), 2))), "English");
   CHECK_EQ(std::string(rnf_menu_text(rnf_menu_item_choice(m, size_t(sys), size_t(lang), 0))), "Automatic");
+  rnf_menu_free(m);
+}
+
+TEST_CASE("product flash flag: complete desktop menu matches the pre-change enumeration") {
+  std::ifstream file(RN_MENU_BASELINE);
+  REQUIRE(file.good());
+  std::ostringstream expected;
+  expected << file.rdbuf();
+  std::string baseline = expected.str();
+#if !RN_PRODUCT_FLASH_FILTER
+  for (const char* id : {",display.flash", ",system.flash_badge"}) {
+    auto at = baseline.find(id);
+    REQUIRE(at != std::string::npos);
+    baseline.erase(at, std::strlen(id));
+  }
+#endif
+  rnf_menu* m = rnf_menu_new(kDesktopLinux);
+  REQUIRE(m);
+  std::string actual;
+  for (size_t p = 0; p < rnf_menu_page_count(m); ++p) {
+    rnf_menu_page_info page{};
+    REQUIRE(rnf_menu_page_get(m, p, &page));
+    actual += std::string(page.id) + ":";
+    auto ids = itemIds(m, page.id);
+    for (size_t i = 0; i < ids.size(); ++i) actual += (i ? "," : "") + ids[i];
+    actual += "\n";
+  }
+  CHECK_EQ(actual, baseline);
   rnf_menu_free(m);
 }

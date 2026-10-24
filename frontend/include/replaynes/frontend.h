@@ -47,6 +47,9 @@
 #ifndef RN_PRODUCT_PROJECT_EXT
 #define RN_PRODUCT_PROJECT_EXT ".nesrec"
 #endif
+#ifndef RN_PRODUCT_FLASH_FILTER
+#define RN_PRODUCT_FLASH_FILTER 1
+#endif
 #include <stddef.h>
 #include <stdint.h>
 

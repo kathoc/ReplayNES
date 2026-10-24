@@ -94,3 +94,13 @@ if(RNL_DESKTOP_TESTS)
   add_test(NAME test_desktop_frontend COMMAND test_desktop_frontend)
   set_tests_properties(test_desktop_frontend PROPERTIES TIMEOUT 300)
 endif()
+
+# A disabled product must not create, configure, process or destroy a flash filter.
+function(rnl_test_no_flash_symbols target)
+  if(RNL_DESKTOP_TESTS AND NOT RN_PRODUCT_FLASH_FILTER AND CMAKE_NM AND NOT MSVC)
+    add_test(NAME noflash_symbols_${target}
+      COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DARCHIVE=$<TARGET_FILE:${target}>
+              -P ${RNL_DESKTOP_DIR}/../../tests/check_no_flash_symbols.cmake)
+  endif()
+endfunction()
+rnl_test_no_flash_symbols(rnl_logic)

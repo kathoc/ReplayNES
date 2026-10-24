@@ -38,6 +38,9 @@ Settings Settings::parse(const std::string& text) {
   std::istringstream in(text);
   std::string line;
   while (std::getline(in, line)) {
+#if !RN_PRODUCT_FLASH_FILTER
+    const std::string rawLine = line;
+#endif
     line = trim(line);
     if (line.empty() || line[0] == '#') continue;
     size_t eq = line.find('=');
@@ -52,7 +55,11 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
     else if (k == "showStats") s.showStats = parseBool(v, s.showStats);
+#if RN_PRODUCT_FLASH_FILTER
     else if (k == "flash" && num && d >= 0 && d <= 3 && d == std::floor(d)) s.flash = int(d);
+#else
+    else if (k == "flash") s.preservedFlashLines += rawLine + "\n";
+#endif
     else if (k == "showFlashIndicator") s.showFlashIndicator = parseBool(v, s.showFlashIndicator);
     else if (k == "uiScale" && num && d >= 0.5 && d <= 2.5) s.uiScale = float(d);
     else if (k == "volume" && num && d >= 0 && d <= 1) s.volume = float(d);
@@ -90,7 +97,11 @@ std::string Settings::serialize() const {
   o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "resumeCountdown=" << int(resumeCountdown) << "\n";
   o << "showStats=" << int(showStats) << "\n";
+#if RN_PRODUCT_FLASH_FILTER
   o << "flash=" << flash << "\n";
+#else
+  o << preservedFlashLines;
+#endif
   o << "showFlashIndicator=" << int(showFlashIndicator) << "\n";
   char buf[64];
   std::snprintf(buf, sizeof buf, "%.2f", double(uiScale));

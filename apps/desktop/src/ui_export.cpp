@@ -57,7 +57,7 @@ void UI::openExportDialog() {
   exportOpened_ = false;
   if (!exportJob_.running()) exportStarted_ = false;
   exportError_.clear();
-  exportApplyFlash_ = d_.settings->flash != RN_FLASH_OFF;
+  exportApplyFlash_ = RN_PRODUCT_FLASH_FILTER && d_.settings->flash != RN_FLASH_OFF;
   exportApplyCRT_ = d_.settings->crt && d_.emu->crtAvailable();
   exportPar87_ = d_.settings->par87;
   videoCursor_ = st.frame;
@@ -121,7 +121,7 @@ void UI::startExport() {
   ExportOptions eo;
   eo.settings = s;
   rn_flash_level level = d_.settings->flash == RN_FLASH_OFF ? RN_FLASH_STANDARD : rn_flash_level(d_.settings->flash);
-  eo.flash = exportApplyFlash_ ? level : RN_FLASH_OFF;
+  eo.flash = RN_PRODUCT_FLASH_FILTER && exportApplyFlash_ ? level : RN_FLASH_OFF;
   const auto& encoders = exportEncoderChoices();
   eo.quality = exportQuality_;
   if (exportEncoder_ > 0 && size_t(exportEncoder_) <= encoders.size()) eo.encoder = encoders[size_t(exportEncoder_ - 1)].id;
@@ -250,9 +250,13 @@ void UI::buildExportDialog() {
         ImGui::SameLine();
         if (ImGui::RadioButton((d_.emu->crtAvailable() ? TR("8:7 (as on a CRT TV)") : TR("Pixel Aspect Ratio")), exportPar87_)) exportPar87_ = true;
         ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
+#if RN_PRODUCT_FLASH_FILTER
         ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
+#endif
         ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable || !d_.emu->crtAvailable());
+#if RN_PRODUCT_FLASH_FILTER
         ImGui::SameLine();
+#endif
         ImGui::Checkbox(TR("Apply CRT Effect"), &exportApplyCRT_);
         ImGui::EndDisabled();
         ImGui::AlignTextToFramePadding();

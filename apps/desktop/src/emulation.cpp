@@ -30,7 +30,9 @@ const char* EmulationController::practiceBlockedText() {
 }
 
 EmulationController::EmulationController(rn_input* input, AudioSink* audio) : input_(input), audio_(audio) {
+#if RN_PRODUCT_FLASH_FILTER
   flash_ = rn_flash_filter_new(flashLevel_);
+#endif
   ff_ = rnf_fast_forward_new();
   stepRepeater_ = rnf_step_repeater_new();
   practiceLoop_ = rnf_practice_loop_new();
@@ -46,7 +48,9 @@ EmulationController::EmulationController(rn_input* input, AudioSink* audio) : in
 
 EmulationController::~EmulationController() {
   closeSession();
+#if RN_PRODUCT_FLASH_FILTER
   rn_flash_filter_free(flash_);
+#endif
   rnf_fast_forward_free(ff_);
   rnf_step_repeater_free(stepRepeater_);
   rnf_practice_loop_free(practiceLoop_);
@@ -104,7 +108,9 @@ void EmulationController::install(rn_session* s) {
   pictureWidth_ = media_.max_width;
   pictureHeight_ = media_.max_height;
   display_.assign(size_t(pictureWidth_) * pictureHeight_, 0xFF000000u);
+#if RN_PRODUCT_FLASH_FILTER
   rn_flash_filter_set_size(flash_, pictureWidth_, pictureHeight_);
+#endif
   rnf_reel_free(reel_);
   reel_ = rnf_reel_new_media(RNF_REEL_CAPACITY, &media_);
   if (audio_) {
@@ -195,16 +201,22 @@ void EmulationController::setCrtDisplay(bool on) {
 }
 
 void EmulationController::setFlashLevel(rn_flash_level l) {
+#if RN_PRODUCT_FLASH_FILTER
   if (l == flashLevel_) return;
   flashLevel_ = l;
   rnf_vtr_configure(vtr_, vtrEnabled_ ? 1 : 0, l);
   rn_flash_filter_set_level(flash_, l);
   flashAltered_ = false;
   if (l == RN_FLASH_OFF) publishVideo();  // the unfiltered picture right away
+#else
+  (void)l;
+#endif
 }
 
 void EmulationController::resetFlashFilter() {
+#if RN_PRODUCT_FLASH_FILTER
   rn_flash_filter_reset(flash_);
+#endif
   flashAltered_ = false;
 }
 
@@ -221,7 +233,9 @@ void EmulationController::show(const rn_video_frame_info& frame) {
     pictureWidth_ = frame.width;
     pictureHeight_ = frame.height;
     display_.resize(size_t(frame.width) * frame.height);
+#if RN_PRODUCT_FLASH_FILTER
     rn_flash_filter_set_size(flash_, frame.width, frame.height);
+#endif
   }
   signal_ = Signal();
   rn_video_indices_info vi{};
@@ -237,6 +251,7 @@ void EmulationController::show(const rn_video_frame_info& frame) {
     for (uint32_t y = 0; y < frame.height; ++y)
       std::memcpy(display_.data() + size_t(y) * frame.width, v + size_t(y) * frame.stride, size_t(frame.width) * 4);
     flashAltered_ = false;
+#if RN_PRODUCT_FLASH_FILTER
   } else {
     rn_flash_info info{};
     if (signal_.codes) {
@@ -249,6 +264,7 @@ void EmulationController::show(const rn_video_frame_info& frame) {
     }
     flashAltered_ = info.altered != 0;
     if (flashAltered_) lastFlashTick_ = tickCount_;
+#endif
   }
   // The CRT takes the RGB picture only when the codes do not describe it.
   signal_.flashAltered = flashAltered_ && !codesOk;

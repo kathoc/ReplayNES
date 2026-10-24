@@ -76,7 +76,7 @@ class CrtExportProcessor : public ExportVideoProcessor {
   // picture when the filter altered the frame / the core has no codes.
   bool render(const ExportFrameSignal& sig, const uint32_t* pixels, uint8_t* canvas, size_t stride, std::string* error) override {
     CrtRenderer::Input in;
-    if (sig.codes && !sig.flashAltered) {
+    if (sig.codes && !(RN_PRODUCT_FLASH_FILTER && sig.flashAltered)) {
       in.kind = CrtRenderer::InputKind::codes;
       in.codes = sig.codes;
       in.burstPhase = sig.burstPhase;
@@ -86,7 +86,7 @@ class CrtExportProcessor : public ExportVideoProcessor {
     }
     // The power-on intro (ExportCrtIntro): its reception; no carrier = the noSignal input.
     CrtReception rx;
-    if (crtReceptionAt(sig.receptionStep, sig.receptionCounter, sig.flashReduced, renderer_->settings().antennaDbuv, &rx)) {
+    if (crtReceptionAt(sig.receptionStep, sig.receptionCounter, RN_PRODUCT_FLASH_FILTER && sig.flashReduced, renderer_->settings().antennaDbuv, &rx)) {
       in.reception = &rx;
       if (rx.noSignal) in.kind = CrtRenderer::InputKind::noSignal;
     }

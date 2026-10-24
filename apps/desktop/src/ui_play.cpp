@@ -616,6 +616,7 @@ void UI::buildCountdown() {
 // Top left: only the flash reduction indicator (no record / playback / transport badges: the status
 // label at the bottom left says those, docs/design/VTR_UX.md).
 void UI::buildBadges() {
+#if RN_PRODUCT_FLASH_FILTER
   const EmuStatus& st = d_.emu->status();
   if (!(st.flashActive && d_.settings->showFlashIndicator)) return;
   const UiMetrics& m = metrics_;
@@ -623,6 +624,7 @@ void UI::buildBadges() {
   float fs = m.hint();
   ImVec2 p(m.margin(), pill_.y + (pill_.h - fs - S(8)) / 2);
   ui::Pill(dl, p, TR("Flash Reduction Active"), IM_COL32(30, 150, 150, 220), fs);
+#endif
 }
 
 std::string UI::statusLabelText(bool practicePart) const {

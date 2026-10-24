@@ -121,8 +121,10 @@ const std::vector<ItemDef>& items() {
        "maximize", CHOICE, "", 0, {RNF_L("Integer"), RNF_L("FILL")}},
       {"settings.display", "display.crt", RNF_L("CRT"), RNF_L("Looks like a CRT TV (display only)"), "device-tv-old", TOGGLE,
        "", F_CRT, {}},
+#if RN_PRODUCT_FLASH_FILTER
       {"settings.display", "display.flash", RNF_L("Reduce Flashing"), RNF_L("Dims hard full-screen flashes (photosensitivity)"),
        "bolt-off", CHOICE, "", 0, {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
+#endif
       {"settings.display", "display.vtr", RNF_L("VTR Effect"), RNF_L("Videotape-style noise while rewinding (display only)"),
        "rewind-backward-5", TOGGLE, "", 0, {}},
       {"settings.display", "display.shape", RNF_L("Picture Shape"), RNF_L("8:7 pixels, hide the edges"), "aspect-ratio", PAGE,
@@ -221,8 +223,10 @@ const std::vector<ItemDef>& items() {
       // Here, not under Controls: Controls and Controls > More are full on Linux (docs/design/UI_REDESIGN.md).
       {"system.detail", "system.resume_countdown", RNF_L("Resume Countdown"), RNF_L("3, 2, 1 before play resumes after a pause"),
        "player-play", TOGGLE, "", 0, {}},
+#if RN_PRODUCT_FLASH_FILTER
       {"system.detail", "system.flash_badge", RNF_L("Flash Badge"), RNF_L("Show a badge while flashes are reduced"), "bolt-off",
        TOGGLE, "", 0, {}},
+#endif
       {"system.detail", "system.stats", RNF_L("Latency Stats"), RNF_L("Measured latency and timing (F3)"), "chart-line", TOGGLE,
        "", 0, {}},
       // Game.

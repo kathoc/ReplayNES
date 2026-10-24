@@ -49,6 +49,7 @@ add_library(rnl_export STATIC src/export/mp4_export.cpp ${RNL_DESKTOP_DIR}/src/e
 target_include_directories(rnl_export PUBLIC ${RNL_DESKTOP_DIR}/src/export)
 target_link_libraries(rnl_export PUBLIC replaynes_frontend replaynes_engine PkgConfig::FFMPEG Threads::Threads)
 target_compile_options(rnl_export PRIVATE ${RNL_WARNINGS})
+rnl_test_no_flash_symbols(rnl_export)
 add_executable(replaynes-export ${RNL_DESKTOP_DIR}/src/export/export_cli.cpp)
 target_link_libraries(replaynes-export PRIVATE rnl_export)
 target_compile_definitions(replaynes-export PRIVATE RNL_EXPORT_FFMPEG=1)
@@ -93,6 +94,7 @@ string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" RNL_APP_VERSION "${RNL_ROOT_PROJEC
 set(RNL_SDL3_TARGET SDL3::SDL3)
 set(RNL_APP_FEATURES RNL_HAVE_STEAM=1 RNL_HAVE_MP4_EXPORT=1 RNL_HAVE_CRT=1)
 include(${RNL_DESKTOP_DIR}/app.cmake)
+rnl_test_no_flash_symbols(rnl_app)
 target_include_directories(rnl_app PUBLIC src)  # steam_shortcut.h (RNL_HAVE_STEAM)
 
 add_executable(${RN_PRODUCT_EXECUTABLE}

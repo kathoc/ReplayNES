@@ -18,7 +18,10 @@ struct Settings {
   bool par87 = false;
   bool hideOverscan = true;
   bool showStats = false;
-  int flash = 2;  // rn_flash_level: 0 off, 1 low, 2 standard (default: safety first), 3 high
+  int flash = RN_PRODUCT_FLASH_FILTER ? 2 : 0;  // rn_flash_level: 0 off, 1 low, 2 standard (default: safety first), 3 high
+#if !RN_PRODUCT_FLASH_FILTER
+  std::string preservedFlashLines;  // opaque settings lines: ignore the value without rewriting it
+#endif
   bool showFlashIndicator = true;
   bool vtrEffect = true;  // the VTR tape look while rewinding / returning to A (rnf_vtr; display only)
   float uiScale = 1.0f;  // multiplies the automatic scale (window height / 800)

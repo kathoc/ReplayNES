@@ -320,7 +320,7 @@ class EmulationController {
   rn_input* input_;
   AudioSink* audio_;
   rn_flash_filter* flash_ = nullptr;
-  rn_flash_level flashLevel_ = RN_FLASH_STANDARD;
+  rn_flash_level flashLevel_ = RN_PRODUCT_FLASH_FILTER ? RN_FLASH_STANDARD : RN_FLASH_OFF;
   std::vector<uint32_t> display_;
   std::vector<uint16_t> displayCodes_ = std::vector<uint16_t>(size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT, 0x0F);  // filtered PPU codes of display_
   Signal signal_;

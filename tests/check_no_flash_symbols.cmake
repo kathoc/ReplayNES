@@ -1,0 +1,11 @@
+# The application archives must not even reference a flash-filter API in an OFF product.
+if(NOT EXISTS "${ARCHIVE}")
+  message(FATAL_ERROR "Missing application archive: ${ARCHIVE}")
+endif()
+execute_process(COMMAND "${NM}" -u "${ARCHIVE}" RESULT_VARIABLE status OUTPUT_VARIABLE symbols ERROR_VARIABLE error)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "nm failed: ${error}")
+endif()
+if(symbols MATCHES "rn_flash_filter_[A-Za-z0-9_]+")
+  message(FATAL_ERROR "Flash-filter reference in disabled product: ${CMAKE_MATCH_0}")
+endif()

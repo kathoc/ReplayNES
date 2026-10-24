@@ -19,7 +19,7 @@ rnf_export_settings defaultExportSettings() {
 }
 
 ExportCrtIntro::ExportCrtIntro(bool flashReduced)
-    : power_(rnf_crt_power_new()), hiss_(rnf_crt_hiss_new()), flashReduced_(flashReduced) {
+    : power_(rnf_crt_power_new()), hiss_(rnf_crt_hiss_new()), flashReduced_(RN_PRODUCT_FLASH_FILTER && flashReduced) {
   rnf_crt_power_start(power_);
 }
 

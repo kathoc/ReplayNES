@@ -310,16 +310,20 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       return false;
     }
   }
+#if RN_PRODUCT_FLASH_FILTER
   std::unique_ptr<rn_flash_filter, void (*)(rn_flash_filter*)> flash(
       opt.flash == RN_FLASH_OFF ? nullptr : rn_flash_filter_new_sized(opt.flash, picture.width, picture.height), rn_flash_filter_free);
   if (opt.flash != RN_FLASH_OFF && !flash) {
     err = "invalid flash reduction level";
     return false;
   }
+#else
+  constexpr bool flash = false;
+#endif
   std::vector<uint32_t> filtered(flash ? size_t(media.max_width) * media.max_height : 0);
   std::vector<uint16_t> filteredCodes(flash ? size_t(media.max_width) * media.max_height : 0);
   // The CRT effect starts with the power-on intro (and its hiss).
-  std::unique_ptr<ExportCrtIntro> intro(processor ? new ExportCrtIntro(opt.flash != RN_FLASH_OFF) : nullptr);
+  std::unique_ptr<ExportCrtIntro> intro(processor ? new ExportCrtIntro(RN_PRODUCT_FLASH_FILTER && opt.flash != RN_FLASH_OFF) : nullptr);
 
   // ---- muxer + encoders
   // Written under a temporary name and renamed once finished and checked (a failed / cancelled
@@ -450,8 +454,10 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
         return fail("the renderer returned no picture");
     }
     if (picture.width != pictureWidth || picture.height != pictureHeight) {
+#if RN_PRODUCT_FLASH_FILTER
       if (flash && rn_flash_filter_set_size(flash.get(), picture.width, picture.height) != RN_OK)
         return fail("unsupported flash filter picture size");
+#endif
       pictureWidth = picture.width;
       pictureHeight = picture.height;
       if (rnf_export_validate_media(&opt.settings, &media, pictureWidth, pictureHeight, nullptr) != RN_OK)
@@ -469,6 +475,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     // Flash reduction: frames strictly in order through one filter (display only).
     const uint32_t* pixels = picture.pixels;
     bool altered = false, codesOk = false;
+#if RN_PRODUCT_FLASH_FILTER
     if (flash) {
       rn_flash_info info{};
       // With a CRT processor the PPU codes go through the filter too (the RF path stays in use).
@@ -484,6 +491,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       pixels = filtered.data();
       altered = info.altered != 0;
     }
+#endif
 
     if (useProcessor) {
       rn_video_indices_info info{};

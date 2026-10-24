@@ -200,7 +200,7 @@ TEST_CASE("settings round trip and tolerant parsing") {
   CHECK(Settings::parse("").checkForUpdates);  // on by default
   CHECK_FALSE(t.integerScale);
   CHECK(t.par87);
-  CHECK_EQ(t.flash, 3);
+  CHECK_EQ(t.flash, RN_PRODUCT_FLASH_FILTER ? 3 : 0);
   CHECK(std::fabs(t.volume - 0.25f) < 1e-3);
   CHECK_EQ(t.autosaveInterval, 10.0);
   CHECK(std::fabs(t.uiScale - 1.25f) < 1e-3);
@@ -217,7 +217,7 @@ TEST_CASE("settings round trip and tolerant parsing") {
   Settings old = Settings::parse("integerScale=0\npar87=1\nhideOverscan=0\nshowStats=1\nflash=1\n");
   CHECK_FALSE(old.integerScale);
   CHECK(old.showStats);
-  CHECK_EQ(old.flash, 1);
+  CHECK_EQ(old.flash, RN_PRODUCT_FLASH_FILTER ? 1 : 0);
   // On-screen keyboard: auto by default, the three modes round-trip, anything else is ignored.
   CHECK_EQ(d.onScreenKeyboard, std::string("auto"));
   for (const char* m : {"auto", "builtin", "steam"}) {
@@ -1116,8 +1116,8 @@ TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, 
   emu.seek(0);
   int pictures = 0;
   for (int i = 0; i < 40; ++i) pictures += emu.tick().newPicture ? 1 : 0;
-  CHECK_EQ(pictures, 1 + 12);
-  CHECK(emu.signal().flashReduced);
+  CHECK_EQ(pictures, RN_PRODUCT_FLASH_FILTER ? 1 + 12 : 40);
+  CHECK_EQ(emu.signal().flashReduced, bool(RN_PRODUCT_FLASH_FILTER));
   // A jump elsewhere: normal reception.
   emu.seek(30);
   CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NORMAL);
@@ -1125,6 +1125,7 @@ TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, 
   rn_input_free(in);
 }
 
+#if RN_PRODUCT_FLASH_FILTER
 TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which follow the reduced picture") {
   // The legacy test ROM flashes large areas: at Standard most frames are reduced. The CRT signal
   // must stay on the codes (RF path) and the codes must show what the picture shows (block means
@@ -1179,6 +1180,8 @@ TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which foll
   emu.closeSession();
   rn_input_free(in);
 }
+
+#endif
 
 TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing emulated, aborts back to paused") {
   std::string d = tmpDir("resume-countdown");
@@ -2731,3 +2734,68 @@ TEST_CASE("library product identity matches projects and persists catalog entrie
   CHECK_EQ(history.plays, int64_t(1));
   CHECK_EQ(history.play_seconds, 30.0);
 }
+
+#if !RN_PRODUCT_FLASH_FILTER
+TEST_CASE("product without flash: settings are ignored and original values survive unrelated saves") {
+  CHECK_EQ(Settings{}.flash, int(RN_FLASH_OFF));
+  CHECK(Settings{}.serialize().find("flash=") == std::string::npos);
+  for (const char* value : {"0", "1", "2", "3", "9", "invalid"}) {
+    std::string line = std::string("flash=") + value + "\n";
+    Settings settings = Settings::parse(line);
+    CHECK_EQ(settings.flash, int(RN_FLASH_OFF));
+    settings.flash = 3;
+    settings.volume = 0.25f;
+    CHECK(settings.serialize().find(line) != std::string::npos);
+  }
+}
+
+TEST_CASE("product without flash: live and paused pictures stay raw even after requesting every level") {
+  std::string d = tmpDir("noflash-pixels");
+  std::string rom = testRom(d);
+  rn_input* in = rn_input_new();
+  NullAudio audio;
+  EmulationController emu(in, &audio);
+  rn_session* session = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &session) == RN_OK);
+  emu.install(session);
+  size_t different = 0;
+  unsigned maxDifference = 0;
+  for (int frame = 0; frame < 120; ++frame) {
+    emu.setFlashLevel(rn_flash_level(frame % 4));
+    emu.tick();
+    REQUIRE_EQ(emu.flashLevel(), RN_FLASH_OFF);
+    CHECK_FALSE(emu.signal().flashAltered);
+    CHECK_FALSE(emu.signal().flashReduced);
+    const uint32_t* raw = rn_video(session);
+    const uint32_t* shown = emu.picture();
+    for (int i = 0; i < RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT; ++i) {
+      different += raw[i] != shown[i];
+      for (int shift : {0, 8, 16})
+        maxDifference = std::max(maxDifference, unsigned(std::abs(int(raw[i] >> shift & 255) - int(shown[i] >> shift & 255))));
+    }
+  }
+  emu.seek(60);
+  for (int level = 0; level < 4; ++level) {
+    emu.setFlashLevel(rn_flash_level(level));
+    CHECK_EQ(emu.flashLevel(), RN_FLASH_OFF);
+    CHECK(std::memcmp(emu.picture(), rn_video(session), RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT * 4) == 0);
+  }
+  CHECK_EQ(different, size_t(0));
+  CHECK_EQ(maxDifference, 0u);
+  MESSAGE("flash OFF: differing pixels=" << different << ", maximum channel difference=" << maxDifference);
+  std::vector<uint8_t> rgba(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT * 4);
+  for (int i = 0; i < RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT; ++i) {
+    uint32_t pixel = emu.picture()[i];
+    rgba[i * 4] = uint8_t(pixel >> 16);
+    rgba[i * 4 + 1] = uint8_t(pixel >> 8);
+    rgba[i * 4 + 2] = uint8_t(pixel);
+    rgba[i * 4 + 3] = 255;
+  }
+  auto png = encodePNG(RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, rgba.data());
+  std::ofstream out(std::string(RNL_TEST_TMP) + "/noflash-picture.png", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(png.data()), std::streamsize(png.size()));
+  REQUIRE(out.good());
+  emu.closeSession();
+  rn_input_free(in);
+}
+#endif
