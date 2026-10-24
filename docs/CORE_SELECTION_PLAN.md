@@ -388,6 +388,21 @@ compat IDを`replaynescore/nrom-live/accuracy-c5-v15`、build IDを
 読み替えない。Release相当で`test_core_selection` 4件、`test_replaynescore_audio` 3件、
 `test_replaynescore_adapter` 8件（計15件、assertion failure 0）を実行し、ctest 3/3が成功した。
 
+### 描画オフ時の音声ドリフト修正（同日）
+
+描画オフは29780 2/3 CPU cycle/frameとなるため、固定CPUクロックでの積分では
+固定フレーム時間29780.5 cycleとのずれが累積し、SMBなどで15フレーム目に停止した。
+各フレームの実測CPU slot列を幅 `655171*48000` の整数時間へ写し、
+`audioSamplesBefore(f)`から`audioSamplesBefore(f+1)`までの出力を返す方式へ修正した。
+slot境界は `floor(i*655171*48000/N)` とし、端数位相・面積・DC履歴は保持する。
+soft reset中のslotも未写像PCMとして保存し、次のフレーム終了時にまとめて写す。
+無制限の出力繰越は、暗転が長いと遅延が累積するため採用しない。
+
+pendingの意味変更に合わせてpayload schemaとstateFormatVersionを3、audio state versionを2、
+compat IDを`replaynescore/nrom-live/accuracy-c5-v16`、build IDを
+`replaynescore-0.9.0+adapter-v16`へ更新した。DC profileは1を維持し、旧stateは拒否する。
+検証結果は `docs/reviews/replaynescore-audio-drift-2.md` に記録する。
+
 ## 2026-10-20 Codex への依頼（ReplayNEScore 側）
 
 ReplayNEScore の修正は Codex の担当で、ReplayNES はコミットされた成果物を組み込むだけにする（利用者決定）。

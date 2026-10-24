@@ -7,7 +7,7 @@
 namespace rn::replaynes_audio {
 
 struct State {
-  static constexpr uint32_t kVersion = 1;
+  static constexpr uint32_t kVersion = 2;
   static constexpr uint32_t kProfile = 1;
   uint32_t version{kVersion};
   uint32_t profile{kProfile};
@@ -29,6 +29,8 @@ class Pipeline {
  public:
   static constexpr uint64_t kInputWidth = 22ULL * 48000ULL;
   static constexpr uint64_t kOutputWidth = 39375000ULL;
+  static constexpr uint64_t kFrameWidth = 655171ULL * 48000ULL;
+  static constexpr size_t kMaxFrameSlots = 29781;
   static constexpr int32_t kDcNumerator = 65372;
   static constexpr int32_t kDcDenominator = 65536;
 
@@ -53,12 +55,31 @@ class Pipeline {
   }
 
   bool push(int16_t input, std::vector<int16_t>& output) {
+    return pushWidth(input, kInputWidth, output);
+  }
+
+  // Map actual CPU slots onto one fixed frontend frame; retain partial output area.
+  bool pushFrame(const int16_t* input, size_t count, std::vector<int16_t>& output) {
+    if(!input || count == 0 || count > kMaxFrameSlots ||
+       state_.outputCursor > std::numeric_limits<uint64_t>::max() -
+         (state_.phase + kFrameWidth) / kOutputWidth) return false;
+    uint64_t begin = 0;
+    for(size_t i=0; i<count; ++i) {
+      const uint64_t end = uint64_t(i+1) * kFrameWidth / count;
+      if(!pushWidth(input[i], end-begin, output)) return false;
+      begin = end;
+    }
+    return true;
+  }
+
+ private:
+  bool pushWidth(int16_t input, uint64_t inputWidth, std::vector<int16_t>& output) {
     if(state_.outputCursor == std::numeric_limits<uint64_t>::max() &&
-       state_.phase + kInputWidth >= kOutputWidth)
+       state_.phase + inputWidth >= kOutputWidth)
       return false;
     state_.input = input;
     state_.hasInput = true;
-    uint64_t remaining = kInputWidth;
+    uint64_t remaining = inputWidth;
     while(remaining != 0) {
       const uint64_t width = std::min(remaining, kOutputWidth - state_.phase);
       state_.area += int64_t(input) * int64_t(width);
@@ -80,6 +101,7 @@ class Pipeline {
     return true;
   }
 
+ public:
   bool push(const int16_t* input, size_t count, std::vector<int16_t>& output) {
     if(!input && count!=0) return false;
     for(size_t i=0;i<count;++i) if(!push(input[i], output)) return false;

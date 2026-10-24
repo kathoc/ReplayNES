@@ -45,7 +45,7 @@ struct ReplayNEScoreAdapter::Impl {
   std::array<uint32_t, kVideoWidth*kVideoHeight> pixels{};
   std::array<uint8_t,2048> ram{};
   std::vector<int16_t> audio;
-  std::vector<int16_t> pendingAudio;
+  std::vector<int16_t> pendingSlots;
   uint64_t lastAudioSlot=0;
   replaynes_audio::Pipeline audioPipeline;
   uint64_t frames=0, tick=0;
@@ -57,7 +57,7 @@ struct ReplayNEScoreAdapter::Impl {
       image->chr().empty()?std::span<const uint8_t>(chr):std::span<const uint8_t>{},
       initialPort(),replaynes::machine::CpuPpuTiming{4,4,12,true},initialFrame(),
       replaynes::dma::Cadence::get,true,replaynes::apu::Phase::clock,true,true,true,true,true);
-    frames=0; tick=0; ram.fill(0); pixels.fill(0xff000000); audio.clear(); pendingAudio.clear();
+    frames=0; tick=0; ram.fill(0); pixels.fill(0xff000000); audio.clear(); pendingSlots.clear();
     lastAudioSlot=0; audioPipeline=replaynes_audio::Pipeline{}; fault=Status::Ok();
   }
   Status fail(const replaynes::time::RunResult& result) {
@@ -113,8 +113,9 @@ Status ReplayNEScoreAdapter::stepFrame(uint8_t p1,uint8_t p2,bool renderVideo) {
       if(audioObservation->cpu_slots!=s.lastAudioSlot+1U)
         return Error(Err::Internal,"ReplayNEScore audio slot did not advance");
       s.lastAudioSlot=audioObservation->cpu_slots;
-      if(!s.audioPipeline.push(audioObservation->pcm,s.pendingAudio))
-        return Error(Err::OutOfRange,"ReplayNEScore audio cursor overflow");
+      if(s.pendingSlots.size() >= replaynes_audio::Pipeline::kMaxFrameSlots)
+        return Error(Err::OutOfRange,"ReplayNEScore frame audio slot overflow");
+      s.pendingSlots.push_back(audioObservation->pcm);
     }
     const auto dot=s.machine->last_render_dot();
     if(!dot || dot->tick!=s.tick) continue;
@@ -131,9 +132,11 @@ Status ReplayNEScoreAdapter::stepFrame(uint8_t p1,uint8_t p2,bool renderVideo) {
       s.ram=state->bus.ram.cpu;
       if(renderVideo) s.pixels=std::move(pending);
       const auto count=audioSamplesForFrame(s.frames);
-      if(count==0 || s.pendingAudio.size()!=count)
+      std::vector<int16_t> output;
+      if(count==0 || !s.audioPipeline.pushFrame(s.pendingSlots.data(),s.pendingSlots.size(),output) ||
+         output.size()!=count)
         return Error(Err::Internal,"ReplayNEScore continuous audio count disagrees with frame timeline");
-      s.audio.swap(s.pendingAudio); s.pendingAudio.clear();
+      s.audio.swap(output); s.pendingSlots.clear();
       ++s.frames; return Status::Ok();
     }
   }
@@ -143,6 +146,8 @@ Status ReplayNEScoreAdapter::softReset() {
   auto& s=*impl_;
   if(!s.machine) return Error(Err::StateError,"No ROM loaded");
   if(!s.fault) return s.fault;
+  if(s.pendingSlots.size() > replaynes_audio::Pipeline::kMaxFrameSlots-7U)
+    return Error(Err::OutOfRange,"ReplayNESCore RESET audio slot overflow");
   if(!s.machine->set_reset_line(true))
     return Error(Err::Internal,"ReplayNESCore RESET assertion was rejected");
   for(unsigned slot=0;slot<7U;++slot) {
@@ -152,8 +157,7 @@ Status ReplayNEScoreAdapter::softReset() {
     if(!observation || observation->cpu_slots!=s.lastAudioSlot+1U)
       return Error(Err::Internal,"ReplayNESCore RESET audio slot did not advance");
     s.lastAudioSlot=observation->cpu_slots;
-    if(!s.audioPipeline.push(observation->pcm,s.pendingAudio))
-      return Error(Err::OutOfRange,"ReplayNESCore RESET audio cursor overflow");
+    s.pendingSlots.push_back(observation->pcm);
   }
   if(!s.machine->set_reset_line(false)) {
     s.fault=Error(Err::Internal,"ReplayNESCore RESET release was rejected");
@@ -178,7 +182,7 @@ Status ReplayNEScoreAdapter::saveState(std::vector<uint8_t>& out) {
   const auto core=replaynes::state::save_nrom_cpu_ppu(*s.machine);
   if(!core || !core.value) return Error(Err::StateError,"ReplayNEScore machine snapshot failed");
   ByteWriter payload;
-  payload.u32(0x31484e52U); payload.u32(2U); // RNH1, adapter payload schema 2.
+  payload.u32(0x31484e52U); payload.u32(3U); // RNH1, adapter payload schema 3: pending raw CPU slots.
   payload.u64(s.tick); payload.u64(s.lastAudioSlot);
   const auto& audioState=s.audioPipeline.state();
   payload.u32(audioState.version); payload.u32(audioState.profile);
@@ -187,8 +191,8 @@ Status ReplayNEScoreAdapter::saveState(std::vector<uint8_t>& out) {
   payload.u64(audioState.outputCursor);
   payload.u32(std::bit_cast<uint32_t>(audioState.dcInput));
   payload.u32(std::bit_cast<uint32_t>(audioState.dcOutput));
-  payload.u32(uint32_t(s.pendingAudio.size()));
-  for(const int16_t sample:s.pendingAudio) payload.u32(uint16_t(sample));
+  payload.u32(uint32_t(s.pendingSlots.size()));
+  for(const int16_t sample:s.pendingSlots) payload.u32(uint16_t(sample));
   payload.u32(uint32_t(s.pixels.size()));
   for(uint32_t pixel:s.pixels) payload.u32(pixel);
   payload.u64(core.value->size()); payload.bytes(core.value->data(),core.value->size());
@@ -204,7 +208,7 @@ Status ReplayNEScoreAdapter::loadState(const uint8_t* data,size_t size) {
   if(!envelope.ok()) return envelope;
   try {
     ByteReader reader(payload,payloadLen);
-    if(reader.u32()!=0x31484e52U || reader.u32()!=2U)
+    if(reader.u32()!=0x31484e52U || reader.u32()!=3U)
       return Error(Err::StateError,"Unsupported ReplayNEScore adapter state schema");
     const uint64_t tick=reader.u64(),lastSlot=reader.u64();
     replaynes_audio::State audioState{};
@@ -217,13 +221,13 @@ Status ReplayNEScoreAdapter::loadState(const uint8_t* data,size_t size) {
     audioState.dcInput=std::bit_cast<int32_t>(reader.u32());
     audioState.dcOutput=std::bit_cast<int32_t>(reader.u32());
     const uint32_t pendingCount=reader.u32();
-    if(pendingCount>kMaxSamplesPerFrame)
+    if(pendingCount>replaynes_audio::Pipeline::kMaxFrameSlots)
       return Error(Err::StateError,"ReplayNESCore state has invalid pending audio size");
-    std::vector<int16_t> pendingAudio; pendingAudio.reserve(pendingCount);
+    std::vector<int16_t> pendingSlots; pendingSlots.reserve(pendingCount);
     for(uint32_t i=0;i<pendingCount;++i) {
       const uint32_t encoded=reader.u32();
       if(encoded>0xffffU) return Error(Err::StateError,"ReplayNESCore state has invalid pending audio sample");
-      pendingAudio.push_back(std::bit_cast<int16_t>(uint16_t(encoded)));
+      pendingSlots.push_back(std::bit_cast<int16_t>(uint16_t(encoded)));
     }
     if(reader.u32()!=kVideoWidth*kVideoHeight)
       return Error(Err::StateError,"ReplayNEScore state has invalid video size");
@@ -241,11 +245,25 @@ Status ReplayNEScoreAdapter::loadState(const uint8_t* data,size_t size) {
     const auto state=candidate->machine->export_state();
     if(!state || tick!=state->scheduler.last_committed || lastSlot!=state->cpu_cycles)
       return Error(Err::StateError,"ReplayNEScore host and machine state disagree");
+    if(!state->render)
+      return Error(Err::StateError,"ReplayNEScore render timing is unavailable");
+    const auto& render=*state->render;
+    const auto& raster=render.current.pipeline.raster;
+    const uint64_t frameDots=uint64_t(raster.scanline)*341U+raster.dot;
+    // CPU ticks every third physical PPU dot. A skipped dot ends the previous
+    // frame, so the current raster offset counts only physical dots here.
+    if(raster.frame!=frame || frameDots>render.ppu_dots ||
+       lastSlot!=render.ppu_dots/3U ||
+       pendingSlots.size()!=lastSlot-(render.ppu_dots-frameDots)/3U)
+      return Error(Err::StateError,"ReplayNEScore pending audio and raster timing disagree");
     candidate->frames=frame; candidate->tick=tick; candidate->lastAudioSlot=lastSlot;
     if(!candidate->audioPipeline.restore(audioState) ||
-       audioState.outputCursor!=audioSamplesBefore(frame)+pendingAudio.size())
+       audioState.outputCursor!=audioSamplesBefore(frame) ||
+       audioState.phase!=(frame % replaynes_audio::Pipeline::kOutputWidth) *
+         replaynes_audio::Pipeline::kFrameWidth % replaynes_audio::Pipeline::kOutputWidth ||
+       pendingSlots.size()>lastSlot)
       return Error(Err::StateError,"ReplayNESCore state has invalid continuous audio state");
-    candidate->pendingAudio=std::move(pendingAudio); candidate->pixels=pixels;
+    candidate->pendingSlots=std::move(pendingSlots); candidate->pixels=pixels;
     candidate->ram=state->bus.ram.cpu; candidate->audio.clear();
     impl_=std::move(candidate); return Status::Ok();
   } catch(const std::exception& e) { return Error(Err::StateError,e.what()); }

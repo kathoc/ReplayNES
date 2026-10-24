@@ -97,3 +97,79 @@ TEST_CASE("ReplayNESCore audio profile has deterministic DC step and rejects cor
   std::vector<int16_t> untouched{7}; CHECK_FALSE(step.push(1,untouched));
   CHECK(step.state()==before); CHECK(untouched==std::vector<int16_t>{7});
 }
+
+TEST_CASE("ReplayNESCore frame mapping preserves cross-frame area phase and DC against interval oracle") {
+  // Build absolute slot intervals independently, then integrate each output
+  // interval by intersection. The oracle never calls a Pipeline helper.
+  constexpr uint64_t frameWidth=655171ULL*48000ULL;
+  constexpr uint64_t sampleWidth=39375000ULL;
+  std::vector<uint64_t> boundaries{0};
+  std::vector<int16_t> values,actual,expected,restoredOutput;
+  Pipeline pipeline,restored;
+  int32_t previousInput=0,previousOutput=0;
+  auto integral=[&](uint64_t begin,uint64_t end) {
+    int64_t area=0;
+    size_t slot=size_t(std::upper_bound(boundaries.begin(),boundaries.end(),begin)-
+      boundaries.begin()-1);
+    for(;begin<end;++slot) {
+      const uint64_t stop=std::min(end,boundaries[slot+1]);
+      area+=int64_t(values[slot])*int64_t(stop-begin);
+      begin=stop;
+    }
+    return area;
+  };
+  for(unsigned frame=0;frame<12;++frame) {
+    // Rendered and unrendered frame cadences both contain 29780/29781 slots.
+    const size_t slots=(frame%5==0 || frame%5==2)?29780:29781;
+    std::vector<int16_t> input(slots);
+    for(size_t i=0;i<slots;++i) {
+      input[i]=int16_t(int((i*7919U+frame*1237U)%65536U)-32768);
+      values.push_back(input[i]);
+      boundaries.push_back(uint64_t(frame)*frameWidth+(i+1)*frameWidth/slots);
+    }
+    REQUIRE(pipeline.pushFrame(input.data(),input.size(),actual));
+    const uint64_t end=(frame+1)*frameWidth;
+    while(expected.size()<end/sampleWidth) {
+      const uint64_t begin=expected.size()*sampleWidth;
+      const int64_t area=integral(begin,begin+sampleWidth);
+      const int32_t averaged=area>=0 ? int32_t((area+int64_t(sampleWidth/2))/int64_t(sampleWidth))
+        : -int32_t((-area+int64_t(sampleWidth/2))/int64_t(sampleWidth));
+      const int32_t filtered=int32_t(std::clamp<int64_t>(int64_t(averaged)-previousInput+
+        int64_t(65372)*previousOutput/65536,-32768,32767));
+      expected.push_back(int16_t(filtered)); previousInput=averaged; previousOutput=filtered;
+    }
+    CHECK(actual==expected);
+    CHECK_EQ(pipeline.state().phase,end%sampleWidth);
+    CHECK_EQ(pipeline.state().area,integral(end/sampleWidth*sampleWidth,end));
+    CHECK_EQ(pipeline.state().outputCursor,end/sampleWidth);
+    CHECK_EQ(pipeline.state().dcInput,previousInput);
+    CHECK_EQ(pipeline.state().dcOutput,previousOutput);
+    CHECK_EQ(pipeline.state().input,input.back());
+    CHECK(pipeline.state().hasInput);
+    if(frame==4) {
+      CHECK(pipeline.state().phase!=0);
+      CHECK(pipeline.state().area!=0);
+      REQUIRE(restored.restore(pipeline.state())); restoredOutput=actual;
+    } else if(frame>4) {
+      REQUIRE(restored.pushFrame(input.data(),input.size(),restoredOutput));
+      CHECK(restoredOutput==actual); CHECK(restored.state()==pipeline.state());
+    }
+  }
+}
+
+TEST_CASE("ReplayNESCore frame mapping rejects invalid input atomically") {
+  Pipeline pipeline; std::vector<int16_t> output;
+  const std::vector<int16_t> input(29781,1234);
+  REQUIRE(pipeline.pushFrame(input.data(),input.size(),output));
+  const auto before=pipeline.state(); const auto beforeOutput=output;
+  CHECK_FALSE(pipeline.pushFrame(nullptr,0,output));
+  CHECK_FALSE(pipeline.pushFrame(input.data(),0,output));
+  CHECK_FALSE(pipeline.pushFrame(nullptr,29781,output));
+  CHECK_FALSE(pipeline.pushFrame(input.data(),29782,output));
+  CHECK(pipeline.state()==before); CHECK(output==beforeOutput);
+  auto overflow=before;
+  overflow.outputCursor=std::numeric_limits<uint64_t>::max()-1;
+  REQUIRE(pipeline.restore(overflow));
+  CHECK_FALSE(pipeline.pushFrame(input.data(),input.size(),output));
+  CHECK(pipeline.state()==overflow); CHECK(output==beforeOutput);
+}

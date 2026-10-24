@@ -1,6 +1,7 @@
 #include "support/rn_test.h"
 #include "support/TestUtil.h"
 #include "core/ReplayNEScoreAdapter.h"
+#include "util/Bytes.h"
 #include <algorithm>
 #include <array>
 #include <vector>
@@ -16,9 +17,9 @@ std::vector<uint8_t> rom(std::initializer_list<uint8_t> code) {
 }
 TEST_CASE("ReplayNESCore C5 identity and state format are synchronized") {
   rn::ReplayNEScoreAdapter core;
-  CHECK_EQ(core.compatId(),std::string("replaynescore/nrom-live/accuracy-c5-v15"));
-  CHECK_EQ(core.buildId(),std::string("replaynescore-0.9.0+adapter-v15"));
-  CHECK_EQ(core.stateFormatVersion(),2U);
+  CHECK_EQ(core.compatId(),std::string("replaynescore/nrom-live/accuracy-c5-v16"));
+  CHECK_EQ(core.buildId(),std::string("replaynescore-0.9.0+adapter-v16"));
+  CHECK_EQ(core.stateFormatVersion(),3U);
 }
 TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   rn::ReplayNEScoreAdapter core;
@@ -77,6 +78,87 @@ TEST_CASE("Experimental core emits deterministic non-silent pulse PCM") {
     REQUIRE_EQ(an,size_t(rn::audioSamplesForFrame(frame))); REQUIRE_EQ(an,bn);
     CHECK(std::equal(ap,ap+an,bp));
     CHECK(std::any_of(ap,ap+an,[](int16_t value){return value!=0;}));
+  }
+}
+TEST_CASE("ReplayNESCore maps 600 rendering-disabled frames without audio drift and restores RESET history") {
+  // Never write PPUMASK: every frame has all 341*262 PPU dots (29780 2/3 CPU
+  // cycles), including odd frames. Keep pulse length halted so PCM stays live.
+  auto bytes=rom({0xa9,1,0x8d,0x15,0x40,0xa9,0xbf,0x8d,0x00,0x40,
+    0xa9,0,0x8d,0x02,0x40,0xa9,9,0x8d,0x03,0x40,0x4c,0x14,0x80});
+  rn::ReplayNEScoreAdapter straight,branch;
+  REQUIRE(straight.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(branch.loadROM(bytes.data(),bytes.size()).ok());
+  uint64_t total=0;
+  std::vector<uint8_t> checkpoint;
+  for(unsigned frame=0;frame<620;++frame) {
+    if(frame==600) {
+      REQUIRE(straight.saveState(checkpoint).ok());
+      REQUIRE(branch.loadState(checkpoint.data(),checkpoint.size()).ok());
+    }
+    if(frame==610) {
+      REQUIRE(straight.softReset().ok());
+      REQUIRE(branch.softReset().ok());
+      CHECK_EQ(straight.machineHash(),branch.machineHash());
+      // RESET advances seven CPU slots. Save/load before completing the frame
+      // must preserve those pending slots as well as the filter history.
+      REQUIRE(straight.saveState(checkpoint).ok());
+      REQUIRE(branch.loadState(checkpoint.data(),checkpoint.size()).ok());
+    }
+    const auto status=straight.stepFrame(0,0,false);
+    if(!status.ok()) MESSAGE("frame="<<frame<<": "<<status.message);
+    REQUIRE(status.ok());
+    size_t count=0; const auto* samples=straight.audio(&count);
+    REQUIRE_EQ(count,size_t(rn::audioSamplesForFrame(frame)));
+    total+=count;
+    CHECK_EQ(total,rn::audioSamplesBefore(frame+1));
+    CHECK(std::any_of(samples,samples+count,[](int16_t value){return value!=0;}));
+    if(frame>=600) {
+      REQUIRE(branch.stepFrame(0,0,false).ok());
+      size_t branchCount=0; const auto* branchSamples=branch.audio(&branchCount);
+      REQUIRE_EQ(count,branchCount);
+      CHECK(std::equal(samples,samples+count,branchSamples));
+      CHECK_EQ(straight.machineHash(),branch.machineHash());
+    }
+  }
+  CHECK_EQ(straight.frameIndex(),620U);
+}
+TEST_CASE("ReplayNESCore rejects pending slot insertion and removal without changing live state") {
+  auto bytes=rom({0x4c,0,0x80});
+  rn::ReplayNEScoreAdapter core,validRestore;
+  REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(validRestore.loadROM(bytes.data(),bytes.size()).ok());
+  REQUIRE(core.stepFrame(0,0,false).ok());
+  for(const bool removeSlots:{false,true}) {
+    if(removeSlots) REQUIRE(core.softReset().ok());
+    std::vector<uint8_t> before;
+    REQUIRE(core.saveState(before).ok());
+    REQUIRE(validRestore.loadState(before.data(),before.size()).ok());
+    uint64_t frame=0; const uint8_t* payload=nullptr; size_t payloadSize=0;
+    REQUIRE(rn::stateenv::read(before.data(),before.size(),core.compatId(),frame,payload,payloadSize).ok());
+    rn::ByteReader reader(payload,payloadSize);
+    REQUIRE_EQ(reader.u32(),0x31484e52U); REQUIRE_EQ(reader.u32(),3U);
+    // Schema 3: ticks/last slot (16 bytes), resampler state (48 bytes),
+    // then a u32 pending count and u32-encoded PCM for every pending slot.
+    REQUIRE(reader.ptr(16+48)!=nullptr);
+    const size_t countOffset=reader.pos();
+    const uint32_t originalCount=reader.u32();
+    REQUIRE_EQ(originalCount,removeSlots?7U:0U);
+    REQUIRE(reader.ptr(originalCount*4U)!=nullptr);
+    const size_t tailOffset=reader.pos();
+    rn::ByteWriter modified;
+    modified.bytes(payload,countOffset);
+    modified.u32(removeSlots?0U:7U);
+    if(!removeSlots) for(unsigned i=0;i<7;++i) modified.u32(1234U);
+    modified.bytes(payload+tailOffset,payloadSize-tailOffset);
+    // Rebuild the wrapper length. Its envelope has no CRC; the embedded
+    // machine snapshot and its checksum remain intact and valid.
+    std::vector<uint8_t> corrupted;
+    rn::stateenv::write(corrupted,core.compatId(),frame,modified.buf.data(),modified.buf.size());
+    const auto rejected=core.loadState(corrupted.data(),corrupted.size());
+    CHECK_EQ(rejected.code,rn::Err::StateError);
+    CHECK_EQ(rejected.message,std::string("ReplayNEScore pending audio and raster timing disagree"));
+    std::vector<uint8_t> after;
+    REQUIRE(core.saveState(after).ok()); CHECK(before==after);
   }
 }
 TEST_CASE("Experimental hard power restores fresh machine and host state while RESET retains RAM and video") {
