@@ -384,3 +384,41 @@ TEST_CASE("downscaler") {
   CHECK_EQ(out[119 * 128 + 63], 0xFFFF0000u);
   CHECK_EQ(out[10 * 128 + 80], 0xFF7F7F7Fu);
 }
+
+TEST_CASE("media thumbnails preserve NES pixels and rotate non-NES pictures") {
+  rn_media_info media{320, 224, 5963, 100, 2, 1, 1, 1};
+  std::vector<uint32_t> source(324 * 224, 0xdeadbeef);
+  for (uint32_t y = 0; y < 224; ++y)
+    for (uint32_t x = 0; x < 320; ++x)
+      source[y * 324 + x] = 0xff000000u | ((x < 160 ? 255u : 0u) << 16) | (y < 112 ? 255u : 0u);
+  rn_video_frame_info frame{source.data(), 320, 224, 324};
+  uint32_t w = 0, h = 0;
+  CHECK(rnf_thumb_size(&frame, &media, &w, &h));
+  CHECK_EQ(w, 128u);
+  CHECK_EQ(h, 183u);
+  std::vector<uint32_t> out(size_t(w) * h + 1, 0xdeadbeef);
+  CHECK(!rnf_thumb_downscale_frame(&frame, &media, out.data(), out.size() - 2));
+  CHECK(rnf_thumb_downscale_frame(&frame, &media, out.data(), out.size() - 1));
+  CHECK_EQ(out.front(), 0xffff0000u);
+  CHECK_EQ(out[127], 0xffff00ffu);
+  CHECK_EQ(out[size_t(w) * (h - 1)], 0xff000000u);
+  CHECK_EQ(out[size_t(w) * h - 1], 0xff0000ffu);
+  CHECK_EQ(out.back(), 0xdeadbeefu);
+  media.pixel_aspect_num = 2;
+  CHECK(rnf_thumb_size(&frame, &media, &w, &h));
+  CHECK_EQ(h, 366u);
+  media.rotation = 4;
+  CHECK(!rnf_thumb_size(&frame, &media, &w, &h));
+
+  media = {RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 1, 1, 0};
+  source.resize(RN_VIDEO_WIDTH * RN_VIDEO_HEIGHT);
+  for (size_t i = 0; i < source.size(); ++i) source[i] = uint32_t(i * 2654435761u);
+  frame = {source.data(), RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_VIDEO_WIDTH};
+  CHECK(rnf_thumb_size(&frame, &media, &w, &h));
+  CHECK_EQ(w, uint32_t(RNF_THUMB_WIDTH));
+  CHECK_EQ(h, uint32_t(RNF_THUMB_HEIGHT));
+  std::vector<uint32_t> legacy(size_t(w) * h), generic(legacy.size());
+  rnf_thumb_downscale(source.data(), legacy.data());
+  CHECK(rnf_thumb_downscale_frame(&frame, &media, generic.data(), generic.size()));
+  CHECK(legacy == generic);
+}

@@ -58,7 +58,7 @@ void UI::openExportDialog() {
   if (!exportJob_.running()) exportStarted_ = false;
   exportError_.clear();
   exportApplyFlash_ = d_.settings->flash != RN_FLASH_OFF;
-  exportApplyCRT_ = d_.settings->crt;
+  exportApplyCRT_ = d_.settings->crt && d_.emu->crtAvailable();
   exportPar87_ = d_.settings->par87;
   videoCursor_ = st.frame;
   videoRange_ = RNF_VIDEO_RANGE_ALL;
@@ -113,7 +113,7 @@ void UI::startExport() {
   s.start_frame = all ? 0 : a;
   s.end_frame = all ? 0 : b;
   char* msg = nullptr;
-  if (rnf_export_validate(&s, &msg) != RN_OK) {
+  if (rnf_export_validate_media(&s, &d_.emu->media(), d_.emu->videoFrame().width, d_.emu->videoFrame().height, &msg) != RN_OK) {
     exportError_ = str(msg);
     return;
   }
@@ -125,7 +125,7 @@ void UI::startExport() {
   const auto& encoders = exportEncoderChoices();
   eo.quality = exportQuality_;
   if (exportEncoder_ > 0 && size_t(exportEncoder_) <= encoders.size()) eo.encoder = encoders[size_t(exportEncoder_ - 1)].id;
-  if (exportApplyCRT_) eo.makeProcessor = crtExportProcessorFactory(crtSettings());
+  if (exportApplyCRT_ && d_.emu->crtAvailable()) eo.makeProcessor = crtExportProcessorFactory(crtSettings());
   std::string dir = d_.library->root() + "/Exports";
   std::error_code ec;
   fs::create_directories(dir, ec);
@@ -189,7 +189,7 @@ void UI::buildExportDialog() {
       s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
       s.pixel_aspect_87 = exportPar87_;
       rnf_export_geometry g{};
-      rnf_export_geometry_compute(&s, &g);
+      rnf_export_geometry_compute_media(&s, &d_.emu->media(), d_.emu->videoFrame().width, d_.emu->videoFrame().height, &g);
       // The body scrolls (focus-driven) only if Details ever outgrows the screen; the buttons stay.
       float maxBody = io.DisplaySize.y * 0.94f - S(40) - S(100);
       ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, maxBody));
@@ -230,7 +230,7 @@ void UI::buildExportDialog() {
       bool any = videoFrames(d_.emu, videoRange_, videoSection_, videoCursor_, &a, &b);
       uint64_t frames = any ? b - a : 0;
       rowLabel(TR("Length"));
-      ImGui::TextDisabled("%s", str(rnf_video_summary(frames, rnf_export_predict_size(&g, 0, exportQuality_, frames, nullptr))).c_str());
+      ImGui::TextDisabled("%s", str(rnf_video_summary_for_period(frames, rnf_export_predict_size_media(&g, 0, exportQuality_, frames, &d_.emu->media(), exportAudioSampleRate(d_.emu->session()), nullptr), d_.emu->framePeriod())).c_str());
       // Details ›: codec / size / PAR / overscan / flash / CRT (the bit rate is Quality).
       ImGui::SetNextItemOpen(exportDetails_, ImGuiCond_Always);
       exportDetails_ = ImGui::CollapsingHeader(TR("Details ›"));
@@ -248,10 +248,10 @@ void UI::buildExportDialog() {
         ImGui::TextUnformatted(TR("Pixel Aspect Ratio"));
         if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
         ImGui::SameLine();
-        if (ImGui::RadioButton(TR("8:7 (as on a CRT TV)"), exportPar87_)) exportPar87_ = true;
+        if (ImGui::RadioButton((d_.emu->crtAvailable() ? TR("8:7 (as on a CRT TV)") : TR("Pixel Aspect Ratio")), exportPar87_)) exportPar87_ = true;
         ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
         ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
-        ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable);
+        ImGui::BeginDisabled(!d_.renderer->postProcessStatus().crtAvailable || !d_.emu->crtAvailable());
         ImGui::SameLine();
         ImGui::Checkbox(TR("Apply CRT Effect"), &exportApplyCRT_);
         ImGui::EndDisabled();

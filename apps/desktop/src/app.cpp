@@ -439,6 +439,7 @@ int App::run(const AppOptions& opt) {
   std::deque<FrameRecord> inflight;  // presented, not yet confirmed on screen
   uint64_t seq = 0;
   double lastRate = 0;
+  uint64_t lastMediaGeneration = UINT64_MAX;
   double hostNext = 0;  // host-clock pacing: the next sample time
   recentLatency_.assign(60, 0.0);
 
@@ -471,6 +472,11 @@ int App::run(const AppOptions& opt) {
     }
     while (inflight.size() > 16) { settle(inflight.front(), nullptr); inflight.pop_front(); }
     // 2. Target vblank and input lead for the next frame.
+    if (lastMediaGeneration != emu_->mediaGeneration()) {
+      lastMediaGeneration = emu_->mediaGeneration();
+      lastRate = 0;
+    }
+    sched_.setFramePeriod(emu_->framePeriod());
     sched_.setRefreshHint(renderer_->refreshPeriod());
     double r = sched_.refresh();
     if (r > 0) {
@@ -478,8 +484,8 @@ int App::run(const AppOptions& opt) {
       // frames may overlap (lead > one refresh).
       double maxLead = std::min(0.030, 2.0 * r);
       rnf_input_deadline_set_limits(deadline_, 0, maxLead, std::max(0.003, maxLead - RNF_INPUT_DEADLINE_MIN_LEAD));
-      // Host-clock pacing (no present timing) emulates at the NES rate.
-      double rate = renderer_->presentTiming() ? sched_.cadence().emulationRate(r) : 1.0 / nesFramePeriod();
+      // Host-clock pacing (no present timing) emulates at the game rate.
+      double rate = renderer_->presentTiming() ? sched_.cadence().emulationRate(r) : 1.0 / emu_->framePeriod();
       if (std::fabs(rate - lastRate) > 0.01) { audio_.setEmulationRate(rate); lastRate = rate; }
       audio_.setFramesPerPush(sched_.cadence().kind == Cadence::Kind::slower ? RNF_MAX_FRAMES_PER_PRESENT : 1);
     }
@@ -490,10 +496,10 @@ int App::run(const AppOptions& opt) {
     lastTargetIssued = target;
     if (!renderer_->presentTiming()) {
       // No present timing (no present_wait / frame statistics, or --vrr on Windows): the host
-      // clock at the NES rate on a steady schedule - a late frame does not delay the later ones.
+      // clock at the game rate on a steady schedule - a late frame does not delay the later ones.
       // FIFO / vsync keeps the pictures on vblanks; a variable refresh display follows the presents.
-      hostNext = hostNext > 0 ? hostNext + nesFramePeriod() : nowSeconds();
-      if (hostNext < nowSeconds() - 2 * nesFramePeriod()) hostNext = nowSeconds();  // after a stall
+      hostNext = hostNext > 0 ? hostNext + emu_->framePeriod() : nowSeconds();
+      if (hostNext < nowSeconds() - 2 * emu_->framePeriod()) hostNext = nowSeconds();  // after a stall
       sampleAt = hostNext;
     } else {
       hostNext = 0;
@@ -576,7 +582,9 @@ int App::run(const AppOptions& opt) {
     bool newPicture = tick.newPicture || extraPicture;
     const EmulationController::Signal& es = emu_->signal();
     FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered, es.receptionStep, es.receptionCounter, es.flashReduced};
-    uint64_t id = renderer_->drawAndPresent(newPicture ? emu_->picture() : nullptr, rect, ImGui::GetDrawData(), &sig);
+    renderer_->configureMedia(emu_->media(), emu_->crtAvailable());
+    rn_video_frame_info frame = emu_->videoFrame();
+    uint64_t id = renderer_->drawFrameAndPresent(newPicture ? &frame : nullptr, rect, ImGui::GetDrawData(), &sig);
     rec.submit = nowSeconds();
     rec.acquireWait = renderer_->lastAcquireWait();
     // CRT built with the present: its GPU time is part of the sample -> screen work.
@@ -634,7 +642,7 @@ int App::run(const AppOptions& opt) {
       if (renderer_->presentTiming()) inflight.push_back(rec);
       else if (perfMode) perf.add(rec);
     } else {
-      sleepUntil(nowSeconds() + nesFramePeriod());  // hidden / minimised: keep time on the host clock
+      sleepUntil(nowSeconds() + emu_->framePeriod());  // hidden / minimised: keep time on the host clock
     }
 
     // Perf window.

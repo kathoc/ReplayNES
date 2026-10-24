@@ -1,9 +1,10 @@
-// Export settings validation + geometry (nearest-neighbour mapping of the cropped 256x240 source
+// Export settings validation + geometry (nearest-neighbour mapping of the cropped source
 // into the output canvas), the streaming output canvas (Syphon / PipeWire / NDI-style outputs) and
 // the flash reduction level texts. Encoders stay in the frontends (AVFoundation, FFmpeg).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "common.hpp"
 
@@ -27,6 +28,20 @@ int streamMultiple(rnf_stream_size s) {
   }
 }
 
+const rn_media_info kNesMedia = {RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+bool validMedia(const rn_media_info* m) {
+  return m && m->max_width && m->max_height && m->max_width <= uint32_t(std::numeric_limits<int>::max()) &&
+         m->max_height <= uint32_t(std::numeric_limits<int>::max()) &&
+         m->fps_num && m->fps_den && (m->audio_channels == 1 || m->audio_channels == 2) &&
+         m->pixel_aspect_num && m->pixel_aspect_den && m->rotation < 4;
+}
+bool sourceSize(const rn_media_info* m, uint32_t& w, uint32_t& h) {
+  if (!validMedia(m)) return false;
+  if (!w) w = m->max_width;
+  if (!h) h = m->max_height;
+  return w <= m->max_width && h <= m->max_height;
+}
+
 }  // namespace
 
 extern "C" {
@@ -46,10 +61,16 @@ char* rnf_export_preset_label(const rnf_export_preset* p) {
 }
 
 rn_status rnf_export_validate(const rnf_export_settings* s, char** message) {
+  return rnf_export_validate_media(s, &kNesMedia, 0, 0, message);
+}
+rn_status rnf_export_validate_media(const rnf_export_settings* s, const rn_media_info* media,
+                                    uint32_t width, uint32_t height, char** message) {
   if (message) *message = nullptr;
+  if (!sourceSize(media, width, height)) return fail(RN_ERR_INVALID_ARG, "invalid media or source size");
   if (!s) return fail(RN_ERR_INVALID_ARG, "null settings");
   bool ok = s->crop_top >= 0 && s->crop_bottom >= 0 && s->crop_left >= 0 && s->crop_right >= 0 &&
-            s->crop_top + s->crop_bottom <= RN_VIDEO_HEIGHT - 16 && s->crop_left + s->crop_right <= RN_VIDEO_WIDTH - 16;
+            int64_t(s->crop_top) + s->crop_bottom <= int64_t(height) - 16 &&
+            int64_t(s->crop_left) + s->crop_right <= int64_t(width) - 16;
   if (!ok) {
     const char* m = tr(RNF_L("The overscan crop is too large"));
     if (message) *message = dup(m);
@@ -65,27 +86,49 @@ rn_status rnf_export_validate(const rnf_export_settings* s, char** message) {
 
 void rnf_export_geometry_compute(const rnf_export_settings* s, rnf_export_geometry* out) {
   if (!s || !out) return;
-  const int sw = RN_VIDEO_WIDTH - s->crop_left - s->crop_right;
-  const int sh = RN_VIDEO_HEIGHT - s->crop_top - s->crop_bottom;
-  const double par = s->pixel_aspect_87 ? 8.0 / 7.0 : 1.0;
+  rnf_export_geometry_compute_media(s, &kNesMedia, 0, 0, out);
+}
+void rnf_export_geometry_compute_media(const rnf_export_settings* s, const rn_media_info* media,
+                                       uint32_t widthPixels, uint32_t heightPixels, rnf_export_geometry* out) {
+  if (!out) return;
+  *out = {};
+  if (!s) return;
+  auto geometrySettings = *s;
+  geometrySettings.end_frame = 0;  // Range validity does not affect picture geometry.
+  if (rnf_export_validate_media(&geometrySettings, media, widthPixels, heightPixels, nullptr) != RN_OK) return;
+  sourceSize(media, widthPixels, heightPixels);
+  const int sw = int(widthPixels) - s->crop_left - s->crop_right;
+  const int sh = int(heightPixels) - s->crop_top - s->crop_bottom;
+  const double par = s->pixel_aspect_87 ? double(media->pixel_aspect_num) / media->pixel_aspect_den : 1.0;
+  const bool turned = (media->rotation & 1) != 0;
+  const double displayHeight = turned ? sw * par : sh;
   auto even = [](int v) { return v + (v & 1); };
-  auto width = [&](int scale) { return int(std::round(double(sw * scale) * par)); };
+  // Keep the NES multiplication order exactly as in the original geometry path.
+  auto width = [&](int scale) { return std::round(turned ? double(sh) * scale : double(int64_t(sw) * scale) * par); };
+  auto height = [&](int scale) { return turned ? std::round(double(int64_t(sw) * scale) * par) : double(int64_t(sh) * scale); };
   int k, dw, dh, cw, ch;
   if (s->preset.kind == RNF_PRESET_NATIVE) {
     k = std::max(1, s->preset.scale);
-    dw = even(width(k));
-    dh = sh * k;
+    if (width(k) > std::numeric_limits<int>::max() - 1 || height(k) > std::numeric_limits<int>::max() - 1) return;
+    dw = even(int(width(k)));
+    dh = int(height(k));
     cw = dw;
     ch = even(dh);
   } else {
     const int w = s->preset.width, h = s->preset.height;
-    k = std::max(1, sh > 0 ? h / sh : 1);
+    if (w <= 0 || h <= 0 || w == std::numeric_limits<int>::max() || h == std::numeric_limits<int>::max()) return;
+    const double maxScale = std::min(double(h) / displayHeight, double(std::numeric_limits<int>::max()));
+    k = std::max(1, int(maxScale));
+    // Jump near the width limit before the rounding check, even for extreme pixel aspects.
+    const double displayWidth = turned ? double(sh) : sw * par;
+    if (width(k) > w) k = std::max(1, int(std::min(double(k), (double(w) + 0.5) / displayWidth)));
     while (k > 1 && width(k) > w) k -= 1;
-    dh = std::min(h, sh * k);
-    dw = std::min(w, width(k));
+    dh = int(std::min(double(h), height(k)));
+    dw = int(std::min(double(w), width(k)));
     cw = even(w);
     ch = even(h);
   }
+  out->rotation = media->rotation;
   out->src_x = s->crop_left;
   out->src_y = s->crop_top;
   out->src_width = sw;
@@ -106,6 +149,34 @@ void rnf_export_column_map(const rnf_export_geometry* g, int* out) {
 void rnf_export_row_map(const rnf_export_geometry* g, int* out) {
   if (!g || !out || g->dst_height <= 0) return;
   for (int i = 0; i < g->dst_height; ++i) out[i] = g->src_y + (i * g->src_height) / g->dst_height;
+}
+
+int rnf_export_source_point(const rnf_export_geometry* g, int x, int y, int* sx, int* sy) {
+  if (!g || !sx || !sy || x < 0 || y < 0 || x >= g->dst_width || y >= g->dst_height) return 0;
+  const int u = int(int64_t(x) * ((g->rotation & 1) ? g->src_height : g->src_width) / g->dst_width);
+  const int v = int(int64_t(y) * ((g->rotation & 1) ? g->src_width : g->src_height) / g->dst_height);
+  switch (g->rotation) {
+    case 1: *sx = v; *sy = g->src_height - 1 - u; break;
+    case 2: *sx = g->src_width - 1 - u; *sy = g->src_height - 1 - v; break;
+    case 3: *sx = g->src_width - 1 - v; *sy = u; break;
+    default: *sx = u; *sy = v; break;
+  }
+  *sx += g->src_x;
+  *sy += g->src_y;
+  return 1;
+}
+
+rn_status rnf_export_timing_compute(const rn_media_info* media, double audioRate, rnf_export_timing* out) {
+  if (!out) return fail(RN_ERR_INVALID_ARG, "null timing");
+  *out = {};
+  if (!validMedia(media) || !std::isfinite(audioRate) || audioRate <= 0)
+    return fail(RN_ERR_INVALID_ARG, "invalid export timing");
+  out->timescale = media->fps_num;
+  out->frame_duration = media->fps_den;
+  out->audio_channels = media->audio_channels;
+  out->audio_sample_rate = audioRate;
+  out->gop_frames = uint64_t(std::max(1.0, std::round(double(media->fps_num) / media->fps_den / 2)));
+  return RN_OK;
 }
 
 int64_t rnf_export_video_bitrate(const rnf_export_geometry* g, int hevc, int quality) {
@@ -137,18 +208,25 @@ int64_t rnf_export_audio_bitrate(void) { return 128000; }
 
 int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int quality, uint64_t frames,
                                 rnf_export_prediction* detail) {
+  return rnf_export_predict_size_media(g, hevc, quality, frames, &kNesMedia, RN_SAMPLE_RATE, detail);
+}
+int64_t rnf_export_predict_size_media(const rnf_export_geometry* g, int hevc, int quality, uint64_t frames,
+                                      const rn_media_info* media, double audioRate, rnf_export_prediction* detail) {
+  if (detail) *detail = {};
+  rnf_export_timing timing{};
+  if (rnf_export_timing_compute(media, audioRate, &timing) != RN_OK) return 0;
   rnf_export_prediction p{};
   p.video_bitrate = rnf_export_video_bitrate(g, hevc, quality);
-  p.audio_bitrate = rnf_export_audio_bitrate();
-  p.seconds = double(frames) * 655171.0 / 39375000.0;
+  p.audio_bitrate = rnf_export_audio_bitrate() * media->audio_channels;
+  p.seconds = double(frames) * double(media->fps_den) / double(media->fps_num);
   p.video_bytes = int64_t(std::llround(p.seconds * double(p.video_bitrate) / 8.0));
   p.audio_bytes = int64_t(std::llround(p.seconds * double(p.audio_bitrate) / 8.0));
   // An estimate: the encoders' average rate (capped VBR) is reached by detailed pictures; simple
   // ones give smaller files. Container: the boxes the platform's muxer writes (ISO 14496-12; sizes of the boxes of a real
   // file of each muxer, tables per sample / chunk), see container notes below.
   const int64_t n = int64_t(frames);
-  const int64_t keys = (n + RNF_EXPORT_GOP_FRAMES - 1) / RNF_EXPORT_GOP_FRAMES;
-  const int64_t aac = int64_t(std::ceil(p.seconds * double(RN_SAMPLE_RATE) / 1024.0));
+  const int64_t keys = (n + int64_t(timing.gop_frames) - 1) / int64_t(timing.gop_frames);
+  const int64_t aac = int64_t(std::ceil(p.seconds * audioRate / 1024.0));
   const bool big = p.video_bytes + p.audio_bytes > int64_t(4) * 1024 * 1024 * 1024;  // co64 / 64-bit mdat
   const int64_t offset = big ? 8 : 4;
   auto table = [&](int64_t entries, int64_t entryBytes) { return 16 + entries * entryBytes; };
@@ -196,12 +274,20 @@ int64_t rnf_export_predict_size(const rnf_export_geometry* g, int hevc, int qual
 int rnf_stream_output_multiple(rnf_stream_size size) { return streamMultiple(size); }
 
 rnf_stream_layout rnf_stream_output_layout(rnf_stream_size size, int par87) {
-  const double fw = RN_VIDEO_WIDTH, fh = RN_VIDEO_HEIGHT;
-  const double par = par87 ? 8.0 / 7.0 : 1.0;
+  return rnf_stream_output_layout_media(size, par87, &kNesMedia, 0, 0);
+}
+rnf_stream_layout rnf_stream_output_layout_media(rnf_stream_size size, int gameAspect, const rn_media_info* media,
+                                                  uint32_t width, uint32_t height) {
   rnf_stream_layout l{};
+  if (!sourceSize(media, width, height)) return l;
+  const double par = gameAspect ? double(media->pixel_aspect_num) / media->pixel_aspect_den : 1.0;
+  double fw = width * par, fh = height;
+  if (media->rotation & 1) std::swap(fw, fh);
   if (int n = streamMultiple(size)) {
     // The canvas is exactly the scaled frame: no borders.
-    int w = int(std::round(fw * par * double(n))), h = RN_VIDEO_HEIGHT * n;
+    if (std::round(fw * n) > std::numeric_limits<int>::max() ||
+        std::round(fh * n) > std::numeric_limits<int>::max()) return l;
+    int w = int(std::round(fw * double(n))), h = int(std::round(fh * n));
     l.canvas_width = w;
     l.canvas_height = h;
     l.x = 0;
@@ -212,8 +298,8 @@ rnf_stream_layout rnf_stream_output_layout(rnf_stream_size size, int par87) {
   }
   const int cw = size == RNF_STREAM_W1280 ? 1280 : 1920, ch = size == RNF_STREAM_W1280 ? 960 : 1440;
   // Largest scale that fits; integer when the aspect allows it (it does for both canvases).
-  double s = std::min(double(cw) / (fw * par), double(ch) / fh);
-  double pw = std::round(fw * par * s), ph = std::round(fh * s);
+  double s = std::min(double(cw) / fw, double(ch) / fh);
+  double pw = std::round(fw * s), ph = std::round(fh * s);
   l.canvas_width = cw;
   l.canvas_height = ch;
   l.x = std::floor((double(cw) - pw) / 2);
@@ -224,8 +310,12 @@ rnf_stream_layout rnf_stream_output_layout(rnf_stream_size size, int par87) {
 }
 
 char* rnf_stream_output_label(rnf_stream_size size, int par87) {
+  return rnf_stream_output_label_media(size, par87, &kNesMedia, 0, 0);
+}
+char* rnf_stream_output_label_media(rnf_stream_size size, int gameAspect, const rn_media_info* media,
+                                   uint32_t width, uint32_t height) {
   RNF_GUARD_BEGIN
-  rnf_stream_layout l = rnf_stream_output_layout(size, par87);
+  rnf_stream_layout l = rnf_stream_output_layout_media(size, gameAspect, media, width, height);
   std::string dims = std::to_string(l.canvas_width) + "×" + std::to_string(l.canvas_height);  // plain digits
   int n = streamMultiple(size);
   if (n == 1) return dup(trf(RNF_L("Native %@"), {argS(dims)}));

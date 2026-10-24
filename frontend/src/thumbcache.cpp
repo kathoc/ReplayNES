@@ -25,7 +25,7 @@ struct rnf_thumb_cache {
   uint64_t generation = 1;
   uint64_t version = 0;
   double step = 0;
-  size_t capacity = 600;  // 60 KB each
+  size_t capacity = 600;  // Image count; payload dimensions belong to the caller.
 
   void notify() {
     rnf_change_fn fn;

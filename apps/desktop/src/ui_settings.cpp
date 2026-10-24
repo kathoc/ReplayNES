@@ -97,7 +97,7 @@ std::string UI::itemValue(const std::string& id) const {
     return b;
   }
   if (id == "controls.turbo") {
-    std::snprintf(b, sizeof b, "%.1f/s", 60.0988 / std::max(1, in.turboPeriod()));
+    std::snprintf(b, sizeof b, "%.1f/s", 1.0 / d_.emu->framePeriod() / std::max(1, in.turboPeriod()));
     return b;
   }
   if (id == "controls.turbo_duty") return TRF("%lld frames", {in.turboDuty()});
@@ -129,7 +129,7 @@ std::string UI::itemValue(const std::string& id) const {
 
 bool UI::itemOn(const std::string& id) const {
   const Settings& s = *d_.settings;
-  if (id == "display.crt") return s.crt && d_.renderer->postProcessStatus().crtAvailable;
+  if (id == "display.crt") return s.crt && d_.renderer->postProcessStatus().crtAvailable && (!hasSession() || d_.emu->crtAvailable());
   if (id == "display.par87") return s.par87;
   if (id == "display.overscan") return s.hideOverscan;
   if (id == "display.vtr") return s.vtrEffect;
@@ -164,7 +164,7 @@ bool UI::itemEnabled(const std::string& id) const {
   const EmuStatus& st = d_.emu->status();
   if (st.live && (id.rfind("retry.", 0) == 0 || id == "retry" || id == "practice" ||
                   id == "share.export" || id == "game.save" || id == "game.save_as" || id == "game.reset")) return false;
-  bool crt = d_.renderer->postProcessStatus().crtAvailable;
+  bool crt = d_.renderer->postProcessStatus().crtAvailable && (!hasSession() || d_.emu->crtAvailable());
   if (id == "retry.playback") return !st.practicing && st.takeLength > 0;
   if (id == "retry.rerecord" || id == "retry.bookmarks" || id == "retry.restart") return hasSession();
   if (id == "share.export") return RNL_HAVE_MP4_EXPORT && st.takeLength > 0;

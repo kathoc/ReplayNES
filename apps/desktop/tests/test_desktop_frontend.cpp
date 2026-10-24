@@ -2650,7 +2650,7 @@ TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture fr
   for (int f = 0; f < LibraryThumbs::kRomPictureFrame; ++f) REQUIRE(rn_step(s, 0, 0, 0, nullptr) == RN_OK);
   ThumbRef want(ThumbImage::make(rn_video(s)));
   rn_session_close(s);
-  CHECK(std::memcmp(img.get()->px, want.get()->px, sizeof img.get()->px) == 0);
+  CHECK(img.get()->px == want.get()->px);
   // Written for the next run, and a second request does nothing.
   CHECK(fs::exists(thumbs.fileFor("r:" + rom)));
   thumbs.requestRomPicture(rom);

@@ -190,6 +190,10 @@ uint32_t rnf_api_version(void) { return RNF_API_VERSION; }
 const char* rnf_last_error(void) { return tlsError.c_str(); }
 void rnf_string_free(char* s) { std::free(s); }
 double rnf_frame_period(void) { return double(RN_FPS_DEN) / double(RN_FPS_NUM); }
+double rnf_frame_period_for_media(const rn_media_info* media) {
+  return media && media->fps_num && media->fps_den
+      ? double(media->fps_den) / double(media->fps_num) : rnf_frame_period();
+}
 
 const char* rnf_ui_language_choose(const char* const* preferred, size_t count) {
   if (!preferred || count == 0 || !preferred[0]) return "en";

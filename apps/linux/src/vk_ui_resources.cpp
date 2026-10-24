@@ -15,9 +15,6 @@
 
 namespace rnl {
 
-namespace {
-constexpr VkDeviceSize kGameBytes = VkDeviceSize(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT * 4;
-}
 
 bool VkRenderer::createAtlas() {
   VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -61,42 +58,60 @@ void VkRenderer::destroyAtlas() {
 }
 
 bool VkRenderer::thumbTexture(uint64_t key, const uint32_t* px, uint64_t* texId, float uv[4]) {
-  if (!atlasSet_) return false;
+  return thumbTextureSized(key, px, 128, 120, texId, uv);
+}
+
+bool VkRenderer::thumbTextureSized(uint64_t key, const uint32_t* px, uint32_t width, uint32_t height,
+                                    uint64_t* texId, float uv[4]) {
+  if (!atlasSet_ || !px || !width || width > kAtlasCell || !height) return false;
+  // Very tall sources retain their aspect on screen, with a bounded GPU copy.
+  const uint32_t uploadHeight = std::min(height, uint32_t(kAtlasSize));
+  const int perRow = kAtlasSize / kAtlasCell;
+  const int rows = int((uploadHeight + kAtlasCell - 1) / kAtlasCell);
   int cell = -1;
   auto it = keyCell_.find(key);
   if (it != keyCell_.end()) {
     cell = it->second;
   } else {
     if (int(pendingThumbs_.size()) >= kAtlasUploadsPerFrame) return false;
-    // A free cell, else the least recently used one not drawn this frame.
     uint64_t best = ~uint64_t(0);
     for (int i = 0; i < kAtlasCells; ++i) {
-      if (cellKey_[size_t(i)] == 0) {
-        cell = i;
-        break;
+      if (i / perRow + rows > perRow) continue;
+      uint64_t age = 0;
+      bool available = true;
+      for (int row = 0; row < rows; ++row) {
+        const int c = i + row * perRow;
+        if (cellKey_[size_t(c)] && cellUsed_[size_t(c)] >= uiFrame_) { available = false; break; }
+        age = std::max(age, cellKey_[size_t(c)] ? cellUsed_[size_t(c)] : 0);
       }
-      if (cellUsed_[size_t(i)] < uiFrame_ && cellUsed_[size_t(i)] < best) {
-        best = cellUsed_[size_t(i)];
-        cell = i;
-      }
+      if (available && age < best) { cell = i; best = age; if (!age) break; }
     }
     if (cell < 0) return false;
-    if (cellKey_[size_t(cell)] != 0) keyCell_.erase(cellKey_[size_t(cell)]);
-    cellKey_[size_t(cell)] = key;
+    for (int row = 0; row < rows; ++row) {
+      uint64_t old = cellKey_[size_t(cell + row * perRow)];
+      if (!old) continue;
+      auto oldIt = keyCell_.find(old);
+      if (oldIt != keyCell_.end()) {
+        const int oldCell = oldIt->second;
+        pendingThumbs_.erase(std::remove_if(pendingThumbs_.begin(), pendingThumbs_.end(),
+                                          [&](const PendingThumb& p) { return p.cell == oldCell; }), pendingThumbs_.end());
+        keyCell_.erase(oldIt);
+      }
+      for (uint64_t& k : cellKey_) if (k == old) k = 0;
+    }
+    for (int row = 0; row < rows; ++row) cellKey_[size_t(cell + row * perRow)] = key;
     keyCell_[key] = cell;
-    // A previous pending upload to this cell (evicted again in the same frame) is replaced.
-    pendingThumbs_.erase(std::remove_if(pendingThumbs_.begin(), pendingThumbs_.end(),
-                                        [&](const PendingThumb& p) { return p.cell == cell; }),
-                         pendingThumbs_.end());
-    pendingThumbs_.push_back(PendingThumb{cell, std::vector<uint32_t>(px, px + 128 * 120)});
+    std::vector<uint32_t> copy(size_t(width) * uploadHeight);
+    for (uint32_t y = 0; y < uploadHeight; ++y)
+      std::copy_n(px + size_t(uint64_t(y) * height / uploadHeight) * width, width, copy.data() + size_t(y) * width);
+    pendingThumbs_.push_back(PendingThumb{cell, width, uploadHeight, std::move(copy)});
   }
-  cellUsed_[size_t(cell)] = uiFrame_;
-  const int perRow = kAtlasSize / kAtlasCell;
+  for (int row = 0; row < rows; ++row) cellUsed_[size_t(cell + row * perRow)] = uiFrame_;
   float x0 = float((cell % perRow) * kAtlasCell), y0 = float((cell / perRow) * kAtlasCell);
   uv[0] = x0 / kAtlasSize;
   uv[1] = y0 / kAtlasSize;
-  uv[2] = (x0 + 128) / kAtlasSize;
-  uv[3] = (y0 + 120) / kAtlasSize;
+  uv[2] = (x0 + width) / kAtlasSize;
+  uv[3] = (y0 + uploadHeight) / kAtlasSize;
   *texId = uint64_t(atlasSet_);
   return true;
 }
@@ -123,15 +138,15 @@ void VkRenderer::recordAtlasUploads(VkCommandBuffer cmd, int slot) {
   }
   const int perRow = kAtlasSize / kAtlasCell;
   std::vector<VkBufferImageCopy> copies;
-  auto* base = static_cast<uint8_t*>(s.stagingPtr) + kGameBytes;
+  auto* base = static_cast<uint8_t*>(s.stagingPtr) + pictureBytes();
   for (size_t i = 0; i < pendingThumbs_.size(); ++i) {
     const PendingThumb& p = pendingThumbs_[i];
-    std::memcpy(base + i * kThumbBytes, p.px.data(), size_t(kThumbBytes));
+    std::memcpy(base + i * kThumbBytes, p.px.data(), p.px.size() * sizeof(uint32_t));
     VkBufferImageCopy c{};
-    c.bufferOffset = kGameBytes + i * kThumbBytes;
+    c.bufferOffset = pictureBytes() + i * kThumbBytes;
     c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     c.imageOffset = {(p.cell % perRow) * kAtlasCell, (p.cell / perRow) * kAtlasCell, 0};
-    c.imageExtent = {128, 120, 1};
+    c.imageExtent = {p.width, p.height, 1};
     copies.push_back(c);
   }
   if (!copies.empty())

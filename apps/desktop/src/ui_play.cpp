@@ -213,9 +213,9 @@ void UI::buildSeekBar(double now) {
   dl->AddRectFilled(tl(g.panel), br(g.panel), kPanel, m.panelRadius());
   layoutRecord(g.panel);
   // Times: where we are | the tape's length (no record / playback badge: the status label says it).
-  std::string left = timecode(st.practicing ? st.practiceFrame : st.frame);
-  std::string right = st.practicing ? (st.practiceLength > 0 ? timecode(st.practiceLength) : std::string("--:--.--"))
-                                    : timecode(st.takeLength) + (st.unsaved ? " \xE2\x80\xA2" : "");
+  std::string left = timecode(st.practicing ? st.practiceFrame : st.frame, d_.emu->framePeriod());
+  std::string right = st.practicing ? (st.practiceLength > 0 ? timecode(st.practiceLength, d_.emu->framePeriod()) : std::string("--:--.--"))
+                                    : timecode(st.takeLength, d_.emu->framePeriod()) + (st.unsaved ? " \xE2\x80\xA2" : "");
   float cy = g.strip.y + g.strip.h / 2;
   ImVec2 ls = measure(m.label(), left.c_str());
   dl->AddText(ImGui::GetFont(), m.label(), ImVec2(g.timeLeft.x, cy - ls.y / 2), kText, left.c_str());
@@ -291,7 +291,9 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now, bool i
   const EmuStatus& st = d_.emu->status();
   EmulationController* emu = d_.emu;
   const float laneH = lane.h, stripH = strip.h;
-  const double tw = double(stripH) * RN_VIDEO_WIDTH / RN_VIDEO_HEIGHT;
+  uint32_t thumbW = RNF_THUMB_WIDTH, thumbH = RNF_THUMB_HEIGHT;
+  thumbnailSize(emu->videoFrame(), emu->media(), &thumbW, &thumbH, rn_session_core_kind(emu->session()) != RN_CORE_EXTERNAL);
+  const double tw = double(stripH) * thumbW / thumbH;
   const float w = strip.w;
   const uint64_t len = st.takeLength;
   double step = d_.thumbs->layout(w, tw, len, now);
@@ -427,7 +429,7 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now, bool i
       if (img) {
         uint64_t tex = 0;
         float uv[4];
-        if (d_.renderer->thumbTexture(img.get()->serial, img.get()->px, &tex, uv)) {
+        if (d_.renderer->thumbTextureSized(img.get()->serial, img.get()->px.data(), img.get()->width, img.get()->height, &tex, uv)) {
           float vis = float(t.visible);
           float u1 = uv[0] + (uv[2] - uv[0]) * float(vis / tw);
           float al = a * (own ? 1.0f : float(RNF_THUMB_FALLBACK_OPACITY));
@@ -556,8 +558,8 @@ void UI::buildPracticePill() {
   std::string current = TR("Practicing");
   if (st.practiceSlot >= 0 && st.practiceSlot < int(ss.slots.size()))
     current = std::to_string(st.practiceSlot + 1) + ". " + ss.slots[size_t(st.practiceSlot)].displayName();
-  std::string progress = timecode(std::min(st.practiceFrame, st.practiceLength > 0 ? st.practiceLength : st.practiceFrame)) + " / " +
-                         (st.practiceLength > 0 ? timecode(st.practiceLength) : std::string("--:--.--"));
+  std::string progress = timecode(std::min(st.practiceFrame, st.practiceLength > 0 ? st.practiceLength : st.practiceFrame), d_.emu->framePeriod()) + " / " +
+                         (st.practiceLength > 0 ? timecode(st.practiceLength, d_.emu->framePeriod()) : std::string("--:--.--"));
   if (st.practiceLoops > 0) progress += "  " + TRF("Loop %lld", {st.practiceLoops + 1});
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   float fs = m.hint() * 1.1f;

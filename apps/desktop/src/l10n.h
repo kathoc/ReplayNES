@@ -40,7 +40,7 @@ std::string TRF(const char* key, std::initializer_list<L10nArg> args);
 std::string chooseUILanguage(const std::vector<std::string>& preferred, const char* override_);
 
 /// "mm:ss.ss" of a frame count (Engine.timecode on macOS).
-std::string timecode(uint64_t frame);
+std::string timecode(uint64_t frame, double framePeriod = rnf_frame_period());
 
 /// "yyyy-MM-dd HH:mm" in local time of seconds since 1970.
 std::string localDateTime(double seconds);

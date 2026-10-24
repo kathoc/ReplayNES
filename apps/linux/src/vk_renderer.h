@@ -1,4 +1,4 @@
-// Minimal Vulkan presenter: FIFO swapchain, the 256x240 BGRA frame drawn nearest-neighbour into a
+// Minimal Vulkan presenter: FIFO swapchain, the current BGRA frame drawn nearest-neighbour into a
 // destination rectangle (integer / FILL scale, 8:7 pixel aspect and the overscan crop are computed
 // by the caller), Dear ImGui on top, and present ids + VK_KHR_present_wait so the frame loop knows
 // when each picture reached the screen (docs/FRAME_PACING.md, "Linux X11 / Vulkan").
@@ -47,6 +47,10 @@ class VkRenderer final : public Renderer {
   uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui,
                           const FrameSignal* signal = nullptr) override;
 
+  void configureMedia(const rn_media_info& media, bool nesPicture = true) override;
+  uint64_t drawFrameAndPresent(const rn_video_frame_info* frame, const GameRect& rect, ImDrawData* ui,
+                              const FrameSignal* signal = nullptr) override;
+
   /// Display post-process (CRT on/off + parameters). Takes effect with the next draw; switching
   /// the CRT off frees its GPU resources.
   void setPostProcess(const DisplayPostProcess& pp) override { post_ = pp; }
@@ -78,6 +82,8 @@ class VkRenderer final : public Renderer {
   // ---- UI resources (vk_ui_resources.cpp) ----
   void beginUIFrame() override { uiFrame_ += 1; }
   bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
+  bool thumbTextureSized(uint64_t key, const uint32_t* pixels, uint32_t width, uint32_t height,
+                         uint64_t* texId, float uv[4]) override;
   void requestScreenshot(const std::string& path) override;
 
  private:
@@ -100,6 +106,7 @@ class VkRenderer final : public Renderer {
   void destroySwapchain();
   bool createPipeline();
   bool createGameTexture();
+  void createStaging();
   uint32_t findMemory(uint32_t typeBits, VkMemoryPropertyFlags props);
   // vk_ui_resources.cpp
   bool createAtlas();
@@ -144,7 +151,7 @@ class VkRenderer final : public Renderer {
   static constexpr int kSlots = 2;
   static constexpr int kAtlasCell = 128, kAtlasSize = 1024, kAtlasCells = (kAtlasSize / kAtlasCell) * (kAtlasSize / kAtlasCell);
   static constexpr int kAtlasUploadsPerFrame = 12;
-  static constexpr VkDeviceSize kThumbBytes = VkDeviceSize(128) * 120 * 4;
+  static constexpr VkDeviceSize kThumbBytes = VkDeviceSize(128) * kAtlasSize * 4;
   struct Slot {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
@@ -165,6 +172,10 @@ class VkRenderer final : public Renderer {
   int slot_ = 0;
   VkCommandPool pool_ = VK_NULL_HANDLE;
 
+  rn_media_info media_{RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+  rn_video_frame_info frame_{nullptr, RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_VIDEO_WIDTH};
+  bool mediaCrt_ = true;
+  VkDeviceSize pictureBytes() const { return VkDeviceSize(media_.max_width) * media_.max_height * 4; }
   VkImage gameImage_ = VK_NULL_HANDLE;
   VkDeviceMemory gameMem_ = VK_NULL_HANDLE;
   VkImageView gameView_ = VK_NULL_HANDLE;
@@ -199,6 +210,7 @@ class VkRenderer final : public Renderer {
   std::unordered_map<uint64_t, int> keyCell_;
   struct PendingThumb {
     int cell;
+    uint32_t width, height;
     std::vector<uint32_t> px;
   };
   std::vector<PendingThumb> pendingThumbs_;

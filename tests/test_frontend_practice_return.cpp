@@ -415,3 +415,40 @@ TEST_CASE("seek bar Y / X: Y practices a slot with a section, X cycles the slot 
   CHECK_EQ(rnf_markers_face(m, 1), RNF_SEEK_FACE_NONE);
   rnf_markers_free(m);
 }
+
+TEST_CASE("sized reel and VTR honor changing pictures and padded rows") {
+  const rn_media_info media{320, 224, 5963, 100, 2, 1, 1, 1};
+  auto* reel = rnf_reel_new_media(4, &media);
+  REQUIRE(reel != nullptr);
+  std::vector<uint32_t> pixels(324 * 224, 0xdeadbeef);
+  for (uint32_t y = 0; y < 224; ++y)
+    for (uint32_t x = 0; x < 320; ++x) pixels[y * 324 + x] = 0xff000000u | (y * 320 + x);
+  rn_video_frame_info frame{pixels.data(), 320, 224, 324}, view{};
+  CHECK(rnf_reel_offer_frame(reel, 1, &frame));
+  frame.width = 288; frame.height = 200;
+  CHECK(rnf_reel_offer_frame(reel, 2, &frame));
+  CHECK(rnf_reel_video_frame(reel, 0, &view));
+  CHECK_EQ(view.width, 320u); CHECK_EQ(view.height, 224u); CHECK_EQ(view.stride, 320u);
+  CHECK_EQ(view.pixels[320], pixels[324]);
+  CHECK(rnf_reel_video_frame(reel, 1, &view));
+  CHECK_EQ(view.width, 288u); CHECK_EQ(view.height, 200u);
+  frame.width = 321;
+  CHECK(!rnf_reel_offer_frame(reel, 3, &frame));
+  CHECK_EQ(rnf_reel_count(reel), 2);
+  frame.width = 288;
+  std::vector<uint32_t> output(300 * 200, 0x12345678);
+  CHECK(rnf_vtr_apply_frame(&frame, output.data(), 300, nullptr));
+  for (uint32_t y = 0; y < 200; ++y) {
+    CHECK_EQ(output[y * 300 + 287], pixels[y * 324 + 287]);
+    CHECK_EQ(output[y * 300 + 288], 0x12345678u);
+  }
+  const rnf_vtr_params effect{0.7f, 1.25, RNF_VTR_RETURN};
+  CHECK(rnf_vtr_apply_frame(&frame, output.data(), 300, &effect));
+  for (uint32_t y = 0; y < 200; ++y) CHECK_EQ(output[y * 300 + 288], 0x12345678u);
+  rnf_reel_truncate(reel, 1);
+  CHECK_EQ(rnf_reel_count(reel), 1);
+  rnf_reel_release(reel);
+  CHECK_EQ(rnf_reel_count(reel), 0);
+  CHECK(rnf_reel_offer_frame(reel, 1, &frame));
+  rnf_reel_free(reel);
+}

@@ -341,7 +341,7 @@ void UI::changed() {
 GameRect UI::gameRect(int w, int h) const {
   if (!hasSession()) return GameRect{};
   const Settings& st = *d_.settings;
-  return computeGameRect(w, h, st.integerScale, st.par87, st.hideOverscan);
+  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, st.hideOverscan);
 }
 
 void UI::slack(double now) {
@@ -358,7 +358,7 @@ void UI::saveLibraryThumb(double now) {
   const EmuStatus& st = d_.emu->status();
   if (st.frame == 0 && st.takeLength == 0) return;  // nothing shown yet
   lastThumbSave_ = now;
-  d_.libraryThumbs->save(d_.app->isTempSession() ? std::string() : st.projectPath, st.romPath, d_.emu->picture());
+  d_.libraryThumbs->save(d_.app->isTempSession() ? std::string() : st.projectPath, st.romPath, d_.emu->videoFrame(), d_.emu->media(), rn_session_core_kind(d_.emu->session()) != RN_CORE_EXTERNAL);
 }
 
 void UI::showResetChoices() {

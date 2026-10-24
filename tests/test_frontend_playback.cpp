@@ -1,6 +1,7 @@
 // Frontend core: transport / practice state machines (record toggle, slow toggle, paused step
 // repeat, practice A/B loop on a fake clock and on a real session, fast-forward over the take),
 // the frame history ring and the audio fade tail. Ported from the macOS PlaybackLogicTests.
+#include <algorithm>
 #include <set>
 #include <vector>
 
@@ -379,4 +380,55 @@ TEST_CASE("frame history ring") {
   rnf_frame_history_release(h);
   CHECK_EQ(rnf_frame_history_count(h), 0);
   rnf_frame_history_free(h);
+}
+
+TEST_CASE("frame history retains each changing picture size and strips stride padding") {
+  const rn_media_info media{320, 224, 5963, 100, 2, 1, 1, 1};
+  auto* h = rnf_frame_history_new_media(2, &media);
+  REQUIRE(h != nullptr);
+  std::vector<uint32_t> pixels(324 * 224, 0xdeadbeef);
+  for (uint32_t y = 0; y < 224; ++y)
+    for (uint32_t x = 0; x < 320; ++x) pixels[y * 324 + x] = y * 320 + x;
+  rn_video_frame_info f{pixels.data(), 320, 224, 324}, out{};
+  CHECK(rnf_frame_history_append_frame(h, &f));
+  f.width = 288; f.height = 200;
+  CHECK(rnf_frame_history_append_frame(h, &f));
+  CHECK(rnf_frame_history_video_frame(h, 1, &out));
+  CHECK_EQ(out.width, 320u); CHECK_EQ(out.height, 224u); CHECK_EQ(out.stride, 320u);
+  CHECK_EQ(out.pixels[320], 320u);
+  CHECK_EQ(out.pixels[320 * 224 - 1], 320u * 224 - 1);
+  CHECK(rnf_frame_history_video_frame(h, 0, &out));
+  CHECK_EQ(out.width, 288u); CHECK_EQ(out.height, 200u); CHECK_EQ(out.stride, 288u);
+  CHECK_EQ(out.pixels[288], 320u);
+  f.width = 321;
+  CHECK(!rnf_frame_history_append_frame(h, &f));
+  CHECK_EQ(rnf_frame_history_count(h), 2);
+  f.width = 160; f.height = 112;
+  CHECK(rnf_frame_history_append_frame(h, &f));
+  CHECK(rnf_frame_history_video_frame(h, 1, &out));
+  CHECK_EQ(out.width, 288u);
+  CHECK(rnf_frame_history_video_frame(h, 0, &out));
+  CHECK_EQ(out.width, 160u);
+  CHECK(!rnf_frame_history_video_frame(h, 2, &out));
+  CHECK(out.pixels == nullptr);
+  rnf_frame_history_release(h);
+  CHECK_EQ(rnf_frame_history_count(h), 0);
+  CHECK(rnf_frame_history_append_frame(h, &f));
+  rnf_frame_history_free(h);
+}
+
+TEST_CASE("stereo fade uses the same gain for both channels at each sample frame") {
+  const int16_t in[] = {12000, -12000, 8000, -8000};
+  int16_t out[18];
+  std::fill(out, out + 18, int16_t(123));
+  REQUIRE_EQ(rnf_audio_fade_tail_with_channels(in, 2, 4, 2, out, 8), size_t(8));
+  for (size_t i = 0; i < 8; ++i) CHECK_EQ(out[2*i], -out[2*i+1]);
+  CHECK_EQ(out[14], 0); CHECK_EQ(out[15], 0);
+  CHECK_EQ(out[16], 123); CHECK_EQ(out[17], 123);
+  const int16_t mono[] = {12000, 8000};
+  int16_t expected[8];
+  rnf_audio_fade_tail(mono, 2, 4, expected, 8);
+  for (size_t i = 0; i < 8; ++i) CHECK_EQ(out[2*i], expected[i]);
+  CHECK_EQ(rnf_audio_fade_tail_with_channels(in, 2, 4, 2, nullptr, 0), size_t(8));
+  CHECK_EQ(rnf_audio_fade_tail_with_channels(in, 2, 4, 3, out, 8), size_t(0));
 }

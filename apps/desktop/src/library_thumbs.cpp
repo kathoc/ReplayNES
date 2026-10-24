@@ -13,7 +13,6 @@ namespace rnl {
 
 namespace {
 constexpr char kMagic[8] = {'R', 'N', 'T', 'H', 'U', 'M', 'B', '1'};
-constexpr size_t kPixels = size_t(RNF_THUMB_WIDTH) * RNF_THUMB_HEIGHT;
 
 uint64_t fnv1a(const std::string& s) {
   uint64_t h = 1469598103934665603ull;
@@ -24,13 +23,21 @@ uint64_t fnv1a(const std::string& s) {
   return h;
 }
 
-bool writeFile(const std::string& path, const uint32_t* px) {
+bool writeFile(const std::string& path, const std::vector<uint32_t>& px, uint32_t width, uint32_t height) {
   std::string tmp = path + ".tmp";
   {
     std::ofstream f(std::filesystem::path(tmp), std::ios::binary | std::ios::trunc);
     if (!f) return false;
-    f.write(kMagic, sizeof kMagic);
-    f.write(reinterpret_cast<const char*>(px), std::streamsize(kPixels * 4));
+    const bool legacy = width == RNF_THUMB_WIDTH && height == RNF_THUMB_HEIGHT;
+    char magic[8];
+    std::memcpy(magic, kMagic, sizeof magic);
+    if (!legacy) magic[7] = '2';
+    f.write(magic, sizeof magic);
+    if (!legacy) {
+      // Little-endian dimensions make the new cache format portable.
+      for (uint32_t n : {width, height}) for (int shift = 0; shift < 32; shift += 8) f.put(char(n >> shift));
+    }
+    f.write(reinterpret_cast<const char*>(px.data()), std::streamsize(px.size() * 4));
     if (!f) return false;
   }
   std::error_code ec;
@@ -50,6 +57,7 @@ LibraryThumbs::~LibraryThumbs() {
   picCv_.notify_all();
   if (picThread_.joinable()) picThread_.join();
   if (writer_.joinable()) writer_.join();
+  for (auto& [rom, img] : picDone_) if (img) img->release();
   for (auto& [k, img] : cache_)
     if (img) img->release();
 }
@@ -72,10 +80,24 @@ ThumbRef LibraryThumbs::get(const std::string& key) {
     ThumbImage* img = nullptr;
     std::ifstream f(std::filesystem::path(fileFor(key)), std::ios::binary);
     char magic[8] = {};
-    std::vector<uint32_t> px(kPixels);
-    if (f && f.read(magic, sizeof magic) && std::memcmp(magic, kMagic, sizeof magic) == 0 &&
-        f.read(reinterpret_cast<char*>(px.data()), std::streamsize(kPixels * 4)))
-      img = ThumbImage::fromThumb(px.data());
+    if (f && f.read(magic, sizeof magic) && std::memcmp(magic, kMagic, 7) == 0 &&
+        (magic[7] == '1' || magic[7] == '2')) {
+      uint32_t width = RNF_THUMB_WIDTH, height = RNF_THUMB_HEIGHT;
+      if (magic[7] == '2') {
+        uint32_t dims[2] = {};
+        for (uint32_t& n : dims) for (int shift = 0; shift < 32; shift += 8) {
+          int ch = f.get();
+          if (ch == EOF) { f.setstate(std::ios::failbit); break; }
+          n |= uint32_t(ch) << shift;
+        }
+        width = dims[0]; height = dims[1];
+      }
+      if (f && width == RNF_THUMB_WIDTH && height && height <= 65536) {
+        std::vector<uint32_t> px(size_t(width) * height);
+        if (f.read(reinterpret_cast<char*>(px.data()), std::streamsize(px.size() * 4)))
+          img = ThumbImage::fromThumb(px.data(), width, height);
+      }
+    }
     it = cache_.emplace(key, img).first;
   }
   if (!it->second) return {};
@@ -85,24 +107,35 @@ ThumbRef LibraryThumbs::get(const std::string& key) {
 
 void LibraryThumbs::save(const std::string& projectPath, const std::string& romPath, const uint32_t* frame) {
   if (!frame || (projectPath.empty() && romPath.empty())) return;
-  ThumbImage* img = ThumbImage::make(frame);
+  saveImage(projectPath, romPath, ThumbImage::make(frame));
+}
+
+void LibraryThumbs::save(const std::string& projectPath, const std::string& romPath,
+                         const rn_video_frame_info& frame, const rn_media_info& media, bool nesPicture) {
+  if (!frame.pixels || (projectPath.empty() && romPath.empty())) return;
+  saveImage(projectPath, romPath, ThumbImage::make(frame, media, nesPicture));
+}
+
+void LibraryThumbs::saveImage(const std::string& projectPath, const std::string& romPath, ThumbImage* img) {
+  if (!img) return;
+  const uint32_t width = img->width, height = img->height;
   std::vector<std::pair<std::string, std::vector<uint32_t>>> writes;
   for (const std::string& key : {projectPath.empty() ? std::string() : "p:" + projectPath,
                                  romPath.empty() ? std::string() : "r:" + romPath}) {
     if (key.empty()) continue;
     img->retain();
     put(key, img);
-    writes.emplace_back(fileFor(key), std::vector<uint32_t>(img->px, img->px + kPixels));
+    writes.emplace_back(fileFor(key), img->px);
   }
   img->release();
   // One write at a time; a save while the previous one runs waits for it (they are seconds apart).
   if (writer_.joinable()) writer_.join();
   std::string dir = dir_;
-  writer_ = std::thread([dir, writes = std::move(writes)] {
+  writer_ = std::thread([dir, width, height, writes = std::move(writes)] {
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::path(dir), ec);
     for (const auto& [path, px] : writes)
-      if (!writeFile(path, px.data())) std::fprintf(stderr, "cannot write %s\n", path.c_str());
+      if (!writeFile(path, px, width, height)) std::fprintf(stderr, "cannot write %s\n", path.c_str());
   });
 }
 
@@ -117,12 +150,12 @@ void LibraryThumbs::requestRomPicture(const std::string& romPath) {
 }
 
 bool LibraryThumbs::pollRomPictures() {
-  std::vector<std::pair<std::string, std::vector<uint32_t>>> done;
+  std::vector<std::pair<std::string, ThumbImage*>> done;
   {
     std::lock_guard<std::mutex> lk(picMutex_);
     done.swap(picDone_);
   }
-  for (const auto& [rom, frame] : done) save("", rom, frame.data());
+  for (const auto& [rom, img] : done) saveImage("", rom, img);
   return !done.empty();
 }
 
@@ -145,10 +178,13 @@ void LibraryThumbs::pictureWorker() {
       std::lock_guard<std::mutex> lk(picMutex_);
       if (picStop_) ok = false;
     }
-    const uint32_t* v = ok ? rn_video(s) : nullptr;
-    if (v) {
-      std::lock_guard<std::mutex> lk(picMutex_);
-      picDone_.emplace_back(rom, std::vector<uint32_t>(v, v + 256 * 240));
+    rn_video_frame_info frame{};
+    rn_media_info media{};
+    if (ok && rn_session_video_frame(s, &frame) == RN_OK && rn_session_media_info(s, &media) == RN_OK) {
+      if (ThumbImage* img = ThumbImage::make(frame, media, rn_session_core_kind(s) != RN_CORE_EXTERNAL)) {
+        std::lock_guard<std::mutex> lk(picMutex_);
+        picDone_.emplace_back(rom, img);
+      }
     }
     rn_session_close(s);
   }

@@ -383,7 +383,7 @@ void UI::buildTilesPage(const PageGeometry& g, size_t page, double now) {
     ImU32 fg = en ? kText : kTextFaint;
     float is = std::min(rr.w * 0.30f, rr.h * 0.34f);
     icon(dl, it.icon, ImVec2(rr.x + rr.w / 2, rr.y + rr.h * 0.40f), is, it.kind == RNF_MENU_ITEM_RESUME ? kBrand : fg);
-    textCentered(dl, m.label(), inset(rr, S(10)), rr.y + rr.h * 0.70f, fg, txt(it.label));
+    textCentered(dl, m.label(), inset(rr, S(10)), rr.y + rr.h * 0.70f, fg, std::strcmp(it.id, "display.par87") == 0 && hasSession() && rn_session_core_kind(d_.emu->session()) == RN_CORE_EXTERNAL ? TR("Pixel Aspect Ratio") : txt(it.label));
     if (it.kind == RNF_MENU_ITEM_TOGGLE) {
       // State under the label ("On" in the brand color).
       bool on = itemOn(it.id);
@@ -583,7 +583,7 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
         break;
       }
     }
-    textFit(dl, m.label(), ImVec2(labelX, cy - m.label() / 2), std::max(0.0f, valueRight - valueW - S(16) - labelX), fg, txt(it.label));
+    textFit(dl, m.label(), ImVec2(labelX, cy - m.label() / 2), std::max(0.0f, valueRight - valueW - S(16) - labelX), fg, std::strcmp(it.id, "display.par87") == 0 && hasSession() && rn_session_core_kind(d_.emu->session()) == RN_CORE_EXTERNAL ? TR("Pixel Aspect Ratio") : txt(it.label));
     if (f) {
       drawFocus(r, m.tileRadius(), now);
       description_ = std::strcmp(it.id, "system.core") == 0
@@ -648,7 +648,7 @@ void UI::buildCardsPage(const PageGeometry& g, double now) {
     float ty = thumb.bottom() + S(8);
     std::string name = hasA ? s->displayName() : std::string(TR("Set A Here"));
     textFit(dl, m.label(), ImVec2(r.x + S(12), ty), r.w - S(24), hasA ? kText : kTextDim, name);
-    std::string len = !hasA ? std::string() : s->hasB ? timecode(s->length) : std::string(TR("No B yet"));
+    std::string len = !hasA ? std::string() : s->hasB ? timecode(s->length, d_.emu->framePeriod()) : std::string(TR("No B yet"));
     if (!len.empty()) textFit(dl, m.hint(), ImVec2(r.x + S(12), ty + m.label() * 1.2f), r.w - S(24), kTextDim, len);
     if (f) drawFocus(r, m.tileRadius(), now);
   }
@@ -717,7 +717,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
         const BookmarkInfo& b = ss->bookmarks[row - 1];
         ic = "bookmark";
         label = b.name;
-        value = timecode(b.frame);
+        value = timecode(b.frame, d_.emu->framePeriod());
         if (f) description_ = TR("A: jump there");
       }
     } else if (id == "controls.keyboard") {

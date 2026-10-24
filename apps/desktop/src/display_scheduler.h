@@ -28,6 +28,17 @@ class DisplayScheduler {
   ~DisplayScheduler() { rnf_frame_budget_free(budget_); }
   DisplayScheduler(const DisplayScheduler&) = delete;
   DisplayScheduler& operator=(const DisplayScheduler&) = delete;
+  void setFramePeriod(double period, double tolerance = RNF_CADENCE_LOCK_TOLERANCE) {
+    if (!(period > 0)) period = nesFramePeriod();
+    if (period == framePeriod_ && tolerance == tolerance_) return;
+    framePeriod_ = period;
+    tolerance_ = tolerance;
+    rnf_frame_budget_free(budget_);
+    budget_ = rnf_frame_budget_new(period);
+    lastTarget_ = content_ = 0;
+    pattern_ = 0;
+  }
+  double framePeriod() const { return framePeriod_; }
   void seedRefresh(double r) { est_.seed(r); }
   /// A precise refresh period from the presenter (Windows: DXGI frame statistics, vblank counts
   /// over seconds); 0 = none. While set it replaces the estimate from the present timestamps
@@ -38,7 +49,7 @@ class DisplayScheduler {
     if (hint_ > 0) est_.refresh = hint_;
   }
   double refresh() const { return est_.refresh; }
-  Cadence cadence() const { return Cadence::classify(est_.refresh); }
+  Cadence cadence() const { return Cadence::classify(est_.refresh, framePeriod_, tolerance_); }
   bool hasGrid() const { return hasAnchor_ && est_.refresh > 0; }
   uint64_t skippedRefreshes() const { return skipped_; }
 
@@ -95,14 +106,14 @@ class DisplayScheduler {
     if (frames) *frames = 1;
     double r = est_.refresh;
     if (!(r > 0) || !hasAnchor_) {
-      lastTarget_ = now + lead + nesFramePeriod();
+      lastTarget_ = now + lead + framePeriod_;
       rnf_frame_budget_reset(budget_);
       return lastTarget_;
     }
     const double previous = lastTarget_;
-    Cadence c = Cadence::classify(r);
+    Cadence c = Cadence::classify(r, framePeriod_, tolerance_);
     double t;
-    if (lastTarget_ <= 0 || lastTarget_ < now - 4 * nesFramePeriod()) {
+    if (lastTarget_ <= 0 || lastTarget_ < now - 4 * framePeriod_) {
       t = snap(now + lead + r);
       content_ = t;
     } else if (c.kind == Cadence::Kind::locked) {
@@ -116,10 +127,10 @@ class DisplayScheduler {
       t = snap(lastTarget_ + r);  // every refresh shows a new picture
       content_ = t;
     } else {
-      content_ += nesFramePeriod();
+      content_ += framePeriod_;
       t = snap(content_);
       if (t <= lastTarget_) t = snap(lastTarget_ + r);
-      if (std::fabs(t - content_) > 2 * nesFramePeriod()) content_ = t;
+      if (std::fabs(t - content_) > 2 * framePeriod_) content_ = t;
     }
     while (t - lead < now + 0.0002) {
       t += r;
@@ -146,6 +157,8 @@ class DisplayScheduler {
     return n >= 1 && n <= 8 && std::fabs(d - n * r) <= 0.25 * r;
   }
 
+  double framePeriod_ = nesFramePeriod();
+  double tolerance_ = RNF_CADENCE_LOCK_TOLERANCE;
   RefreshEstimator est_;
   double hint_ = 0;
   double anchor_ = 0;

@@ -91,7 +91,7 @@ bool UI::thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1) {
   if (!img) return false;
   uint64_t t = 0;
   float uv[4];
-  if (!d_.renderer->thumbTexture(img.get()->serial, img.get()->px, &t, uv)) return false;
+  if (!d_.renderer->thumbTextureSized(img.get()->serial, img.get()->px.data(), img.get()->width, img.get()->height, &t, uv)) return false;
   *tex = ImTextureID(t);
   *uv0 = ImVec2(uv[0], uv[1]);
   *uv1 = ImVec2(uv[2], uv[3]);
@@ -100,8 +100,8 @@ bool UI::thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1) {
 
 namespace {
 // The picture fills r (cropped to its aspect ratio), rounded.
-void coverImage(ImDrawList* dl, ImTextureID tex, ImVec2 uv0, ImVec2 uv1, const LRect& r, float radius) {
-  float ia = float(RNF_THUMB_WIDTH) / float(RNF_THUMB_HEIGHT), ra = r.w / std::max(1.0f, r.h);
+void coverImage(ImDrawList* dl, ImTextureID tex, ImVec2 uv0, ImVec2 uv1, const LRect& r, float radius, float aspect) {
+  float ia = aspect, ra = r.w / std::max(1.0f, r.h);
   ImVec2 a = uv0, b = uv1;
   if (ra > ia) {  // wider box: crop top / bottom
     float keep = ia / ra, cut = (1 - keep) / 2 * (uv1.y - uv0.y);
@@ -471,7 +471,7 @@ void UI::buildLibrary(double now) {
                                                   : takeString(rnf_game_title(nullptr, cont->projectName.c_str()));
       ImTextureID tex{};
       ImVec2 uv0, uv1;
-      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius());
+      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius(), float(img.get()->width) / img.get()->height);
       else nameTile(dl, pic, game, m.tileRadius(), pic.h * 0.4f);
       float tx = pic.right() + S(24), tw = r.right() - S(24) - tx;
       float ty = r.y + (r.h - (m.hint() + m.title() + m.hint() + S(16))) / 2;
@@ -523,7 +523,7 @@ void UI::buildLibrary(double now) {
       std::string title = rom.title();
       ImTextureID tex{};
       ImVec2 uv0, uv1;
-      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4));
+      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4), float(img.get()->width) / img.get()->height);
       else nameTile(dl, pic, title, m.tileRadius() - S(4), pic.h * 0.45f);
       if (lib->isFavorite(rom)) {
         float d = m.label() * 1.7f;
@@ -571,7 +571,7 @@ void UI::buildLibrary(double now) {
       ThumbRef img = romThumb(rom, lib->projectsFor(rom));
       ImTextureID tex{};
       ImVec2 uv0, uv1;
-      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4));
+      if (img && thumbImage(img, &tex, &uv0, &uv1)) coverImage(dl, tex, uv0, uv1, pic, m.tileRadius() - S(4), float(img.get()->width) / img.get()->height);
       else nameTile(dl, pic, rom.title(), m.tileRadius() - S(4), pic.h * 0.45f);
       dl->AddRectFilled(tl(r), br(r), IM_COL32(16, 16, 19, 150), m.tileRadius());  // dimmed: not this page
     };

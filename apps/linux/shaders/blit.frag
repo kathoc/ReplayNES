@@ -1,4 +1,4 @@
-// Nearest-neighbour sample of the 256x240 BGRA frame (the sampler uses NEAREST filtering).
+// Nearest-neighbour sample of the current BGRA frame (the sampler uses NEAREST filtering).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #version 450
 layout(set = 0, binding = 0) uniform sampler2D tex;

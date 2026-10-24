@@ -150,6 +150,28 @@ void scaleNearest(const uint32_t* src, uint8_t* canvas, size_t stride, const rnf
 }
 
 
+void scaleNearestFrame(const rn_video_frame_info& src, uint8_t* canvas, size_t stride,
+                       const rnf_export_geometry& g) {
+  if (g.rotation == 0 && src.stride == RN_VIDEO_WIDTH) {
+    std::vector<int> cols(size_t(g.dst_width)), rows(size_t(g.dst_height));
+    rnf_export_column_map(&g, cols.data());
+    rnf_export_row_map(&g, rows.data());
+    scaleNearest(src.pixels, canvas, stride, g, cols, rows);
+    return;
+  }
+  for (int y = 0; y < g.canvas_height; ++y) {
+    auto* row = reinterpret_cast<uint32_t*>(canvas + size_t(y) * stride);
+    std::fill(row, row + g.canvas_width, 0xFF000000u);
+    for (int x = 0; x < g.dst_width && y >= g.dst_y && y < g.dst_y + g.dst_height; ++x) {
+      int sx = 0, sy = 0;
+      if (rnf_export_source_point(&g, x, y - g.dst_y, &sx, &sy) &&
+          sx >= 0 && sy >= 0 && uint32_t(sx) < src.width && uint32_t(sy) < src.height)
+        row[g.dst_x + x] = src.pixels[size_t(sy) * src.stride + size_t(sx)] | 0xFF000000u;
+    }
+  }
+}
+
+
 int64_t frameTime100ns(uint64_t n) {
   // n * 655171 * 10^7 / 39375000 = n * 655171 * 16 / 63 (exact reduction), rounded to nearest.
   // No overflow below 8.8e11 frames (~460 years).

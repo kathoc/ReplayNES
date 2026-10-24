@@ -22,6 +22,10 @@ void convertToYuv(const uint8_t* canvas, size_t stride, int w, int h, uint8_t* y
 void scaleNearest(const uint32_t* src, uint8_t* canvas, size_t stride, const rnf_export_geometry& g, const std::vector<int>& cols,
                   const std::vector<int>& rows);
 
+/// Scale a strided frame through media geometry, including clockwise rotation.
+void scaleNearestFrame(const rn_video_frame_info& src, uint8_t* canvas, size_t stride,
+                       const rnf_export_geometry& g);
+
 /// Start of video frame `n` (frames since the export start) in 100 ns units, rounded to nearest:
 /// n * 655171 / 39375000 s (Media Foundation's time base; durations are differences of these, so
 /// rounding never accumulates).

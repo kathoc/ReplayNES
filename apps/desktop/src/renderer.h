@@ -1,4 +1,4 @@
-// The presenter seam of the desktop frontend: one implementation per platform draws the 256x240
+// The presenter seam of the desktop frontend: one implementation per platform draws the current
 // BGRA picture nearest-neighbour into a destination rectangle (integer / FILL scale, 8:7 and the
 // overscan crop come from computeGameRect), Dear ImGui on top, presents, and reports when each
 // present reached the screen (the pacing source of the frame loop, docs/FRAME_PACING.md):
@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "render/crt_settings.h"
+#include "game_rect.h"
+#include "replaynes/replaynes.h"
 #include "render/post_process.h"
 
 struct ImDrawData;
@@ -31,17 +33,6 @@ struct PresentDone {
   int result = 0;   // platform result code of the wait (diagnostics)
 };
 
-struct GameRect {
-  bool visible = false;
-  float x = 0, y = 0, w = 0, h = 0;  // pixels, origin top-left
-  int crop = 0;                      // source pixels hidden on every side
-  // CRT Display: the 4:3 tube face (no 8:7), fitted to the same height (MetalView.crtViewport).
-  CrtRect crt;
-  double crtCrop = 0;                // tube rows hidden at the top and bottom (fraction)
-};
-
-/// Destination rectangle of the game picture in a drawable (MetalView.viewport on macOS).
-GameRect computeGameRect(int width, int height, bool integerScale, bool par87, bool hideOverscan);
 
 class Renderer {
  public:
@@ -57,7 +48,7 @@ class Renderer {
   virtual void newImGuiFrame() = 0;
 
   /// Present timestamps are available: the loop aims frames at vblanks (just-in-time input).
-  /// false: host-clock pacing at the NES rate (also a renderer's own choice, e.g. VRR).
+  /// false: host-clock pacing at the media rate (also a renderer's own choice, e.g. VRR).
   virtual bool presentTiming() const = 0;
   virtual std::string description() const = 0;
   /// Drawable size in pixels (0 x 0 before the first present).
@@ -69,6 +60,12 @@ class Renderer {
   /// channel of newPicture (render/post_process.h).
   virtual uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui,
                                   const FrameSignal* signal = nullptr) = 0;
+  /// Media capacity is fixed for a session; current frame dimensions may vary.
+  virtual void configureMedia(const rn_media_info& media, bool nesPicture = true) { (void)media; (void)nesPicture; }
+  virtual uint64_t drawFrameAndPresent(const rn_video_frame_info* frame, const GameRect& rect, ImDrawData* ui,
+                                      const FrameSignal* signal = nullptr) {
+    return drawAndPresent(frame ? frame->pixels : nullptr, rect, ui, signal);
+  }
   /// Presents confirmed on screen since the last call, in present order.
   virtual std::vector<PresentDone> takeCompleted() = 0;
   /// Seconds the last drawAndPresent spent blocked (fence / image / swap chain).
@@ -104,6 +101,10 @@ class Renderer {
   /// Filmstrip thumbnails: a 128x120 BGRA picture identified by `key` in the thumbnail atlas
   /// (uploaded before this frame's draw if new). false: no room this frame (draw a placeholder).
   virtual bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) = 0;
+  virtual bool thumbTextureSized(uint64_t key, const uint32_t* pixels, uint32_t width, uint32_t height,
+                                 uint64_t* texId, float uv[4]) {
+    return width == 128 && height == 120 && thumbTexture(key, pixels, texId, uv);
+  }
   /// Saves the next presented frame (game + UI) as PNG (tests, docs screenshots).
   virtual void requestScreenshot(const std::string& path) = 0;
 };

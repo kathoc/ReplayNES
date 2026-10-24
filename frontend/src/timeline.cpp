@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "common.hpp"
+#include "picture.hpp"
+#include <limits>
 
 using namespace rnf;
 
@@ -295,6 +297,61 @@ void rnf_thumb_downscale(const uint32_t* src, uint32_t* dst) {
       dst[y * RNF_THUMB_WIDTH + x] = 0xFF000000u | ((r / n) << 16) | ((g / n) << 8) | (b / n);
     }
   }
+}
+
+int rnf_thumb_size(const rn_video_frame_info* frame, const rn_media_info* media,
+                   uint32_t* width, uint32_t* height) {
+  if (width) *width = 0;
+  if (height) *height = 0;
+  if (!frame || !media || !width || !height || !frame->width || !frame->height ||
+      frame->width > media->max_width || frame->height > media->max_height ||
+      !media->pixel_aspect_num || !media->pixel_aspect_den || media->rotation > 3) return 0;
+  double aspect = double(frame->width) * media->pixel_aspect_num /
+                  (double(frame->height) * media->pixel_aspect_den);
+  if (media->rotation & 1) aspect = 1 / aspect;
+  double h = std::max(1.0, std::round(RNF_THUMB_WIDTH / aspect));
+  if (!std::isfinite(h) || h > std::numeric_limits<uint32_t>::max() ||
+      h > double(SIZE_MAX / RNF_THUMB_WIDTH / sizeof(uint32_t))) return 0;
+  *width = RNF_THUMB_WIDTH;
+  *height = uint32_t(h);
+  return 1;
+}
+
+int rnf_thumb_downscale_frame(const rn_video_frame_info* frame, const rn_media_info* media,
+                              uint32_t* dst, size_t capacity) {
+  uint32_t width = 0, height = 0;
+  if (!rnf_thumb_size(frame, media, &width, &height) || !dst ||
+      !rnf::validPicture(frame, media->max_width, media->max_height) ||
+      capacity < size_t(width) * height) return 0;
+  const bool quarter = (media->rotation & 1) != 0;
+  const uint32_t sw = quarter ? frame->height : frame->width;
+  const uint32_t sh = quarter ? frame->width : frame->height;
+  // Box averaging in display coordinates; an exact 2:1 scale matches the NES downscaler.
+  for (uint32_t y = 0; y < height; ++y) {
+    const uint32_t y0 = uint32_t(uint64_t(y) * sh / height);
+    const uint32_t y1 = std::max(y0 + 1, uint32_t(uint64_t(y + 1) * sh / height));
+    for (uint32_t x = 0; x < width; ++x) {
+      const uint32_t x0 = uint32_t(uint64_t(x) * sw / width);
+      const uint32_t x1 = std::max(x0 + 1, uint32_t(uint64_t(x + 1) * sw / width));
+      uint64_t r = 0, g = 0, b = 0;
+      for (uint32_t sy = y0; sy < y1; ++sy) {
+        for (uint32_t sx = x0; sx < x1; ++sx) {
+          uint32_t ox = sx, oy = sy;
+          switch (media->rotation) {
+            case 1: ox = sy; oy = frame->height - 1 - sx; break;
+            case 2: ox = frame->width - 1 - sx; oy = frame->height - 1 - sy; break;
+            case 3: ox = frame->width - 1 - sy; oy = sx; break;
+          }
+          const uint32_t p = frame->pixels[size_t(oy) * frame->stride + ox];
+          r += (p >> 16) & 255; g += (p >> 8) & 255; b += p & 255;
+        }
+      }
+      const uint64_t n = uint64_t(x1 - x0) * (y1 - y0);
+      dst[size_t(y) * width + x] = 0xff000000u | uint32_t(r / n) << 16 |
+                                  uint32_t(g / n) << 8 | uint32_t(b / n);
+    }
+  }
+  return 1;
 }
 
 }  // extern "C"

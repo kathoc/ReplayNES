@@ -23,17 +23,20 @@ inline double nesFramePeriod() { return rnf_frame_period(); }
 struct Cadence {
   enum class Kind { unknown, locked, three_two, free, slower };
   Kind kind = Kind::unknown;
+  double framePeriod = nesFramePeriod();
   int k = 0;  // refreshes per frame when locked
 
-  static Cadence classify(double refresh, double framePeriod = nesFramePeriod()) {
+  static Cadence classify(double refresh, double framePeriod = nesFramePeriod(),
+                          double tolerance = RNF_CADENCE_LOCK_TOLERANCE) {
     Cadence c;
+    c.framePeriod = framePeriod;
     if (!(refresh > 0)) return c;
-    if (int k = rnf_refreshes_per_frame(refresh, framePeriod)) {
+    if (int k = rnf_refreshes_per_frame_with_tolerance(refresh, framePeriod, tolerance)) {
       c.kind = Kind::locked;
       c.k = k;
-    } else if (std::fabs(1.5 * refresh - framePeriod) / framePeriod <= RNF_CADENCE_LOCK_TOLERANCE) {
+    } else if (std::fabs(1.5 * refresh - framePeriod) / framePeriod <= tolerance) {
       c.kind = Kind::three_two;
-    } else if (rnf_display_slower_than_frames(refresh, framePeriod)) {
+    } else if (rnf_display_slower_than_frames_with_tolerance(refresh, framePeriod, tolerance)) {
       c.kind = Kind::slower;
     } else {
       c.kind = Kind::free;
@@ -46,7 +49,7 @@ struct Cadence {
     switch (kind) {
       case Kind::locked: return 1.0 / (k * refresh);
       case Kind::three_two: return 1.0 / (1.5 * refresh);
-      default: return 1.0 / nesFramePeriod();
+      default: return 1.0 / framePeriod;
     }
   }
 

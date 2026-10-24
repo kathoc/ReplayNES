@@ -28,16 +28,49 @@ constexpr double kFadeDuration = 0.3;
 }  // namespace
 
 ThumbImage* ThumbImage::make(const uint32_t* frame) {
+  const rn_video_frame_info f{frame, RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_VIDEO_WIDTH};
+  const rn_media_info m{RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 1, 1, 0};
+  return make(f, m);
+}
+
+namespace {
+rn_media_info thumbnailMedia(rn_media_info m, bool nesPicture) {
+  // NES thumbnails historically use square pixels, independently of the 8:7 display toggle.
+  if (nesPicture && m.max_width == RN_VIDEO_WIDTH && m.max_height == RN_VIDEO_HEIGHT && m.rotation == 0 &&
+      m.pixel_aspect_num == 8 && m.pixel_aspect_den == 7)
+    m.pixel_aspect_num = m.pixel_aspect_den = 1;
+  return m;
+}
+}
+
+bool thumbnailSize(const rn_video_frame_info& frame, const rn_media_info& media, uint32_t* width, uint32_t* height, bool nesPicture) {
+  const rn_media_info m = thumbnailMedia(media, nesPicture);
+  uint32_t w = 0, h = 0;
+  if (!width || !height || !rnf_thumb_size(&frame, &m, &w, &h)) return false;
+  *width = w; *height = h;
+  return true;
+}
+
+ThumbImage* ThumbImage::make(const rn_video_frame_info& frame, const rn_media_info& media, bool nesPicture) {
+  const rn_media_info m = thumbnailMedia(media, nesPicture);
+  uint32_t w = 0, h = 0;
+  if (!rnf_thumb_size(&frame, &m, &w, &h)) return nullptr;
   auto* t = new ThumbImage;
   t->serial = gSerial.fetch_add(1);
-  rnf_thumb_downscale(frame, t->px);
+  t->width = w;
+  t->height = h;
+  t->px.resize(size_t(w) * h);
+  if (!rnf_thumb_downscale_frame(&frame, &m, t->px.data(), t->px.size())) { delete t; return nullptr; }
   return t;
 }
 
-ThumbImage* ThumbImage::fromThumb(const uint32_t* px) {
+ThumbImage* ThumbImage::fromThumb(const uint32_t* px, uint32_t width, uint32_t height) {
+  if (!px || !width || !height) return nullptr;
   auto* t = new ThumbImage;
   t->serial = gSerial.fetch_add(1);
-  std::memcpy(t->px, px, sizeof t->px);
+  t->width = width;
+  t->height = height;
+  t->px.assign(px, px + size_t(width) * height);
   return t;
 }
 
@@ -84,8 +117,12 @@ void ThumbnailManager::workerLoop() {
       const int16_t* audio = nullptr;
       size_t n = 0;
       uint64_t idx = 0;
-      if (rn_renderer_next(t.renderer, &video, &audio, &n, &idx) == RN_OK && idx + 1 == t.frame && video)
-        img = ThumbImage::make(video);
+      if (rn_renderer_next(t.renderer, &video, &audio, &n, &idx) == RN_OK && idx + 1 == t.frame && video) {
+        rn_video_frame_info frame{};
+        rn_media_info media{};
+        if (rn_renderer_video_frame(t.renderer, &frame) == RN_OK && rn_renderer_media_info(t.renderer, &media) == RN_OK)
+          img = ThumbImage::make(frame, media, t.nesPicture);
+      }
     }
     rn_renderer_free(t.renderer);
     finishOne(t.job, t.frame, img, img == nullptr && !t.job->cancelled.load());
@@ -137,9 +174,11 @@ void ThumbnailManager::frameShown(rn_session* s, uint64_t frame) {
   syncTake(s);
   uint64_t take = rn_active_take(s);
   if (!rnf_thumb_cache_wants(cache_, frame, take)) return;
-  const uint32_t* v = rn_video(s);
-  if (!v) return;
-  ThumbImage* img = ThumbImage::make(v);
+  rn_video_frame_info f{};
+  rn_media_info m{};
+  if (rn_session_video_frame(s, &f) != RN_OK || rn_session_media_info(s, &m) != RN_OK) return;
+  ThumbImage* img = ThumbImage::make(f, m, rn_session_core_kind(s) != RN_CORE_EXTERNAL);
+  if (!img) return;
   rnf_thumb_cache_insert(cache_, frame, take, 0, 0, img);
   img->release();
 }
@@ -240,7 +279,7 @@ void ThumbnailManager::pump(rn_session* s, double now) {
       finishOne(j, f, nullptr, !j->cancelled.load());
       continue;
     }
-    tasks.push_back(Task{j, r, f});
+    tasks.push_back(Task{j, r, f, rn_session_core_kind(s) != RN_CORE_EXTERNAL});
   }
   if (!tasks.empty()) {
     {
