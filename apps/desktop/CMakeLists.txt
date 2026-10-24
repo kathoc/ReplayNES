@@ -64,8 +64,10 @@ string(REPLACE "<" "&lt;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
 string(REPLACE ">" "&gt;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
 string(REPLACE "'" "&apos;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
 set(RNL_WINDOWS_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/replaynes.manifest" CACHE INTERNAL "")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../windows/resources/replaynes.manifest.in
-  "${RNL_WINDOWS_MANIFEST}" @ONLY)
+if(WIN32)  # other platforms build without apps/windows
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../windows/resources/replaynes.manifest.in
+    "${RNL_WINDOWS_MANIFEST}" @ONLY)
+endif()
 function(rnl_windows_manifest target)
   if(NOT WIN32)
     return()
