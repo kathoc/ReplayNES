@@ -78,6 +78,7 @@ Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
 }
 
 Status Session::stepInput(const InputRecord& in, StepInfo* info) {
+  clearRewindCache();
   const uint8_t events = in.events;
   if (mode_ != Mode::Replay)
     for (size_t b = layout_.recordBytes; b < kInputRecordBytes; ++b)
@@ -159,7 +160,123 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
   return Status::Ok();
 }
 
-Status Session::resync(uint64_t target, bool forceReload) {
+void Session::clearRewindCache() {
+  rewindBlocks_.clear();
+  rewindPrefetch_ = {};
+}
+
+void Session::advanceRewindPrefetch(uint64_t budget) {
+  auto& work = rewindPrefetch_;
+  if (!work.end) return;
+  // This walk must not use resync/step: it changes neither cursor, continuity,
+  // checkpoints nor the practice input ring. The caller always restores the
+  // requested pre-frame state and renders the result afterwards, even on error.
+  Status st = work.fresh ? core_->loadContent(romPath_, rom_.data(), rom_.size())
+                         : core_->loadState(work.resume.data(), work.resume.size());
+  work.fresh = false;
+  while (st.ok() && budget && work.next < work.end) {
+    if (work.next >= work.block.first) {
+      std::vector<uint8_t> state;
+      st = captureState(state);
+      if (!st.ok()) break;
+      work.block.states.push_back(std::move(state));
+    }
+    const InputRecord* input = mode_ == Mode::Practice
+        ? &pInputs_[size_t(work.next - pSnaps_.front().count)] : tl_.recordAt(work.next);
+    if (!input) { st = Error(Err::Internal, "missing prefetch input"); break; }
+    st = core_->stepRecord(*input, false);
+    if (st.ok()) ++work.next;
+    --budget;
+  }
+  if (st.ok() && work.next == work.end) {
+    retainRewindBlock(std::move(work.block));
+    work = {};
+  } else if (!st.ok() || !captureState(work.resume).ok()) {
+    // A speculative cache failure must not turn an otherwise valid rewind
+    // into an error. The ordinary restore/replay path remains authoritative.
+    work = {};
+  }
+}
+
+void Session::finishRewindPrefetch(uint64_t target) {
+  const auto& work = rewindPrefetch_;
+  if (target > 0 && work.end && target - 1 >= work.block.first && target - 1 < work.end &&
+      !rewindState(target - 1))
+    advanceRewindPrefetch(work.end - work.next);
+}
+
+void Session::prefetchOlderRewindBlock(uint64_t target) {
+  const uint64_t interval = cps_.policy().denseInterval;
+  uint64_t first, end, seed;
+  const std::vector<uint8_t>* initial = nullptr;
+  if (mode_ == Mode::Practice) {
+    size_t k = pSnaps_.size();
+    while (k && pSnaps_[k - 1].count > target - 1) --k;
+    if (k < 2) return;
+    end = pSnaps_[k - 1].count;
+    const auto& snap = pSnaps_[k - 2];
+    seed = snap.count;
+    first = end - std::min(end - seed, interval);
+    if (end <= practiceFloor()) return;
+    initial = &snap.state;
+  } else {
+    end = (target - 1) / interval * interval;
+    if (!end) return;
+    first = end - interval;
+    const auto* cp = cps_.best(first, tl_);
+    seed = cp ? cp->frame : 0;
+    if (seed) initial = &cp->data;
+    // Take frame zero is always fresh power-on, never a serialized state.
+    first = std::max<uint64_t>(1, first);
+  }
+  if (first >= end || (rewindState(first) && rewindState(end - 1))) return;
+  auto& work = rewindPrefetch_;
+  if (work.end != end || work.block.first != first) {
+    work = {};
+    work.block.first = first;
+    work.next = seed;
+    work.end = end;
+    work.fresh = !initial;
+    if (initial) work.resume = *initial;
+  }
+  // Five speculative frames plus the visible frame. A 30-frame block is
+  // ready within six ticks, including at the frontend's maximum stride of 4.
+  advanceRewindPrefetch(5);
+}
+
+const std::vector<uint8_t>* Session::rewindState(uint64_t frame) const {
+  for (const auto& block : rewindBlocks_)
+    if (frame >= block.first && frame - block.first < block.states.size())
+      return &block.states[size_t(frame - block.first)];
+  return nullptr;
+}
+
+void Session::cacheRewindState(RewindBlock& block, uint64_t frame) {
+  if (frame < block.first) return;
+  std::vector<uint8_t> state;
+  if (!captureState(state).ok()) {
+    // Like checkpoints, this is only an acceleration cache. A failed capture
+    // must not make a previously valid seek fail or leave a hole in the range.
+    block.states.clear();
+    block.first = frame + 1;
+    return;
+  }
+  if (block.states.empty()) block.first = frame;
+  block.states.push_back(std::move(state));
+  // Practice snapshots may be farther apart after a failed snapshot capture.
+  if (block.states.size() > cps_.policy().denseInterval) {
+    block.states.erase(block.states.begin());
+    ++block.first;
+  }
+}
+
+void Session::retainRewindBlock(RewindBlock block) {
+  if (block.states.empty()) return;
+  if (rewindBlocks_.size() == 2) rewindBlocks_.pop_front();
+  rewindBlocks_.push_back(std::move(block));
+}
+
+Status Session::resync(uint64_t target, bool forceReload, RewindBlock* block) {
   if (target > tl_.length()) return Error(Err::OutOfRange, "seek target beyond take end");
   if (!forceReload && target == frame_) return Status::Ok();
   ++emuEpoch_;  // any seek / reload breaks emulation continuity (A/B anchors)
@@ -180,6 +297,10 @@ Status Session::resync(uint64_t target, bool forceReload) {
   while (frame_ < target) {
     const InputRecord* r = tl_.recordAt(frame_);
     if (!r) return Error(Err::Internal, "missing record during seek");
+    // Take frame zero is a fresh content load, not a serialized checkpoint.
+    // In particular, restoring Nestopia's power-on state does not reset its
+    // picture buffer, and the first frame need not overwrite that buffer.
+    if (block && frame_ > 0) cacheRewindState(*block, frame_);
     RN_TRY(core_->stepRecord(*r, frame_ + 1 == target));
     ++frame_;
     maybeCheckpoint();
@@ -189,6 +310,7 @@ Status Session::resync(uint64_t target, bool forceReload) {
 }
 
 Status Session::seek(uint64_t target) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot seek the take while practicing (leave practice first)");
   RN_TRY(resync(target, false));
@@ -199,11 +321,43 @@ Status Session::seek(uint64_t target) {
 Status Session::rewind(uint64_t n) {
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return practiceRewind(n);
-  return seek(frame_ - (n > frame_ ? frame_ : n));
+  const uint64_t target = frame_ - std::min(n, frame_);
+  if (target != frame_) {
+    if (target > 0) {
+      finishRewindPrefetch(target);
+      if (const auto* state = rewindState(target - 1)) {
+        // Prefetch may evict a block. Own the state that restores this tick,
+        // then render its final frame AFTER all speculative core work.
+        const auto saved = *state;
+        prefetchOlderRewindBlock(target);
+        ++emuEpoch_;  // exactly the discontinuity that resync would report
+        RN_TRY(core_->loadState(saved.data(), saved.size()));
+        frame_ = target - 1;
+        const InputRecord* r = tl_.recordAt(frame_);
+        if (!r) return Error(Err::Internal, "missing record during rewind");
+        RN_TRY(core_->stepRecord(*r, true));
+        ++frame_;
+        maybeCheckpoint();
+        audioValid_ = false;
+      } else {
+        if (rewindBlocks_.size() == 2) rewindBlocks_.pop_front();
+        RewindBlock block;
+        const uint64_t interval = cps_.policy().denseInterval;
+        block.first = (target - 1) / interval * interval;
+        RN_TRY(resync(target, false, &block));
+        retainRewindBlock(std::move(block));
+      }
+    } else {
+      RN_TRY(resync(0, false));  // fresh power-on, including the initial picture
+    }
+  }
+  touch();  // seek touches even when the cursor does not move
+  return Status::Ok();
 }
 
 // ------------------------------------------------------------------ bookmarks
 Status Session::bookmarkAdd(const std::string& name, uint64_t* id) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot add a take bookmark while practicing");
   Bookmark b;
@@ -228,6 +382,7 @@ static Bookmark* findBm(std::vector<Bookmark>& v, uint64_t id) {
 }
 
 Status Session::bookmarkRemove(uint64_t id) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   for (size_t i = 0; i < bookmarks_.size(); ++i) {
     if (bookmarks_[i].id != id) continue;
@@ -240,6 +395,7 @@ Status Session::bookmarkRemove(uint64_t id) {
 }
 
 Status Session::bookmarkRename(uint64_t id, const std::string& name) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Bookmark* b = findBm(bookmarks_, id);
   if (!b) return Error(Err::NotFound, "bookmark not found");
@@ -249,6 +405,7 @@ Status Session::bookmarkRename(uint64_t id, const std::string& name) {
 }
 
 Status Session::bookmarkGoto(uint64_t id) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot jump on the take while practicing");
   Bookmark* b = findBm(bookmarks_, id);
@@ -277,6 +434,7 @@ std::vector<TakeInfo> Session::takes() const {
 }
 
 Status Session::activateTake(uint64_t id) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
@@ -289,6 +447,7 @@ Status Session::activateTake(uint64_t id) {
 }
 
 Status Session::undoTakeSwitch() {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot switch takes while practicing");
   if (tl_.undo().empty()) return Error(Err::NotFound, "nothing to undo");
@@ -310,6 +469,7 @@ static bool takeReferenced(const std::vector<Bookmark>& bms, const std::array<Pr
 }
 
 Status Session::discardTake(uint64_t id) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!tl_.segment(id)) return Error(Err::NotFound, "take not found");
   if (takeReferenced(bookmarks_, slots_, id))
@@ -324,6 +484,7 @@ Status Session::discardTake(uint64_t id) {
 }
 
 Status Session::truncateTake() {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot cut the take while practicing");
   if (frame_ >= tl_.length()) return Status::Ok();
@@ -350,6 +511,7 @@ Status Session::truncateTake() {
 
 // ------------------------------------------------------------------ practice
 Status Session::setMode(Mode m) {
+  clearRewindCache();
   if (mode_ == Mode::Live || m == Mode::Live) {
     if (mode_ == m) return Status::Ok();
     return Error(Err::UnsupportedFormat, "live execution cannot change to a recording mode");
@@ -428,10 +590,26 @@ Status Session::practiceRewind(uint64_t n) {
   if (k == 0) return Error(Err::Internal, "practice rewind: no snapshot");
   const PracticeSnap& snap = pSnaps_[k - 1];
   const uint64_t inputBase = pSnaps_.front().count;
-  RN_TRY(core_->loadState(snap.state.data(), snap.state.size()));
-  for (uint64_t c = snap.count; c < target; ++c) {
-    const InputRecord& r = pInputs_[size_t(c - inputBase)];
-    RN_TRY(core_->stepRecord(r, c + 1 == target));
+  // At an exact snapshot boundary the old path only loads the snapshot. Some
+  // cores leave the video buffer untouched on load; preserve that behavior.
+  if (target > snap.count) finishRewindPrefetch(target);
+  const auto* cached = target > snap.count ? rewindState(target - 1) : nullptr;
+  if (cached) {
+    const auto saved = *cached;
+    prefetchOlderRewindBlock(target);
+    RN_TRY(core_->loadState(saved.data(), saved.size()));
+    RN_TRY(core_->stepRecord(pInputs_[size_t(target - 1 - inputBase)], true));
+  } else {
+    if (rewindBlocks_.size() == 2) rewindBlocks_.pop_front();
+    RewindBlock block;
+    block.first = target - std::min<uint64_t>(target - snap.count, cps_.policy().denseInterval);
+    RN_TRY(core_->loadState(snap.state.data(), snap.state.size()));
+    for (uint64_t c = snap.count; c < target; ++c) {
+      cacheRewindState(block, c);
+      const InputRecord& r = pInputs_[size_t(c - inputBase)];
+      RN_TRY(core_->stepRecord(r, c + 1 == target));
+    }
+    retainRewindBlock(std::move(block));
   }
   pSnaps_.erase(pSnaps_.begin() + ptrdiff_t(k), pSnaps_.end());
   pInputs_.resize(size_t(target - inputBase));
@@ -455,6 +633,7 @@ const PracticeSlot* Session::practiceSlot(int slot) const {
 }
 
 Status Session::practiceSetA(int slot) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -497,6 +676,7 @@ bool Session::practiceBSettable(int slot) const {
 }
 
 Status Session::practiceSetB(int slot) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -538,6 +718,7 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
 }
 
 Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -601,6 +782,7 @@ Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
 }
 
 Status Session::practiceGotoA(int slot) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -635,6 +817,7 @@ Status Session::practiceGotoA(int slot) {
 }
 
 Status Session::practiceRename(int slot, const std::string& name) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -647,6 +830,7 @@ Status Session::practiceRename(int slot, const std::string& name) {
 }
 
 Status Session::practiceClear(int slot) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   Status err;
   if (!checkSlot(slot, err)) return err;
@@ -675,6 +859,7 @@ PracticeStatus Session::practiceStatus() const {
 
 // ------------------------------------------------------------------ persistence
 Status Session::save() {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
   RN_TRY(store_->fullSave(*this));
@@ -683,6 +868,7 @@ Status Session::save() {
 }
 
 Status Session::reset(bool keepPracticeSlots) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot reset the project while practicing (leave practice first)");
   // The previous content, restored if the reset cannot be committed.
@@ -752,12 +938,14 @@ Status Session::reset(bool keepPracticeSlots) {
 }
 
 Status Session::autosave() {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
   return store_->autosave(*this);
 }
 
 Status Session::saveAs(const std::string& dir) {
+  clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (store_) return Error(Err::AlreadyExists, "session already has a project directory");
   std::unique_ptr<ProjectStore> st;

@@ -180,14 +180,34 @@ class Session {
   const std::string& romPath() const { return romPath_; }
   const std::string& romSha256() const { return romSha_; }
   CoreKind coreKind() const { return core_->kind(); }
-  ICore& core() { return *core_; }
+  ICore& core() { clearRewindCache(); return *core_; }
   const SessionOptions& options() const { return opt_; }
 
  private:
   friend class ProjectStore;
   Session() = default;
   void touch() { ++changeSeq_; }
-  Status resync(uint64_t target, bool forceReload);
+  // Pre-frame states, collected only during rewind; at most two dense-sized ranges.
+  // No media is cached: the last frame is always rendered by the core.
+  struct RewindBlock {
+    uint64_t first = 0;
+    std::vector<std::vector<uint8_t>> states;
+  };
+  std::deque<RewindBlock> rewindBlocks_;
+  struct RewindPrefetch {
+    RewindBlock block;
+    uint64_t next = 0, end = 0;  // end == 0: no pending work
+    bool fresh = false;
+    std::vector<uint8_t> resume;
+  } rewindPrefetch_;
+  void clearRewindCache();
+  void advanceRewindPrefetch(uint64_t budget);
+  void prefetchOlderRewindBlock(uint64_t target);
+  void finishRewindPrefetch(uint64_t target);
+  const std::vector<uint8_t>* rewindState(uint64_t frame) const;
+  void cacheRewindState(RewindBlock& block, uint64_t frame);
+  void retainRewindBlock(RewindBlock block);
+  Status resync(uint64_t target, bool forceReload, RewindBlock* block = nullptr);
   Status powerOnFresh();
   void maybeCheckpoint();
   Status captureState(std::vector<uint8_t>& out) { return core_->saveState(out); }
