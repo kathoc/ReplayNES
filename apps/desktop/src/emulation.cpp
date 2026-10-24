@@ -936,6 +936,20 @@ void EmulationController::abortCountdown() {
   stopPractice();
 }
 
+// Turns a w x h picture by `turns` quarter turns clockwise into out (w * h pixels, may not alias);
+// returns the turned picture's width.
+static uint32_t turnQuarter(const uint32_t* in, uint32_t w, uint32_t h, uint32_t turns, uint32_t* out) {
+  for (uint32_t y = 0; y < h; ++y)
+    for (uint32_t x = 0; x < w; ++x) {
+      uint32_t v = in[size_t(y) * w + x];
+      if (turns == 1) out[size_t(x) * h + (h - 1 - y)] = v;                  // h wide, w high
+      else if (turns == 2) out[size_t(h - 1 - y) * w + (w - 1 - x)] = v;
+      else if (turns == 3) out[size_t(w - 1 - x) * h + y] = v;              // h wide, w high
+      else out[size_t(y) * w + x] = v;
+    }
+  return turns % 2 ? h : w;
+}
+
 // The VTR effect over the picture: the return sweep, L2 rewind, R2 fast-forward (lighter). Runs only
 // while it is active (fading in / out); otherwise display_ is untouched (zero cost).
 void EmulationController::tickVtr() {
@@ -956,8 +970,22 @@ void EmulationController::tickVtr() {
       vtrBaseSignal_ = signal_;
       vtrOn_ = true;
     }
-    rn_video_frame_info frame{vtrBase_.data(), pictureWidth_, pictureHeight_, pictureWidth_};
-    rnf_vtr_apply_frame(&frame, display_.data(), pictureWidth_, &p);
+    const uint32_t turns = media_.rotation % 4;
+    if (turns == 0) {
+      rn_video_frame_info frame{vtrBase_.data(), pictureWidth_, pictureHeight_, pictureWidth_};
+      rnf_vtr_apply_frame(&frame, display_.data(), pictureWidth_, &p);
+    } else {
+      // A tape's noise runs along the lines on the screen: a rotated game (a vertical shooter) is
+      // turned to the screen's orientation for the effect and back, or its bands would run upright.
+      uint32_t w = pictureWidth_, h = pictureHeight_;
+      vtrTurned_.resize(size_t(w) * h);
+      vtrOut_.resize(size_t(w) * h);
+      uint32_t tw = turnQuarter(vtrBase_.data(), w, h, turns, vtrTurned_.data());
+      uint32_t th = uint32_t(vtrTurned_.size() / tw);
+      rn_video_frame_info frame{vtrTurned_.data(), tw, th, tw};
+      rnf_vtr_apply_frame(&frame, vtrOut_.data(), tw, &p);
+      turnQuarter(vtrOut_.data(), tw, th, (4 - turns) % 4, display_.data());
+    }
     signal_ = vtrBaseSignal_;
     signal_.codes = nullptr;  // the CRT takes the altered picture (RGB), not the PPU codes
     signal_.ordinal = ++pictureOrdinal_;

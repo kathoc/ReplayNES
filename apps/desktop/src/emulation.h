@@ -384,6 +384,7 @@ class EmulationController {
   bool vtrEnabled_ = true;
   bool vtrOn_ = false;
   std::vector<uint32_t> vtrBase_;
+  std::vector<uint32_t> vtrTurned_, vtrOut_;  // a rotated game's picture in the screen's orientation
   Signal vtrBaseSignal_;
   // thumbnails
   bool pendingThumb_ = false;
