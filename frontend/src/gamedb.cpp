@@ -548,7 +548,7 @@ void rnf_rom_data_sha1(const uint8_t* data, size_t size, char out_hex[41]) {
 
 rnf_game_match rnf_gamedb_identify(const uint8_t* data, size_t size, const char* file_name, rnf_game_info* out) {
   try {
-    if (data && size > 0) {
+    if (RN_PRODUCT_NES && data && size > 0) {
       size_t a, b;
       romDataRange(data, size, &a, &b);
       uint32_t crc = rn::crc32(data + a, b - a);
@@ -576,6 +576,7 @@ rnf_game_match rnf_gamedb_identify(const uint8_t* data, size_t size, const char*
 
 rnf_game_match rnf_gamedb_identify_file(const char* path, rnf_game_info* out) {
   if (!path) return RNF_GAME_MATCH_NONE;
+  if (!RN_PRODUCT_NES) return rnf_gamedb_identify(nullptr, 0, path, out);
   try {
     std::vector<uint8_t> bytes;
     FILE* f = nullptr;

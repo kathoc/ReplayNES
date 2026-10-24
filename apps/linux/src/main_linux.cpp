@@ -18,6 +18,10 @@
 #include "update_service_flatpak.h"
 #include "vk_renderer.h"
 
+#ifdef RN_PRODUCT_HAS_STARTUP
+extern "C" void rn_product_startup(void);
+#endif
+
 int main(int argc, char** argv) {
   using namespace rnl;
   if (int rc = 0; steam::runCli(argc, argv, &rc)) return rc;  // --add-to-steam [--dry-run] (no window)
@@ -25,6 +29,9 @@ int main(int argc, char** argv) {
     std::printf("%s %s\n", RN_PRODUCT_NAME, RNL_APP_VERSION);
     return 0;
   }
+#ifdef RN_PRODUCT_HAS_STARTUP
+  rn_product_startup();
+#endif
   PlatformHooks platform;
   platform.version = RNL_APP_VERSION;
   platform.executable = RN_PRODUCT_EXECUTABLE;

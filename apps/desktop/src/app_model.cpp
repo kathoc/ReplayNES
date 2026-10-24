@@ -419,7 +419,7 @@ void AppModel::prepareTempSlot(std::function<void()> then) {
 void AppModel::playFromLibrary(const LibraryROM& rom) {
   LibraryROM r = rom;
   confirmDiscardIfNeeded([this, r] {
-    if (selectedCore != "nestopia") return createSession(r.path, "", false);
+    if (selectedCore != "nestopia" && selectedCore != "external") return createSession(r.path, "", false);
     settlePendingTemp([this, r] {
       if (!library_->ensureFolders()) {
         error(TR("The library folder isn’t available"), library_->folderError());
@@ -435,7 +435,7 @@ void AppModel::playFromLibrary(const LibraryROM& rom) {
 
 void AppModel::tryRom(const std::string& romPath) {
   confirmDiscardIfNeeded([this, romPath] {
-    if (selectedCore != "nestopia") return createSession(romPath, "", false);
+    if (selectedCore != "nestopia" && selectedCore != "external") return createSession(romPath, "", false);
     if (!persist_) return createSession(romPath, "", true);
     prepareTempSlot([this, romPath] { createSession(romPath, paths_.tempProject(), true); });
   });
@@ -464,6 +464,7 @@ void AppModel::createSession(const std::string& rom, const std::string& projectD
   rn_session_options_init(&opt);
   if (selectedCore == "nestopia") opt.core = RN_CORE_NESTOPIA;
   else if (selectedCore == "replaynescore") opt.core = RN_CORE_REPLAYNESCORE;
+  else if (selectedCore == "external") opt.core = RN_CORE_EXTERNAL;
   else { error(TR("Couldn’t create the project"), TR("Unknown core; select a supported core")); return; }
   if (!rn_core_available(opt.core)) { error(TR("Couldn’t create the project"), TR("Selected core is not included in this build")); return; }
   bool dirExisted = projectDir.empty() || exists(projectDir);

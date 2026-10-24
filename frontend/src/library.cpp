@@ -36,6 +36,11 @@ namespace stdfs = std::filesystem;
 
 namespace {
 
+std::mutex contentIdLock;
+rnf_content_id_fn contentIdProvider = nullptr;
+void* contentIdContext = nullptr;
+uint64_t contentIdGeneration = 0;
+
 // Date.distantPast (0001-01-01) in seconds since 1970.
 constexpr double kDistantPast = -62135769600.0;
 
@@ -285,11 +290,19 @@ struct rnf_project_list {
 
 struct rnf_rom_hash_cache {
   std::mutex lock;
+  uint64_t identityGeneration = 0;
   std::map<std::tuple<std::string, int64_t, double>, std::string> cache;
   std::map<std::tuple<std::string, int64_t, double>, std::pair<rnf_game_match, rnf_game_info>> games;
 };
 
 extern "C" {
+
+void rnf_set_content_id_provider(rnf_content_id_fn fn, void* ctx) {
+  std::lock_guard<std::mutex> guard(contentIdLock);
+  contentIdProvider = fn;
+  contentIdContext = ctx;
+  ++contentIdGeneration;
+}
 
 rn_status rnf_library_ensure(const char* root, char** failed_path) {
   if (failed_path) *failed_path = nullptr;
@@ -393,7 +406,8 @@ rn_status rnf_library_scan_projects(const char* dir_c, rnf_project_list** out) {
       Entry de = inspect(path);
       if (de.ok) date = de.modified;
     }
-    list->items.push_back({path, stem(n), lower(rom["sha256"].asString()),
+    list->items.push_back({path, stem(n), rom["identity"].asString() == "content"
+                               ? rom["sha256"].asString() : lower(rom["sha256"].asString()),
                            rom["name"].isString() ? rom["name"].asString() : "", date});
   }
   std::stable_sort(list->items.begin(), list->items.end(),
@@ -446,30 +460,58 @@ rnf_rom_hash_cache* rnf_rom_hash_cache_new(void) {
 }
 void rnf_rom_hash_cache_free(rnf_rom_hash_cache* c) { delete c; }
 
-rn_status rnf_rom_hash_cache_sha256(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
-                                    char out_hex[65]) {
-  if (!c || !path || !out_hex) return fail(RN_ERR_INVALID_ARG, "null argument");
+rn_status rnf_rom_hash_cache_content_id(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
+                                    char** out_id) {
+  if (out_id) *out_id = nullptr;
+  if (!c || !path || !out_id) return fail(RN_ERR_INVALID_ARG, "null argument");
   RNF_GUARD_BEGIN
+  // Hold the provider lock through the callback so replacing a context cannot race its use.
+  std::lock_guard<std::mutex> providerGuard(contentIdLock);
   auto key = std::make_tuple(std::string(path), size, modified);
   {
     std::lock_guard<std::mutex> g(c->lock);
+    if (c->identityGeneration != contentIdGeneration) {
+      c->cache.clear();
+      c->identityGeneration = contentIdGeneration;
+    }
     auto it = c->cache.find(key);
     if (it != c->cache.end()) {
-      std::memcpy(out_hex, it->second.c_str(), it->second.size() + 1);
+      *out_id = dup(it->second);
+      if (!*out_id) return fail(RN_ERR_INTERNAL, "allocation failed");
       return RN_OK;
     }
   }
-  char hex[65] = {0};
-  rn_status st = rn_sha256_file(path, hex);
-  if (st != RN_OK) return fail(st, rn_last_error());
-  std::string h = lower(hex);
+  char hex[65536] = {0};
+  if (contentIdProvider) {
+    if (!contentIdProvider(path, hex, sizeof hex, contentIdContext) || !hex[0] ||
+        !std::memchr(hex, 0, sizeof hex))
+      return fail(RN_ERR_IO, "content identity provider failed");
+  } else {
+    rn_status st = rn_sha256_file(path, hex);
+    if (st != RN_OK) return fail(st, rn_last_error());
+  }
+  std::string h = contentIdProvider ? std::string(hex) : lower(hex);
   {
     std::lock_guard<std::mutex> g(c->lock);
     c->cache[key] = h;
   }
-  std::memcpy(out_hex, h.c_str(), std::min<size_t>(h.size(), 64) + 1);
+  *out_id = dup(h);
+  if (!*out_id) return fail(RN_ERR_INTERNAL, "allocation failed");
   return RN_OK;
   RNF_GUARD_END(RN_ERR_INTERNAL)
+}
+
+rn_status rnf_rom_hash_cache_sha256(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
+                                    char out_hex[65]) {
+  if (!out_hex) return fail(RN_ERR_INVALID_ARG, "null argument");
+  out_hex[0] = 0;
+  char* id = nullptr;
+  rn_status status = rnf_rom_hash_cache_content_id(c, path, size, modified, &id);
+  if (status != RN_OK) return status;
+  const size_t length = std::strlen(id);
+  if (length <= 64) std::memcpy(out_hex, id, length + 1);
+  std::free(id);
+  return length <= 64 ? RN_OK : fail(RN_ERR_INVALID_ARG, "content identity exceeds SHA-256 buffer");
 }
 
 rnf_game_match rnf_rom_hash_cache_identify(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,

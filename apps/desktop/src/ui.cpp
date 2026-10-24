@@ -103,8 +103,8 @@ UI::UI(Deps d) : d_(d) {
   if (RNL_HAVE_CRT) menuFeatures_ |= RNF_MENU_FEATURE_CRT;
   if (RNL_HAVE_STEAM) menuFeatures_ |= RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK;
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
-  // Only a build with a second core offers the choice; a stale non-default setting stays visible so it can be fixed.
-  if (rn_core_available(RN_CORE_REPLAYNESCORE) || d_.settings->core != "nestopia") menuFeatures_ |= RNF_MENU_FEATURE_CORE;
+  // Offer a choice only when multiple product cores are available.
+  if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
   menu_ = rnf_menu_new(menuFeatures_);
   markers_ = rnf_markers_new();
   markerRepeat_ = rnf_step_repeater_new();

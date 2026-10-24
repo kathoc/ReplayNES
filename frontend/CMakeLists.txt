@@ -20,7 +20,7 @@ add_custom_command(
   VERBATIM)
 
 # Game database (titles / makers / years / genres; see tools/nesdb/README.md): compiled in as data.
-set(RNF_NESDB ${CMAKE_CURRENT_SOURCE_DIR}/data/nesdb.tsv)
+set(RNF_NESDB "${RN_PRODUCT_GAMEDB}")
 add_custom_command(
   OUTPUT ${RNF_GEN_DIR}/nesdb_data.inc
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_data.py ${RNF_NESDB}

@@ -63,7 +63,11 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
-  if (id == "system.core") return s.core == "replaynescore" ? 1 : 0;
+  if (id == "system.core") {
+    for (size_t i = 0; i < rnf_product_core_count(); ++i)
+      if (s.core == rnf_product_core_id(i)) return int(i);
+    return 0;
+  }
   if (id == "system.language") return s.language == "ja" ? 1 : s.language == "en" ? 2 : 0;
   if (id == "system.autosave") {
     for (int i = 0; i < 5; ++i)
@@ -77,10 +81,15 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
 std::string UI::itemValue(const std::string& id) const {
   const Settings& s = *d_.settings;
   const InputRouter& in = *d_.input;
-  if (id == "system.core" && s.core != "nestopia" && s.core != "replaynescore") return s.core;
+  if (id == "system.core") {
+    bool available = false;
+    for (size_t i = 0; i < rnf_product_core_count(); ++i)
+      if (s.core == rnf_product_core_id(i)) available = true;
+    if (!available) return s.core;
+  }
   if (id == "system.core_status") {
-    if (s.core != "nestopia" && s.core != "replaynescore") return TR("Unknown core; select a supported core");
-    rn_core_kind core = s.core == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA;
+    if (s.core != "nestopia" && s.core != "replaynescore" && s.core != "external") return TR("Unknown core; select a supported core");
+    rn_core_kind core = s.core == "external" ? RN_CORE_EXTERNAL : s.core == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA;
     if (!rn_core_available(core)) return TR("Not included in this build");
     return core == RN_CORE_REPLAYNESCORE ? TR("Development: no recording or saves") : TR("Available");
   }
@@ -230,7 +239,7 @@ void UI::adjustItem(const std::string& id, int dir) {
       in.setSOCD(next == 1 ? "last_wins" : next == 2 ? "allow" : "neutral");
       return;
     } else if (id == "system.core") {
-      s.core = next == 1 ? "replaynescore" : "nestopia";
+      if (const char* core = rnf_product_core_id(size_t(next))) s.core = core;
     } else if (id == "system.language") {
       s.language = next == 1 ? "ja" : next == 2 ? "en" : "auto";
       changed();

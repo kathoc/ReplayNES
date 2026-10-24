@@ -498,8 +498,9 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   // Settings > System > ReplayNES Version: the version and the updates in one page (no Updates page).
   m = rnf_menu_new(kAll);
   CHECK(rnf_menu_page_find(m, "system.updates") < 0);
-  CHECK((itemIds(m, "settings.system") ==
-         std::vector<std::string>{"system.core", "system.language", "system.steam", "system.about", "system.detail", "system.quit"}));
+  std::vector<std::string> systemItems{"system.language", "system.steam", "system.about", "system.detail", "system.quit"};
+  if (rnf_product_core_count() > 1) systemItems.insert(systemItems.begin(), "system.core");
+  CHECK(itemIds(m, "settings.system") == systemItems);
   CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "updates.status", "updates.check",
                                                                 "updates.apply", "updates.auto", "about.folders"}));
   CHECK((itemIds(m, "about.folders") ==

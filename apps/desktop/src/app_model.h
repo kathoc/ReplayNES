@@ -17,6 +17,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "replaynes/product.h"
+
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -65,7 +67,7 @@ class AppModel {
   /// resumed then and temporary sessions stay in memory).
   void setupSessionPersistence(bool enabled);
   bool persistSessions() const { return persist_; }
-  std::string selectedCore = "nestopia";  // applies only to newly created games
+  std::string selectedCore = RN_PRODUCT_DEFAULT_CORE;  // applies only to newly created games
   /// Launch: --rom opens a temporary session (explicit open); otherwise the library shows and the
   /// last session (resume record: also after a crash / force quit) is offered by its "Continue"
   /// card (resume = false: not offered). Nothing is opened by itself.

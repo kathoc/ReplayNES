@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "library.h"
+#include "replaynes/product.h"
 
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -190,6 +191,10 @@ void LibraryModel::refresh() {
 }
 
 std::string LibraryModel::addTestCartridge(std::string* error) {
+  if (!RN_PRODUCT_NES) {
+    if (error) *error = "Test Cartridge is not available for this product";
+    return "";
+  }
   for (const LibraryROM& r : roms_)
     if (r.known && r.game.id && std::string(r.game.id) == RNF_TEST_CARTRIDGE_GAME_ID) return r.path;
   if (!ensureFolders()) {
@@ -223,8 +228,9 @@ void LibraryModel::scanThread() {
         rnf_rom_entry e{};
         if (!rnf_rom_list_get(roms, i, &e)) continue;
         LibraryROM rom{e.path, e.name, e.relative_path, e.size, e.modified, ""};
-        char hex[65] = {0};
-        if (rnf_rom_hash_cache_sha256(hashes_, e.path, e.size, e.modified, hex) == RN_OK) rom.sha256 = hex;
+        char* id = nullptr;
+        if (rnf_rom_hash_cache_content_id(hashes_, e.path, e.size, e.modified, &id) == RN_OK && id) rom.sha256 = id;
+        rnf_string_free(id);
         rom.known = rnf_rom_hash_cache_identify(hashes_, e.path, e.size, e.modified, &rom.game) != RNF_GAME_MATCH_NONE;
         r.roms.push_back(std::move(rom));
       }

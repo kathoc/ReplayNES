@@ -120,7 +120,7 @@ namespace {
 constexpr int kFocusHero = -1;
 constexpr int kFocusPageStart = -2;  // L / R: the first card of the new page
 constexpr int kFocusBar = -3;        // the filter / sort / search row
-constexpr int kBarItems = RNF_LIBRARY_FILTER_COUNT + 3;  // filters, sort, search, Add Test Cartridge
+constexpr int kBarItems = RNF_LIBRARY_FILTER_COUNT + 2 + int(RN_PRODUCT_NES);  // filters, sort, search, Add Test Cartridge
 constexpr int kBarSort = RNF_LIBRARY_FILTER_COUNT, kBarSearch = RNF_LIBRARY_FILTER_COUNT + 1;
 constexpr int kBarTestCart = RNF_LIBRARY_FILTER_COUNT + 2;
 constexpr ImU32 kStar = IM_COL32(255, 200, 40, 255);
@@ -151,12 +151,13 @@ void UI::libraryBarAction(int item) {
   } else if (item == kBarSearch) {
     focusSearch_ = true;
     searchShown_ = true;
-  } else if (item == kBarTestCart) {
+  } else if (RN_PRODUCT_NES && item == kBarTestCart) {
     addTestCartridge(ImGui::GetTime());
   }
 }
 
 void UI::addTestCartridge(double now) {
+  if (!RN_PRODUCT_NES) return;
   LibraryModel* lib = d_.library;
   std::string error;
   std::string path = lib->addTestCartridge(&error);
@@ -274,7 +275,7 @@ void UI::buildLibraryBar(ImDrawList* dl, const LRect& bar, double now) {
   items.push_back({std::string(icons::glyph("list")) + "  " + rnf_library_sort_name(lib->sort()), false});
   std::string searchText = search_[0] ? std::string(search_) : std::string(TR("Search"));
   items.push_back({std::string(icons::glyph("search")) + "  " + searchText, search_[0] != 0});
-  items.push_back({std::string(icons::glyph("plus")) + "  " + TR("Add Test Cartridge"), false});
+  if (RN_PRODUCT_NES) items.push_back({std::string(icons::glyph("plus")) + "  " + TR("Add Test Cartridge"), false});
   // Natural widths, shrunk together when the row is narrow (labels are then cut).
   std::vector<float> widths;
   float total = gap * 4 + gap * float(items.size() - 1);
@@ -425,10 +426,11 @@ void UI::buildLibrary(double now) {
     textCentered(dl, m.hint(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f + m.label() * 1.6f, kTextFaint,
                  TR(".nes files; they appear here by themselves"));
     // Buttons: Open Folder (A), Reload (X), Add Test Cartridge (Y).
-    float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * 2) / 3), bh = m.label() * 2.2f;
-    float bx = r.x + (r.w - bw * 3 - gap * 2) / 2;
+    constexpr int buttons = RN_PRODUCT_NES ? 3 : 2;
+    float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * (buttons - 1)) / buttons), bh = m.label() * 2.2f;
+    float bx = r.x + (r.w - bw * buttons - gap * (buttons - 1)) / 2;
     static const char* const kIcon[3] = {"folder-open", "refresh", "plus"};
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < buttons; ++i) {
       const LRect br_{bx + float(i) * (bw + gap), r.bottom() - bh - S(24), bw, bh};
       ImGui::SetCursorScreenPos(tl(br_));
       ImGui::PushID(i);
@@ -452,7 +454,7 @@ void UI::buildLibrary(double now) {
     if (!lib->folderError().empty()) description_ = lib->folderError();
     prompt({"ui.confirm"}, TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
-    prompt({"face.north"}, TR("Add Test Cartridge"));
+    if (RN_PRODUCT_NES) prompt({"face.north"}, TR("Add Test Cartridge"));
   } else {
     // Continue: the last session (also after a crash), else the latest project.
     if (hero) {

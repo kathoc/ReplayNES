@@ -1033,7 +1033,7 @@ void rnf_rom_list_free(rnf_rom_list* l);
 typedef struct rnf_project_entry {
   const char* path;
   const char* name; /* without .nesrec */
-  const char* rom_sha256; /* lowercase */
+  const char* rom_sha256; /* File SHA-256 is lowercase; content IDs preserve case. */
   const char* rom_name;
   double modified; /* last save (manifest.json date) */
 } rnf_project_entry;
@@ -1049,12 +1049,22 @@ char* rnf_library_timestamp(double date);          /* "yyyy-MM-dd HHmm", local t
 /* <projects_dir>/<ROM name> <timestamp>.nesrec, " 2", " 3" ... appended if taken. */
 char* rnf_library_new_project_path(const char* projects_dir, const char* rom_name, double date);
 
-/* SHA-256 of ROM files cached by path + size + modification date. Thread-safe. */
+/* Optional content identity. Return nonzero after writing a nonempty NUL-terminated ID
+ * within cap bytes; return zero on failure. NULL restores file SHA-256. Register at startup;
+ * replacing the provider invalidates cached identities. Context must remain valid while used.
+ * Calls are serialized; callbacks must not call the provider setter or identity-cache APIs. */
+typedef int (*rnf_content_id_fn)(const char* path, char* out, size_t cap, void* ctx);
+void rnf_set_content_id_provider(rnf_content_id_fn fn, void* ctx);
+
+/* Content IDs (file SHA-256 by default), cached by path + size + modification date. Thread-safe. */
 typedef struct rnf_rom_hash_cache rnf_rom_hash_cache;
 rnf_rom_hash_cache* rnf_rom_hash_cache_new(void);
 void rnf_rom_hash_cache_free(rnf_rom_hash_cache* c);
+/* Allocated opaque identity (rnf_string_free); providers receive a 65536-byte output buffer. */
+rn_status rnf_rom_hash_cache_content_id(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
+                                       char** out_id);
 rn_status rnf_rom_hash_cache_sha256(rnf_rom_hash_cache* c, const char* path, int64_t size, double modified,
-                                    char out_hex[65]); /* lowercase */
+                                    char out_hex[65]); /* Content IDs preserve case; maximum 64 bytes. */
 
 /* "Reset Project" backup: "<name> (Before Reset yyyy-MM-dd HH.mm).<ext>" next to the project,
  * " 2", " 3" ... appended while exists(candidate) (NULL: the file system). */
@@ -1783,6 +1793,10 @@ void rnf_crt_hiss_free(rnf_crt_hiss* h);
 void rnf_crt_hiss_reset(rnf_crt_hiss* h);
 void rnf_crt_hiss_mix(rnf_crt_hiss* h, int16_t* pcm, size_t n, float hiss);
 float rnf_crt_hiss_level(const rnf_crt_hiss* h); /* level reached by the last call */
+
+/* Product-visible, available core choices, in menu order. IDs are persistent settings values. */
+size_t rnf_product_core_count(void);
+const char* rnf_product_core_id(size_t index);
 
 #ifdef __cplusplus
 }

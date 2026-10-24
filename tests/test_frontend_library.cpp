@@ -1,5 +1,7 @@
 // Frontend core: ROM library folders, scanning, SHA-256 matching of projects, naming, and the
 // "Reset Project" backup name. Ported from the macOS LibraryTests / ProjectResetTests.
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -12,6 +14,13 @@
 using namespace rnft;
 
 namespace {
+
+std::string romExtension() {
+  const std::string extensions = RN_PRODUCT_ROM_EXTS;
+  std::string first = extensions.substr(0, extensions.find(';'));
+  if (!first.empty() && first.front() == '.') first.erase(0, 1);
+  return "." + first;
+}
 
 void writeBytes(const std::string& path, const std::string& bytes) { std::ofstream(path, std::ios::binary) << bytes; }
 
@@ -49,22 +58,27 @@ TEST_CASE("ensure creates the folders and reports conflicts") {
   CHECK_EQ(take(failed), rn::fs::join(bad, "ROM"));
 }
 
-TEST_CASE("scan finds .nes files one level deep, sorted by name") {
+TEST_CASE("scan finds product ROM extensions one level deep, sorted by name") {
   std::string tmp = rntest::tempDir("frontend-lib");
   REQUIRE_EQ(rnf_library_ensure(tmp.c_str(), nullptr), RN_OK);
   std::string romDir = rn::fs::join(tmp, "ROM");
   rn::fs::createDirs(rn::fs::join(romDir, "Sub/Deeper"));
-  for (auto name : {"b game.NES", "A Game.nes", "Sub/c game.Nes", "Sub/Deeper/too deep.nes", "readme.txt",
-                    "notes.nes.txt", "game10.nes", "game9.nes", ".hidden.nes"})
+  const std::string ext = romExtension();
+  std::string upper = ext, mixed = ext;
+  std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+  if (mixed.size() > 1) mixed[1] = char(std::toupper(static_cast<unsigned char>(mixed[1])));
+  for (const auto& name : {"b game" + upper, "A Game" + ext, "Sub/c game" + mixed,
+                           "Sub/Deeper/too deep" + ext, std::string("readme.txt"),
+                           "notes" + ext + ".txt", "game10" + ext, "game9" + ext, ".hidden" + ext})
     writeBytes(rn::fs::join(romDir, name), "NES\x1a");
   rnf_rom_list* l = nullptr;
   REQUIRE_EQ(rnf_library_scan_roms(romDir.c_str(), nullptr, nullptr, &l), RN_OK);
   auto r = roms(l);
   std::vector<std::string> names;
   for (auto& e : r) names.push_back(e.name);
-  CHECK((names == std::vector<std::string>{"A Game", "b game", "c game", "game9", "game10"}));
+  REQUIRE((names == std::vector<std::string>{"A Game", "b game", "c game", "game9", "game10"}));
   for (auto& e : r)
-    if (std::string(e.name) == "c game") CHECK_EQ(std::string(e.relative_path), "Sub/c game.Nes");
+    if (std::string(e.name) == "c game") CHECK_EQ(std::string(e.relative_path), "Sub/c game" + mixed);
   CHECK_EQ(r[0].size, int64_t(4));
   CHECK(r[0].modified > 1.5e9);
   rnf_rom_list_free(l);
@@ -74,6 +88,7 @@ TEST_CASE("scan finds .nes files one level deep, sorted by name") {
   // A frontend-supplied collation (here: reverse byte order) decides the order.
   REQUIRE_EQ(rnf_library_scan_roms(romDir.c_str(), [](const char* a, const char* b, void*) { return -std::strcmp(a, b); },
                                    nullptr, &l), RN_OK);
+  REQUIRE_EQ(rnf_rom_list_count(l), size_t(5));
   CHECK_EQ(std::string(roms(l)[0].name), "game9");
   rnf_rom_list_free(l);
 }
@@ -82,7 +97,7 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
   std::string tmp = rntest::tempDir("frontend-lib");
   REQUIRE_EQ(rnf_library_ensure(tmp.c_str(), nullptr), RN_OK);
   std::string romDir = rn::fs::join(tmp, "ROM"), projDir = rn::fs::join(tmp, "Projects");
-  std::string rom = rntest::writeTestRom(romDir, "Test ROM.nes");
+  std::string rom = rntest::writeTestRom(romDir, ("Test ROM" + romExtension()).c_str());
   const double date = 1790000000;
   std::string stamp = take(rnf_library_timestamp(date));
   CHECK_EQ(stamp.size(), size_t(15));
@@ -101,12 +116,12 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
   std::string dir2 = take(rnf_library_new_project_path(projDir.c_str(), "Test ROM", date));
   CHECK_EQ(dir2, rn::fs::join(projDir, "Test ROM " + stamp + " 2" RN_PRODUCT_PROJECT_EXT));
 
-  std::string renamed = rn::fs::join(romDir, "Renamed.nes");
+  std::string renamed = rn::fs::join(romDir, "Renamed" + romExtension());
   REQUIRE(std::rename(rom.c_str(), renamed.c_str()) == 0);
   std::vector<uint8_t> bytes;
   rn::fs::readFile(renamed, bytes);
   bytes.back() ^= 0xFF;
-  rn::fs::writeFileAtomic(rn::fs::join(romDir, "Other.nes"), bytes.data(), bytes.size());
+  rn::fs::writeFileAtomic(rn::fs::join(romDir, "Other" + romExtension()), bytes.data(), bytes.size());
   writeBytes(rn::fs::join(projDir, "not a project.txt"), "junk");
 
   rnf_project_list* p = nullptr;
@@ -115,7 +130,7 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
   rnf_project_entry pe;
   rnf_project_list_get(p, 0, &pe);
   CHECK_EQ(std::string(pe.name), "Test ROM " + stamp);
-  CHECK_EQ(std::string(pe.rom_name), "Test ROM.nes");
+  CHECK_EQ(std::string(pe.rom_name), "Test ROM" + romExtension());
   std::string sha = pe.rom_sha256;
 
   rnf_rom_hash_cache* cache = rnf_rom_hash_cache_new();
@@ -172,7 +187,7 @@ TEST_CASE("non-ASCII folder and file names") {
   std::string romDir = rn::fs::join(root, RNF_LIBRARY_ROM_DIR);
   std::string sub = rn::fs::join(romDir, "ゲーム");
   REQUIRE(rn::fs::createDirs(sub).ok());
-  REQUIRE(rn::fs::writeFileAtomic(rn::fs::join(sub, "マリオ.nes"), "NES\x1a", 4).ok());
+  REQUIRE(rn::fs::writeFileAtomic(rn::fs::join(sub, "マリオ" + romExtension()), "NES\x1a", 4).ok());
   double modified[2] = {0, 0};
   for (double& m : modified) {
     rnf_rom_list* l = nullptr;
@@ -180,8 +195,8 @@ TEST_CASE("non-ASCII folder and file names") {
     auto r = roms(l);
     REQUIRE_EQ(r.size(), size_t(1));
     CHECK_EQ(std::string(r[0].name), "マリオ");
-    CHECK_EQ(std::string(r[0].relative_path), "ゲーム/マリオ.nes");
-    CHECK_EQ(std::string(r[0].path), rn::fs::join(sub, "マリオ.nes"));
+    CHECK_EQ(std::string(r[0].relative_path), "ゲーム/マリオ" + romExtension());
+    CHECK_EQ(std::string(r[0].path), rn::fs::join(sub, "マリオ" + romExtension()));
     CHECK_EQ(r[0].size, int64_t(4));
     m = r[0].modified;
     rnf_rom_list_free(l);
@@ -200,3 +215,71 @@ TEST_CASE("backup name keeps Windows separators") {
   CHECK_EQ(take(rnf_backup_path("C:\\x\\NoExt\\", d, none, nullptr)), "C:\\x\\NoExt (Before Reset 2026-10-06 20.05)" RN_PRODUCT_PROJECT_EXT);
 }
 #endif
+
+TEST_CASE("content identity provider replaces hashes and invalidates existing caches") {
+  struct ProviderScope {
+    ~ProviderScope() { rnf_set_content_id_provider(nullptr, nullptr); }
+  } scope;
+  std::string tmp = rntest::tempDir("frontend-content-id");
+  std::string path = rn::fs::join(tmp, "set.zip");
+  writeBytes(path, "archive");
+  rnf_rom_hash_cache* cache = rnf_rom_hash_cache_new();
+  REQUIRE(cache != nullptr);
+  char original[65] = {}, id[65] = {};
+  REQUIRE_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, original), RN_OK);
+  struct Context { int calls = 0; const char* id = "Arcade:Set-A"; } context;
+  auto provider = [](const char*, char* out, size_t cap, void* opaque) {
+    auto& c = *static_cast<Context*>(opaque);
+    ++c.calls;
+    if (std::strlen(c.id) >= cap) return 0;
+    std::strcpy(out, c.id);
+    return 1;
+  };
+  rnf_set_content_id_provider(provider, &context);
+  REQUIRE_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_OK);
+  CHECK_EQ(std::string(id), "Arcade:Set-A");
+  REQUIRE_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_OK);
+  CHECK_EQ(context.calls, 1);
+  context.id = "Arcade:Set-B";
+  rnf_set_content_id_provider(provider, &context);
+  REQUIRE_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_OK);
+  CHECK_EQ(std::string(id), "Arcade:Set-B");
+  CHECK_EQ(context.calls, 2);
+  std::string longId(200, 'A');
+  context.id = longId.c_str();
+  rnf_set_content_id_provider(provider, &context);
+  char* allocated = nullptr;
+  REQUIRE_EQ(rnf_rom_hash_cache_content_id(cache, path.c_str(), 7, 1, &allocated), RN_OK);
+  CHECK_EQ(take(allocated), longId);
+  CHECK_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_ERR_INVALID_ARG);
+  CHECK_EQ(id[0], '\0');
+
+  rnf_set_content_id_provider([](const char*, char*, size_t, void*) { return 0; }, nullptr);
+  CHECK_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_ERR_IO);
+  rnf_set_content_id_provider([](const char*, char* out, size_t cap, void*) {
+    std::memset(out, 'X', cap);
+    return 1;
+  }, nullptr);
+  CHECK_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_ERR_IO);
+  rnf_set_content_id_provider([](const char*, char* out, size_t, void*) { out[0] = 0; return 1; }, nullptr);
+  CHECK_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_ERR_IO);
+  rnf_set_content_id_provider(nullptr, nullptr);
+  REQUIRE_EQ(rnf_rom_hash_cache_sha256(cache, path.c_str(), 7, 1, id), RN_OK);
+  CHECK_EQ(std::string(id), std::string(original));
+  rnf_rom_hash_cache_free(cache);
+}
+
+TEST_CASE("project scan preserves opaque content identities") {
+  std::string tmp = rntest::tempDir("frontend-content-project");
+  std::string project = rn::fs::join(tmp, "Set" RN_PRODUCT_PROJECT_EXT);
+  REQUIRE(rn::fs::createDirs(project).ok());
+  writeBytes(rn::fs::join(project, "manifest.json"),
+             "{\"format\":\"" RN_PRODUCT_PROJECT_FORMAT "\",\"rom\":{\"sha256\":\"Arcade:Set-A\",\"identity\":\"content\",\"name\":\"set.zip\"}}");
+  rnf_project_list* projects = nullptr;
+  REQUIRE_EQ(rnf_library_scan_projects(tmp.c_str(), &projects), RN_OK);
+  REQUIRE_EQ(rnf_project_list_count(projects), size_t(1));
+  rnf_project_entry entry{};
+  REQUIRE(rnf_project_list_get(projects, 0, &entry));
+  CHECK_EQ(std::string(entry.rom_sha256), "Arcade:Set-A");
+  rnf_project_list_free(projects);
+}

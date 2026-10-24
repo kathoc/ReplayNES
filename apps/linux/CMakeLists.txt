@@ -107,6 +107,13 @@ target_include_directories(${RN_PRODUCT_EXECUTABLE} PRIVATE src ${SHADER_OUT})
 target_link_libraries(${RN_PRODUCT_EXECUTABLE} PRIVATE rnl_app rnl_crt_export rnl_render rnl_export SDL3::SDL3 Vulkan::Vulkan
   PkgConfig::FONTCONFIG Threads::Threads)
 target_compile_options(${RN_PRODUCT_EXECUTABLE} PRIVATE ${RNL_WARNINGS})
+if(RN_PRODUCT_STARTUP_TARGET)
+  if(NOT TARGET ${RN_PRODUCT_STARTUP_TARGET})
+    message(FATAL_ERROR "RN_PRODUCT_STARTUP_TARGET must name an existing CMake target")
+  endif()
+  target_link_libraries(${RN_PRODUCT_EXECUTABLE} PRIVATE ${RN_PRODUCT_STARTUP_TARGET})
+  target_compile_definitions(${RN_PRODUCT_EXECUTABLE} PRIVATE RN_PRODUCT_HAS_STARTUP=1)
+endif()
 # In-app updates through the XDG Flatpak portal (GDBus; GLib is in org.freedesktop.Platform).
 pkg_check_modules(GIO IMPORTED_TARGET gio-2.0 gio-unix-2.0)
 if(GIO_FOUND)

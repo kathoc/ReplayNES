@@ -167,6 +167,7 @@ struct World {
     library = std::make_unique<LibraryModel>(paths.libraryRoot);
     library->ensureFolders();
     app = std::make_unique<AppModel>(paths, emu.get(), library.get(), &host);
+    app->selectedCore = "nestopia";  // This fixture exercises NES recording workflows.
     app->setupSessionPersistence(true);
   }
   ~World() {
@@ -622,6 +623,13 @@ TEST_CASE("library search") {
 }
 
 TEST_CASE("library: Add Test Cartridge writes it once, the game database names it") {
+  if (!RN_PRODUCT_NES) {
+    LibraryModel lib(tmpDir("testcart-disabled"));
+    std::string error;
+    CHECK(lib.addTestCartridge(&error).empty());
+    CHECK_FALSE(fs::exists(lib.romDir() + "/" RNF_TEST_CARTRIDGE_FILE));
+    return;
+  }
   std::string dir = tmpDir("testcart-lib");
   LibraryModel lib(dir + "/" RN_PRODUCT_DATA_DIR);
   auto scan = [&] {
@@ -2534,7 +2542,8 @@ TEST_CASE("export: MP4 retime of a long take (27:53, 100577 frames): 64-bit medi
 }
 
 TEST_CASE("core preference preserves unknown ids and applies only to new sessions") {
-  CHECK_EQ(Settings::parse("").core, std::string("nestopia"));
+  CHECK_EQ(Settings::parse("").core, std::string(RN_PRODUCT_DEFAULT_CORE));
+  CHECK_EQ(Settings::parse("core=external\n").core, std::string("external"));
   Settings preferences;
   preferences.core = "replaynescore";
   CHECK_EQ(Settings::parse(preferences.serialize()).core, preferences.core);
@@ -2663,4 +2672,62 @@ TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture fr
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   thumbs.pollRomPictures();
   CHECK_FALSE(thumbs.forRom(bad));
+}
+
+TEST_CASE("product core choices contain only available product cores") {
+  size_t expected = RN_PRODUCT_NES ? size_t(rn_core_available(RN_CORE_NESTOPIA) != 0) + size_t(rn_core_available(RN_CORE_REPLAYNESCORE) != 0) : 0;
+  expected += size_t(rn_core_available(RN_CORE_EXTERNAL) != 0);
+  CHECK_EQ(rnf_product_core_count(), expected);
+  for (size_t i = 0; i < expected; ++i) {
+    const std::string id = rnf_product_core_id(i);
+    if (!RN_PRODUCT_NES) CHECK_EQ(id, "external");
+    CHECK(id == "nestopia" || id == "replaynescore" || id == "external");
+  }
+  CHECK(rnf_product_core_id(expected) == nullptr);
+  AppModel app(Paths{}, nullptr, nullptr, nullptr);
+  CHECK_EQ(app.selectedCore, std::string(RN_PRODUCT_DEFAULT_CORE));
+}
+
+TEST_CASE("library product identity matches projects and persists catalog entries") {
+  struct ProviderScope {
+    ProviderScope() {
+      rnf_set_content_id_provider([](const char*, char* out, size_t cap, void*) -> int {
+        const char id[] = "ArcadeSet:Revision-A:0123456789abcdefghijklmnopqrstuvwxyz:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if (cap < sizeof(id)) return 0;
+        std::memcpy(out, id, sizeof(id));
+        return 1;
+      }, nullptr);
+    }
+    ~ProviderScope() { rnf_set_content_id_provider(nullptr, nullptr); }
+  } provider;
+  const std::string root = tmpDir("product-identity");
+  fs::remove_all(root);
+  {
+    LibraryModel lib(root);
+    REQUIRE(lib.ensureFolders());
+    lib.setPrefsFile(root + "/catalog.json");
+    testRom(lib.romDir(), "set" + testRomExtension());
+    const std::string project = lib.projectsDir() + "/saved" RN_PRODUCT_PROJECT_EXT;
+    fs::create_directories(project);
+    std::ofstream(project + "/manifest.json") << R"({"format":")" RN_PRODUCT_PROJECT_FORMAT R"(","formatVersion":2,"rom":{"sha256":"ArcadeSet:Revision-A:0123456789abcdefghijklmnopqrstuvwxyz:ABCDEFGHIJKLMNOPQRSTUVWXYZ","identity":"content","name":"set"},"takes":[]})";
+    lib.refresh();
+    for (int i = 0; i < 300 && !lib.poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE_EQ(lib.roms().size(), size_t(1));
+    const LibraryROM rom = lib.roms().front();
+    CHECK_EQ(rom.sha256, "ArcadeSet:Revision-A:0123456789abcdefghijklmnopqrstuvwxyz:ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    CHECK_EQ(lib.projectsFor(rom).size(), size_t(1));
+    CHECK(lib.toggleFavorite(rom));
+    lib.recordPlay(rom.sha256, 1234, 30);
+  }
+  LibraryModel restored(root);
+  restored.setPrefsFile(root + "/catalog.json");
+  restored.refresh();
+  for (int i = 0; i < 300 && !restored.poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  REQUIRE_EQ(restored.roms().size(), size_t(1));
+  const auto& rom = restored.roms().front();
+  CHECK(restored.isFavorite(rom));
+  rnf_library_history_entry history{};
+  REQUIRE(restored.history(rom, &history));
+  CHECK_EQ(history.plays, int64_t(1));
+  CHECK_EQ(history.play_seconds, 30.0);
 }

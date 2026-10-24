@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "common.hpp"
+#include "replaynes/product.h"
+#include "replaynes/replaynes.h"
 
 using namespace rnf;
 
@@ -316,8 +318,29 @@ std::vector<Crumb> crumbsOf(const rnf_menu* m) {
 
 extern "C" {
 
+size_t rnf_product_core_count(void) {
+  size_t count = 0;
+  if (RN_PRODUCT_NES && rn_core_available(RN_CORE_NESTOPIA)) ++count;
+  if (RN_PRODUCT_NES && rn_core_available(RN_CORE_REPLAYNESCORE)) ++count;
+  if (rn_core_available(RN_CORE_EXTERNAL)) ++count;
+  return count;
+}
+
+const char* rnf_product_core_id(size_t index) {
+  if (RN_PRODUCT_NES && rn_core_available(RN_CORE_NESTOPIA)) {
+    if (index == 0) return "nestopia";
+    --index;
+  }
+  if (RN_PRODUCT_NES && rn_core_available(RN_CORE_REPLAYNESCORE)) {
+    if (index == 0) return "replaynescore";
+    --index;
+  }
+  return index == 0 && rn_core_available(RN_CORE_EXTERNAL) ? "external" : nullptr;
+}
+
 rnf_menu* rnf_menu_new(uint32_t features) {
   RNF_GUARD_BEGIN
+  if (rnf_product_core_count() <= 1) features &= ~uint32_t(RNF_MENU_FEATURE_CORE);
   auto m = std::make_unique<rnf_menu>();
   for (const PageDef& d : kPages) {
     if (!featureOK(d.features, features)) continue;
@@ -365,7 +388,7 @@ int rnf_menu_item_get(const rnf_menu* m, size_t page, size_t item, rnf_menu_item
   out->icon = d->icon;
   out->kind = d->kind;
   out->target = d->target;
-  out->choice_count = d->choices.size();
+  out->choice_count = std::strcmp(d->id, "system.core") == 0 ? rnf_product_core_count() : d->choices.size();
   return 1;
 }
 
@@ -380,6 +403,11 @@ int rnf_menu_item_find(const rnf_menu* m, size_t page, const char* id) {
 const char* rnf_menu_item_choice(const rnf_menu* m, size_t page, size_t item, size_t choice) {
   if (!m || page >= m->pages.size() || item >= m->pages[page].items.size()) return nullptr;
   const ItemDef* d = m->pages[page].items[item].def;
+  if (std::strcmp(d->id, "system.core") == 0) {
+    const char* id = rnf_product_core_id(choice);
+    if (!id) return nullptr;
+    return std::strcmp(id, "nestopia") == 0 ? "=Nestopia" : std::strcmp(id, "replaynescore") == 0 ? "=ReplayNEScore" : "=External";
+  }
   return choice < d->choices.size() ? d->choices[choice] : nullptr;
 }
 
