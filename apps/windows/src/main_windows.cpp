@@ -21,10 +21,17 @@
 #include <memory>
 #include <string>
 
+#include "replaynes/product.h"
 #include "app.h"
 #include "d3d11_renderer.h"
 #include "update_service.h"
+#if RNW_HAVE_UPDATES
 #include "update_winsparkle.h"
+#endif
+
+#ifdef RN_PRODUCT_HAS_STARTUP
+extern "C" void rn_product_startup(void);
+#endif
 
 namespace {
 
@@ -65,15 +72,20 @@ int main(int argc, char** argv) {
   using namespace rnl;
   setupOutput(argc, argv);
   dropLogArgument(&argc, argv);
+#if RNW_HAVE_UPDATES
   // Started by an older ReplayNES from an unpacked update (update_winsparkle.h): install it.
   if (argc >= 4 && std::strcmp(argv[1], "--finish-update") == 0) return finishUpdate(argc, argv);
+#endif
   if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
-    std::printf("ReplayNES %s\n", RNL_APP_VERSION);
+    std::printf("%s %s\n", RN_PRODUCT_NAME, RNL_APP_VERSION);
     return 0;
   }
+#ifdef RN_PRODUCT_HAS_STARTUP
+  rn_product_startup();
+#endif
   PlatformHooks platform;
   platform.version = RNL_APP_VERSION;
-  platform.executable = "ReplayNES.exe";
+  platform.executable = RN_PRODUCT_EXECUTABLE ".exe";
   platform.makeRenderer = [](const AppOptions& o) { return std::unique_ptr<Renderer>(new D3D11Renderer(o.vrr)); };
   platform.setupFrameThread = [] {
     // Multimedia Class Scheduler "Games": the frame loop gets priority boosts and timer precision.
@@ -83,7 +95,9 @@ int main(int argc, char** argv) {
   platform.sessionMode = [] { return std::string("windows"); };
   AppOptions opt;
   if (!parseAppArgs(argc, argv, platform, &opt)) return 2;
+#if RNW_HAVE_UPDATES
   // In-app updates: WinSparkle (WinSparkle.dll next to the exe; none without it).
   platform.makeUpdates = [&opt] { return makeWinSparkleUpdates(opt.argv); };
+#endif
   return runApp(opt, platform);
 }

@@ -2,7 +2,7 @@
 <!-- ReplayNES (Windows): UTF-8 as the process code page (the frontend's paths are UTF-8 strings),
      per-monitor DPI awareness v2, Windows 10 / 11, long paths, common controls 6 (message boxes). -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="io.github.replaynes.ReplayNES" version="1.0.0.0"/>
+  <assemblyIdentity type="win32" name="@RNL_PRODUCT_APP_ID_XML@" version="1.0.0.0"/>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>

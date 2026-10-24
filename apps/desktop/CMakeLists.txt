@@ -56,7 +56,16 @@ endif()
 
 # Windows executables declare UTF-8 as their code page (narrow file APIs, std::filesystem and
 # fopen then take the UTF-8 paths the frontend uses) - the tests too.
-set(RNL_WINDOWS_MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/../windows/resources/replaynes.manifest CACHE INTERNAL "")
+# XML attributes need escaping independently of the generated C/C++ product header.
+set(RNL_PRODUCT_APP_ID_XML "${RN_PRODUCT_APP_ID}")
+string(REPLACE "&" "&amp;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
+string(REPLACE "\"" "&quot;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
+string(REPLACE "<" "&lt;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
+string(REPLACE ">" "&gt;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
+string(REPLACE "'" "&apos;" RNL_PRODUCT_APP_ID_XML "${RNL_PRODUCT_APP_ID_XML}")
+set(RNL_WINDOWS_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/replaynes.manifest" CACHE INTERNAL "")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../windows/resources/replaynes.manifest.in
+  "${RNL_WINDOWS_MANIFEST}" @ONLY)
 function(rnl_windows_manifest target)
   if(NOT WIN32)
     return()

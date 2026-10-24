@@ -1,7 +1,11 @@
 # Default product identity. External profiles provide the same variables.
 set(RN_PRODUCT_NAME "ReplayNES")
 set(RN_PRODUCT_APP_ID "io.github.replaynes.ReplayNES")
-set(RN_PRODUCT_EXECUTABLE "replaynes-linux")
+if(WIN32)
+  set(RN_PRODUCT_EXECUTABLE "ReplayNES")
+else()
+  set(RN_PRODUCT_EXECUTABLE "replaynes-linux")
+endif()
 set(RN_PRODUCT_DATA_DIR "ReplayNES")
 set(RN_PRODUCT_ENV_PREFIX "REPLAYNES_")
 set(RN_PRODUCT_PROJECT_EXT ".nesrec")

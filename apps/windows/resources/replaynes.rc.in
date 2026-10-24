@@ -19,13 +19,13 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "CompanyName", "ReplayNES"
-      VALUE "FileDescription", "ReplayNES"
+      VALUE "CompanyName", "@RN_PRODUCT_NAME_C@"
+      VALUE "FileDescription", "@RN_PRODUCT_NAME_C@"
       VALUE "FileVersion", "@RNW_VERSION@"
-      VALUE "InternalName", "ReplayNES"
+      VALUE "InternalName", "@RN_PRODUCT_EXECUTABLE_C@"
       VALUE "LegalCopyright", "GPL-2.0-or-later"
-      VALUE "OriginalFilename", "ReplayNES.exe"
-      VALUE "ProductName", "ReplayNES"
+      VALUE "OriginalFilename", "@RN_PRODUCT_EXECUTABLE_C@.exe"
+      VALUE "ProductName", "@RN_PRODUCT_NAME_C@"
       VALUE "ProductVersion", "@RNW_VERSION@"
     END
   END
