@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <algorithm>
 #include <cstring>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "export/export_frame.h"
+#include "export/mp4_export.h"
+#include "png_writer.h"
+#include "replaynes/product.h"
 #include "support/rn_test.h"
 
 TEST_CASE("desktop export preserves NES pixels with the media scaler") {
@@ -53,5 +59,51 @@ TEST_CASE("desktop export rotates strided non-NES pixels in all four directions"
         const int sy = rotation == 0 ? y : rotation == 1 ? 223 - x : rotation == 2 ? 223 - y : x;
         CHECK(output[size_t(y) * g.canvas_width + x] == source[size_t(sy) * stride + sx]);
       }
+  }
+}
+
+TEST_CASE("product overscan policy: export geometry and pixels match independent native reference") {
+  auto defaults = rnl::defaultExportSettings();
+  CHECK_EQ(defaults.crop_top, RN_PRODUCT_OVERSCAN_CROP ? 8 : 0);
+  CHECK_EQ(defaults.crop_bottom, RN_PRODUCT_OVERSCAN_CROP ? 8 : 0);
+  CHECK_EQ(defaults.crop_left, 0); CHECK_EQ(defaults.crop_right, 0);
+  std::vector<uint32_t> source(256 * 240);
+  for (int y = 0; y < 240; ++y) for (int x = 0; x < 256; ++x)
+    source[size_t(y) * 256 + x] = 0xff000000u | (uint32_t(x) << 16) | (uint32_t(y) << 8) | uint32_t((x / 8 + y / 8) % 2 * 255);
+  rn_video_frame_info frame{source.data(), 256, 240, 256};
+  for (bool crop : {false, true}) {
+    auto requested = defaults;
+    requested.preset = {RNF_PRESET_NATIVE, 1, 0, 0};
+    requested.crop_top = requested.crop_bottom = requested.crop_left = requested.crop_right = crop ? 8 : 0;
+    const auto settings = rnl::productExportSettings(requested);
+    const int edge = RN_PRODUCT_OVERSCAN_CROP && crop ? 8 : 0;
+    const int width = 256 - edge * 2, height = 240 - edge * 2;
+    rnf_export_geometry g{};
+    rnf_export_geometry_compute(&settings, &g);
+    CHECK_EQ(g.src_x, edge); CHECK_EQ(g.src_y, edge);
+    CHECK_EQ(g.canvas_width, width); CHECK_EQ(g.canvas_height, height);
+    std::vector<uint32_t> actual(size_t(width) * height), expected(actual.size());
+    rnl::exportframe::scaleNearestFrame(frame, reinterpret_cast<uint8_t*>(actual.data()), size_t(width) * 4, g);
+    size_t different = 0;
+    unsigned maxDifference = 0;
+    for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+      const size_t i = size_t(y) * width + x;
+      expected[i] = source[size_t(y + edge) * 256 + x + edge];
+      different += actual[i] != expected[i];
+      for (int shift : {0, 8, 16})
+        maxDifference = std::max(maxDifference, unsigned(std::abs(int(actual[i] >> shift & 255) - int(expected[i] >> shift & 255))));
+    }
+    CHECK_EQ(different, size_t(0)); CHECK_EQ(maxDifference, 0u);
+    MESSAGE("overscan=" << RN_PRODUCT_OVERSCAN_CROP << ", requested=" << crop << ", differing pixels=" << different << ", maximum channel difference=" << maxDifference);
+    const std::string stem = std::string(RNL_TEST_TMP) + "/overscan-" + (RN_PRODUCT_OVERSCAN_CROP ? "on" : "off") + (crop ? "-requested" : "-full");
+    for (bool reference : {false, true}) {
+      const auto& pixels = reference ? expected : actual;
+      std::vector<uint8_t> rgba(pixels.size() * 4);
+      for (size_t i = 0; i < pixels.size(); ++i) {
+        rgba[i * 4] = uint8_t(pixels[i] >> 16); rgba[i * 4 + 1] = uint8_t(pixels[i] >> 8);
+        rgba[i * 4 + 2] = uint8_t(pixels[i]); rgba[i * 4 + 3] = 255;
+      }
+      CHECK(rnl::writePNG(stem + (reference ? "-reference.png" : ".png"), width, height, rgba.data()));
+    }
   }
 }

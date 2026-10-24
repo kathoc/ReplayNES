@@ -50,6 +50,9 @@
 #ifndef RN_PRODUCT_FLASH_FILTER
 #define RN_PRODUCT_FLASH_FILTER 1
 #endif
+#ifndef RN_PRODUCT_OVERSCAN_CROP
+#define RN_PRODUCT_OVERSCAN_CROP 1
+#endif
 #include <stddef.h>
 #include <stdint.h>
 

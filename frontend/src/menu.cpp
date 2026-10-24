@@ -127,15 +127,23 @@ const std::vector<ItemDef>& items() {
 #endif
       {"settings.display", "display.vtr", RNF_L("VTR Effect"), RNF_L("Videotape-style noise while rewinding (display only)"),
        "rewind-backward-5", TOGGLE, "", 0, {}},
-      {"settings.display", "display.shape", RNF_L("Picture Shape"), RNF_L("8:7 pixels, hide the edges"), "aspect-ratio", PAGE,
+      {"settings.display", "display.shape", RNF_L("Picture Shape"),
+#if RN_PRODUCT_OVERSCAN_CROP
+       RNF_L("8:7 pixels, hide the edges"),
+#else
+       RNF_L("8:7 Pixels"),
+#endif
+       "aspect-ratio", PAGE,
        "display.shape", 0, {}},
       {"settings.display", "display.crt_detail", RNF_L("CRT Details"), RNF_L("Scanlines, afterglow, signal"), "adjustments",
        PAGE, "display.crt", F_CRT, {}},
       // Display > Picture Shape.
       {"display.shape", "display.par87", RNF_L("8:7 Pixels"), RNF_L("The pixel shape of a CRT TV"), "aspect-ratio", TOGGLE,
        "", 0, {}},
+#if RN_PRODUCT_OVERSCAN_CROP
       {"display.shape", "display.overscan", RNF_L("Hide Edges"), RNF_L("Hides 8 pixels on each side, like a TV"),
        "crop", TOGGLE, "", 0, {}},
+#endif
       // Display > CRT details.
       {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "line-scan", SLIDER,
        "", F_CRT, {}},

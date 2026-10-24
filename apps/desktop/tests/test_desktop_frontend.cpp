@@ -2813,3 +2813,27 @@ TEST_CASE("device profile heading reserves space without changing legacy geometr
     CHECK(pageFits(m, profiles, nullptr));
   }
 }
+
+TEST_CASE("product overscan policy: settings defaults and opaque round trip") {
+  CHECK_EQ(Settings{}.hideOverscan, bool(RN_PRODUCT_OVERSCAN_CROP));
+#if RN_PRODUCT_OVERSCAN_CROP
+  CHECK(Settings::parse("hideOverscan=1\n").hideOverscan);
+  CHECK_FALSE(Settings::parse("hideOverscan=0\n").hideOverscan);
+  CHECK(Settings{}.serialize().find("hideOverscan=1\n") != std::string::npos);
+#else
+  CHECK(Settings{}.serialize().find("hideOverscan=") == std::string::npos);
+  for (const char* value : {"0", "1", "true", "false", "invalid", "9"}) {
+    const std::string line = std::string(" \thideOverscan = ") + value + " \r\n";
+    Settings settings = Settings::parse(line);
+    CHECK_FALSE(settings.hideOverscan);
+    settings.hideOverscan = true;  // direct mutation cannot replace the opaque line
+    settings.volume = 0.25f;
+    const auto saved = settings.serialize();
+    CHECK(saved.find(line) != std::string::npos);
+    CHECK_FALSE(Settings::parse(saved).hideOverscan);
+    CHECK_EQ(Settings::parse(saved).serialize(), saved);
+  }
+  const std::string duplicate = "hideOverscan=1\n  hideOverscan=false\n";
+  CHECK(Settings::parse(duplicate).serialize().find(duplicate) != std::string::npos);
+#endif
+}

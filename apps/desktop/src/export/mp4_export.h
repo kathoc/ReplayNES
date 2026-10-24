@@ -80,8 +80,11 @@ class ExportVideoProcessor {
                       std::string* error) = 0;
 };
 
-/// Defaults like the macOS ExportSettings: canvas 1280x960, crop top/bottom 8, whole take.
+/// Canvas 1280x960, whole take; crop top/bottom 8 only in products with overscan cropping.
 rnf_export_settings defaultExportSettings();
+
+/// Apply the product policy at each export backend, including direct callers and CRT processors.
+rnf_export_settings productExportSettings(rnf_export_settings settings);
 
 /// Exact average PCM rate from the session sample-position model.
 double exportAudioSampleRate(const rn_session* session);

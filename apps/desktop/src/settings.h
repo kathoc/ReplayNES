@@ -16,7 +16,10 @@ struct Settings {
   // Display
   bool integerScale = true;  // Integer (largest integer scale) vs FILL
   bool par87 = false;
-  bool hideOverscan = true;
+  bool hideOverscan = RN_PRODUCT_OVERSCAN_CROP;
+#if !RN_PRODUCT_OVERSCAN_CROP
+  std::string preservedOverscanLines;  // opaque settings lines, as for the flash option
+#endif
   bool showStats = false;
   int flash = RN_PRODUCT_FLASH_FILTER ? 2 : 0;  // rn_flash_level: 0 off, 1 low, 2 standard (default: safety first), 3 high
 #if !RN_PRODUCT_FLASH_FILTER

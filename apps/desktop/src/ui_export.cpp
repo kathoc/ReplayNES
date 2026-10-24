@@ -100,7 +100,7 @@ void UI::startExport() {
   rnf_export_settings s = defaultExportSettings();
   rnf_export_preset p{};
   if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
-  int crop = exportCropOverscan_ ? 8 : 0;
+  int crop = RN_PRODUCT_OVERSCAN_CROP && exportCropOverscan_ ? 8 : 0;
   s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
   s.pixel_aspect_87 = exportPar87_;
   uint64_t a = 0, b = 0;
@@ -185,7 +185,7 @@ void UI::buildExportDialog() {
       rnf_export_settings s = defaultExportSettings();
       rnf_export_preset p{};
       if (rnf_export_preset_get(size_t(exportPreset_), &p)) s.preset = p;
-      int crop = exportCropOverscan_ ? 8 : 0;
+      int crop = RN_PRODUCT_OVERSCAN_CROP && exportCropOverscan_ ? 8 : 0;
       s.crop_top = s.crop_bottom = s.crop_left = s.crop_right = crop;
       s.pixel_aspect_87 = exportPar87_;
       rnf_export_geometry g{};
@@ -249,7 +249,9 @@ void UI::buildExportDialog() {
         if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
         ImGui::SameLine();
         if (ImGui::RadioButton((d_.emu->crtAvailable() ? TR("8:7 (as on a CRT TV)") : TR("Pixel Aspect Ratio")), exportPar87_)) exportPar87_ = true;
+#if RN_PRODUCT_OVERSCAN_CROP
         ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
+#endif
 #if RN_PRODUCT_FLASH_FILTER
         ImGui::Checkbox(TR("Apply Flash Reduction"), &exportApplyFlash_);
 #endif

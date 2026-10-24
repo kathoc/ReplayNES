@@ -450,7 +450,7 @@ class UI : public DialogHost {
   bool exportDialog_ = false;
   bool exportOpened_ = false;
   bool exportStarted_ = false;
-  bool exportCropOverscan_ = true;
+  bool exportCropOverscan_ = RN_PRODUCT_OVERSCAN_CROP;
   bool exportPar87_ = false;
   bool exportApplyFlash_ = true;
   bool exportApplyCRT_ = false;

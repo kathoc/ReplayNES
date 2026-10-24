@@ -489,7 +489,11 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
 #endif
                                                                    "display.vtr",
                                                                    "display.shape", "display.crt_detail"}));
-  CHECK((itemIds(m, "display.shape") == std::vector<std::string>{"display.par87", "display.overscan"}));
+  CHECK((itemIds(m, "display.shape") == std::vector<std::string>{"display.par87",
+#if RN_PRODUCT_OVERSCAN_CROP
+                                                                 "display.overscan",
+#endif
+  }));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume"}));
   rnf_menu_free(m);
   // Features: no CRT -> no CRT row / details page; no export and no stream -> no Share tile.
@@ -692,7 +696,7 @@ TEST_CASE("menu: toggles flip with A, info rows do nothing, literal choices") {
   rnf_menu_free(m);
 }
 
-TEST_CASE("product flash flag: complete desktop menu matches the pre-change enumeration") {
+TEST_CASE("product flags: complete desktop menu matches the pre-change enumeration") {
   std::ifstream file(RN_MENU_BASELINE);
   REQUIRE(file.good());
   std::ostringstream expected;
@@ -704,6 +708,11 @@ TEST_CASE("product flash flag: complete desktop menu matches the pre-change enum
     REQUIRE(at != std::string::npos);
     baseline.erase(at, std::strlen(id));
   }
+#endif
+#if !RN_PRODUCT_OVERSCAN_CROP
+  const auto cropAt = baseline.find(",display.overscan");
+  REQUIRE(cropAt != std::string::npos);
+  baseline.erase(cropAt, std::strlen(",display.overscan"));
 #endif
   rnf_menu* m = rnf_menu_new(kDesktopLinux);
   REQUIRE(m);
@@ -717,5 +726,19 @@ TEST_CASE("product flash flag: complete desktop menu matches the pre-change enum
     actual += "\n";
   }
   CHECK_EQ(actual, baseline);
+  rnf_menu_free(m);
+}
+
+TEST_CASE("product overscan flag: picture shape explanation matches available controls") {
+  rnf_menu* m = rnf_menu_new(kDesktopLinux);
+  REQUIRE(m);
+  const int page = rnf_menu_page_find(m, "settings.display");
+  REQUIRE(page >= 0);
+  const int row = rnf_menu_item_find(m, size_t(page), "display.shape");
+  REQUIRE(row >= 0);
+  rnf_menu_item_info item{};
+  REQUIRE(rnf_menu_item_get(m, size_t(page), size_t(row), &item));
+  CHECK_EQ(std::string(rnf_menu_text(item.description)),
+           RN_PRODUCT_OVERSCAN_CROP ? "8:7 pixels, hide the edges" : "8:7 Pixels");
   rnf_menu_free(m);
 }

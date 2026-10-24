@@ -364,7 +364,7 @@ void UI::changed() {
 GameRect UI::gameRect(int w, int h) const {
   if (!hasSession()) return GameRect{};
   const Settings& st = *d_.settings;
-  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, st.hideOverscan);
+  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, RN_PRODUCT_OVERSCAN_CROP && st.hideOverscan);
 }
 
 void UI::slack(double now) {

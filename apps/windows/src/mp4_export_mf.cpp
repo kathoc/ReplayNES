@@ -492,6 +492,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     return false;
   }
 
+  const auto exportSettings = productExportSettings(opt.settings);
   // ---- settings + geometry (shared frontend core)
   rn_media_info media{};
   rnf_export_timing timing{};
@@ -507,7 +508,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     return false;
   }
   char* message = nullptr;
-  if (rnf_export_validate_media(&opt.settings, &media, 0, 0, &message) != RN_OK) {
+  if (rnf_export_validate_media(&exportSettings, &media, 0, 0, &message) != RN_OK) {
     err = message ? message : "invalid export settings";
     rnf_string_free(message);
     return false;
@@ -532,14 +533,14 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     err = "the renderer returned no picture";
     return false;
   }
-  if (rnf_export_validate_media(&opt.settings, &media, picture.width, picture.height, &message) != RN_OK) {
+  if (rnf_export_validate_media(&exportSettings, &media, picture.width, picture.height, &message) != RN_OK) {
     err = message ? message : "invalid export settings";
     rnf_string_free(message);
     return false;
   }
   rnf_string_free(message);
   rnf_export_geometry g{};
-  rnf_export_geometry_compute_media(&opt.settings, &media, picture.width, picture.height, &g);
+  rnf_export_geometry_compute_media(&exportSettings, &media, picture.width, picture.height, &g);
   const int canvasWidth = g.canvas_width, canvasHeight = g.canvas_height;
   uint32_t pictureWidth = picture.width, pictureHeight = picture.height;
   rn_video_indices_info firstCodes{};
@@ -557,7 +558,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       err = perr.empty() ? "The video effect could not be created" : perr;
       return false;
     }
-    if (!processor->begin(opt.settings, g, &perr)) {
+    if (!processor->begin(exportSettings, g, &perr)) {
       err = perr.empty() ? "The video effect could not be started" : perr;
       return false;
     }
@@ -638,7 +639,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   const size_t canvasStride = size_t(W) * 4;
   std::vector<uint8_t> canvas(canvasStride * size_t(H));
   std::vector<uint8_t> nv12(size_t(W) * H * 3 / 2);
-  const uint64_t startFrame = opt.settings.start_frame;
+  const uint64_t startFrame = exportSettings.start_frame;
   uint64_t samplesQueued = 0;  // next audio sample position (relative to the start)
   uint64_t framesWritten = 0;
   std::vector<int16_t> pcm;
@@ -661,7 +662,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
         return fail("unsupported flash filter picture size");
       pictureWidth = picture.width;
       pictureHeight = picture.height;
-      if (!mfmedia::resizeGeometry(opt.settings, media, pictureWidth, pictureHeight, canvasWidth, canvasHeight, &g))
+      if (!mfmedia::resizeGeometry(exportSettings, media, pictureWidth, pictureHeight, canvasWidth, canvasHeight, &g))
         return fail("invalid crop for the current picture size");
     }
     rn_video_indices_info frameCodes{};

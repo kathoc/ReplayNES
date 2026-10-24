@@ -51,3 +51,10 @@ target_compile_options(rnl_app PRIVATE ${RNL_WARNINGS})
 if(WIN32)
   target_link_libraries(rnl_app PUBLIC shell32)
 endif()
+
+if(RNL_DESKTOP_TESTS OR REPLAYNES_BUILD_TESTS)
+  add_test(NAME product_overscan_export_checkbox
+    COMMAND ${CMAKE_COMMAND} -DARCHIVE=$<TARGET_FILE:rnl_app>
+            -DEXPECT_CROP=${RN_PRODUCT_OVERSCAN_CROP}
+            -P ${RNL_DESKTOP_DIR}/../../tests/check_overscan_checkbox.cmake)
+endif()

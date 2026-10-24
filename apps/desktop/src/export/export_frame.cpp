@@ -13,9 +13,16 @@ rnf_export_settings defaultExportSettings() {
   s.preset.kind = RNF_PRESET_CANVAS;
   s.preset.width = 1280;
   s.preset.height = 960;
-  s.crop_top = 8;
-  s.crop_bottom = 8;
+  s.crop_top = RN_PRODUCT_OVERSCAN_CROP ? 8 : 0;
+  s.crop_bottom = RN_PRODUCT_OVERSCAN_CROP ? 8 : 0;
   return s;
+}
+
+rnf_export_settings productExportSettings(rnf_export_settings settings) {
+#if !RN_PRODUCT_OVERSCAN_CROP
+  settings.crop_top = settings.crop_bottom = settings.crop_left = settings.crop_right = 0;
+#endif
+  return settings;
 }
 
 ExportCrtIntro::ExportCrtIntro(bool flashReduced)

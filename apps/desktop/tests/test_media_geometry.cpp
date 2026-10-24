@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "game_rect.h"
+#include "replaynes/product.h"
 #include "library_thumbs.h"
 #include "png_writer.h"
 #include "support/rn_test.h"
@@ -122,4 +123,36 @@ TEST_CASE("media NES thumbnail pixels exactly match legacy downscaler") {
   REQUIRE(img);
   CHECK_EQ(img.get()->width, 128u); CHECK_EQ(img.get()->height, 120u);
   CHECK(img.get()->px == expected);
+}
+
+TEST_CASE("product overscan policy: fixed picture and CRT geometry") {
+  const auto uncropped = computeGameRect(1280, 720, false, false, false);
+  CHECK_EQ(uncropped.x, 256); CHECK_EQ(uncropped.y, 0);
+  CHECK_EQ(uncropped.w, 768); CHECK_EQ(uncropped.h, 720);
+  CHECK_EQ(uncropped.crop, 0); CHECK_EQ(uncropped.crtCrop, 0);
+  CHECK_EQ(uncropped.crt.x, 160); CHECK_EQ(uncropped.crt.w, 960);
+  const auto requested = computeGameRect(1280, 720, false, false, true);
+#if RN_PRODUCT_OVERSCAN_CROP
+  CHECK_EQ(requested.x, 255); CHECK_EQ(requested.y, 0);
+  CHECK_EQ(requested.w, 771); CHECK_EQ(requested.h, 720);
+  CHECK_EQ(requested.crop, 8); CHECK_EQ(requested.crtCrop, 8.0 / 240);
+  CHECK_EQ(requested.crt.x, 126); CHECK_EQ(requested.crt.w, 1029);
+#else
+  CHECK_EQ(requested.x, uncropped.x); CHECK_EQ(requested.y, uncropped.y);
+  CHECK_EQ(requested.w, uncropped.w); CHECK_EQ(requested.h, uncropped.h);
+  CHECK_EQ(requested.crop, 0); CHECK_EQ(requested.crtCrop, 0);
+  CHECK_EQ(requested.crt.x, uncropped.crt.x); CHECK_EQ(requested.crt.w, uncropped.crt.w);
+#endif
+  rn_media_info media{320, 224, 60, 1, 2, 1, 1, 0};
+  rn_video_frame_info frame{nullptr, 320, 224, 336};
+  for (uint32_t rotation = 0; rotation < 4; ++rotation) {
+    media.rotation = rotation;
+    const auto rect = computeGameRect(1280, 720, media, frame, false, false, true);
+    CHECK_EQ(rect.crop, RN_PRODUCT_OVERSCAN_CROP ? 8 : 0);
+#if !RN_PRODUCT_OVERSCAN_CROP
+    const auto full = computeGameRect(1280, 720, media, frame, false, false, false);
+    CHECK_EQ(rect.x, full.x); CHECK_EQ(rect.y, full.y);
+    CHECK_EQ(rect.w, full.w); CHECK_EQ(rect.h, full.h);
+#endif
+  }
 }

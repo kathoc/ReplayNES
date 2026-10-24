@@ -707,7 +707,11 @@ int selfTest(const Args& a) {
   badCrop.settings.crop_top = 230;  // + 8 bottom > 224
   fs::remove(dir / "bad.mp4", ec);
   RunOut bad = runExport(s, badCrop, (dir / "bad.mp4").u8string(), false);
+#if RN_PRODUCT_OVERSCAN_CROP
   expectTrue(!bad.ok && !fs::exists(dir / "bad.mp4"), "invalid crop: rejected");
+#else
+  expectTrue(bad.ok && fs::exists(dir / "bad.mp4"), "product without overscan: explicit crop ignored");
+#endif
 
   // 7) ExportJob (worker thread, polled)
   {

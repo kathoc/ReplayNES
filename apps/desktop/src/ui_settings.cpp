@@ -164,7 +164,7 @@ bool UI::itemOn(const std::string& id) const {
   const Settings& s = *d_.settings;
   if (id == "display.crt") return s.crt && d_.renderer->postProcessStatus().crtAvailable && (!hasSession() || d_.emu->crtAvailable());
   if (id == "display.par87") return s.par87;
-  if (id == "display.overscan") return s.hideOverscan;
+  if (id == "display.overscan") return RN_PRODUCT_OVERSCAN_CROP && s.hideOverscan;
   if (id == "display.vtr") return s.vtrEffect;
   if (id == "crt.beam") return s.crtBeamGrowth;
   if (id == "crt.persistence") return s.crtPersistence;
@@ -247,7 +247,7 @@ void UI::adjustItem(const std::string& id, int dir) {
   if (info.kind == RNF_MENU_ITEM_TOGGLE) {
     if (id == "display.crt") s.crt = !s.crt;
     else if (id == "display.par87") s.par87 = !s.par87;
-    else if (id == "display.overscan") s.hideOverscan = !s.hideOverscan;
+    else if (id == "display.overscan") s.hideOverscan = RN_PRODUCT_OVERSCAN_CROP && !s.hideOverscan;
     else if (id == "display.vtr") s.vtrEffect = !s.vtrEffect;
     else if (id == "crt.beam") s.crtBeamGrowth = !s.crtBeamGrowth;
     else if (id == "crt.persistence") s.crtPersistence = !s.crtPersistence;

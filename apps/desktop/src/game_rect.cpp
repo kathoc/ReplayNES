@@ -4,11 +4,13 @@
 #include <cmath>
 
 #include "game_rect.h"
+#include "replaynes/product.h"
 #include "replaynes/replaynes.h"
 
 namespace rnl {
 
 GameRect computeGameRect(int width, int height, bool integerScale, bool par87, bool hideOverscan) {
+  hideOverscan = RN_PRODUCT_OVERSCAN_CROP && hideOverscan;
   GameRect r;
   if (width <= 0 || height <= 0) return r;
   r.crop = hideOverscan ? 8 : 0;
@@ -35,6 +37,7 @@ GameRect computeGameRect(int width, int height, bool integerScale, bool par87, b
 
 GameRect computeGameRect(int width, int height, const rn_media_info& media,
                          const rn_video_frame_info& frame, bool integerScale, bool gameAspect, bool hideOverscan) {
+  hideOverscan = RN_PRODUCT_OVERSCAN_CROP && hideOverscan;
   const bool nes = media.max_width == RN_VIDEO_WIDTH && media.max_height == RN_VIDEO_HEIGHT &&
                    media.rotation == 0 && media.pixel_aspect_num == 8 && media.pixel_aspect_den == 7 &&
                    frame.width == RN_VIDEO_WIDTH && frame.height == RN_VIDEO_HEIGHT;
