@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "audio_out.h"
 
 #include <algorithm>
@@ -53,7 +54,7 @@ void SDLCALL AudioOut::onGet(void* user, SDL_AudioStream*, int additional, int t
   auto* self = static_cast<AudioOut*>(user);
   if (additional > 0 && self->counting_.load(std::memory_order_relaxed)) {
     self->underruns_.fetch_add(1);
-    if (std::getenv("REPLAYNES_DEBUG_AUDIO"))
+    if (std::getenv(productEnvName("DEBUG_AUDIO").c_str()))
       std::fprintf(stderr, "underrun t=%.3f additional=%d total=%d\n", nowSeconds(), additional / 2, total / 2);
   }
 }

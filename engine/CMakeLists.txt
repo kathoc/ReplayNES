@@ -4,6 +4,7 @@ list(FILTER RN_ENGINE_SOURCES EXCLUDE REGEX "/ReplayNEScoreAdapter\\.cpp$")
 add_library(replaynes_engine STATIC ${RN_ENGINE_SOURCES})
 target_include_directories(replaynes_engine
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PUBLIC ${CMAKE_BINARY_DIR}/generated
   # Internal headers are visible to tests and the CLI; frontends must only use include/.
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(replaynes_engine PUBLIC nestopia_core)

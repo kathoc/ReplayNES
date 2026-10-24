@@ -3,6 +3,7 @@
 // Linux, Media Foundation on Windows - the project is never touched and play continues), the
 // "Video saved" toast (Open / Share) and the CRT display parameters.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -128,9 +129,9 @@ void UI::startExport() {
   std::string dir = d_.library->root() + "/Exports";
   std::error_code ec;
   fs::create_directories(dir, ec);
-  std::string name = chooserProjectFileName(exportName_);  // same rules; ".nesrec" swapped for ".mp4"
-  if (name.empty()) name = "export.nesrec";
-  name = name.substr(0, name.size() - 7);
+  std::string name = chooserProjectFileName(exportName_);  // same rules; RN_PRODUCT_PROJECT_EXT swapped for ".mp4"
+  if (name.empty()) name = "export" RN_PRODUCT_PROJECT_EXT;
+  name = name.substr(0, name.size() - (sizeof(RN_PRODUCT_PROJECT_EXT) - 1));
   std::string path = dir + "/" + name + ".mp4";
   for (int n = 2; fs::exists(path, ec); ++n) path = dir + "/" + name + " " + std::to_string(n) + ".mp4";
   if (!exportJob_.start(d_.emu->session(), eo, path)) {

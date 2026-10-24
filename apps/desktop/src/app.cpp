@@ -17,6 +17,7 @@
 // Without present timing the loop runs on the host clock at the NES rate (no JIT sampling;
 // reported), as with VRR on Windows (--vrr).
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -219,11 +220,11 @@ int App::run(const AppOptions& opt) {
   settings_.load(paths_.settingsFile());
   if (opt.flash >= 0 && opt.flash <= 3) settings_.flash = opt.flash;
   if (opt.integerScale >= 0) settings_.integerScale = opt.integerScale != 0;
-  std::fprintf(stderr, "ReplayNES %s\n", platform_.version);
+  std::fprintf(stderr, "%s %s\n", RN_PRODUCT_NAME, platform_.version);
   if (platform_.setupFrameThread) platform_.setupFrameThread();  // precise wake-ups for the just-in-time sample
   const bool perfMode = opt.perfSeconds > 0;
 
-  SDL_SetAppMetadata("ReplayNES", platform_.version, "io.github.replaynes.ReplayNES");
+  SDL_SetAppMetadata(RN_PRODUCT_NAME, platform_.version, RN_PRODUCT_APP_ID);
   SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
   SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
   // Controllers are updated on their own thread (below), not by the frame loop's event pump: the
@@ -242,18 +243,18 @@ int App::run(const AppOptions& opt) {
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
     desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
     desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
-    desc.name = "ReplayNES Virtual Pad";
+    desc.name = RN_PRODUCT_NAME " Virtual Pad";
     if (!SDL_AttachVirtualJoystick(&desc)) std::fprintf(stderr, "virtual pad: %s\n", SDL_GetError());
   }
   // Language: Japanese iff the first preferred language is Japanese (before any other thread
   // reads localized strings).
-  const char* langOverride = !opt.lang.empty() ? opt.lang.c_str() : std::getenv("REPLAYNES_LANG");
+  const char* langOverride = !opt.lang.empty() ? opt.lang.c_str() : std::getenv(productEnvName("LANG").c_str());
   if ((!langOverride || !*langOverride) && settings_.language != "auto") langOverride = settings_.language.c_str();
   std::string lang = chooseUILanguage(preferredLanguages(), langOverride);
   rnf_l10n_set_language(lang.c_str());
 
   bool fullscreen = opt.fullscreen == 1 || (opt.fullscreen == -1 && gamingMode());
-  window_ = SDL_CreateWindow("ReplayNES", 1280, 800, platform_.windowFlags | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+  window_ = SDL_CreateWindow(RN_PRODUCT_NAME, 1280, 800, platform_.windowFlags | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window_) { std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
   if (fullscreen) applyFullscreen(true);
   std::string err;
@@ -261,7 +262,7 @@ int App::run(const AppOptions& opt) {
   if (!renderer_ || !renderer_->init(window_, &err)) {
     std::fprintf(stderr, "renderer: %s\n", err.c_str());
 #ifdef _WIN32  // a GUI program there: no console shows the message
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ReplayNES", ("The display could not be started:\n" + err).c_str(), window_);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, RN_PRODUCT_NAME, ("The display could not be started:\n" + err).c_str(), window_);
 #endif
     return 1;
   }
@@ -547,7 +548,7 @@ int App::run(const AppOptions& opt) {
     SDL_GetWindowSizeInPixels(window_, &w, &h);
     if (!pendingLanguage_.empty()) {
       // Settings -> System -> Language: the strings and the fonts (CJK first for Japanese) now.
-      std::string l = pendingLanguage_ == "auto" ? chooseUILanguage(preferredLanguages(), std::getenv("REPLAYNES_LANG")) : pendingLanguage_;
+      std::string l = pendingLanguage_ == "auto" ? chooseUILanguage(preferredLanguages(), std::getenv(productEnvName("LANG").c_str())) : pendingLanguage_;
       pendingLanguage_.clear();
       rnf_l10n_set_language(l.c_str());
       if (!ui_->loadFonts(l == "ja")) rnf_l10n_set_language("en");
@@ -609,7 +610,7 @@ int App::run(const AppOptions& opt) {
         if (fallback)
           std::snprintf(what, sizeof what, "FALLBACK: plain picture (CRT off) for %.0f s, CRT renderer and swap chain recreated",
                         watchdog.fallbackLeft(now));
-        std::fprintf(stderr, "ReplayNES: display watchdog: %s (a picture waited %.0f ms with emulation advancing; last present %s; %s)\n",
+        std::fprintf(stderr, "%s: display watchdog: %s (a picture waited %.0f ms with emulation advancing; last present %s; %s)\n", RN_PRODUCT_NAME,
                      fallback  ? what
                      : restart ? "RESTART: CRT renderer and swap chain recreated"
                                : "RECOVER: CRT output discarded, plain picture for a present",
@@ -625,7 +626,7 @@ int App::run(const AppOptions& opt) {
       if (crtFallbackUntil_ != 0 && now >= crtFallbackUntil_) {
         crtFallbackUntil_ = 0;
         applyPostProcess();
-        std::fprintf(stderr, "ReplayNES: display watchdog: CRT model tried again after the plain-picture fallback\n");
+        std::fprintf(stderr, "%s: display watchdog: CRT model tried again after the plain-picture fallback\n", RN_PRODUCT_NAME);
       }
     }
     if (id) {
@@ -713,7 +714,7 @@ int App::run(const AppOptions& opt) {
     // it so that Steam keeps the game running (and stops it with this one).
     int rc = updates_->restartLatestAndWait(restartArguments(opt.argv));
     if (rc >= 0) return rc;
-    std::fprintf(stderr, "could not start the updated ReplayNES: start it again\n");
+    std::fprintf(stderr, "could not start the updated %s: start it again\n", RN_PRODUCT_NAME);
   }
   return scriptExit_;
 }
@@ -726,12 +727,12 @@ void printUsage(const PlatformHooks& platform) {
       "  --rom PATH            play PATH without a project (temporary session)\n"
       "  --no-resume           do not offer the last session (Continue)\n"
       "  --fullscreen | --windowed\n"
-      "  --lang ja|en          UI language (also REPLAYNES_LANG; default: the system's)\n"
+      "  --lang ja|en          UI language (also %sLANG; default: the system's)\n"
       "  --perf-seconds N      measure N seconds after --warmup S (default 8), then quit\n"
       "  --stats-log FILE      append the JSON summary to FILE\n"
       "  --frame-log FILE      per-frame CSV\n"
       "  --session-root DIR    session folder (perf runs use a scratch folder)\n"
-      "  --library-root DIR    library folder (default: Documents/ReplayNES)\n"
+      "  --library-root DIR    library folder (default: Documents/%s)\n"
       "  --inject-input        press B every ~0.25 s from another thread (event -> screen latency)\n"
       "  --label NAME          label of the summary\n"
       "  --flash 0-3           flash reduction level for this run (off / low / standard / high)\n"
@@ -748,11 +749,15 @@ void printUsage(const PlatformHooks& platform) {
 #endif
       "  --version             print the version and exit\n"
 #ifndef _WIN32
-      "  --add-to-steam        add ReplayNES to the Steam library with its artwork, then exit (close Steam first);\n"
+      "  --add-to-steam        add %s to the Steam library with its artwork, then exit (close Steam first);\n"
       "                        add --dry-run to only show what would change (also --force, --steam-userdata DIR, --steam-artwork DIR)\n"
 #endif
-      "Environment: REPLAYNES_LANG=ja|en overrides the system language.\n",
-      platform.executable);
+      "Environment: %sLANG=ja|en overrides the system language.\n",
+      platform.executable, RN_PRODUCT_ENV_PREFIX, RN_PRODUCT_DATA_DIR,
+#ifndef _WIN32
+      RN_PRODUCT_NAME,
+#endif
+      RN_PRODUCT_ENV_PREFIX);
 }
 
 bool parseAppArgs(int argc, char** argv, const PlatformHooks& platform, AppOptions* o) {

@@ -1,4 +1,5 @@
 #include "core/ICore.h"
+#include "replaynes/product.h"
 
 #include "core/MockCore.h"
 #include "core/NestopiaCore.h"
@@ -106,7 +107,7 @@ void write(std::vector<uint8_t>& out, const std::string& compat, uint64_t frame,
 Status read(const uint8_t* data, size_t n, const std::string& expectCompat, uint64_t& frame, const uint8_t*& payload,
             size_t& payloadLen) {
   ByteReader r(data, n);
-  if (r.u32() != kMagic) return Error(Err::StateError, "not a ReplayNES core state");
+  if (r.u32() != kMagic) return Error(Err::StateError, "not a " RN_PRODUCT_NAME " core state");
   uint32_t v = r.u32();
   if (v != kVersion) return Error(Err::StateError, "unsupported core state envelope version " + std::to_string(v));
   std::string compat = r.str(256);

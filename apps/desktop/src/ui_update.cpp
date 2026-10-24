@@ -2,6 +2,7 @@
 // screen) that opens Settings > System > Updates (status, Check Now, Update / Restart, Check
 // Automatically: ui_settings.cpp; Windows: WinSparkle's own dialogs behind Check Now).
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <string>
 
 #include "icons.h"
@@ -15,8 +16,8 @@
 namespace rnl {
 
 namespace {
-constexpr const char* kAllowUpdatesCommand = "flatpak permission-set flatpak updates io.github.replaynes.ReplayNES yes";
-constexpr const char* kUpdateCommand = "flatpak update io.github.replaynes.ReplayNES";
+constexpr const char* kAllowUpdatesCommand = "flatpak permission-set flatpak updates " RN_PRODUCT_APP_ID " yes";
+constexpr const char* kUpdateCommand = "flatpak update " RN_PRODUCT_APP_ID;
 
 }  // namespace
 

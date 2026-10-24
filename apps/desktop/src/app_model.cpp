@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "app_model.h"
 
 #include <chrono>
@@ -45,11 +46,13 @@ std::string chooserProjectFileName(const std::string& typed) {
     s = s.substr(a, s.find_last_not_of(chars) - a + 1);
   };
   trim(out, " ");
-  const std::string ext = ".nesrec";
+  const std::string ext = RN_PRODUCT_PROJECT_EXT;
   if (out.size() >= ext.size()) {
     std::string tail = out.substr(out.size() - ext.size());
     for (char& ch : tail) ch = char(std::tolower(static_cast<unsigned char>(ch)));
-    if (tail == ext) out.resize(out.size() - ext.size());
+    std::string lowerExt = ext;
+    for (char& ch : lowerExt) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    if (tail == lowerExt) out.resize(out.size() - ext.size());
   }
   trim(out, " .");
   return out.empty() ? std::string() : out + ext;
@@ -271,7 +274,7 @@ std::string AppModel::romName() const {
 
 std::string AppModel::windowTitle() const {
   const EmuStatus& st = emu_->status();
-  if (!st.hasSession) return "ReplayNES";
+  if (!st.hasSession) return RN_PRODUCT_NAME;
   if (!st.projectPath.empty() && !isTempPath(st.projectPath)) return fileName(st.projectPath) + (st.unsaved ? " •" : "");
   return fileName(st.romPath) + TR(" (Unsaved)");
 }
@@ -761,7 +764,7 @@ void AppModel::performProjectReset(bool keepSlots, bool backup) {
       if (!copyTree(dir, copy, &err)) {
         // The project's folder is not writable: copy into the temporary folder instead.
         std::error_code ec;
-        std::string tmp = fs::temp_directory_path(ec).string() + "/replaynes-backup-" +
+        std::string tmp = fs::temp_directory_path(ec).string() + "/" RN_PRODUCT_TEMP_PREFIX "-backup-" +
                           std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
         fs::create_directories(tmp, ec);
         copy = tmp + "/" + fileName(copy);

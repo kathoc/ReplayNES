@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "update_model.h"
 
 #include <algorithm>
@@ -175,7 +176,7 @@ std::vector<std::pair<std::string, std::string>> restartEnvironment(const std::v
   static const char* exact[] = {"LANG", "LANGUAGE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "XDG_SESSION_DESKTOP",
                                 "SteamDeck", "SteamGameId", "SteamAppId", "SteamOverlayGameId", "SteamClientLaunch",
                                 "SteamGamepadUI", "SteamEnv", "ENABLE_GAMESCOPE_WSI"};
-  static const char* prefixes[] = {"LC_", "REPLAYNES_", "SDL_", "STEAM_COMPAT_", "GAMESCOPE_"};
+  static const char* prefixes[] = {"LC_", RN_PRODUCT_ENV_PREFIX, "SDL_", "STEAM_COMPAT_", "GAMESCOPE_"};
   std::vector<std::pair<std::string, std::string>> out;
   for (const std::string& e : environment) {
     size_t eq = e.find('=');
@@ -189,8 +190,8 @@ std::vector<std::pair<std::string, std::string>> restartEnvironment(const std::v
 }
 
 std::string parseVersionOutput(const std::string& text) {
-  size_t p = text.find("ReplayNES ");
-  size_t i = p == std::string::npos ? 0 : p + 10;
+  size_t p = text.find(RN_PRODUCT_NAME " ");
+  size_t i = p == std::string::npos ? 0 : p + sizeof(RN_PRODUCT_NAME);
   while (i < text.size() && !std::isdigit(static_cast<unsigned char>(text[i]))) {
     if (text[i] == '\n') return {};
     ++i;

@@ -8,6 +8,7 @@
 // decides the clocks) instead of back to back. REPLAYNES_CRT_PROFILE=1: per-pass times too.
 // REPLAYNES_VK_DEVICE=<name substring> picks the device (e.g. llvmpipe = lavapipe).
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -115,7 +116,7 @@ int bench(HeadlessVulkan& vk, int ow, int oh, int frames, const std::string& pre
     }
   }
   std::printf("plan: %s\n", r.planInfo().c_str());
-  if (std::getenv("REPLAYNES_CRT_PROFILE")) {
+  if (std::getenv(productEnvName("CRT_PROFILE").c_str())) {
     r.profile = true;
     std::map<std::string, double> acc;
     const int n = 30;

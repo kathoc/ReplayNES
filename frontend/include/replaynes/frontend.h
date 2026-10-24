@@ -36,6 +36,17 @@
 #ifndef REPLAYNES_FRONTEND_H
 #define REPLAYNES_FRONTEND_H
 
+/* Product identity (cmake/Product.cmake generates replaynes/product.h). Builds that do not see the
+ * generated header, such as the macOS Xcode project with its own header search paths, get
+ * ReplayNES's values. */
+#if defined(__has_include)
+#if __has_include("replaynes/product.h")
+#include "replaynes/product.h"
+#endif
+#endif
+#ifndef RN_PRODUCT_PROJECT_EXT
+#define RN_PRODUCT_PROJECT_EXT ".nesrec"
+#endif
 #include <stddef.h>
 #include <stdint.h>
 
@@ -745,7 +756,7 @@ const char* rnf_menu_text(const char* key);
 /* ================================================================== session resume
  * Always-on session persistence. A session folder holds the temporary project of a session
  * without a project, the resume record and the single-instance lock. */
-#define RNF_SESSION_TEMP_PROJECT "current.nesrec"
+#define RNF_SESSION_TEMP_PROJECT "current" RN_PRODUCT_PROJECT_EXT
 #define RNF_SESSION_RESUME_FILE "resume.json"
 #define RNF_SESSION_LOCK_FILE ".lock"
 #define RNF_RESUME_VERSION 1

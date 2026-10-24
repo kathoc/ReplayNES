@@ -8,6 +8,7 @@
 //   replaynes-export --list-presets | --encoders
 // Prints progress on stderr and one JSON result line on stdout.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <algorithm>
 #include <chrono>
 #include <cinttypes>
@@ -445,7 +446,7 @@ int selfTest(const Args& a) {
   const int quality = a.get("--quality") ? std::atoi(a.get("--quality")) : RNF_QUALITY_STANDARD;
   std::error_code ec;
   fs::create_directories(dir, ec);
-  const fs::path rom = dir / "selftest.nes", proj = dir / "selftest.nesrec";
+  const fs::path rom = dir / "selftest.nes", proj = dir / "selftest" RN_PRODUCT_PROJECT_EXT;
   fs::remove_all(proj, ec);
   std::printf("replaynes-export self-test in %s (%" PRIu64 " frames)\n", dir.u8string().c_str(), frames);
 #ifdef RNL_EXPORT_FFMPEG

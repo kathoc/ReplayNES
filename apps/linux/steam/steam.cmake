@@ -6,7 +6,8 @@ set(RNL_STEAM_DIR ${CMAKE_CURRENT_LIST_DIR})
 add_library(rnl_steam STATIC ${RNL_STEAM_DIR}/../src/steam_shortcut.cpp)
 target_include_directories(rnl_steam PUBLIC ${RNL_STEAM_DIR}/../src)
 target_compile_options(rnl_steam PRIVATE ${RNL_WARNINGS})
-target_link_libraries(replaynes-linux PRIVATE rnl_steam)
+target_link_libraries(rnl_steam PUBLIC replaynes_engine)
+target_link_libraries(${RN_PRODUCT_EXECUTABLE} PRIVATE rnl_steam)
 
 if(RNL_BUILD_TESTS)
   add_executable(test_steam_shortcut ${RNL_STEAM_DIR}/../tests/test_steam_shortcut.cpp
@@ -19,15 +20,15 @@ endif()
 
 # /app/share/replaynes/steam-artwork: copied into Steam's grid folder by --add-to-steam.
 install(FILES
-  ${RNL_STEAM_DIR}/artwork/png/capsule.png
-  ${RNL_STEAM_DIR}/artwork/png/wide.png
-  ${RNL_STEAM_DIR}/artwork/png/hero.png
-  ${RNL_STEAM_DIR}/artwork/png/logo.png
-  ${RNL_STEAM_DIR}/artwork/png/icon.png
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/replaynes/steam-artwork)
+  "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/capsule.png"
+  "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/wide.png"
+  "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/hero.png"
+  "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/logo.png"
+  "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/icon.png"
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/${RN_PRODUCT_TEMP_PREFIX}/steam-artwork)
 foreach(size 64 128 256 512)
-  install(FILES ${RNL_STEAM_DIR}/artwork/png/hicolor/${size}.png
+  install(FILES "${RN_PRODUCT_STEAM_ARTWORK_DIR}/png/hicolor/${size}.png"
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps RENAME ${APP_ID}.png)
 endforeach()
-install(FILES ${RNL_STEAM_DIR}/artwork/src/icon.svg
+install(FILES "${RN_PRODUCT_STEAM_ARTWORK_DIR}/src/icon.svg"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps RENAME ${APP_ID}.svg)

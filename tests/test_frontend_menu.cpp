@@ -510,10 +510,10 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
     REQUIRE(about >= 0);
     rnf_menu_item_info it{};
     REQUIRE(rnf_menu_item_get(m, size_t(sys), size_t(rnf_menu_item_find(m, size_t(sys), "system.about")), &it));
-    CHECK_EQ(std::string(rnf_menu_text(it.label)), "ReplayNES Version");
+    CHECK_EQ(std::string(rnf_menu_text(it.label)), RN_PRODUCT_NAME " Version");
     rnf_menu_page_info pi{};
     REQUIRE(rnf_menu_page_get(m, size_t(about), &pi));
-    CHECK_EQ(std::string(rnf_menu_text(pi.title)), "ReplayNES Version");
+    CHECK_EQ(std::string(rnf_menu_text(pi.title)), RN_PRODUCT_NAME " Version");
   }
   rnf_menu_free(m);
   // Resume Countdown: System > More (Controls and Controls > More are full on Linux).

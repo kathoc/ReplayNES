@@ -6,6 +6,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include "replaynes/product.h"
 #include <windows.h>
 #include <knownfolders.h>
 #include <objbase.h>
@@ -78,14 +79,14 @@ Paths Paths::standard() {
   Paths p;
   std::string docs = knownFolder(FOLDERID_Documents);
   if (docs.empty()) docs = envUtf8(L"USERPROFILE") + "\\Documents";
-  p.setLibraryRoot(docs + "\\ReplayNES");
+  p.setLibraryRoot(docs + "\\" RN_PRODUCT_DATA_DIR);
   std::string local = knownFolder(FOLDERID_LocalAppData);
   if (local.empty()) local = envUtf8(L"LOCALAPPDATA");
   std::string roaming = knownFolder(FOLDERID_RoamingAppData);
   if (roaming.empty()) roaming = envUtf8(L"APPDATA");
   if (roaming.empty()) roaming = local;
-  p.sessionRoot = local + "\\ReplayNES\\Session";
-  p.configDir = roaming + "\\ReplayNES";
+  p.sessionRoot = local + "\\" RN_PRODUCT_DATA_DIR "\\Session";
+  p.configDir = roaming + "\\" RN_PRODUCT_DATA_DIR;
   return p;
 }
 

@@ -87,7 +87,7 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
   std::string stamp = take(rnf_library_timestamp(date));
   CHECK_EQ(stamp.size(), size_t(15));
   std::string dir = take(rnf_library_new_project_path(projDir.c_str(), "Test ROM", date));
-  CHECK_EQ(dir, rn::fs::join(projDir, "Test ROM " + stamp + ".nesrec"));
+  CHECK_EQ(dir, rn::fs::join(projDir, "Test ROM " + stamp + RN_PRODUCT_PROJECT_EXT));
   {
     rn_session_options o;
     rn_session_options_init(&o);
@@ -99,7 +99,7 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
     rn_session_close(s);
   }
   std::string dir2 = take(rnf_library_new_project_path(projDir.c_str(), "Test ROM", date));
-  CHECK_EQ(dir2, rn::fs::join(projDir, "Test ROM " + stamp + " 2.nesrec"));
+  CHECK_EQ(dir2, rn::fs::join(projDir, "Test ROM " + stamp + " 2" RN_PRODUCT_PROJECT_EXT));
 
   std::string renamed = rn::fs::join(romDir, "Renamed.nes");
   REQUIRE(std::rename(rom.c_str(), renamed.c_str()) == 0);
@@ -155,7 +155,7 @@ TEST_CASE("backup name next to the project") {
       [](const char* p, void* ctx) { return int(std::string(p) == *static_cast<std::string*>(ctx)); }, &first));
   CHECK_EQ(taken, "/x/Games/Mario (Before Reset 2026-10-06 20.05) 2.nesrec");
   CHECK_EQ(take(rnf_backup_path("/x/Games/NoExt/", d, [](const char*, void*) { return 0; }, nullptr)),
-           "/x/Games/NoExt (Before Reset 2026-10-06 20.05).nesrec");
+           "/x/Games/NoExt (Before Reset 2026-10-06 20.05)" RN_PRODUCT_PROJECT_EXT);
   rnf_l10n_set_language("ja");
   CHECK_EQ(take(rnf_backup_path("/x/Mario.nesrec", d, [](const char*, void*) { return 0; }, nullptr)),
            "/x/Mario（リセット前 2026-10-06 20.05）.nesrec");
@@ -197,6 +197,6 @@ TEST_CASE("backup name keeps Windows separators") {
   CHECK_EQ(take(rnf_backup_path("C:\\x\\Mario.nesrec", d, none, nullptr)),
            "C:\\x\\Mario (Before Reset 2026-10-06 20.05).nesrec");
   CHECK_EQ(take(rnf_backup_path("C:\\Mario.nesrec", d, none, nullptr)), "C:\\Mario (Before Reset 2026-10-06 20.05).nesrec");
-  CHECK_EQ(take(rnf_backup_path("C:\\x\\NoExt\\", d, none, nullptr)), "C:\\x\\NoExt (Before Reset 2026-10-06 20.05).nesrec");
+  CHECK_EQ(take(rnf_backup_path("C:\\x\\NoExt\\", d, none, nullptr)), "C:\\x\\NoExt (Before Reset 2026-10-06 20.05)" RN_PRODUCT_PROJECT_EXT);
 }
 #endif

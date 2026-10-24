@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "render/crt_display_policy.h"
 
 #include <algorithm>
@@ -88,7 +89,7 @@ void CrtDisplayPolicy::update(const std::vector<double>& gpuTimes, double budget
     p50_ = s[s.size() / 2];
     p90_ = s[size_t(std::round(double(s.size() - 1) * 0.9))];
   }
-  static const bool forceAhead = std::getenv("REPLAYNES_CRT_BUILD_AHEAD") != nullptr;  // verification
+  static const bool forceAhead = std::getenv(productEnvName("CRT_BUILD_AHEAD").c_str()) != nullptr;  // verification
   if (forceAhead) {
     pipelined_ = true;
   } else if (allowBuildAhead && budget > 0) {

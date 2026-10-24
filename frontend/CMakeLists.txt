@@ -7,11 +7,15 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # table compiled into this library (and l10n.json for tooling) is generated from it.
 set(RNF_XCSTRINGS ${PROJECT_SOURCE_DIR}/apps/macos/Resources/Localizable.xcstrings)
 set(RNF_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(RNF_L10N_OVERRIDE_ARGS)
+if(RN_PRODUCT_L10N_OVERRIDES)
+  list(APPEND RNF_L10N_OVERRIDE_ARGS --overrides "${RN_PRODUCT_L10N_OVERRIDES}")
+endif()
 add_custom_command(
   OUTPUT ${RNF_GEN_DIR}/l10n_table.inc ${RNF_GEN_DIR}/l10n.json
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_l10n.py ${RNF_XCSTRINGS}
-          ${RNF_GEN_DIR}/l10n_table.inc --json ${RNF_GEN_DIR}/l10n.json
-  DEPENDS ${RNF_XCSTRINGS} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_l10n.py
+          ${RNF_GEN_DIR}/l10n_table.inc --json ${RNF_GEN_DIR}/l10n.json ${RNF_L10N_OVERRIDE_ARGS}
+  DEPENDS ${RNF_XCSTRINGS} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_l10n.py ${RN_PRODUCT_L10N_OVERRIDES}
   COMMENT "Generating the localization table from Localizable.xcstrings"
   VERBATIM)
 

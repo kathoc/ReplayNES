@@ -64,3 +64,31 @@ steps.
 - A smoke configure with a throw-away profile (`-DRN_PRODUCT_FILE=…` naming the product `TestArcade`,
   data dir `TestArcade`, extension `.arcrec`) compiles, and `test_desktop_frontend` passes there too
   (its expectations read the macros instead of literal "ReplayNES").
+
+## Implementation decisions and validation
+
+The specified configure-time profile is the implementation contract. Work is split into
+profile/build plumbing, engine/frontend localization, desktop/Linux consumers, and test
+expectations. Runtime configuration and translated-key renaming are rejected because they
+would change persistence or shared localization behavior. Existing test and build tooling
+provides the reusable validation; no separate automation framework is needed.
+
+Profile strings are escaped before generating C-compatible macros. The Linux standalone
+project loads the same profile in its scope. Default generated localization is compared
+byte-for-byte, and engine golden tests protect rendering and persisted output. Validation
+uses Unix Makefiles, a separate custom-profile build, and the Flatpak SDK when available.
+
+### Completed validation
+
+- Unix Makefiles Release build: all 34 tests passed, including test_golden and
+  test_desktop_frontend. The final desktop changes were rebuilt and retested.
+- TestArcade smoke build: desktop and localization tests passed; JSON overrides
+  were verified in both English and Japanese at runtime.
+- Linux app compiled with Freedesktop SDK 25.08, using a direct SDK mount because
+  Flatpak startup could not create its NETLINK_ROUTE socket in this sandbox.
+  Steam tests, --version, and installation into a build-local prefix passed.
+- The default localization table and JSON are byte-identical to the old generator.
+- Stable translation keys and emulator identities remain by design. Auxiliary
+  tool executable names remain unchanged because this profile selects the main app.
+- The requested external report directory is read-only in this session. The full
+  Japanese report is retained at docs/reviews/s1-product-profile-codex.md.

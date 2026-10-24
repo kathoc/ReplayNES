@@ -1,4 +1,5 @@
 #include "persist/ProjectStore.h"
+#include "replaynes/product.h"
 
 #include <algorithm>
 #include <set>
@@ -463,7 +464,7 @@ Status ProjectStore::fullSave(Session& s) {
   RN_TRY(fs::writeFileAtomic(path("metadata/practice.json"), pm.dump()));
 
   Json man = Json::object();
-  man.set("format", "replaynes-project");
+  man.set("format", RN_PRODUCT_PROJECT_FORMAT);
   man.set("formatVersion", kProjectFormatVersion);
   man.set("appVersion", RN_ENGINE_VERSION);
   man.set("generation", newGen);
@@ -568,7 +569,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
 
   Json man;
   RN_TRY(parseJsonFile(ps->path("manifest.json"), man));
-  if (man["format"].asString() != "replaynes-project") return Error(Err::Corrupt, "not a ReplayNES project");
+  if (man["format"].asString() != RN_PRODUCT_PROJECT_FORMAT) return Error(Err::Corrupt, "not a " RN_PRODUCT_NAME " project");
   int64_t fv = man["formatVersion"].asInt(-1);
   if (fv < 1) return Error(Err::Corrupt, "manifest has no formatVersion");
   if (fv > int64_t(kProjectFormatVersion))  // 1..kProjectFormatVersion are read
@@ -585,7 +586,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
     return Error(Err::CoreMismatch, "project was recorded with core '" + compat + "' (build '" +
                                         man["coreBuild"].asString() + "'); this build provides '" +
                                         coreCompatId(CoreKind::Nestopia) +
-                                        "'. Open it with a matching ReplayNES build (see COMPATIBILITY.md).");
+                                        "'. Open it with a matching " RN_PRODUCT_NAME " build (see COMPATIBILITY.md).");
 
   // ROM: never stored; located by override or last path, verified by SHA-256.
   const Json& romJ = man["rom"];

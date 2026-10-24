@@ -38,6 +38,7 @@
 #include "manifest.h"
 #include "osk.h"
 #include "paths.h"
+#include "replaynes/product.h"
 #include "platform/platform.h"
 #include "png_writer.h"
 #include "settings.h"
@@ -81,7 +82,12 @@ std::string readFile(const std::string& p) {
   return ss.str();
 }
 
-std::string testRom(const std::string& dir, const std::string& name = "testrom.nes") {
+std::string testRomExtension() {
+  const std::string extensions = RN_PRODUCT_ROM_EXTS;
+  return "." + extensions.substr(0, extensions.find(';'));
+}
+
+std::string testRom(const std::string& dir, const std::string& name = "testrom" + testRomExtension()) {
   fs::create_directories(dir);
   std::string p = dir + "/" + name;
   REQUIRE(rn_write_test_rom(p.c_str()) == RN_OK);
@@ -153,9 +159,9 @@ struct World {
       std::error_code ec;
       fs::remove_all(dir, ec);
     }
-    paths.setLibraryRoot(dir + "/Documents/ReplayNES");
-    paths.sessionRoot = dir + "/data/ReplayNES/Session";
-    paths.configDir = dir + "/config/ReplayNES";
+    paths.setLibraryRoot(dir + "/Documents/" RN_PRODUCT_DATA_DIR);
+    paths.sessionRoot = dir + "/data/" RN_PRODUCT_DATA_DIR "/Session";
+    paths.configDir = dir + "/config/" RN_PRODUCT_DATA_DIR;
     paths.ensure();
     emu = std::make_unique<EmulationController>(input, &audio);
     library = std::make_unique<LibraryModel>(paths.libraryRoot);
@@ -474,7 +480,7 @@ TEST_CASE("update model: notice, progress, Later, errors") {
 }
 
 TEST_CASE("restart into an update: arguments, environment, version") {
-  std::vector<std::string> argv = {"/app/bin/replaynes-linux", "--script", "update restart", "--windowed", "--rom", "a.nes",
+  std::vector<std::string> argv = {"/app/bin/" RN_PRODUCT_EXECUTABLE, "--script", "update restart", "--windowed", "--rom", "a.nes",
                                    "--perf-seconds", "5", "--inject-input"};
   std::vector<std::string> args = restartArguments(argv);
   REQUIRE_EQ(args.size(), size_t(3));
@@ -482,15 +488,15 @@ TEST_CASE("restart into an update: arguments, environment, version") {
   CHECK_EQ(args[1], std::string("--rom"));
   CHECK_EQ(args[2], std::string("a.nes"));
   std::vector<std::string> env = {"PATH=/app/bin:/usr/bin", "DISPLAY=:99.0", "LANG=ja_JP.UTF-8", "SteamGameId=123",
-                                  "SDL_VIDEO_DRIVER=x11", "REPLAYNES_LANG=en", "XDG_CONFIG_HOME=/x", "LD_PRELOAD=/y.so",
+                                  "SDL_VIDEO_DRIVER=x11", RN_PRODUCT_ENV_PREFIX "LANG=en", "XDG_CONFIG_HOME=/x", "LD_PRELOAD=/y.so",
                                   "GAMESCOPE_WAYLAND_DISPLAY=gamescope-0", "broken"};
   auto kept = restartEnvironment(env);
   std::vector<std::string> keys;
   for (auto& [k, v] : kept) keys.push_back(k);
-  std::vector<std::string> want = {"LANG", "SteamGameId", "SDL_VIDEO_DRIVER", "REPLAYNES_LANG", "GAMESCOPE_WAYLAND_DISPLAY"};
+  std::vector<std::string> want = {"LANG", "SteamGameId", "SDL_VIDEO_DRIVER", RN_PRODUCT_ENV_PREFIX "LANG", "GAMESCOPE_WAYLAND_DISPLAY"};
   CHECK(keys == want);
-  CHECK_EQ(parseVersionOutput("ReplayNES 0.3.1\n"), std::string("0.3.1"));
-  CHECK_EQ(parseVersionOutput("ReplayNES 1.10.0-test\n"), std::string("1.10.0"));
+  CHECK_EQ(parseVersionOutput(RN_PRODUCT_NAME " 0.3.1\n"), std::string("0.3.1"));
+  CHECK_EQ(parseVersionOutput(RN_PRODUCT_NAME " 1.10.0-test\n"), std::string("1.10.0"));
   CHECK_EQ(parseVersionOutput(""), std::string());
   CHECK_EQ(parseVersionOutput("error: no such command\n"), std::string());
 }
@@ -499,14 +505,14 @@ TEST_CASE("restart into an update: arguments, environment, version") {
 
 #ifndef _WIN32
 TEST_CASE("trash info follows the freedesktop specification") {
-  CHECK_EQ(trashEscapePath("/home/deck/Documents/ReplayNES/Projects/My Game (Before Reset 2026-10-07 12.00).nesrec"),
-           std::string("/home/deck/Documents/ReplayNES/Projects/My%20Game%20%28Before%20Reset%202026-10-07%2012.00%29.nesrec"));
+  CHECK_EQ(trashEscapePath("/home/deck/Documents/" RN_PRODUCT_DATA_DIR "/Projects/My Game (Before Reset 2026-10-07 12.00)" RN_PRODUCT_PROJECT_EXT),
+           std::string("/home/deck/Documents/" RN_PRODUCT_DATA_DIR "/Projects/My%20Game%20%28Before%20Reset%202026-10-07%2012.00%29" RN_PRODUCT_PROJECT_EXT));
   CHECK_EQ(trashEscapePath("/a/\xE3\x81\x82"), std::string("/a/%E3%81%82"));
   std::string info = trashInfoContents("/x/y z", 0);
   CHECK(info.rfind("[Trash Info]\nPath=/x/y%20z\nDeletionDate=", 0) == 0);
   CHECK(info.size() == std::string("[Trash Info]\nPath=/x/y%20z\nDeletionDate=1970-01-01T00:00:00\n").size());
-  CHECK_EQ(trashCandidateName("a.nesrec", 1), std::string("a.nesrec"));
-  CHECK_EQ(trashCandidateName("a.nesrec", 3), std::string("a 3.nesrec"));
+  CHECK_EQ(trashCandidateName("a" RN_PRODUCT_PROJECT_EXT, 1), std::string("a" RN_PRODUCT_PROJECT_EXT));
+  CHECK_EQ(trashCandidateName("a" RN_PRODUCT_PROJECT_EXT, 3), std::string("a 3" RN_PRODUCT_PROJECT_EXT));
   CHECK_EQ(trashCandidateName("noext", 2), std::string("noext 2"));
 }
 
@@ -514,7 +520,7 @@ TEST_CASE("move to trash: folders, collisions, info files") {
   std::string d = tmpDir("trash");
   std::string trash = d + "/share/Trash";
   for (int i = 0; i < 2; ++i) {
-    std::string p = d + "/Proj.nesrec";
+    std::string p = d + "/Proj" RN_PRODUCT_PROJECT_EXT;
     fs::create_directories(p + "/timeline");
     std::ofstream(p + "/manifest.json") << "{}";
     std::string as, err;
@@ -522,7 +528,7 @@ TEST_CASE("move to trash: folders, collisions, info files") {
     CHECK_FALSE(fs::exists(p));
     CHECK(fs::exists(as + "/manifest.json"));
     std::string name = fs::path(as).filename().string();
-    CHECK_EQ(name, std::string(i == 0 ? "Proj.nesrec" : "Proj 2.nesrec"));
+    CHECK_EQ(name, std::string(i == 0 ? "Proj" RN_PRODUCT_PROJECT_EXT : "Proj 2" RN_PRODUCT_PROJECT_EXT));
     std::string info = readFile(trash + "/info/" + name + ".trashinfo");
     CHECK(info.find("Path=" + trashEscapePath(fs::absolute(p).lexically_normal().string()) + "\n") != std::string::npos);
   }
@@ -546,13 +552,13 @@ TEST_CASE("home trash location (Flatpak: the host's)") {
 
 TEST_CASE("copy tree: folders, refuses an existing destination") {
   std::string d = tmpDir("copytree");
-  fs::create_directories(d + "/a.nesrec/timeline");
-  std::ofstream(d + "/a.nesrec/manifest.json") << "{}";
+  fs::create_directories(d + "/a" RN_PRODUCT_PROJECT_EXT "/timeline");
+  std::ofstream(d + "/a" RN_PRODUCT_PROJECT_EXT "/manifest.json") << "{}";
   std::string err;
-  REQUIRE(copyTree(d + "/a.nesrec", d + "/b.nesrec", &err));
-  CHECK_EQ(readFile(d + "/b.nesrec/manifest.json"), std::string("{}"));
-  CHECK(fs::is_directory(d + "/b.nesrec/timeline"));
-  CHECK_FALSE(copyTree(d + "/a.nesrec", d + "/b.nesrec", &err));
+  REQUIRE(copyTree(d + "/a" RN_PRODUCT_PROJECT_EXT, d + "/b" RN_PRODUCT_PROJECT_EXT, &err));
+  CHECK_EQ(readFile(d + "/b" RN_PRODUCT_PROJECT_EXT "/manifest.json"), std::string("{}"));
+  CHECK(fs::is_directory(d + "/b" RN_PRODUCT_PROJECT_EXT "/timeline"));
+  CHECK_FALSE(copyTree(d + "/a" RN_PRODUCT_PROJECT_EXT, d + "/b" RN_PRODUCT_PROJECT_EXT, &err));
   CHECK_FALSE(err.empty());
 }
 
@@ -561,17 +567,17 @@ TEST_CASE("standard paths: library, session and settings folders") {
   CHECK_FALSE(p.libraryRoot.empty());
   CHECK(p.romDir.rfind(p.libraryRoot, 0) == 0);
   CHECK(p.projectsDir.rfind(p.libraryRoot, 0) == 0);
-  CHECK(p.sessionRoot.find("ReplayNES") != std::string::npos);
-  CHECK(p.configDir.find("ReplayNES") != std::string::npos);
+  CHECK(p.sessionRoot.find(RN_PRODUCT_DATA_DIR) != std::string::npos);
+  CHECK(p.configDir.find(RN_PRODUCT_DATA_DIR) != std::string::npos);
   CHECK_EQ(Paths::stripSlash("C:/x//"), std::string("C:/x"));
 #ifdef _WIN32
   // Documents\ReplayNES, %LOCALAPPDATA%\ReplayNES\Session, %APPDATA%\ReplayNES; shown with '\'.
   CHECK(p.libraryRoot.size() > 3 && p.libraryRoot[1] == ':');
-  CHECK(p.sessionRoot.find("\\ReplayNES\\Session") != std::string::npos);
+  CHECK(p.sessionRoot.find("\\" RN_PRODUCT_DATA_DIR "\\Session") != std::string::npos);
   CHECK_EQ(Paths::display("C:\\Users\\u/Documents/ReplayNES/ROM"), std::string("C:\\Users\\u\\Documents\\ReplayNES\\ROM"));
   CHECK(p.settingsFile().find("settings.ini") != std::string::npos);
 #else
-  CHECK(p.sessionRoot.find("/ReplayNES/Session") != std::string::npos);
+  CHECK(p.sessionRoot.find("/" RN_PRODUCT_DATA_DIR "/Session") != std::string::npos);
   CHECK(p.settingsFile().find("linux-settings.ini") != std::string::npos);
 #endif
 }
@@ -595,12 +601,12 @@ TEST_CASE("recycle bin: a file goes there (RN_TEST_RECYCLE_BIN=1)") {
 // ------------------------------------------------------------------ small pure helpers
 
 TEST_CASE("chooser project names") {
-  CHECK_EQ(chooserProjectFileName("Super Mario"), std::string("Super Mario.nesrec"));
-  CHECK_EQ(chooserProjectFileName("  run.nesrec  "), std::string("run.nesrec"));
-  CHECK_EQ(chooserProjectFileName("a/b\\c"), std::string("abc.nesrec"));
+  CHECK_EQ(chooserProjectFileName("Super Mario"), std::string("Super Mario" RN_PRODUCT_PROJECT_EXT));
+  CHECK_EQ(chooserProjectFileName("  run" RN_PRODUCT_PROJECT_EXT "  "), std::string("run" RN_PRODUCT_PROJECT_EXT));
+  CHECK_EQ(chooserProjectFileName("a/b\\c"), std::string("abc" RN_PRODUCT_PROJECT_EXT));
   CHECK_EQ(chooserProjectFileName("..."), std::string(""));
-  CHECK_EQ(chooserProjectFileName(".nesrec"), std::string(""));
-  CHECK_EQ(chooserProjectFileName("\xE3\x83\x9E\xE3\x83\xAA\xE3\x82\xAA"), std::string("\xE3\x83\x9E\xE3\x83\xAA\xE3\x82\xAA.nesrec"));
+  CHECK_EQ(chooserProjectFileName(RN_PRODUCT_PROJECT_EXT), std::string(""));
+  CHECK_EQ(chooserProjectFileName("\xE3\x83\x9E\xE3\x83\xAA\xE3\x82\xAA"), std::string("\xE3\x83\x9E\xE3\x83\xAA\xE3\x82\xAA" RN_PRODUCT_PROJECT_EXT));
 }
 
 TEST_CASE("library search") {
@@ -617,7 +623,7 @@ TEST_CASE("library search") {
 
 TEST_CASE("library: Add Test Cartridge writes it once, the game database names it") {
   std::string dir = tmpDir("testcart-lib");
-  LibraryModel lib(dir + "/ReplayNES");
+  LibraryModel lib(dir + "/" RN_PRODUCT_DATA_DIR);
   auto scan = [&] {
     for (int i = 0; i < 300 && !lib.poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     for (int i = 0; i < 300 && lib.scanning(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -644,11 +650,11 @@ TEST_CASE("library: Add Test Cartridge writes it once, the game database names i
   // Again: the same file, nothing written (a renamed copy is found by the database id too).
   CHECK(LibraryModel::samePath(lib.addTestCartridge(&error), path));
   CHECK_EQ(fs::file_size(fs::u8path(path)), size);
-  fs::rename(fs::u8path(path), fs::u8path(lib.romDir() + "/cart.nes"));
+  fs::rename(fs::u8path(path), fs::u8path(lib.romDir() + "/cart" + testRomExtension()));
   lib.refresh();
   scan();
   REQUIRE_EQ(lib.roms().size(), size_t(1));
-  CHECK(LibraryModel::samePath(lib.addTestCartridge(&error), lib.romDir() + "/cart.nes"));
+  CHECK(LibraryModel::samePath(lib.addTestCartridge(&error), lib.romDir() + "/cart" + testRomExtension()));
   CHECK_FALSE(fs::exists(fs::u8path(path)));
 }
 
@@ -983,7 +989,7 @@ TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward
   std::vector<std::string> notices;
   emu.onNotice = [&](const std::string& s) { notices.push_back(s); };
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   CHECK_FALSE(emu.status().paused);  // a fresh recording runs at once
   tickN(emu, 120);
@@ -1055,7 +1061,7 @@ TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, 
   emu.setFlashLevel(RN_FLASH_OFF);
   emu.setCrtDisplay(true);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   CHECK_EQ(emu.signal().receptionStep, RNF_CRT_RECEPTION_NO_SIGNAL);  // frame 0: not powered
   auto pushedIsGame = [&] {
@@ -1121,7 +1127,7 @@ TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which foll
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   REQUIRE(emu.flashLevel() == RN_FLASH_STANDARD);
   auto lin = [](uint32_t c) {
@@ -1173,7 +1179,7 @@ TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing em
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   // A fresh recording runs at once (no countdown).
   tickN(emu, 120);
@@ -1283,7 +1289,7 @@ TEST_CASE("emulation: resume countdown type-ahead - NES buttons during it reach 
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 60);
   emu.togglePause();
@@ -1350,7 +1356,7 @@ TEST_CASE("emulation: resume countdown in practice - only while the run plays, n
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 300);
   emu.setPaused(true);
@@ -1405,7 +1411,7 @@ TEST_CASE("emulation: practice A/B on the timeline, loop, stop restores the take
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 300);
   emu.setPaused(true);
@@ -1454,7 +1460,7 @@ TEST_CASE("emulation: practice return - countdown at A, L2 + R2 back to A with t
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 300);
   emu.setPaused(true);
@@ -1514,7 +1520,7 @@ TEST_CASE("emulation: bookmarks, a retry and its undo, reset with backup") {
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 120);
   emu.addBookmark();
@@ -1542,7 +1548,7 @@ TEST_CASE("emulation: bookmarks, a retry and its undo, reset with backup") {
     return std::string();
   });
   CHECK(err.empty());
-  CHECK_EQ(backedUp, d + "/p.nesrec");
+  CHECK_EQ(backedUp, d + "/p" RN_PRODUCT_PROJECT_EXT);
   CHECK_EQ(emu.status().takeLength, uint64_t(0));
   CHECK_FALSE(emu.paused());
   // A failing backup leaves the project alone.
@@ -1576,7 +1582,7 @@ TEST_CASE("emulation: VTR - rewind released in play: the countdown (with the ove
   std::vector<std::string> notices;
   emu.onNotice = [&](const std::string& t) { notices.push_back(t); };
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 120);
   REQUIRE(!(emu.paused()));
@@ -1673,7 +1679,7 @@ TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to be
   std::vector<std::string> notices;
   emu.onNotice = [&](const std::string& t) { notices.push_back(t); };
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   emu.setResumeCountdown(false);
   tickN(emu, 120);
@@ -1732,7 +1738,7 @@ TEST_CASE("emulation: VTR - playback: a game button plays from there (countdown 
   NullAudio audio;
   EmulationController emu(in, &audio);
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   tickN(emu, 120);
   // Playback (Retry > Playback): watching from the start.
@@ -1894,7 +1900,7 @@ TEST_CASE("session: Save As moves the temporary project into Projects and reopen
   World w(dir + "/w", true);
   w.app->tryRom(rom);
   tickN(*w.emu, 90);
-  std::string dest = w.library->projectsDir() + "/Run.nesrec";
+  std::string dest = w.library->projectsDir() + "/Run" RN_PRODUCT_PROJECT_EXT;
   w.host.choices = {dest};
   w.app->save();
   REQUIRE(w.emu->session() != nullptr);
@@ -1916,7 +1922,7 @@ TEST_CASE("session: Save As moves the temporary project into Projects and reopen
 TEST_CASE("session: library Play creates a project in Projects; Continue reopens it") {
   std::string dir = tmpDir("library");
   World w(dir + "/w", true);
-  std::string rom = testRom(w.library->romDir(), "Test Game.nes");
+  std::string rom = testRom(w.library->romDir(), "Test Game" + testRomExtension());
   w.library->refresh();
   for (int i = 0; i < 200 && !w.library->poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
   REQUIRE_EQ(w.library->roms().size(), size_t(1));
@@ -2097,7 +2103,7 @@ TEST_CASE("thumbnails: live capture and background batches") {
   EmulationController emu(in, nullptr);
   emu.observer = &thumbs;
   rn_session* s = nullptr;
-  REQUIRE(rn_session_new(rom.c_str(), (d + "/p.nesrec").c_str(), nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_new(rom.c_str(), (d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, &s) == RN_OK);
   emu.install(s);
   double step = thumbs.layout(1000, 64, 0, 0);
   CHECK_EQ(step, RNF_THUMB_BASE_STEP);
@@ -2110,7 +2116,7 @@ TEST_CASE("thumbnails: live capture and background batches") {
   // Reopened: the background batch renders the missing pictures from the checkpoints.
   emu.save();
   emu.closeSession();
-  REQUIRE(rn_session_open((d + "/p.nesrec").c_str(), nullptr, nullptr, &s) == RN_OK);
+  REQUIRE(rn_session_open((d + "/p" RN_PRODUCT_PROJECT_EXT).c_str(), nullptr, nullptr, &s) == RN_OK);
   emu.install(s);
   CHECK_FALSE(bool(thumbs.imageAt(rnf_thumb_picture_frame(1, step))));
   thumbs.layout(1000, 64, rn_take_length(s), 0);

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "settings.h"
 
 #include <cmath>
@@ -81,7 +82,7 @@ Settings Settings::parse(const std::string& text) {
 
 std::string Settings::serialize() const {
   std::ostringstream o;
-  o << "# ReplayNES (Linux) settings\n";
+  o << "# " RN_PRODUCT_NAME " (Linux) settings\n";
   o << "integerScale=" << int(integerScale) << "\n";
   o << "par87=" << int(par87) << "\n";
   o << "hideOverscan=" << int(hideOverscan) << "\n";

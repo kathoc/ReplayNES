@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "steam_shortcut.h"
 
 #include <fcntl.h>
@@ -221,7 +222,7 @@ bool readFile(const std::string& p, std::string* out) {
 
 /// Writes via a temporary file in the same folder + rename (atomic replace), keeping `mode`.
 bool writeFileAtomic(const std::string& path, const std::string& data, mode_t mode, std::string* err) {
-  std::string tmp = path + ".replaynes-tmp";
+  std::string tmp = path + "." RN_PRODUCT_TEMP_PREFIX "-tmp";
   int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
   if (fd < 0) {
     *err = tmp + ": " + std::strerror(errno);
@@ -336,7 +337,7 @@ void installArtwork(const std::string& gridDir, uint32_t appId, const AddOptions
     std::string cur;
     if (readFile(dst, &cur)) {
       if (cur == data) continue;
-      std::string bak = dst + ".replaynes-backup";
+      std::string bak = dst + "." RN_PRODUCT_TEMP_PREFIX "-backup";
       if (!fs::exists(bak, ec) && !o.dryRun) {
         fs::copy_file(dst, bak, fs::copy_options::overwrite_existing, ec);
         if (!ec) u.notes.push_back("previous " + fs::path(dst).filename().string() + " kept as " +
@@ -387,7 +388,7 @@ void processUser(const std::string& userDir, const std::string& accountId, const
     if (s > best) best = s, idx = i;
   }
   if (strongCount > 1)
-    u.notes.push_back(std::to_string(strongCount) + " ReplayNES entries in Steam; updating the first one");
+    u.notes.push_back(std::to_string(strongCount) + " " RN_PRODUCT_NAME " entries in Steam; updating the first one");
 
   bool steamBlocks = steam == SteamState::Running && !o.force;
   std::string before = file.serialize();
@@ -438,7 +439,7 @@ void processUser(const std::string& userDir, const std::string& accountId, const
     struct stat st{};
     if (exists && ::stat(u.shortcutsPath.c_str(), &st) == 0) mode = st.st_mode & 07777;
     if (exists) {
-      u.backupPath = u.shortcutsPath + ".replaynes-backup";
+      u.backupPath = u.shortcutsPath + "." RN_PRODUCT_TEMP_PREFIX "-backup";
       if (!writeFileAtomic(u.backupPath, bytes, mode, &err)) {
         u.action = UserAction::Failed;
         u.error = "backup failed: " + err;
@@ -454,7 +455,7 @@ void processUser(const std::string& userDir, const std::string& accountId, const
     u.shortcutsWritten = true;
   } else if (vdfChanges) {
     u.shortcutsWritten = true;  // dry run: would be written
-    if (exists) u.backupPath = u.shortcutsPath + ".replaynes-backup";
+    if (exists) u.backupPath = u.shortcutsPath + "." RN_PRODUCT_TEMP_PREFIX "-backup";
   }
   if (artFailed) {
     u.action = UserAction::Failed;
@@ -531,14 +532,14 @@ SteamState detectSteamRunning(const std::string& steamRoot, const std::string& h
 }
 
 std::string defaultArtworkDir() {
-  if (const char* e = std::getenv("REPLAYNES_STEAM_ARTWORK"); e && *e) return e;
+  if (const char* e = std::getenv(productEnvName("STEAM_ARTWORK").c_str()); e && *e) return e;
   std::error_code ec;
   fs::path exe = fs::read_symlink("/proc/self/exe", ec);
   if (!ec) {
-    fs::path d = exe.parent_path().parent_path() / "share/replaynes/steam-artwork";
+    fs::path d = exe.parent_path().parent_path() / "share/" RN_PRODUCT_TEMP_PREFIX "/steam-artwork";
     if (fs::is_directory(d, ec)) return d.string();
   }
-  return "/app/share/replaynes/steam-artwork";
+  return "/app/share/" RN_PRODUCT_TEMP_PREFIX "/steam-artwork";
 }
 
 // ------------------------------------------------------------------ add
@@ -552,7 +553,7 @@ bool addToSteam(const AddOptions& optIn, Report& r) {
   }
   r.artworkDir = o.artworkDir.empty() ? defaultArtworkDir() : o.artworkDir;
   if (o.userdataRoots.empty()) {
-    if (const char* e = std::getenv("REPLAYNES_STEAM_USERDATA"); e && *e) o.userdataRoots.push_back(e);
+    if (const char* e = std::getenv(productEnvName("STEAM_USERDATA").c_str()); e && *e) o.userdataRoots.push_back(e);
     else o.userdataRoots = findUserdataRoots(o.home);
   }
   r.roots = o.userdataRoots;
@@ -599,14 +600,14 @@ bool addToSteam(const AddOptions& optIn, Report& r) {
 
   bool dry = o.dryRun;
   std::string pre = dry ? "[dry run] " : "";
-  std::string did = added ? (dry ? "Would add ReplayNES to Steam" : "Added to Steam")
+  std::string did = added ? (dry ? "Would add " RN_PRODUCT_NAME " to Steam" : "Added to Steam")
                           : (dry ? "Would update the Steam entry" : "Steam entry updated");
   if (r.users.empty()) r.summary = "No Steam account found. Start Steam and sign in once, then try again.";
   else if (failed) r.summary = pre + "Add to Steam failed - see details.";
   else if (waiting)
     r.summary = pre + std::string(artOnly ? (dry ? "Artwork would be installed. " : "Artwork installed. ") : "") +
                 "Close Steam first (Desktop Mode: Steam menu > Exit), then try again.";
-  else if (added + updated == 0) r.summary = pre + "ReplayNES is already in Steam with its artwork.";
+  else if (added + updated == 0) r.summary = pre + RN_PRODUCT_NAME " is already in Steam with its artwork.";
   else if (r.steam == SteamState::Running) r.summary = pre + did + " - restart Steam to see the changes.";
   else r.summary = pre + did + " - start (or restart) Steam to see it.";
   return ok;

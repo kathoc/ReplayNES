@@ -8,6 +8,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "replaynes/product.h"
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -31,7 +32,7 @@ class DisplayErrors {
     lastCode_ = code;
     lastName_ = name;
     if (!displayLogDue(count_)) return false;
-    std::fprintf(stderr, "ReplayNES: display: %s failed: %s (%ld / 0x%08lx), %d display failures so far\n", what.c_str(),
+    std::fprintf(stderr, "%s: display: %s failed: %s (%ld / 0x%08lx), %d display failures so far\n", RN_PRODUCT_NAME, what.c_str(),
                  name.empty() ? "?" : name.c_str(), code, (unsigned long)uint32_t(code), count_);
     return true;
   }

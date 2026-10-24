@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
+#include <mutex>
 
 namespace rnf {
 #include "l10n_table.inc"
@@ -35,10 +37,31 @@ int langIndex(const char* lang) {
   return (lang[0] == 'j' || lang[0] == 'J') && (lang[1] == 'a' || lang[1] == 'A') ? 1 : 0;
 }
 
+// Intern replaced strings so returned C pointers retain process lifetime.
+const char* productText(const char* text) try {
+  constexpr char originalName[] = "ReplayNES";  // Original catalog product name.
+  if (!text || std::strcmp(RN_PRODUCT_NAME, originalName) == 0 ||
+      !std::strstr(text, originalName)) return text;
+  static std::mutex mutex;
+  static std::map<std::string, std::string> values;
+  std::lock_guard<std::mutex> lock(mutex);
+  const auto existing = values.find(text);
+  if (existing != values.end()) return existing->second.c_str();
+  std::string value(text);
+  size_t pos = 0;
+  while ((pos = value.find(originalName, pos)) != std::string::npos) {
+    value.replace(pos, sizeof(originalName) - 1, RN_PRODUCT_NAME);
+    pos += std::strlen(RN_PRODUCT_NAME);
+  }
+  return values.emplace(text, std::move(value)).first->second.c_str();
+} catch (...) {
+  // Localization must not let allocation failures cross the C API.
+  return text;
+}
+
 const char* lookup(int lang, const char* key) {
   const L10nEntry* e = findEntry(key);
-  if (!e) return key;
-  return lang == 1 ? e->ja : e->en;
+  return productText(e ? (lang == 1 ? e->ja : e->en) : key);
 }
 }  // namespace
 

@@ -160,6 +160,14 @@ TEST_CASE("localization table and formatting") {
   CHECK_EQ(std::string(rnf_l10n_lookup_in("ja", "Move")), "移動");
   CHECK_EQ(std::string(rnf_l10n_lookup_in("en", "Move")), "Move");
   CHECK_EQ(std::string(rnf_l10n_lookup("not a key")), "not a key");
+  const char* productTitle = rnf_l10n_lookup_in("en", "ReplayNES Version");
+  CHECK_EQ(std::string(productTitle), std::string(RN_PRODUCT_NAME) + " Version");
+  CHECK_EQ(std::string(rnf_l10n_lookup_in("ja", "ReplayNES Version")),
+           std::string(RN_PRODUCT_NAME) + "のバージョン");
+  CHECK_EQ(std::string(rnf_l10n_lookup("ReplayNES / ReplayNES")),
+           std::string(RN_PRODUCT_NAME) + " / " + RN_PRODUCT_NAME);
+  // Another lookup must not invalidate a previously returned string.
+  CHECK_EQ(std::string(productTitle), std::string(RN_PRODUCT_NAME) + " Version");
   rnf_arg args[3];
   args[0] = rnf_arg{RNF_ARG_INT, 2, 0, 0, nullptr};
   args[1] = rnf_arg{RNF_ARG_STRING, 0, 0, 0, "D-pad ↑"};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "vk_renderer.h"
 
 #include <SDL3/SDL_vulkan.h>
@@ -71,16 +72,16 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
   apiVersion_ = loaderVersion >= VK_API_VERSION_1_3 ? VK_API_VERSION_1_3 : VK_API_VERSION_1_1;
 
   VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-  app.pApplicationName = "ReplayNES";
+  app.pApplicationName = RN_PRODUCT_NAME;
   app.applicationVersion = VK_MAKE_VERSION(0, 2, 0);
-  app.pEngineName = "ReplayNES";
+  app.pEngineName = RN_PRODUCT_NAME;
   app.apiVersion = apiVersion_;
   VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   ici.pApplicationInfo = &app;
   ici.enabledExtensionCount = uint32_t(exts.size());
   ici.ppEnabledExtensionNames = exts.data();
   const char* layers[] = {"VK_LAYER_KHRONOS_validation"};
-  if (const char* v = std::getenv("REPLAYNES_VK_VALIDATION"); v && *v == '1') {
+  if (const char* v = std::getenv(productEnvName("VK_VALIDATION").c_str()); v && *v == '1') {
     ici.enabledLayerCount = 1;
     ici.ppEnabledLayerNames = layers;
   }
@@ -173,7 +174,7 @@ bool VkRenderer::createDevice(std::string* error) {
   VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
   f2.pNext = &idF;
   vkGetPhysicalDeviceFeatures2(phys_, &f2);
-  bool disable = std::getenv("REPLAYNES_NO_PRESENT_WAIT") != nullptr;
+  bool disable = std::getenv(productEnvName("NO_PRESENT_WAIT").c_str()) != nullptr;
   presentWait_ = !disable && hasExtension(avail, VK_KHR_PRESENT_ID_EXTENSION_NAME) &&
                  hasExtension(avail, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) && idF.presentId && waitF.presentWait;
   if (presentWait_) {
@@ -850,7 +851,7 @@ bool VkRenderer::recreateDevice() {
   nextDeviceRetry_ = now + 1.0;
   // The ImGui renderer backend goes with the old device (it was up unless a re-creation failed).
   bool imgui = imguiReady_ || imguiWanted_;
-  std::fprintf(stderr, "ReplayNES: display: recreating the Vulkan device (%s)\n", errors_.summary().c_str());
+  std::fprintf(stderr, "%s: display: recreating the Vulkan device (%s)\n", RN_PRODUCT_NAME, errors_.summary().c_str());
   releaseDevice();
   std::string err;
   if (!initDevice(&err)) {
@@ -861,7 +862,7 @@ bool VkRenderer::recreateDevice() {
   if (imgui && !initImGuiBackend()) errors_.note("ImGui_ImplVulkan_Init after device re-creation", 0);
   deviceLost_ = false;
   surfaceLost_ = false;
-  std::fprintf(stderr, "ReplayNES: display: Vulkan device recreated (%s)\n", description_.c_str());
+  std::fprintf(stderr, "%s: display: Vulkan device recreated (%s)\n", RN_PRODUCT_NAME, description_.c_str());
   return true;
 }
 
@@ -890,7 +891,7 @@ bool VkRenderer::recreateSurface() {
   }
   surfaceLost_ = false;
   needRecreate_ = false;
-  std::fprintf(stderr, "ReplayNES: display: Vulkan surface recreated\n");
+  std::fprintf(stderr, "%s: display: Vulkan surface recreated\n", RN_PRODUCT_NAME);
   return createSwapchain();
 }
 
@@ -930,7 +931,7 @@ void VkRenderer::recoverDisplay(bool restart) {
   if (crtFailStreak_ > 0 && ++crtFailedRestarts_ >= 2 && !crtGaveUp_) {
     crtGaveUp_ = true;
     status_.crtError = "CRT stopped after repeated GPU errors (switch it off and on to retry)";
-    std::fprintf(stderr, "ReplayNES: display: CRT builds keep failing after a restart: plain picture\n");
+    std::fprintf(stderr, "%s: display: CRT builds keep failing after a restart: plain picture\n", RN_PRODUCT_NAME);
   }
   plainNext_ = true;
   if (deviceLost_ || !device_) {

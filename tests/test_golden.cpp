@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "replaynes/product.h"
 #include "replaynes/replaynes.h"
 #include "support/TestUtil.h"
 #include "support/rn_test.h"
@@ -162,6 +163,12 @@ TEST_CASE("golden: Nestopia + Test Cartridge record, branch, replay, save and re
       std::ofstream(path, std::ios::binary) << text;
     }
     MESSAGE("fixture project written: " + fixture);
+  }
+  if (std::string(RN_PRODUCT_PROJECT_FORMAT) != "replaynes-project") {
+    // Another product (cmake/Product.cmake) must refuse ReplayNES projects; the digests below are
+    // ReplayNES's.
+    CHECK(rn_session_open(fixture.c_str(), rom.c_str(), &opt, &s) == RN_ERR_CORRUPT);
+    return;
   }
   REQUIRE(rn_session_open(fixture.c_str(), rom.c_str(), &opt, &s) == RN_OK);
   Digest d("fixture");

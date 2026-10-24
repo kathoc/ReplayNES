@@ -29,8 +29,8 @@ struct ChooserRequest {
   std::string title;
   std::string root;         // the chooser never leaves this folder
   std::string startDir;     // inside root ("" = root)
-  std::string defaultName;  // saveProject: file name without ".nesrec"
-  /// The chosen path (saveProject: <dir>/<name>.nesrec; the caller handles an existing item).
+  std::string defaultName;  // saveProject: file name without RN_PRODUCT_PROJECT_EXT
+  /// The chosen path (saveProject: <dir>/<name><project extension>; the caller handles an existing item).
   std::function<void(const std::string& path)> onChosen;
   std::function<void()> onCancel;
 };
@@ -46,7 +46,7 @@ class DialogHost {
 };
 
 /// Save-name rules of the chooser: trims, drops path separators and control characters, appends
-/// ".nesrec". "" when nothing usable is left.
+/// the product project extension. "" when nothing usable is left.
 std::string chooserProjectFileName(const std::string& typed);
 
 }  // namespace rnl

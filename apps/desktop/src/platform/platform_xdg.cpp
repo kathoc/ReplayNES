@@ -1,5 +1,6 @@
 // Linux (and the macOS test build): XDG folders, the freedesktop.org Trash, gamescope detection.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -48,13 +49,13 @@ Paths Paths::standard() {
     std::string x = xdgDocumentsDir(home);
     if (!x.empty()) docs = x;
   }
-  p.setLibraryRoot(docs + "/ReplayNES");
+  p.setLibraryRoot(docs + "/" RN_PRODUCT_DATA_DIR);
   std::string data = env("XDG_DATA_HOME");
   if (data.empty()) data = home + "/.local/share";
   std::string config = env("XDG_CONFIG_HOME");
   if (config.empty()) config = home + "/.config";
-  p.sessionRoot = data + "/ReplayNES/Session";
-  p.configDir = config + "/ReplayNES";
+  p.sessionRoot = data + "/" RN_PRODUCT_DATA_DIR "/Session";
+  p.configDir = config + "/" RN_PRODUCT_DATA_DIR;
   return p;
 }
 

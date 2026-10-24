@@ -1,6 +1,7 @@
 // Modal popups: dialogs (DialogHost), the file chooser and the rename field. ImGui navigation
 // (A / B); styled like the menus (UI::updateScale sets the style).
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -91,8 +92,21 @@ void UI::chooserList() {
     bool dir = it->is_directory(ec);
     std::string lower = n;
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
-    bool nesrec = lower.size() > 7 && lower.compare(lower.size() - 7, 7, ".nesrec") == 0;
-    bool nes = lower.size() > 4 && lower.compare(lower.size() - 4, 4, ".nes") == 0;
+    auto hasExtension = [&lower](std::string extension) {
+      std::transform(extension.begin(), extension.end(), extension.begin(),
+                     [](unsigned char ch) { return char(std::tolower(ch)); });
+      return lower.size() > extension.size() &&
+             lower.compare(lower.size() - extension.size(), extension.size(), extension) == 0;
+    };
+    bool nesrec = hasExtension(RN_PRODUCT_PROJECT_EXT);
+    bool nes = false;
+    const std::string extensions = RN_PRODUCT_ROM_EXTS;
+    for (size_t begin = 0; begin < extensions.size();) {
+      size_t end = extensions.find(';', begin);
+      if (end == std::string::npos) end = extensions.size();
+      if (end > begin && hasExtension("." + extensions.substr(begin, end - begin))) nes = true;
+      begin = end + 1;
+    }
     if (c.req.mode == ChooserRequest::Mode::openROM && !dir && !nes) continue;
     if (c.req.mode != ChooserRequest::Mode::openROM && !dir) continue;
     if (c.req.mode == ChooserRequest::Mode::openROM && nesrec) continue;
@@ -165,14 +179,14 @@ void UI::buildChooser() {
       ImGui::AlignTextToFramePadding();
       ImGui::TextUnformatted(TR("Name"));
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(".nesrec").x - S(16));
+      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(RN_PRODUCT_PROJECT_EXT).x - S(16));
       if (appearing || c.focusName) {
         ImGui::SetKeyboardFocusHere();
         c.focusName = false;
       }
       bool enter = ImGui::InputText("##name", c.name, sizeof c.name, ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::SameLine();
-      ImGui::TextDisabled(".nesrec");
+      ImGui::TextDisabled("%s", RN_PRODUCT_PROJECT_EXT);
       if (!c.confirmReplace.empty()) {
         ImGui::TextColored(ImVec4(1, 0.75f, 0.4f, 1), "%s",
                            (kRecycleBin ? TRF("“%@” already exists. Replace it? (The existing project is moved to the Recycle Bin.)",

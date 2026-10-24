@@ -1,6 +1,7 @@
 // ReplayNES for Linux / Steam Deck: the shared desktop frontend (apps/desktop/src/app.h) with the
 // Vulkan presenter (vk_renderer.h), in-app updates through the Flatpak portal and "Add to Steam".
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <sys/prctl.h>
@@ -21,12 +22,12 @@ int main(int argc, char** argv) {
   using namespace rnl;
   if (int rc = 0; steam::runCli(argc, argv, &rc)) return rc;  // --add-to-steam [--dry-run] (no window)
   if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
-    std::printf("ReplayNES %s\n", RNL_APP_VERSION);
+    std::printf("%s %s\n", RN_PRODUCT_NAME, RNL_APP_VERSION);
     return 0;
   }
   PlatformHooks platform;
   platform.version = RNL_APP_VERSION;
-  platform.executable = "replaynes-linux";
+  platform.executable = RN_PRODUCT_EXECUTABLE;
   platform.windowFlags = SDL_WINDOW_VULKAN;
   platform.makeRenderer = [](const AppOptions&) { return std::unique_ptr<Renderer>(new VkRenderer()); };
   platform.makeUpdates = [] { return std::unique_ptr<UpdateService>(new FlatpakUpdateService()); };

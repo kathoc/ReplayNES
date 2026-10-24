@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "render/headless_vulkan.h"
 
 #include <cstdlib>
@@ -32,13 +33,13 @@ bool HeadlessVulkan::init(std::string* error) {
   if (hasExt(iexts, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
     enable.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
   VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-  app.pApplicationName = "ReplayNES (offscreen)";
+  app.pApplicationName = RN_PRODUCT_NAME " (offscreen)";
   app.apiVersion = VK_API_VERSION_1_1;
   ici.pApplicationInfo = &app;
   ici.enabledExtensionCount = uint32_t(enable.size());
   ici.ppEnabledExtensionNames = enable.data();
   const char* layers[] = {"VK_LAYER_KHRONOS_validation"};
-  if (const char* v = std::getenv("REPLAYNES_VK_VALIDATION"); v && *v == '1') {
+  if (const char* v = std::getenv(productEnvName("VK_VALIDATION").c_str()); v && *v == '1') {
     ici.enabledLayerCount = 1;
     ici.ppEnabledLayerNames = layers;
   }
@@ -49,7 +50,7 @@ bool HeadlessVulkan::init(std::string* error) {
   vkEnumeratePhysicalDevices(instance_, &n, nullptr);
   std::vector<VkPhysicalDevice> devs(n);
   vkEnumeratePhysicalDevices(instance_, &n, devs.data());
-  const char* want = std::getenv("REPLAYNES_VK_DEVICE");
+  const char* want = std::getenv(productEnvName("VK_DEVICE").c_str());
   int best = -1;
   for (VkPhysicalDevice d : devs) {
     VkPhysicalDeviceProperties p;

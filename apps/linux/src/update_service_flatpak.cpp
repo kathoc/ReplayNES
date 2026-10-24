@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "update_service_flatpak.h"
 
 #include <fcntl.h>
@@ -149,7 +150,7 @@ struct FlatpakUpdateService::Impl {
     if (!monitorPath.empty()) return true;
     if (!portalOK) return false;
     char token[64];
-    std::snprintf(token, sizeof token, "replaynes%d_%d", int(::getpid()), ++tokenSeq);
+    std::snprintf(token, sizeof token, "%s%d_%d", RN_PRODUCT_TEMP_PREFIX, int(::getpid()), ++tokenSeq);
     GVariantBuilder opts;
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(token));
@@ -255,7 +256,7 @@ struct FlatpakUpdateService::Impl {
     }
     GVariantBuilder argv, fdmap, envs, opts;
     g_variant_builder_init(&argv, G_VARIANT_TYPE("aay"));
-    g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring("replaynes-linux"));
+    g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring(RN_PRODUCT_EXECUTABLE));
     g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring("--version"));
     g_variant_builder_init(&fdmap, G_VARIANT_TYPE("a{uh}"));
     g_variant_builder_add(&fdmap, "{uh}", guint32(1), gint32(h));
@@ -316,7 +317,7 @@ struct FlatpakUpdateService::Impl {
     GUnixFDList* list = g_unix_fd_list_new();
     GVariantBuilder argv, fdmap, envs, opts;
     g_variant_builder_init(&argv, G_VARIANT_TYPE("aay"));
-    g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring("replaynes-linux"));
+    g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring(RN_PRODUCT_EXECUTABLE));
     for (const std::string& a : args) g_variant_builder_add(&argv, "@ay", g_variant_new_bytestring(a.c_str()));
     g_variant_builder_init(&fdmap, G_VARIANT_TYPE("a{uh}"));
     for (int fd = 0; fd <= 2; ++fd) {  // the same stdin / stdout / stderr (logs go where ours went)

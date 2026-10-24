@@ -39,6 +39,19 @@ namespace {
 // Date.distantPast (0001-01-01) in seconds since 1970.
 constexpr double kDistantPast = -62135769600.0;
 
+bool isRomExtension(const std::string& extension) {
+  const std::string extensions = lower(RN_PRODUCT_ROM_EXTS);
+  const std::string wanted = lower(extension);
+  size_t start = 0;
+  while (start < extensions.size()) {
+    const size_t end = extensions.find(';', start);
+    if (extensions.substr(start, end - start) == wanted) return true;
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return false;
+}
+
 struct Entry {
   bool ok = false;
   bool isDir = false;
@@ -313,7 +326,7 @@ rn_status rnf_library_scan_roms(const char* dir_c, rnf_name_compare compare, voi
   if (!listDir(dir, names, err)) return fail(RN_ERR_IO, err);
   auto list = std::make_unique<rnf_rom_list>();
   auto add = [&](const std::string& path, const std::string& name, const std::string& relative) {
-    if (lower(extensionOf(name)) != "nes") return;
+    if (!isRomExtension(extensionOf(name))) return;
     Entry e = inspect(path);
     if (!e.ok || !e.isRegular) return;
     list->items.push_back({path, stem(name), relative, e.size, e.modified});
@@ -363,7 +376,7 @@ rn_status rnf_library_scan_projects(const char* dir_c, rnf_project_list** out) {
   if (!listDir(dir, names, err)) return fail(RN_ERR_IO, err);
   auto list = std::make_unique<rnf_project_list>();
   for (auto& n : names) {
-    if (lower(extensionOf(n)) != "nesrec") continue;
+    if (lower(extensionOf(n)) != lower(RN_PRODUCT_PROJECT_EXT + 1)) continue;
     std::string path = join(dir, n);
     char* text = nullptr;
     if (rn_project_manifest_json(path.c_str(), &text) != RN_OK || !text) continue;
@@ -422,7 +435,7 @@ char* rnf_library_new_project_path(const char* projects_dir, const char* rom_nam
   std::string dir = stripTrailing(projects_dir);
   for (int n = 1;; ++n) {
     std::string name = n == 1 ? base : base + " " + std::to_string(n);
-    std::string path = join(dir, name + ".nesrec");
+    std::string path = join(dir, name + RN_PRODUCT_PROJECT_EXT);
     if (!exists(path)) return dup(path);
   }
   RNF_GUARD_END(nullptr)
@@ -492,7 +505,7 @@ char* rnf_backup_path(const char* project_path, double date, rnf_exists_fn exist
   std::string file = lastComponent(project_path);
   std::string name = stem(file);
   std::string ext = extensionOf(file);
-  if (ext.empty()) ext = "nesrec";
+  if (ext.empty()) ext = RN_PRODUCT_PROJECT_EXT + 1;
   // Sibling of the project, spelled with the project path's own separator ("C:/x/a" stays "/").
   std::string trimmed = stripTrailing(project_path);
   size_t slash = lastPathSep(trimmed);

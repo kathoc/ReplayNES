@@ -23,6 +23,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "replaynes/product.h"
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -95,11 +96,11 @@ uint32_t crc32(const std::string& data);
 enum class SteamState { NotRunning, Running, Unknown };
 
 struct AddOptions {
-  std::string appName = "ReplayNES";
+  std::string appName = RN_PRODUCT_NAME;
   std::string exe = "\"/usr/bin/flatpak\"";  ///< Steam's own format for Flatpak shortcuts
   std::string startDir = "/usr/bin/";
-  std::string launchOptions = "run io.github.replaynes.ReplayNES";
-  std::string flatpakId = "io.github.replaynes.ReplayNES";  ///< matches existing entries
+  std::string launchOptions = "run " RN_PRODUCT_APP_ID;
+  std::string flatpakId = RN_PRODUCT_APP_ID;  ///< matches existing entries
   std::vector<std::string> tags = {"Emulator"};             ///< new entries only
   /// capsule.png, wide.png, hero.png, logo.png, icon.png. Empty: defaultArtworkDir().
   std::string artworkDir;
