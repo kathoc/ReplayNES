@@ -6,6 +6,7 @@
 #include <set>
 #include <sstream>
 #include "emulation.h"
+#include "diagram_navigation.h"
 #include "replaynes/frontend.h"
 #include "replaynes/product.h"
 #include "support/rn_test.h"
@@ -538,4 +539,37 @@ TEST_CASE("P NES ignores device kind for filenames and complete defaults") {
   }
   CHECK_EQ(take(rnf_input_bindings_filename_for_kind(1)), "bindings.json");
   CHECK_EQ(take(rnf_input_bindings_filename_for_kind(0)), "bindings.json");
+}
+
+TEST_CASE("D stick diagram navigation reaches every assignable element and the kind row") {
+  struct Point { float x, y; };
+  const auto family = rnf_diagram_family_for_layout(RNF_FAMILY_XBOX, 1, 1);
+  // Match the UI: HOME belongs to the system, so it is drawn but not focusable.
+  for (float scale : {0.5f, 1.0f, 2.0f}) {
+    std::vector<Point> centers;
+    for (size_t i = 0; i < rnf_diagram_element_count(family); ++i) {
+      rnf_diagram_element e{};
+      REQUIRE(rnf_diagram_element_get(family, i, &e));
+      if (!rnf_input_element_ignored(e.element))
+        centers.push_back({float(e.cx) * scale, float(e.cy) * scale});
+    }
+    REQUIRE_EQ(centers.size(), size_t(14));  // four directions, eight buttons, Select + Start
+    centers.push_back({float(RNF_DIAGRAM_CANVAS_WIDTH / 2) * scale, -30 * scale});
+    // Strong connectivity: changing kind or selecting any element must never strand focus.
+    for (size_t start = 0; start < centers.size(); ++start) {
+      std::set<int> visited{int(start)};
+      std::vector<int> pending{int(start)};
+      while (!pending.empty()) {
+        const int current = pending.back();
+        pending.pop_back();
+        for (auto dir : {Point{-1, 0}, Point{1, 0}, Point{0, -1}, Point{0, 1}}) {
+          int next = rnl::diagramFocusNext(centers, current, int(dir.x), int(dir.y));
+          REQUIRE(next >= 0);
+          REQUIRE(next < int(centers.size()));
+          if (visited.insert(next).second) pending.push_back(next);
+        }
+      }
+      CHECK_EQ(visited.size(), centers.size());
+    }
+  }
 }

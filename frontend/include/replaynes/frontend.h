@@ -461,7 +461,10 @@ const char* rnf_face_position_name(rnf_face_position p);    /* "south" ... */
 
 typedef enum rnf_controller_family {
   RNF_FAMILY_NINTENDO = 0, RNF_FAMILY_XBOX = 1, RNF_FAMILY_PLAYSTATION = 2, RNF_FAMILY_GENERIC = 3,
-  RNF_FAMILY_STEAM_DECK = 4
+  RNF_FAMILY_STEAM_DECK = 4,
+  /* Geometry-only families; retain the device family for printed labels. */
+  RNF_FAMILY_ARCADE_STICK = 5, RNF_FAMILY_DIAGRAM_STANDARD = 6,
+  RNF_FAMILY_DIAGRAM_PLAYSTATION = 7, RNF_FAMILY_DIAGRAM_STEAM_DECK = 8
 } rnf_controller_family;
 /* From a product category / name ("Switch Pro Controller", "DualSense", "Xbox One", "Steam Deck")
  * and an optional vendor name. */
@@ -516,6 +519,9 @@ typedef struct rnf_diagram_info {
   double touchpad_x, touchpad_y, touchpad_width, touchpad_height;
   double dpad_anchor_x, dpad_anchor_y, lstick_anchor_x, lstick_anchor_y, rstick_anchor_x, rstick_anchor_y;
 } rnf_diagram_info;
+/* NES (uses_device_kinds == 0) keeps the original family and all drawing data.
+ * Other layouts select decor-free pad geometry or the arcade stick table. */
+rnf_controller_family rnf_diagram_family_for_layout(rnf_controller_family family, int uses_device_kinds, int stick);
 void rnf_diagram_info_get(rnf_controller_family f, rnf_diagram_info* out);
 size_t rnf_diagram_element_count(rnf_controller_family f);
 int rnf_diagram_element_get(rnf_controller_family f, size_t index, rnf_diagram_element* out);

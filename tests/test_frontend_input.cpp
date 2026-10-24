@@ -3,6 +3,9 @@
 // assignment summaries. Ported from the macOS ControllerLayoutTests / PlaybackLogicTests.
 #include <algorithm>
 #include <map>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <set>
 
 #include "support/FrontendTestUtil.h"
@@ -741,4 +744,119 @@ TEST_CASE("L3 = Undo of a retry (layout 7)") {
   Pairs key = old;
   key.emplace_back("kb:6", "hk.undo_take");
   CHECK_EQ(plan(rnf_input_undo_migration, key).bind.size(), size_t(1));
+}
+
+namespace {
+// Canonical value serialization excludes pointer addresses and structure padding.
+// Integer/half-integer geometry is represented exactly, including every public field.
+std::string diagramSnapshot(rnf_controller_family family, bool withDecor = true) {
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  out << std::setprecision(17);
+  rnf_diagram_info i{};
+  rnf_diagram_info_get(family, &i);
+  for (double v : {i.left_stick_x, i.left_stick_y, i.right_stick_x, i.right_stick_y, i.stick_radius,
+                  i.dpad_x, i.dpad_y, i.face_x, i.face_y, double(i.has_touchpad),
+                  i.touchpad_x, i.touchpad_y, i.touchpad_width, i.touchpad_height,
+                  i.dpad_anchor_x, i.dpad_anchor_y, i.lstick_anchor_x, i.lstick_anchor_y,
+                  i.rstick_anchor_x, i.rstick_anchor_y}) out << v << ',';
+  out << '\n';
+  for (size_t n = 0; n < rnf_diagram_element_count(family); ++n) {
+    rnf_diagram_element e{};
+    rnf_diagram_element_get(family, n, &e);
+    out << e.element << ',' << int(e.kind) << ',' << e.cx << ',' << e.cy << ',' << e.width << ',' << e.height
+        << ',' << int(e.badge_side) << ',' << (e.group ? e.group : "(null)") << ',' << e.badge_x << ',' << e.badge_y << '\n';
+  }
+  if (withDecor) for (size_t n = 0; n < rnf_diagram_decor_count(family); ++n) {
+    rnf_diagram_decor d{};
+    rnf_diagram_decor_get(family, n, &d);
+    out << int(d.kind) << ',' << d.x << ',' << d.y << ',' << d.width << ',' << d.height << ',' << d.radius << '\n';
+  }
+  return out.str();
+}
+
+uint64_t diagramFingerprint(const std::string& data) {
+  uint64_t hash = UINT64_C(14695981039346656037);
+  for (unsigned char byte : data) { hash ^= byte; hash *= UINT64_C(1099511628211); }
+  return hash;
+}
+
+}  // namespace
+
+TEST_CASE("diagram NES data matches the pre-simplification snapshots") {
+  // Captured from the original diagram.cpp before adding the non-NES families.
+  const uint64_t snapshots[] = {
+      UINT64_C(3985211134541363568), UINT64_C(3985211134541363568), UINT64_C(11853029716022840263),
+      UINT64_C(3985211134541363568), UINT64_C(12759062532903448228),
+  };
+  for (int n = 0; n < 5; ++n) {
+    auto family = rnf_controller_family(n);
+    CHECK_EQ(diagramFingerprint(diagramSnapshot(family)), snapshots[n]);
+    for (int stick : {0, 1}) {
+      auto selected = rnf_diagram_family_for_layout(family, 0, stick);
+      CHECK_EQ(selected, family);
+      CHECK_EQ(diagramSnapshot(selected), diagramSnapshot(family));
+    }
+  }
+}
+
+TEST_CASE("diagram non-NES pads preserve all positions without decor") {
+  for (auto family : {RNF_FAMILY_NINTENDO, RNF_FAMILY_XBOX, RNF_FAMILY_PLAYSTATION, RNF_FAMILY_GENERIC, RNF_FAMILY_STEAM_DECK}) {
+    auto pad = rnf_diagram_family_for_layout(family, 1, 0);
+    CHECK_EQ(diagramSnapshot(pad, false), diagramSnapshot(family, false));
+    for (int stick : {0, 1}) {
+      auto selected = rnf_diagram_family_for_layout(family, 1, stick);
+      CHECK_EQ(rnf_diagram_decor_count(selected), size_t(0));
+      rnf_diagram_decor d{};
+      CHECK_FALSE(rnf_diagram_decor_get(selected, 0, &d));
+      if (stick) CHECK_EQ(selected, RNF_FAMILY_ARCADE_STICK);
+    }
+  }
+}
+
+TEST_CASE("diagram arcade stick has a left lever and the two arcade button rows") {
+  const auto family = RNF_FAMILY_ARCADE_STICK;
+  std::map<std::string, rnf_diagram_element> elements;
+  for (size_t n = 0; n < rnf_diagram_element_count(family); ++n) {
+    rnf_diagram_element e{};
+    REQUIRE(rnf_diagram_element_get(family, n, &e));
+    CHECK(elements.emplace(e.element, e).second);
+    CHECK(e.cx - e.width / 2 >= 0);
+    CHECK(e.cy - e.height / 2 >= 0);
+    CHECK(e.cx + e.width / 2 <= RNF_DIAGRAM_CANVAS_WIDTH);
+    CHECK(e.cy + e.height / 2 <= RNF_DIAGRAM_CANVAS_HEIGHT);
+  }
+  const char* top[] = {"face.west", "face.north", "rightShoulder", "leftShoulder"};
+  const char* bottom[] = {"face.south", "face.east", "rightTrigger", "leftTrigger"};
+  std::set<std::string> expected = {"dpad.up", "dpad.down", "dpad.left", "dpad.right", "options", "menu", "home"};
+  expected.insert(std::begin(top), std::end(top));
+  expected.insert(std::begin(bottom), std::end(bottom));
+  REQUIRE_EQ(elements.size(), expected.size());
+  for (const auto& name : expected) REQUIRE(elements.count(name));
+  for (int col = 0; col < 4; ++col) {
+    const auto& t = elements.at(top[col]);
+    const auto& b = elements.at(bottom[col]);
+    CHECK_EQ(t.kind, RNF_DIAGRAM_FACE);
+    CHECK_EQ(b.kind, RNF_DIAGRAM_FACE);
+    CHECK_EQ(t.cx, b.cx);
+    CHECK(t.cy < b.cy);
+    CHECK_EQ(t.cy, elements.at(top[0]).cy);
+    CHECK_EQ(b.cy, elements.at(bottom[0]).cy);
+    if (col) {
+      CHECK(elements.at(top[col - 1]).cx < t.cx);
+      CHECK(elements.at(bottom[col - 1]).cx < b.cx);
+    }
+    for (const char* direction : {"dpad.up", "dpad.down", "dpad.left", "dpad.right"}) {
+      const auto& lever = elements.at(direction);
+      CHECK_EQ(lever.kind, RNF_DIAGRAM_STICK_DIRECTION);
+      CHECK_EQ(std::string(lever.group), "dpad");
+      CHECK(lever.cx + lever.width / 2 < t.cx - t.width / 2);
+      CHECK(lever.cx + lever.width / 2 < b.cx - b.width / 2);
+    }
+    for (const char* name : {"options", "menu", "home"}) CHECK(elements.at(name).cy < t.cy);
+  }
+  CHECK(elements.at("options").cx < elements.at("menu").cx);
+  CHECK(elements.at("menu").cx < elements.at("home").cx);
+  CHECK(rnf_input_element_ignored("home"));
+  for (const auto& entry : elements) if (entry.first != "home") CHECK_FALSE(rnf_input_element_ignored(entry.first.c_str()));
 }

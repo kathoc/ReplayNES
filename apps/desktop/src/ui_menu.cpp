@@ -11,6 +11,7 @@
 
 #include "app_model.h"
 #include "emulation.h"
+#include "diagram_navigation.h"
 #include "icons.h"
 #include "imgui_internal.h"
 #include "input_router.h"
@@ -216,20 +217,7 @@ void UI::handleMenuInput(double now) {
   if (pi.kind == RNF_MENU_PAGE_CUSTOM) {
     // The controller diagram: the D-pad moves between the buttons on the picture.
     if (dx || dy) {
-      int best = -1;
-      float bestScore = 1e9f;
-      if (diagramFocus_ < int(diagramCenters_.size())) {
-        ImVec2 c = diagramCenters_[size_t(diagramFocus_)];
-        for (size_t i = 0; i < diagramCenters_.size(); ++i) {
-          if (int(i) == diagramFocus_) continue;
-          float vx = diagramCenters_[i].x - c.x, vy = diagramCenters_[i].y - c.y;
-          float along = vx * float(dx) + vy * float(dy), across = std::fabs(vx * float(dy)) + std::fabs(vy * float(dx));
-          if (along <= 1) continue;
-          float score = along + across * 2.2f;
-          if (score < bestScore) bestScore = score, best = int(i);
-        }
-      }
-      if (best >= 0) diagramFocus_ = best;
+      diagramFocus_ = diagramFocusNext(diagramCenters_, diagramFocus_, dx, dy);
     }
     if (confirm) menuEvent(RNF_MENU_EVENT_ACTIVATE, 0);
     else if (back) menuEvent(rnf_menu_back(menu_), 0);
