@@ -14,6 +14,7 @@
 #include <memory>
 #include <map>
 #include <cstdio>
+#include <cstdlib>
 #include "input/InputLayout.h"
 #include <set>
 
