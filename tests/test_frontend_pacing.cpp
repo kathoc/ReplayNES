@@ -632,3 +632,63 @@ TEST_CASE("display watchdog: pause, slow presents and hidden viewport do not tri
   CHECK_EQ(rnf_display_watchdog_recoveries(w), 0);
   rnf_display_watchdog_free(w);
 }
+
+TEST_CASE("media timing and configurable cadence tolerance") {
+  rn_media_info media{320, 224, 5963, 100, 2, 1, 1, 1};
+  CHECK_EQ(rnf_frame_period_for_media(nullptr), P);
+  CHECK_EQ(rnf_frame_period_for_media(&media), 100.0 / 5963);
+  for (double fps : {59.63, 60.6}) {
+    const double period = 1 / fps;
+    CHECK_EQ(rnf_refreshes_per_frame(1.0 / 60, period), 0);
+    CHECK_EQ(rnf_refreshes_per_frame_with_tolerance(1.0 / 60, period, .015), 1);
+    auto* c = rnf_cadence_new_with_tolerance(period, .015);
+    REQUIRE(c);
+    run(c, 1.0 / 60, 600);
+    CHECK_EQ(rnf_cadence_refreshes_per_frame(c), 1);
+    CHECK(near(rnf_cadence_emulation_rate(c), 60, 1e-6));
+    auto* copy = rnf_cadence_clone(c);
+    CHECK_EQ(rnf_cadence_refreshes_per_frame(copy), 1);
+    rnf_cadence_free(copy);
+    rnf_cadence_free(c);
+    CHECK_EQ(rnf_display_slower_than_frames_with_tolerance(1.0 / 60, period, .015), 0);
+  }
+  CHECK_EQ(rnf_cadence_new_with_tolerance(P, -1), nullptr);
+  auto* p = rnf_frame_pacing_new_with_period(1.0 / 30);
+  rnf_frame_pacing_present(p, 1, 1);
+  rnf_frame_pacing_present(p, 2, 1.04);
+  CHECK_EQ(rnf_frame_pacing_hitches(p), uint64_t(0));
+  rnf_frame_pacing_present(p, 3, 1.10);
+  CHECK_EQ(rnf_frame_pacing_hitches(p), uint64_t(1));
+  rnf_frame_pacing_free(p);
+}
+
+TEST_CASE("stereo resampling matches independent mono streams across chunks") {
+  auto* stereo = rnf_resampler_new_with_channels(2);
+  auto* left = rnf_resampler_new();
+  auto* right = rnf_resampler_new();
+  REQUIRE(stereo && left && right);
+  for (double ratio : {1.0, .99, 1.01, 2.0, .5}) {
+    rnf_resampler_reset(stereo);
+    rnf_resampler_reset(left);
+    rnf_resampler_reset(right);
+    for (size_t chunk = 0; chunk < 8; ++chunk) {
+      const size_t n = 127 + chunk, cap = rnf_resampler_output_bound(n);
+      std::vector<int16_t> l(n), r(n), in(n * 2), out(cap * 2), lo(cap), ro(cap);
+      for (size_t i = 0; i < n; ++i) {
+        l[i] = int16_t((i * 37 + chunk * 29) % 20000);
+        r[i] = int16_t(-int(i * 23 + chunk * 31));
+        in[2*i] = l[i]; in[2*i+1] = r[i];
+      }
+      size_t got = 0, lc = 0, rc = 0;
+      REQUIRE_EQ(rnf_resampler_process(stereo, in.data(), n, ratio, out.data(), cap, &got), RN_OK);
+      REQUIRE_EQ(rnf_resampler_process(left, l.data(), n, ratio, lo.data(), cap, &lc), RN_OK);
+      REQUIRE_EQ(rnf_resampler_process(right, r.data(), n, ratio, ro.data(), cap, &rc), RN_OK);
+      REQUIRE_EQ(got, lc); REQUIRE_EQ(got, rc);
+      for (size_t i = 0; i < got; ++i) {
+        CHECK_EQ(out[2*i], lo[i]); CHECK_EQ(out[2*i+1], ro[i]);
+      }
+    }
+  }
+  CHECK_EQ(rnf_resampler_new_with_channels(3), nullptr);
+  rnf_resampler_free(stereo); rnf_resampler_free(left); rnf_resampler_free(right);
+}

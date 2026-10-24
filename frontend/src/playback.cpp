@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common.hpp"
+#include "picture.hpp"
 
 using namespace rnf;
 
@@ -37,9 +38,9 @@ struct rnf_resume_countdown {
 };
 
 struct rnf_frame_history {
-  static constexpr size_t pixels = size_t(RN_VIDEO_WIDTH) * RN_VIDEO_HEIGHT;
+  uint32_t maxWidth = RN_VIDEO_WIDTH, maxHeight = RN_VIDEO_HEIGHT;
   int capacity = 1;
-  std::vector<uint32_t> storage;
+  std::vector<rnf::Picture> storage;
   int head = 0;  // next write slot
   int count = 0;
 };
@@ -414,21 +415,36 @@ rnf_frame_history* rnf_frame_history_new(int capacity) {
   } catch (...) { return nullptr; }
 }
 void rnf_frame_history_free(rnf_frame_history* h) { delete h; }
-void rnf_frame_history_append(rnf_frame_history* h, const uint32_t* frame) {
-  if (!h || !frame) return;
+rnf_frame_history* rnf_frame_history_new_media(int capacity, const rn_media_info* media) {
+  if (!media || !media->max_width || !media->max_height) return nullptr;
+  auto* h = rnf_frame_history_new(capacity);
+  if (h) { h->maxWidth = media->max_width; h->maxHeight = media->max_height; }
+  return h;
+}
+int rnf_frame_history_append_frame(rnf_frame_history* h, const rn_video_frame_info* frame) {
+  if (!h || !rnf::validPicture(frame, h->maxWidth, h->maxHeight)) return 0;
   try {
-    if (h->storage.empty()) h->storage.assign(size_t(h->capacity) * rnf_frame_history::pixels, 0);
-  } catch (...) {
-    return;
-  }
-  std::copy(frame, frame + rnf_frame_history::pixels, h->storage.begin() + ptrdiff_t(size_t(h->head) * rnf_frame_history::pixels));
+    if (h->storage.empty()) h->storage.resize(size_t(h->capacity));
+    h->storage[size_t(h->head)].assign(*frame);
+  } catch (...) { return 0; }
   h->head = (h->head + 1) % h->capacity;
   h->count = std::min(h->count + 1, h->capacity);
+  return 1;
+}
+void rnf_frame_history_append(rnf_frame_history* h, const uint32_t* frame) {
+  const rn_video_frame_info f{frame, RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_VIDEO_WIDTH};
+  rnf_frame_history_append_frame(h, &f);
+}
+int rnf_frame_history_video_frame(const rnf_frame_history* h, int back, rn_video_frame_info* out) {
+  if (out) *out = {};
+  if (!h || !out || back < 0 || back >= h->count) return 0;
+  const int slot = int((int64_t(h->head) - 1 - back + h->capacity) % h->capacity);
+  *out = h->storage[size_t(slot)].view();
+  return 1;
 }
 const uint32_t* rnf_frame_history_frame(const rnf_frame_history* h, int back) {
-  if (!h || back < 0 || back >= h->count) return nullptr;
-  int slot = (h->head - 1 - back + h->capacity * 2) % h->capacity;
-  return h->storage.data() + size_t(slot) * rnf_frame_history::pixels;
+  rn_video_frame_info f{};
+  return rnf_frame_history_video_frame(h, back, &f) ? f.pixels : nullptr;
 }
 int rnf_frame_history_count(const rnf_frame_history* h) { return h ? h->count : 0; }
 int rnf_frame_history_capacity(const rnf_frame_history* h) { return h ? h->capacity : 0; }
@@ -438,18 +454,25 @@ void rnf_frame_history_clear(rnf_frame_history* h) {
 void rnf_frame_history_release(rnf_frame_history* h) {
   if (!h) return;
   rnf_frame_history_clear(h);
-  std::vector<uint32_t>().swap(h->storage);
+  std::vector<rnf::Picture>().swap(h->storage);
 }
 
 // ------------------------------------------------------------------ audio fade
 size_t rnf_audio_fade_tail(const int16_t* last, size_t n, int repeats, int16_t* out, size_t cap) {
-  if (!last || n == 0 || repeats <= 0) return 0;
+  return rnf_audio_fade_tail_with_channels(last, n, repeats, 1, out, cap);
+}
+size_t rnf_audio_fade_tail_with_channels(const int16_t* last, size_t n, int repeats, uint32_t channels,
+                                         int16_t* out, size_t cap) {
+  if (!last || n == 0 || repeats <= 0 || channels < 1 || channels > 2 ||
+      n > SIZE_MAX / size_t(repeats) / channels) return 0;
   size_t total = n * size_t(repeats);
   if (!out) return total;
   for (size_t i = 0; i < total && i < cap; ++i) {
     double g = 1.0 - double(i + 1) / double(total);  // linear to exactly 0
-    double v = std::round(double(last[i % n]) * g * g);
-    out[i] = int16_t(std::max(-32768.0, std::min(32767.0, v)));
+    for (uint32_t ch = 0; ch < channels; ++ch) {
+      double v = std::round(double(last[(i % n) * channels + ch]) * g * g);
+      out[i * channels + ch] = int16_t(std::max(-32768.0, std::min(32767.0, v)));
+    }
   }
   return total;
 }

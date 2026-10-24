@@ -38,16 +38,17 @@ struct Ring {
   void clear() { v.clear(); head = 0; }
 };
 
-int refreshesPerFrame(double refresh, double framePeriod) {
+int refreshesPerFrame(double refresh, double framePeriod, double tolerance = RNF_CADENCE_LOCK_TOLERANCE) {
   if (!(refresh > 0)) return 0;
   double k = std::round(framePeriod / refresh);
-  if (!(k >= 1) || !(std::fabs(k * refresh - framePeriod) / framePeriod <= RNF_CADENCE_LOCK_TOLERANCE)) return 0;
+  if (!(k >= 1) || !(std::fabs(k * refresh - framePeriod) / framePeriod <= tolerance)) return 0;
   return int(k);
 }
 
 }  // namespace
 
 struct rnf_cadence {
+  double tolerance = RNF_CADENCE_LOCK_TOLERANCE;
   double framePeriod = rnf_frame_period();
   double refresh = 0;
   bool hasLastPresentation = false;
@@ -129,13 +130,15 @@ struct rnf_audio_rate {
 };
 
 struct rnf_resampler {
-  float history[3] = {0, 0, 0};
+  uint32_t channels = 1;
+  float history[6] = {};
   double position = 0;
   bool primed = false;
   std::vector<float> work;
 };
 
 struct rnf_frame_pacing {
+  double framePeriod = rnf_frame_period();
   uint64_t presents = 0, hitches = 0, skipped = 0;
   double windowMax = 0;
   bool hasLast = false;
@@ -161,9 +164,12 @@ extern "C" {
 
 // ------------------------------------------------------------------ displays slower than the frame rate
 int rnf_display_slower_than_frames(double refresh, double frame_period) {
+  return rnf_display_slower_than_frames_with_tolerance(refresh, frame_period, RNF_CADENCE_LOCK_TOLERANCE);
+}
+int rnf_display_slower_than_frames_with_tolerance(double refresh, double frame_period, double tolerance) {
   if (!(frame_period > 0)) frame_period = rnf_frame_period();
   if (!(refresh > 0)) return 0;
-  return refresh > frame_period && refreshesPerFrame(refresh, frame_period) == 0 ? 1 : 0;
+  return refresh > frame_period && rnf_refreshes_per_frame_with_tolerance(refresh, frame_period, tolerance) == 0 ? 1 : 0;
 }
 
 rnf_frame_budget* rnf_frame_budget_new(double frame_period) {
@@ -202,8 +208,13 @@ uint64_t rnf_frame_budget_dropped(const rnf_frame_budget* b) {
 
 // ------------------------------------------------------------------ cadence
 rnf_cadence* rnf_cadence_new(double frame_period) {
+  return rnf_cadence_new_with_tolerance(frame_period, RNF_CADENCE_LOCK_TOLERANCE);
+}
+rnf_cadence* rnf_cadence_new_with_tolerance(double frame_period, double tolerance) {
+  if (!std::isfinite(tolerance) || tolerance < 0 || tolerance >= 1) return nullptr;
   try {
     auto* c = new rnf_cadence;
+    c->tolerance = tolerance;
     if (frame_period > 0) c->framePeriod = frame_period;
     return c;
   } catch (...) { return nullptr; }
@@ -212,7 +223,11 @@ rnf_cadence* rnf_cadence_clone(const rnf_cadence* c) { return cloneOf(c); }
 void rnf_cadence_free(rnf_cadence* c) { delete c; }
 
 int rnf_refreshes_per_frame(double refresh, double frame_period) {
-  return refreshesPerFrame(refresh, frame_period > 0 ? frame_period : rnf_frame_period());
+  return rnf_refreshes_per_frame_with_tolerance(refresh, frame_period, RNF_CADENCE_LOCK_TOLERANCE);
+}
+int rnf_refreshes_per_frame_with_tolerance(double refresh, double frame_period, double tolerance) {
+  if (!std::isfinite(tolerance) || tolerance < 0 || tolerance >= 1) return 0;
+  return refreshesPerFrame(refresh, frame_period > 0 ? frame_period : rnf_frame_period(), tolerance);
 }
 
 int rnf_cadence_refresh(rnf_cadence* c, double t) {
@@ -243,7 +258,7 @@ int rnf_cadence_refresh(rnf_cadence* c, double t) {
   }
   double last = c->lastFrameTime;
   if (t <= last) return 0;
-  int k = refreshesPerFrame(c->refresh, c->framePeriod);
+  int k = refreshesPerFrame(c->refresh, c->framePeriod, c->tolerance);
   if (k) {
     // Every k-th refresh after the previous frame (half a refresh of tolerance absorbs timestamp
     // noise; a refresh without a callback starts the frame at the next callback).
@@ -260,16 +275,16 @@ int rnf_cadence_refresh(rnf_cadence* c, double t) {
 }
 
 double rnf_cadence_refresh_interval(const rnf_cadence* c) { return c ? c->refresh : 0; }
-int rnf_cadence_refreshes_per_frame(const rnf_cadence* c) { return c ? refreshesPerFrame(c->refresh, c->framePeriod) : 0; }
+int rnf_cadence_refreshes_per_frame(const rnf_cadence* c) { return c ? refreshesPerFrame(c->refresh, c->framePeriod, c->tolerance) : 0; }
 double rnf_cadence_emulation_rate(const rnf_cadence* c) {
   if (!c) return 0;
-  int k = refreshesPerFrame(c->refresh, c->framePeriod);
+  int k = refreshesPerFrame(c->refresh, c->framePeriod, c->tolerance);
   if (!k) return 1 / c->framePeriod;
   return 1 / (double(k) * c->refresh);
 }
 double rnf_cadence_expected_frame_interval(const rnf_cadence* c) {
   if (!c) return 0;
-  int k = refreshesPerFrame(c->refresh, c->framePeriod);
+  int k = refreshesPerFrame(c->refresh, c->framePeriod, c->tolerance);
   if (!k) return c->framePeriod;
   return double(k) * c->refresh;
 }
@@ -493,13 +508,21 @@ int rnf_audio_rate_smoothed_fill(const rnf_audio_rate* a, double* out) {
 
 // ------------------------------------------------------------------ resampler
 rnf_resampler* rnf_resampler_new(void) {
-  try { return new rnf_resampler; } catch (...) { return nullptr; }
+  return rnf_resampler_new_with_channels(1);
+}
+rnf_resampler* rnf_resampler_new_with_channels(uint32_t channels) {
+  if (channels < 1 || channels > 2) return nullptr;
+  try {
+    auto* r = new rnf_resampler;
+    r->channels = channels;
+    return r;
+  } catch (...) { return nullptr; }
 }
 rnf_resampler* rnf_resampler_clone(const rnf_resampler* r) { return cloneOf(r); }
 void rnf_resampler_free(rnf_resampler* r) { delete r; }
 void rnf_resampler_reset(rnf_resampler* r) {
   if (!r) return;
-  r->history[0] = r->history[1] = r->history[2] = 0;
+  std::fill(r->history, r->history + 6, 0);
   r->position = 0;
   r->primed = false;
 }
@@ -514,17 +537,17 @@ rn_status rnf_resampler_process(rnf_resampler* r, const int16_t* in, size_t n, d
   RNF_GUARD_BEGIN
   if (!r->primed) {
     // Start on the first sample (no ramp from silence).
-    float first = float(in[0]);
-    r->history[0] = r->history[1] = r->history[2] = first;
+    for (uint32_t ch = 0; ch < r->channels; ++ch)
+      for (size_t j = 0; j < 3; ++j) r->history[j * r->channels + ch] = float(in[ch]);
     r->primed = true;
   }
   // work = x[-3], x[-2], x[-1], x[0] ... x[n-1]
   std::vector<float>& work = r->work;
   work.clear();
-  work.insert(work.end(), r->history, r->history + 3);
-  for (size_t i = 0; i < n; ++i) work.push_back(float(in[i]));
+  work.insert(work.end(), r->history, r->history + 3 * r->channels);
+  for (size_t i = 0; i < n * r->channels; ++i) work.push_back(float(in[i]));
   double step = 1 / std::max(0.5, std::min(2.0, ratio));
-  long long wn = (long long)work.size();
+  long long wn = (long long)(work.size() / r->channels);
   double p = r->position;
   size_t written = 0;
   for (;;) {
@@ -532,20 +555,22 @@ rn_status rnf_resampler_process(rnf_resampler* r, const int16_t* in, size_t n, d
     long long i = (long long)fl + 2;
     if (i + 2 >= wn) break;
     float t = float(p - fl);
-    float y0 = work[size_t(i - 1)], y1 = work[size_t(i)], y2 = work[size_t(i + 1)], y3 = work[size_t(i + 2)];
-    float c1 = 0.5f * (y2 - y0);
-    float c2 = y0 - 2.5f * y1 + 2 * y2 - 0.5f * y3;
-    float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-    float v = ((c3 * t + c2) * t + c1) * t + y1;
-    float rv = std::round(v);
-    out[written++] = int16_t(std::max(-32768.0f, std::min(32767.0f, rv)));
+    for (uint32_t ch = 0; ch < r->channels; ++ch) {
+      float y0 = work[size_t(i - 1) * r->channels + ch], y1 = work[size_t(i) * r->channels + ch],
+            y2 = work[size_t(i + 1) * r->channels + ch], y3 = work[size_t(i + 2) * r->channels + ch];
+      float c1 = 0.5f * (y2 - y0);
+      float c2 = y0 - 2.5f * y1 + 2 * y2 - 0.5f * y3;
+      float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+      float v = ((c3 * t + c2) * t + c1) * t + y1;
+      float rv = std::round(v);
+      out[written * r->channels + ch] = int16_t(std::max(-32768.0f, std::min(32767.0f, rv)));
+    }
+    ++written;
     p += step;
   }
   // Keep the last three samples; positions are re-based on the new x[-1].
   r->position = p - double(n);
-  r->history[0] = work[size_t(wn - 3)];
-  r->history[1] = work[size_t(wn - 2)];
-  r->history[2] = work[size_t(wn - 1)];
+  std::copy(work.end() - 3 * r->channels, work.end(), r->history);
   if (out_count) *out_count = written;
   return RN_OK;
   RNF_GUARD_END(RN_ERR_INTERNAL)
@@ -553,11 +578,21 @@ rn_status rnf_resampler_process(rnf_resampler* r, const int16_t* in, size_t n, d
 
 // ------------------------------------------------------------------ frame pacing counters
 rnf_frame_pacing* rnf_frame_pacing_new(void) {
-  try { return new rnf_frame_pacing; } catch (...) { return nullptr; }
+  return rnf_frame_pacing_new_with_period(0);
+}
+rnf_frame_pacing* rnf_frame_pacing_new_with_period(double frame_period) {
+  try {
+    auto* p = new rnf_frame_pacing;
+    if (frame_period > 0) p->framePeriod = frame_period;
+    return p;
+  } catch (...) { return nullptr; }
 }
 rnf_frame_pacing* rnf_frame_pacing_clone(const rnf_frame_pacing* p) { return cloneOf(p); }
 void rnf_frame_pacing_free(rnf_frame_pacing* p) { delete p; }
-double rnf_frame_pacing_hitch_interval(void) { return rnf_frame_period() * 1.5; }
+double rnf_frame_pacing_hitch_interval(void) { return rnf_frame_pacing_hitch_interval_for_period(0); }
+double rnf_frame_pacing_hitch_interval_for_period(double frame_period) {
+  return (frame_period > 0 ? frame_period : rnf_frame_period()) * 1.5;
+}
 
 void rnf_frame_pacing_present(rnf_frame_pacing* p, uint64_t frame, double time) {
   if (!p) return;
@@ -567,7 +602,7 @@ void rnf_frame_pacing_present(rnf_frame_pacing* p, uint64_t frame, double time) 
   if (continuous) {
     double dt = time - p->lastTime;
     p->skipped += frame - p->lastFrame - 1;
-    if (frame - p->lastFrame == 1 && dt > rnf_frame_pacing_hitch_interval()) p->hitches += 1;
+    if (frame - p->lastFrame == 1 && dt > rnf_frame_pacing_hitch_interval_for_period(p->framePeriod)) p->hitches += 1;
     p->windowMax = std::max(p->windowMax, dt);
   }
   p->hasLast = true;

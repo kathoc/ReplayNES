@@ -173,7 +173,11 @@ char* rnf_tape_status_label(const rnf_tape_status* st) {
 }
 
 char* rnf_tape_time_label(uint64_t frames) {
-  const uint64_t secs = uint64_t(std::floor(double(frames) * rnf_frame_period() + 1e-9));
+  return rnf_tape_time_label_for_period(frames, rnf_frame_period());
+}
+char* rnf_tape_time_label_for_period(uint64_t frames, double frame_period) {
+  if (!(frame_period > 0) || !std::isfinite(frame_period)) frame_period = rnf_frame_period();
+  const uint64_t secs = uint64_t(std::floor(double(frames) * frame_period + 1e-9));
   char buf[32];
   if (secs >= 3600)
     std::snprintf(buf, sizeof buf, "%llu:%02llu:%02llu", (unsigned long long)(secs / 3600),
@@ -287,7 +291,10 @@ const char* rnf_video_quality_label(int preset) {
 }
 
 char* rnf_video_summary(uint64_t frames, int64_t bytes) {
-  char* t = rnf_tape_time_label(frames);
+  return rnf_video_summary_for_period(frames, bytes, rnf_frame_period());
+}
+char* rnf_video_summary_for_period(uint64_t frames, int64_t bytes, double frame_period) {
+  char* t = rnf_tape_time_label_for_period(frames, frame_period);
   std::string len = t ? t : "";
   rnf_string_free(t);
   char size[32];

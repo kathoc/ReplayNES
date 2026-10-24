@@ -1,6 +1,7 @@
 // Frontend core: export settings + geometry, streaming output canvas, flash level texts and the
 // shared localization table (generated from Localizable.xcstrings) with its formatter.
 // Ported from the macOS ExportTests (geometry) / StreamOutputTests / UILanguageTests.
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -127,6 +128,134 @@ TEST_CASE("stream output: integer multiples fill the canvas") {
   CHECK_EQ(take(rnf_stream_output_label(RNF_STREAM_X1, 0)), "Native 256×240");
   CHECK_EQ(take(rnf_stream_output_label(RNF_STREAM_X4, 0)), "4× 1024×960");
   CHECK_EQ(take(rnf_stream_output_label(RNF_STREAM_W1280, 1)), "1280×960 (4:3, with black bars)");
+}
+
+TEST_CASE("export and stream media geometry timing and source rotation") {
+  rn_media_info media{320, 224, 5963, 100, 2, 4, 3, 1};
+  rnf_export_settings s{};
+  s.preset = {RNF_PRESET_NATIVE, 2, 0, 0};
+  rnf_export_geometry g{};
+  REQUIRE_EQ(rnf_export_validate_media(&s, &media, 0, 0, nullptr), RN_OK);
+  rnf_export_geometry_compute_media(&s, &media, 0, 0, &g);
+  CHECK_EQ(g.canvas_width, 448);
+  CHECK_EQ(g.canvas_height, 640);
+  CHECK_EQ(g.rotation, uint32_t(1));
+  CHECK_EQ(g.src_width, 320);
+  CHECK_EQ(g.src_height, 224);
+  int x = -1, y = -1;
+  REQUIRE(rnf_export_source_point(&g, 0, 0, &x, &y));
+  CHECK_EQ(x, 0);
+  CHECK_EQ(y, 223);
+  REQUIRE(rnf_export_source_point(&g, 447, 639, &x, &y));
+  CHECK_EQ(x, 319);
+  CHECK_EQ(y, 0);
+  CHECK(!rnf_export_source_point(&g, 448, 0, &x, &y));
+  s.pixel_aspect_87 = 1;
+  rnf_export_geometry_compute_media(&s, &media, 0, 0, &g);
+  CHECK_EQ(g.canvas_width, 448);
+  CHECK_EQ(g.canvas_height, 854);
+  CHECK_EQ(g.dst_height, 853);
+  s.crop_left = 16;
+  s.crop_top = 8;
+  rnf_export_geometry_compute_media(&s, &media, 304, 208, &g);
+  CHECK_EQ(g.src_width, 288);
+  CHECK_EQ(g.src_height, 200);
+  REQUIRE(rnf_export_source_point(&g, 0, 0, &x, &y));
+  CHECK_EQ(x, 16);
+  CHECK_EQ(y, 207);
+  s.crop_bottom = 193;
+  CHECK_EQ(rnf_export_validate_media(&s, &media, 304, 208, nullptr), RN_ERR_INVALID_ARG);
+  s.crop_bottom = 0;
+  CHECK_EQ(rnf_export_validate_media(&s, &media, 321, 224, nullptr), RN_ERR_INVALID_ARG);
+  s.crop_top = s.crop_left = 0;
+  s.pixel_aspect_87 = 0;
+  for (uint32_t rotation = 0; rotation < 4; ++rotation) {
+    media.rotation = rotation;
+    rnf_export_geometry_compute_media(&s, &media, 0, 0, &g);
+    REQUIRE(rnf_export_source_point(&g, 0, 0, &x, &y));
+    CHECK_EQ(x, rotation >= 2 ? 319 : 0);
+    CHECK_EQ(y, rotation == 1 || rotation == 2 ? 223 : 0);
+  }
+  media.rotation = 1;
+  auto l = rnf_stream_output_layout_media(RNF_STREAM_X2, 0, &media, 0, 0);
+  CHECK_EQ(l.canvas_width, 448);
+  CHECK_EQ(l.canvas_height, 640);
+  CHECK_EQ(l.width, 448.0);
+  CHECK_EQ(l.height, 640.0);
+  l = rnf_stream_output_layout_media(RNF_STREAM_X2, 1, &media, 0, 0);
+  CHECK_EQ(l.canvas_width, 448);
+  CHECK_EQ(l.canvas_height, 853);
+  l = rnf_stream_output_layout_media(RNF_STREAM_W1280, 0, &media, 0, 0);
+  CHECK_EQ(l.width, 672.0);
+  CHECK_EQ(l.height, 960.0);
+  CHECK_EQ(l.x, 304.0);
+  CHECK_EQ(take(rnf_stream_output_label_media(RNF_STREAM_X2, 0, &media, 0, 0)), "2× 448×640");
+
+  const double audioRate = 800.0 * 5963 / 100;
+  rnf_export_timing timing{};
+  REQUIRE_EQ(rnf_export_timing_compute(&media, audioRate, &timing), RN_OK);
+  CHECK_EQ(timing.timescale, uint64_t(5963));
+  CHECK_EQ(timing.frame_duration, uint64_t(100));
+  CHECK_EQ(timing.audio_channels, uint32_t(2));
+  CHECK_EQ(timing.audio_sample_rate, audioRate);
+  CHECK_EQ(timing.gop_frames, uint64_t(30));
+  rnf_export_prediction p{};
+  rnf_export_predict_size_media(&g, 0, RNF_QUALITY_STANDARD, 5963, &media, audioRate, &p);
+  CHECK_EQ(p.seconds, 100.0);
+  CHECK_EQ(p.audio_bitrate, int64_t(256000));
+  CHECK_EQ(p.audio_bytes, int64_t(3200000));
+  rnf_export_prediction fasterAudio{};
+  rnf_export_predict_size_media(&g, 0, RNF_QUALITY_STANDARD, 5963, &media, audioRate * 2, &fasterAudio);
+  CHECK(fasterAudio.container_bytes > p.container_bytes);
+  CHECK_EQ(rnf_export_timing_compute(&media, 0, &timing), RN_ERR_INVALID_ARG);
+  media.fps_den = 0;
+  CHECK_EQ(rnf_export_timing_compute(&media, audioRate, &timing), RN_ERR_INVALID_ARG);
+}
+
+TEST_CASE("explicit NES media keeps legacy export results") {
+  const rn_media_info media{RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+  for (int par = 0; par < 2; ++par) {
+    for (size_t preset = 0; preset < rnf_export_preset_count(); ++preset) {
+      auto s = defaults();
+      rnf_export_preset_get(preset, &s.preset);
+      s.pixel_aspect_87 = par;
+      auto legacy = geometry(s);
+      rnf_export_geometry generic{};
+      rnf_export_geometry_compute_media(&s, &media, 0, 0, &generic);
+      CHECK_EQ(generic.canvas_width, legacy.canvas_width);
+      CHECK_EQ(generic.canvas_height, legacy.canvas_height);
+      CHECK_EQ(generic.dst_width, legacy.dst_width);
+      CHECK_EQ(generic.dst_height, legacy.dst_height);
+      CHECK_EQ(generic.dst_x, legacy.dst_x);
+      CHECK_EQ(generic.dst_y, legacy.dst_y);
+      // Independent frozen NES formula, rather than comparing two wrappers of one implementation.
+      const int sw = 256, sh = 224;
+      const double aspect = par ? 8.0 / 7.0 : 1.0;
+      auto even = [](int v) { return v + (v & 1); };
+      auto width = [&](int scale) { return int(std::round(double(sw * scale) * aspect)); };
+      int k, dw, dh, cw, ch;
+      if (s.preset.kind == RNF_PRESET_NATIVE) {
+        k = std::max(1, s.preset.scale);
+        dw = even(width(k)); dh = sh * k; cw = dw; ch = even(dh);
+      } else {
+        k = std::max(1, s.preset.height / sh);
+        while (k > 1 && width(k) > s.preset.width) --k;
+        dw = std::min(s.preset.width, width(k)); dh = std::min(s.preset.height, sh * k);
+        cw = even(s.preset.width); ch = even(s.preset.height);
+      }
+      CHECK_EQ(generic.dst_width, dw);
+      CHECK_EQ(generic.dst_height, dh);
+      CHECK_EQ(generic.canvas_width, cw);
+      CHECK_EQ(generic.canvas_height, ch);
+      CHECK_EQ(generic.dst_x, (cw - dw) / 2);
+      CHECK_EQ(generic.dst_y, (ch - dh) / 2);
+      rnf_export_prediction a{}, b{};
+      rnf_export_predict_size(&legacy, 0, RNF_QUALITY_STANDARD, 3606, &a);
+      rnf_export_predict_size_media(&generic, 0, RNF_QUALITY_STANDARD, 3606, &media, RN_SAMPLE_RATE, &b);
+      CHECK_EQ(a.total_bytes, b.total_bytes);
+      CHECK_EQ(a.seconds, b.seconds);
+    }
+  }
 }
 
 TEST_CASE("flash level texts") {
