@@ -31,6 +31,26 @@
         }
       }
     },
+    "%.1f/s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.1f回/秒"
+          }
+        }
+      }
+    },
+    "%.2f Hz": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%.2f Hz"
+          }
+        }
+      }
+    },
     "%@ (%@)": {
       "localizations": {
         "ja": {
@@ -67,6 +87,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@（画像 %2$@、縦 %3$lld 倍・最近傍）"
+          }
+        }
+      }
+    },
+    "%@ (Turbo)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（連射）"
           }
         }
       }
@@ -138,6 +168,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lldA"
+          }
+        }
+      }
+    },
+    "%lldP %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldP %@"
           }
         }
       }
@@ -318,6 +358,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "8:7・端を隠す"
+          }
+        }
+      }
+    },
+    "A": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A"
           }
         }
       }
@@ -895,6 +945,16 @@
         }
       }
     },
+    "B": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B"
+          }
+        }
+      }
+    },
     "B (legacy)": {
       "localizations": {
         "ja": {
@@ -1116,12 +1176,32 @@
         }
       }
     },
+    "Button %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタン%lld"
+          }
+        }
+      }
+    },
     "Button Action": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ボタンの動作"
+          }
+        }
+      }
+    },
+    "Buttons": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタン"
           }
         }
       }
@@ -1259,6 +1339,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "このゲームを閉じてライブラリに戻ります"
+          }
+        }
+      }
+    },
+    "Coin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コイン"
           }
         }
       }
@@ -1862,6 +1952,16 @@
         }
       }
     },
+    "Custom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "個別"
+          }
+        }
+      }
+    },
     "D-pad": {
       "localizations": {
         "ja": {
@@ -2115,6 +2215,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存しない"
+          }
+        }
+      }
+    },
+    "Down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下"
           }
         }
       }
@@ -2513,6 +2623,26 @@
         }
       }
     },
+    "Frames held per cycle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1周期のうち押しているコマ数"
+          }
+        }
+      }
+    },
+    "Frames per turbo cycle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射1回の周期のコマ数"
+          }
+        }
+      }
+    },
     "Free software (GPL-2.0-or-later)": {
       "localizations": {
         "ja": {
@@ -2579,6 +2709,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゲームの音量"
+          }
+        }
+      }
+    },
+    "Global": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体の設定"
+          }
+        }
+      }
+    },
+    "Global and per-button turbo timing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体とボタンごとの連射の設定"
           }
         }
       }
@@ -3237,6 +3387,16 @@
         }
       }
     },
+    "Left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左"
+          }
+        }
+      }
+    },
     "Left Alt": {
       "localizations": {
         "ja": {
@@ -3399,6 +3559,26 @@
         }
       }
     },
+    "Per-button turbo timing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンごとの連射の設定"
+          }
+        }
+      }
+    },
+    "Period": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周期"
+          }
+        }
+      }
+    },
     "Play again from here, watch the tape, start over": {
       "localizations": {
         "ja": {
@@ -3494,6 +3674,26 @@
         }
       }
     },
+    "Player 3": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイヤー3"
+          }
+        }
+      }
+    },
+    "Player 4": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイヤー4"
+          }
+        }
+      }
+    },
     "Practice (not recorded)": {
       "comment": "Status label while practicing",
       "localizations": {
@@ -3511,6 +3711,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "練習をやめました"
+          }
+        }
+      }
+    },
+    "Press Length": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "押す長さ"
+          }
+        }
+      }
+    },
+    "Presses per second": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1秒あたりの回数"
           }
         }
       }
@@ -3553,6 +3773,16 @@
         }
       }
     },
+    "Right": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右"
+          }
+        }
+      }
+    },
     "Right button": {
       "localizations": {
         "ja": {
@@ -3569,6 +3799,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "ROMとプロジェクトのフォルダ、設定ファイル"
+          }
+        }
+      }
+    },
+    "RX": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右スティック左右"
+          }
+        }
+      }
+    },
+    "RY": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右スティック上下"
+          }
+        }
+      }
+    },
+    "Service": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サービス"
           }
         }
       }
@@ -6419,6 +6679,16 @@
         }
       }
     },
+    "Start": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタート"
+          }
+        }
+      }
+    },
     "Start a new project from power-on": {
       "localizations": {
         "ja": {
@@ -6677,6 +6947,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "テーブル"
+          }
+        }
+      }
+    },
+    "Test": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト"
           }
         }
       }
@@ -6941,6 +7221,16 @@
         }
       }
     },
+    "Throttle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スロットル"
+          }
+        }
+      }
+    },
     "Timeline: drag to move (muted, paused). Drag the top band (or Shift-drag) to set A/B of the selected section, drag a section edge to adjust it, click a section to practice it": {
       "localizations": {
         "ja": {
@@ -7021,6 +7311,16 @@
         }
       }
     },
+    "Turbo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射"
+          }
+        }
+      }
+    },
     "Turbo A": {
       "localizations": {
         "ja": {
@@ -7057,6 +7357,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "連射の速さ"
+          }
+        }
+      }
+    },
+    "Turbo timing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射の設定"
           }
         }
       }
@@ -7182,6 +7492,16 @@
         }
       }
     },
+    "Up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上"
+          }
+        }
+      }
+    },
     "Up to here": {
       "comment": "Make Video: range = from the start to the playhead",
       "localizations": {
@@ -7239,6 +7559,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "このシステムでは ReplayNES のアップデートが許可されていません。次のコマンドで一度許可してください（デスクトップモードの Konsole）: %@"
+          }
+        }
+      }
+    },
+    "Use global or custom timing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体の設定を使うか、このボタンだけ決めるか"
           }
         }
       }
@@ -7409,12 +7739,32 @@
         }
       }
     },
+    "X": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左右"
+          }
+        }
+      }
+    },
     "X (legacy)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "X(旧設定)"
+          }
+        }
+      }
+    },
+    "Y": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下"
           }
         }
       }

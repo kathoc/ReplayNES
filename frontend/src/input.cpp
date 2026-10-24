@@ -12,6 +12,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <memory>
+#include <map>
+#include <cstdio>
+#include "input/InputLayout.h"
 #include <set>
 
 #include "common.hpp"
@@ -64,6 +67,53 @@ const ActionDef kActions[] = {
     {"hk.menu", RNF_L("Quick Menu"), true, RNF_GROUP_HOTKEY},
 };
 constexpr size_t kActionCount = sizeof(kActions) / sizeof(kActions[0]);
+
+rn::InputLayout activeLayout = rn::InputLayout::nes();
+struct OwnedAction { std::string id, label; rnf_action_group group; };
+std::vector<OwnedAction> layoutActions;
+std::vector<ActionDef> catalog;
+rnf_action_group playerGroup(int p) {
+  static const rnf_action_group groups[] = {RNF_GROUP_PLAYER1, RNF_GROUP_PLAYER2, RNF_GROUP_PLAYER3, RNF_GROUP_PLAYER4};
+  return p >= 0 && p < 4 ? groups[p] : RNF_GROUP_SYSTEM;
+}
+rnf_action_group actionGroup(const std::string& id) {
+  return id.size() > 3 && id[0] == 'p' && id[1] >= '1' && id[1] <= '4' && id[2] == '.'
+      ? playerGroup(id[1] - '1') : RNF_GROUP_SYSTEM;
+}
+std::string fallbackLabel(const std::string& id) {
+  const auto dot = id.rfind('.');
+  std::string name = dot == std::string::npos ? id : id.substr(dot + 1);
+  if (name.size() > 1 && name[0] == 'b' && name[1] >= '1' && name[1] <= '9' &&
+      name.size() <= 9 && std::all_of(name.begin() + 1, name.end(), [](char c) { return c >= '0' && c <= '9'; }))
+    return trf(RNF_L("Button %lld"), {argI(std::stoll(name.substr(1)))});
+  static const std::pair<const char*, const char*> names[] = {
+      {"up", RNF_L("Up")}, {"down", RNF_L("Down")}, {"left", RNF_L("Left")}, {"right", RNF_L("Right")},
+      {"coin", RNF_L("Coin")}, {"start", RNF_L("Start")}, {"select", RNF_L("Select")},
+      {"service", RNF_L("Service")}, {"test", RNF_L("Test")}, {"throttle", RNF_L("Throttle")},
+      {"a", RNF_L("A")}, {"b", RNF_L("B")}, {"x", RNF_L("X")}, {"y", RNF_L("Y")},
+      {"rx", RNF_L("RX")}, {"ry", RNF_L("RY")},
+  };
+  for (const auto& entry : names) if (name == entry.first) return tr(entry.second);
+  if (!name.empty() && name[0] >= 'a' && name[0] <= 'z') name[0] -= 'a' - 'A';
+  // Core-specific ids and explicit labels are also product-overridable translation keys.
+  return tr(name.c_str());
+}
+std::string layoutLabel(const std::string& action) {
+  for (const auto& b : activeLayout.buttons) {
+    const bool turbo = action == activeLayout.turboOf(b);
+    if (action != b.id && !turbo) continue;
+    const std::string label = b.label.empty() ? fallbackLabel(b.id) : tr(b.label.c_str());
+    return turbo ? trf(RNF_L("%@ (Turbo)"), {argS(label)}) : label;
+  }
+  for (const auto& a : activeLayout.axes)
+    if (action == a.id) return a.label.empty() ? fallbackLabel(a.id) : tr(a.label.c_str());
+  return tr(action.c_str());
+}
+const std::vector<ActionDef>& actions() {
+  static const std::vector<ActionDef> nes(kActions, kActions + kActionCount);
+  return activeLayout.isNes() ? nes : catalog;
+}
+
 
 struct Pair {
   const char* input;
@@ -152,6 +202,42 @@ Pair defaultAt(rnf_keyboard_scheme scheme, size_t i) {
 
 Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS) {
   Pairs out;
+  if (!activeLayout.isNes()) {
+    const Pair* keyboard = scheme == RNF_KEYBOARD_SDL ? kKeyboardSDL : kKeyboardMac;
+    for (size_t i = 0; i < kKeyboardCount; ++i)
+      if (std::string(keyboard[i].action).find("hk.") == 0) out.emplace_back(keyboard[i].input, keyboard[i].action);
+    for (auto& pair : kController)
+      if (std::string(pair.action).find("hk.") == 0) out.emplace_back(pair.input, pair.action);
+    for (auto& b : activeLayout.buttons) {
+      if (actionGroup(b.id) == RNF_GROUP_SYSTEM) continue;
+      int slot = b.id[1] - '1';
+      std::string pre = "gc" + std::to_string(slot) + ":", name = b.id.substr(3), element;
+      if (name == "up" || name == "down" || name == "left" || name == "right") {
+        out.emplace_back(pre + "dpad." + name, b.id);
+        out.emplace_back(pre + "lstick." + name, b.id);
+      } else {
+        if (name == "b1") element = "face.east";
+        else if (name == "b2") element = "face.south";
+        else if (name == "b3") element = "face.north";
+        else if (name == "b4") element = "face.west";
+        else if (name == "b5" && slot != 0) element = "leftShoulder";
+        else if (name == "b6" && slot != 0) element = "rightShoulder";
+        else if (name == "coin") element = "options";
+        else if (name == "start") element = "menu";
+        if (!element.empty()) out.emplace_back(pre + element, b.id);
+      }
+    }
+    for (auto& a : activeLayout.axes) {
+      if (actionGroup(a.id) == RNF_GROUP_SYSTEM) continue;
+      std::string name = a.id.substr(3), element;
+      if (name == "axis.x") element = "lstick.x";
+      else if (name == "axis.y") element = "lstick.-y";
+      else if (name == "axis.rx") element = "rstick.x";
+      else if (name == "axis.ry") element = "rstick.-y";
+      if (!element.empty()) out.emplace_back("gc" + std::to_string(a.id[1] - '1') + ":" + element, a.id);
+    }
+    return out;
+  }
   for (size_t i = 0; i < kKeyboardCount + kControllerCount; ++i) {
     Pair p = defaultAt(scheme, i);
     out.emplace_back(p.input, p.action);
@@ -460,7 +546,7 @@ std::vector<std::string> elementActions(const Pairs& b, const std::string& eleme
   std::set<std::string> bound;
   for (auto& p : b) if (p.first == id) bound.insert(p.second);
   std::vector<std::string> out;
-  for (auto& a : kActions) if (bound.count(a.id)) out.push_back(a.id);
+  for (auto& a : actions()) if (bound.count(a.id)) out.push_back(a.id);
   return out;
 }
 
@@ -474,6 +560,15 @@ std::string shortLabel(const std::string& action, int slot) {
       {"hk.soft_reset", RNF_L("Reset"), true}, {"hk.power_cycle", RNF_L("Power"), true},
   };
   for (auto& h : hk) if (action == h.element) return tr(h.text);
+  if (!activeLayout.isNes()) {
+    for (auto& a : actions()) if (action == a.id) {
+      std::string label = a.group == RNF_GROUP_HOTKEY ? tr(a.label) : layoutLabel(action);
+      if (a.group != RNF_GROUP_HOTKEY && a.group != RNF_GROUP_SYSTEM && a.group != playerGroup(slot))
+        label = trf(RNF_L("%lldP %@"), {argI(action[1] - '0'), argS(label)});
+      return label;
+    }
+    return action;
+  }
   auto parts = split(action, '.');
   if (parts.size() != 2) return action;
   static const NameDef game[] = {
@@ -489,9 +584,12 @@ std::string shortLabel(const std::string& action, int slot) {
 
 }  // namespace
 
+namespace rnf { const rn::InputLayout& activeInputLayout() { return activeLayout; } }
+
 // ------------------------------------------------------------------ config
 struct rnf_input_config {
   Pairs bindings;
+  std::map<std::string, std::pair<int, int>> buttonTurbo;
   int turboPeriod = 2, turboDuty = 1;
   std::string socd = "neutral";
   double analogThreshold = 0.5;
@@ -499,40 +597,116 @@ struct rnf_input_config {
 
 extern "C" {
 
-size_t rnf_input_action_count(void) { return kActionCount; }
+rn_status rnf_input_set_layout_json(const char* json) {
+  RNF_GUARD_BEGIN
+  rn::InputLayout next = rn::InputLayout::nes();
+  if (json && !rn::InputLayout::fromJson(json, next).ok()) return fail(RN_ERR_INVALID_ARG, "invalid input layout");
+  std::vector<OwnedAction> owned;
+  if (!next.isNes()) {
+    for (auto& b : next.buttons) {
+      const auto& label = b.label;
+      owned.push_back({b.id, label, actionGroup(b.id)});
+      owned.push_back({next.turboOf(b), label, actionGroup(b.id)});
+    }
+    for (auto& a : next.axes) owned.push_back({a.id, a.label, actionGroup(a.id)});
+  }
+  activeLayout = std::move(next);
+  layoutActions = std::move(owned);
+  catalog.clear();
+  for (auto& a : layoutActions) catalog.push_back({a.id.c_str(), a.label.c_str(), false, a.group});
+  for (auto& a : kActions) if (a.group == RNF_GROUP_HOTKEY) catalog.push_back(a);
+  return RN_OK;
+  RNF_GUARD_END(RN_ERR_INTERNAL)
+}
+const char* rnf_input_layout_name(void) { return activeLayout.name.c_str(); }
+char* rnf_input_bindings_filename(void) {
+  if (activeLayout.isNes()) return dup("bindings.json");
+  std::string safe;
+  const char* hex = "0123456789ABCDEF";
+  for (unsigned char c : activeLayout.name) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') safe += c;
+    else { safe += '%'; safe += hex[c >> 4]; safe += hex[c & 15]; }
+  }
+  return dup("bindings-" + safe + ".json");
+}
+uint8_t rnf_input_record_directions(const rn_input_record* record) {
+  if (!record) return 0;
+  uint8_t out = 0;
+  const char* ids[] = {"p1.up", "p1.down", "p1.left", "p1.right"};
+  for (auto& b : activeLayout.buttons)
+    for (int i = 0; i < 4; ++i)
+      if (b.id == ids[i] && (record->bytes[b.byte] & (1u << b.bit))) out |= uint8_t(1u << (i + 4));
+  return out;
+}
+int rnf_input_record_buttons_pressed(const rn_input_record* now, const rn_input_record* previous) {
+  if (!now || !previous) return 0;
+  for (auto& b : activeLayout.buttons)
+    if ((now->bytes[b.byte] & ~previous->bytes[b.byte]) & (1u << b.bit)) return 1;
+  return 0;
+}
+size_t rnf_input_button_count(void) { return activeLayout.buttons.size(); }
+const char* rnf_input_button_id(size_t i) { return i < activeLayout.buttons.size() ? activeLayout.buttons[i].id.c_str() : nullptr; }
+char* rnf_input_turbo_rate_label(double fps, int period) {
+  rnf_arg rate{};
+  rate.type = RNF_ARG_DOUBLE;
+  rate.d = period > 0 ? fps / period : 0.0;
+  return dup(trf(RNF_L("%.2f Hz"), {rate}));
+}
+size_t rnf_input_action_count(void) { return actions().size(); }
 int rnf_input_action_get(size_t i, rnf_action_info* out) {
-  if (i >= kActionCount || !out) return 0;
-  out->id = kActions[i].id;
-  out->group = kActions[i].group;
+  if (i >= actions().size() || !out) return 0;
+  out->id = actions()[i].id;
+  out->group = actions()[i].group;
   return 1;
 }
 size_t rnf_input_assign_choices(int slot, const char** out, size_t cap) {
   std::vector<const char*> v{""};
   rnf_action_group own = slot == 1 ? RNF_GROUP_PLAYER2 : RNF_GROUP_PLAYER1;
   rnf_action_group other = slot == 1 ? RNF_GROUP_PLAYER1 : RNF_GROUP_PLAYER2;
-  for (rnf_action_group g : {own, other, RNF_GROUP_HOTKEY})
-    for (auto& a : kActions)
+  std::vector<rnf_action_group> groups{own, other, RNF_GROUP_HOTKEY};
+  if (!activeLayout.isNes()) {
+    groups = {playerGroup(slot)};
+    for (int i = 0; i < 4; ++i) if (i != slot) groups.push_back(playerGroup(i));
+    groups.push_back(RNF_GROUP_SYSTEM); groups.push_back(RNF_GROUP_HOTKEY);
+  }
+  for (rnf_action_group g : groups)
+    for (auto& a : actions())
       if (a.group == g) v.push_back(a.id);
   for (size_t i = 0; out && i < v.size() && i < cap; ++i) out[i] = v[i];
   return v.size();
 }
 char* rnf_input_action_label(const char* id) {
   if (!id) return nullptr;
-  for (auto& a : kActions)
-    if (std::strcmp(a.id, id) == 0) return dup(a.localized ? tr(a.label) : a.label);
+  for (auto& a : actions())
+    if (std::strcmp(a.id, id) == 0) {
+      if (!activeLayout.isNes() && a.group != RNF_GROUP_HOTKEY) return dup(layoutLabel(id));
+      return dup(a.localized ? tr(a.label) : a.label);
+    }
   return nullptr;
 }
 char* rnf_input_group_title(rnf_action_group g) {
   switch (g) {
     case RNF_GROUP_PLAYER1: return dup(tr(RNF_L("Player 1")));
     case RNF_GROUP_PLAYER2: return dup(tr(RNF_L("Player 2")));
+    case RNF_GROUP_PLAYER3: return dup(tr(RNF_L("Player 3")));
+    case RNF_GROUP_PLAYER4: return dup(tr(RNF_L("Player 4")));
+    case RNF_GROUP_SYSTEM: return dup(tr(RNF_L("System")));
     case RNF_GROUP_HOTKEY: return dup(tr(RNF_L("Hotkeys")));
   }
   return dup("");
 }
 
-size_t rnf_input_default_binding_count(rnf_keyboard_scheme) { return kKeyboardCount + kControllerCount; }
+size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme) { return defaults(scheme).size(); }
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t i, rnf_binding* out) {
+  if (!activeLayout.isNes()) {
+    static Pairs caches[2];
+    Pairs& cache = caches[scheme == RNF_KEYBOARD_SDL ? 1 : 0];
+    auto next = defaults(scheme);
+    if (cache != next) cache = std::move(next);
+    if (!out || i >= cache.size()) return 0;
+    out->input = cache[i].first.c_str(); out->action = cache[i].second.c_str();
+    return 1;
+  }
   if (i >= kKeyboardCount + kControllerCount || !out) return 0;
   Pair p = defaultAt(scheme, i);
   out->input = p.input;
@@ -593,6 +767,8 @@ rn_status rnf_input_config_parse(const char* json, rnf_input_config** out) {
     if (p.isNumber() || p.isBool()) c->turboPeriod = p.isBool() ? int(p.asBool()) : int(p.asInt());
     if (d.isNumber() || d.isBool()) c->turboDuty = d.isBool() ? int(d.asBool()) : int(d.asInt());
   }
+  for (auto& e : root["buttonTurbo"].items())
+    if (e["button"].isString()) c->buttonTurbo[e["button"].asString()] = {int(e["period"].asInt()), int(e["duty"].asInt())};
   if (root["socd"].isString()) c->socd = root["socd"].asString();
   const rn::Json& at = root["analogThreshold"];
   if (at.isNumber()) c->analogThreshold = at.asDouble();
@@ -611,6 +787,13 @@ int rnf_input_config_binding_get(const rnf_input_config* c, size_t i, rnf_bindin
 }
 int rnf_input_config_turbo_period(const rnf_input_config* c) { return c ? c->turboPeriod : 2; }
 int rnf_input_config_turbo_duty(const rnf_input_config* c) { return c ? c->turboDuty : 1; }
+int rnf_input_config_button_turbo(const rnf_input_config* c, const char* id, int* period, int* duty) {
+  if (!c || !id) return 0;
+  auto it = c->buttonTurbo.find(id);
+  if (period) *period = it == c->buttonTurbo.end() ? c->turboPeriod : it->second.first;
+  if (duty) *duty = it == c->buttonTurbo.end() ? c->turboDuty : it->second.second;
+  return it != c->buttonTurbo.end();
+}
 const char* rnf_input_config_socd(const rnf_input_config* c) { return c ? c->socd.c_str() : "neutral"; }
 double rnf_input_config_analog_threshold(const rnf_input_config* c) { return c ? c->analogThreshold : 0.5; }
 
@@ -788,8 +971,9 @@ rnf_list* rnf_input_paused_step_directions(const rnf_binding* bindings, size_t c
   };
   for (auto& p : b) {
     if (!hasPrefix(p.first, "gc") || p.first.find("stick") != std::string::npos) continue;
-    if (p.second == "p1.left" || p.second == "p2.left") set(p.first, -1);
-    if (p.second == "p1.right" || p.second == "p2.right") set(p.first, 1);
+    if (!activeLayout.isNes() && std::none_of(activeLayout.buttons.begin(), activeLayout.buttons.end(), [&](const auto& button) { return button.id == p.second; })) continue;
+    if (p.second == "p1.left" || (activeLayout.isNes() && p.second == "p2.left")) set(p.first, -1);
+    if (p.second == "p1.right" || (activeLayout.isNes() && p.second == "p2.right")) set(p.first, 1);
   }
   return l;
 }
@@ -1043,12 +1227,12 @@ rnf_group_summary rnf_input_group_summary(const rnf_binding* bindings, size_t co
     if (!per.back().empty()) allEmpty = false;
   }
   if (allEmpty) return RNF_GROUP_NONE;
-  for (const char* p : {"p1", "p2"}) {
+  for (int player = 0; player < (activeLayout.isNes() ? 2 : 4); ++player) {
+    const std::string p = "p" + std::to_string(player + 1);
     bool ok = true;
     for (int i = 0; i < 4; ++i)
       if (per[size_t(i)] != std::vector<std::string>{std::string(p) + "." + dirs[i]}) { ok = false; break; }
     if (!ok) continue;
-    int player = std::string(p) == "p2" ? 1 : 0;
     if (movement_text)
       *movement_text = dup(player == slot ? std::string(tr(RNF_L("Move"))) : trf(RNF_L("%lldP Move"), {argI(player + 1)}));
     return RNF_GROUP_MOVEMENT;

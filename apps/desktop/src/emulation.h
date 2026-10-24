@@ -118,6 +118,7 @@ class EmulationController {
   std::function<void(const std::string&)> onNotice;
   std::function<void(const std::string& title, const std::string& message)> onError;
   std::function<void(bool paused)> onPausedChanged;
+  std::function<void(const char* json)> onInputLayout;
   /// Count of physical presses so far (the "paused, press R to resume" hint).
   std::function<uint64_t()> pressSequence;
   FrameObserver* observer = nullptr;
@@ -375,6 +376,8 @@ class EmulationController {
   bool retryNotice_ = false;
   bool rewindFromPlay_ = false;  // the current rewind hold started during play
   uint64_t rewindStops_ = 0;
+  bool nesLayout_ = true;
+  rn_input_record replayRecord_{};
   uint16_t replayButtons_ = 0xFFFF;  // game buttons seen while watching (0xFFFF: not watching)
   // VTR effect: display_ shows vtrBase_ (the clean picture) through rnf_vtr_apply while active.
   rnf_vtr* vtr_ = nullptr;

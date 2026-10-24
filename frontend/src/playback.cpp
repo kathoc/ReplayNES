@@ -9,6 +9,7 @@
 
 #include "common.hpp"
 #include "picture.hpp"
+#include "input_layout.hpp"
 
 using namespace rnf;
 
@@ -35,6 +36,7 @@ struct rnf_resume_countdown {
   uint16_t prev = 0;          // the previous counting sample
   uint16_t latched = 0;       // pressed after the baseline (taps typed ahead)
   uint16_t pending = 0;       // the latch of a countdown that ended: for the first live frame
+  rn_input_record recordPrev{}, recordLatched{}, recordPending{};
 };
 
 struct rnf_frame_history {
@@ -54,6 +56,19 @@ template <typename T>
 static T* cloneOf(const T* p) {
   if (!p) return nullptr;
   try { return new T(*p); } catch (...) { return nullptr; }
+}
+
+// The preview and fast-forward paths have no live buttons, but still use the core's record API.
+static rn_status stepWithoutInput(rn_session* s, rn_step_info* info) {
+  char* json = rn_session_input_layout_json(s);
+  if (!json) return fail(RN_ERR_INTERNAL, "input layout unavailable");
+  rn::InputLayout layout;
+  const auto status = rn::InputLayout::fromJson(json, layout);
+  rn_string_free(json);
+  if (!status.ok()) return fail(RN_ERR_INVALID_ARG, status.message);
+  if (layout.isNes()) return rn_step(s, 0, 0, 0, info);
+  const rn_input_record empty{};
+  return rn_step_record(s, &empty, info);
 }
 
 extern "C" {
@@ -95,6 +110,25 @@ rn_status rnf_transport_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t even
   si.mode = RN_MODE_RECORD;
   si.branched = 0;
   si.end_of_take = 0;  // in record mode the take end is where the next step records
+  if (info) *info = si;
+  return RN_OK;
+}
+
+rn_status rnf_transport_step_record(rn_session* s, const rn_input_record* record, rn_step_info* info) {
+  if (!s || !record) return fail(RN_ERR_INVALID_ARG, "null argument");
+  if (rn_get_mode(s) != RN_MODE_RECORD || record->bytes[2] != 0 || rn_frame(s) >= rn_take_length(s))
+    return rn_step_record(s, record, info);
+  rn_status st = rn_set_mode(s, RN_MODE_REPLAY);
+  if (st != RN_OK) return st;
+  rn_step_info si{};
+  const rn_input_record empty{};
+  st = rn_step_record(s, &empty, &si);
+  rn_status back = rn_set_mode(s, RN_MODE_RECORD);
+  if (st == RN_OK) st = back;
+  if (st != RN_OK) return st;
+  si.mode = RN_MODE_RECORD;
+  si.branched = 0;
+  si.end_of_take = 0;
   if (info) *info = si;
   return RN_OK;
 }
@@ -266,7 +300,7 @@ int rnf_practice_loop_loops(const rnf_practice_loop* l) { return l ? l->loops : 
 rn_status rnf_practice_preview_a(rn_session* s) {
   if (!s) return fail(RN_ERR_INVALID_ARG, "null argument");
   if (rn_get_mode(s) != RN_MODE_PRACTICE) return fail(RN_ERR_WRONG_MODE, "not practicing");
-  rn_status st = rn_step(s, 0, 0, 0, nullptr);
+  rn_status st = stepWithoutInput(s, nullptr);
   if (st != RN_OK) return st;
   return rn_rewind(s, 1);
 }
@@ -308,13 +342,18 @@ void clearTypeAhead(rnf_resume_countdown* c) {
   c->prev = 0;
   c->latched = 0;
   c->pending = 0;
+  c->recordPrev = {};
+  c->recordLatched = {};
+  c->recordPending = {};
 }
 // The countdown is over (done, or switched off while counting): its taps wait for the first frame.
 void finishCountdown(rnf_resume_countdown* c) {
   c->active = false;
   uint16_t taps = c->latched;
+  const rn_input_record recordTaps = c->recordLatched;
   clearTypeAhead(c);
   c->pending = taps;
+  c->recordPending = recordTaps;
 }
 }  // namespace
 
@@ -397,7 +436,53 @@ int rnf_resume_countdown_apply(rnf_resume_countdown* c, uint8_t* p1, uint8_t* p2
   return 1;
 }
 
-int rnf_resume_countdown_pending(const rnf_resume_countdown* c) { return c && c->pending ? 1 : 0; }
+void rnf_resume_countdown_input_record(rnf_resume_countdown* c, const rn_input_record* record) {
+  if (!c || !record || !c->active) return;
+  // Only buttons are typed ahead; analog values and system events are never latched.
+  for (const auto& b : rnf::activeInputLayout().buttons) {
+    const uint8_t mask = uint8_t(1u << b.bit);
+    if (c->haveBaseline && (record->bytes[b.byte] & mask) && !(c->recordPrev.bytes[b.byte] & mask))
+      c->recordLatched.bytes[b.byte] |= mask;
+  }
+  c->haveBaseline = true;
+  c->recordPrev = *record;
+}
+
+int rnf_resume_countdown_apply_record(rnf_resume_countdown* c, rn_input_record* record) {
+  if (!c || !record) return 0;
+  const auto& layout = rnf::activeInputLayout();
+  rn_input_record add{}, drop{};
+  for (const auto& b : layout.buttons)
+    add.bytes[b.byte] |= uint8_t(c->recordPending.bytes[b.byte] & ~record->bytes[b.byte] & (1u << b.bit));
+  c->recordPending = {};
+  for (const auto& pair : layout.opposite) {
+    const rn::InputLayout::Button *a = nullptr, *b = nullptr;
+    for (const auto& button : layout.buttons) {
+      if (button.id == pair.first) a = &button;
+      if (button.id == pair.second) b = &button;
+    }
+    if (!a || !b) continue;
+    const uint8_t am = uint8_t(1u << a->bit), bm = uint8_t(1u << b->bit);
+    if ((add.bytes[a->byte] & am) && ((record->bytes[b->byte] | add.bytes[b->byte]) & bm))
+      drop.bytes[a->byte] |= am;
+    if ((add.bytes[b->byte] & bm) && ((record->bytes[a->byte] | add.bytes[a->byte]) & am))
+      drop.bytes[b->byte] |= bm;
+  }
+  bool changed = false;
+  for (size_t i = 0; i < RN_INPUT_RECORD_BYTES; ++i) {
+    const uint8_t bits = uint8_t(add.bytes[i] & ~drop.bytes[i]);
+    record->bytes[i] |= bits;
+    changed |= bits != 0;
+  }
+  return changed ? 1 : 0;
+}
+
+int rnf_resume_countdown_pending(const rnf_resume_countdown* c) {
+  if (!c) return 0;
+  if (c->pending) return 1;
+  for (uint8_t b : c->recordPending.bytes) if (b) return 1;
+  return 0;
+}
 
 int rnf_practice_history_index(double back, int count) {
   if (count <= 0) return 0;
@@ -506,7 +591,7 @@ rn_status rnf_fast_forward_step(const rnf_fast_forward* f, rn_session* s, int n,
     }
     uint64_t before = rn_frame(s);
     rn_step_info info{};
-    rn_status st = rn_step(s, 0, 0, 0, &info);
+    rn_status st = stepWithoutInput(s, &info);
     if (st != RN_OK) {
       if (done) *done = d;
       return st;

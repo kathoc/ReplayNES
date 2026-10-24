@@ -39,6 +39,19 @@ std::string str(char* p) {
   return s;
 }
 
+std::string playerLabel(rnf_action_group group, const std::string& label) {
+  int player = 0;
+  switch (group) {
+    case RNF_GROUP_PLAYER1: player = 1; break;
+    case RNF_GROUP_PLAYER2: player = 2; break;
+    case RNF_GROUP_PLAYER3: player = 3; break;
+    case RNF_GROUP_PLAYER4: player = 4; break;
+    default: return label;
+  }
+  if (std::strcmp(rnf_input_layout_name(), "nes") == 0) return std::to_string(player) + "P " + label;
+  return TRF("%lldP %@", {player, label});
+}
+
 void icon(ImDrawList* dl, const char* name, ImVec2 center, float size, ImU32 col) {
   const char* g = icons::glyph(name);
   if (!*g) return;
@@ -74,6 +87,7 @@ std::string UI::focusedItemId() const {
 size_t UI::listCount(const std::string& page) const {
   if (page == "bookmarks") return hasSession() ? d_.emu->structure().bookmarks.size() + 1 : 1;  // + "Add Bookmark"
   if (page == "controls.keyboard") return rnf_input_action_count();
+  if (page == "controls.turbo_buttons") return rnf_input_button_count();
   if (page == "controls.assign") return rnf_input_assign_choices(0, nullptr, 0);
   if (page == "library.projects") {
     const LibraryROM* r = projectsRom();
@@ -83,7 +97,7 @@ size_t UI::listCount(const std::string& page) const {
 }
 
 void UI::syncMenuCounts() {
-  for (const char* p : {"bookmarks", "controls.keyboard", "controls.assign", "library.projects"}) {
+  for (const char* p : {"bookmarks", "controls.keyboard", "controls.assign", "controls.turbo_buttons", "library.projects"}) {
     int i = rnf_menu_page_find(menu_, p);
     if (i >= 0) rnf_menu_set_count(menu_, size_t(i), listCount(p));
   }
@@ -725,8 +739,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
       if (rnf_input_action_get(row, &a)) {
         ic = a.group == RNF_GROUP_HOTKEY ? "bolt" : "keyboard";
         label = str(rnf_input_action_label(a.id));
-        if (a.group == RNF_GROUP_PLAYER2) label = "2P " + label;
-        else if (a.group == RNF_GROUP_PLAYER1) label = "1P " + label;
+        label = playerLabel(a.group, label);
         if (capturingAction_ == a.id) {
           value = TR("Press a key…");
         } else {
@@ -740,6 +753,15 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
           if (value.empty()) value = "—";
         }
         if (f) description_ = TR("A: set a key · X: clear");
+      }
+    } else if (id == "controls.turbo_buttons") {
+      rnf_menu_item_info item{};
+      if (rnf_menu_item_get(menu_, page, row, &item)) {
+        ic = "bolt";
+        label = txt(item.label);
+        int period, duty;
+        const char* action = rnf_input_button_id(row);
+        if (action) value = d_.input->buttonTurbo(action, period, duty) ? TR("Custom") : TR("Global");
       }
     } else if (id == "controls.assign") {
       int slot = 0;
@@ -757,8 +779,7 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
         } else {
           ic = ai.group == RNF_GROUP_HOTKEY ? "bolt" : "device-gamepad";
           label = str(rnf_input_action_label(a.c_str()));
-          if (ai.group == RNF_GROUP_PLAYER2) label = "2P " + label;
-          else if (ai.group == RNF_GROUP_PLAYER1) label = "1P " + label;
+          label = playerLabel(ai.group, label);
         }
         const std::vector<rnf_binding>& b = d_.input->bindings();
         std::string el = assignElement_.substr(assignElement_.find(':') + 1);
@@ -807,6 +828,8 @@ void UI::buildListPage(const PageGeometry& g, size_t page, double now) {
       prompt({"face.north"}, TR("Rename"));
       prompt({"face.west"}, TR("Delete"));
     }
+  } else if (id == "controls.turbo_buttons") {
+    prompt({"ui.confirm"}, TR("Settings"));
   } else if (id == "controls.assign") {
     prompt({"ui.confirm"}, TR("Assign"));
   } else if (id == "controls.keyboard") {
@@ -844,7 +867,12 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
 
 void UI::activateRow(const std::string& page, size_t row) {
   EmulationController* emu = d_.emu;
-  if (page == "practice") {
+  if (page == "controls.turbo_buttons") {
+    rnf_menu_item_info item{};
+    const int index = rnf_menu_page_find(menu_, page.c_str());
+    if (index >= 0 && rnf_menu_item_get(menu_, size_t(index), row, &item))
+      menuEvent(rnf_menu_push(menu_, item.target), 0);
+  } else if (page == "practice") {
     const SessionStructure& ss = emu->structure();
     if (row >= ss.slots.size()) return;
     const SlotInfo& s = ss.slots[row];

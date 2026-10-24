@@ -269,7 +269,8 @@ void UI::buildSeekBar(double now) {
       // At most four: play, frame step, rewind / fast-forward, the marker lane.
       hint({"ui.cancel"}, play);
       hint({"leftShoulder", "rightShoulder"}, TR("Step"));
-      if (st.practicing) hint({"face.north"}, TR("Stop Practicing"));  // Y toggles practice
+      if (st.practicing && d_.input->practiceStopAvailable(std::max(0, d_.input->lastSlot())))
+        hint({"face.north"}, TR("Stop Practicing"));
       if (st.practicing) hint({"leftTrigger"}, TR("Rewind"));
       else hint({"leftTrigger", "rightTrigger"}, std::string(TR("Rewind")) + " / " + TR("Fast-Forward"));
       if (markers) hint({}, TR("↑ Practice sections"));

@@ -91,6 +91,13 @@ void EmulationController::setPaused(bool p) {
 void EmulationController::install(rn_session* s) {
   if (s != session_) closeSession();
   session_ = s;
+  char* layout = s ? rn_session_input_layout_json(s) : nullptr;
+  rnf_input_set_layout_json(layout);
+  const bool wasNes = nesLayout_;
+  nesLayout_ = std::strcmp(rnf_input_layout_name(), "nes") == 0;
+  if (onInputLayout) onInputLayout(layout);
+  else if (!nesLayout_ || !wasNes) rn_input_set_layout_json(input_, layout);
+  rn_string_free(layout);
   ++mediaGeneration_;
   media_ = {RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
   if (s) rn_session_media_info(s, &media_);
@@ -138,6 +145,7 @@ void EmulationController::install(rn_session* s) {
   retryNotice_ = false;
   rewindFromPlay_ = false;
   replayButtons_ = 0xFFFF;
+  std::memset(replayRecord_.bytes, 0xFF, sizeof replayRecord_.bytes);
   rnf_vtr_reset(vtr_);
   vtrOn_ = false;
   pendingThumb_ = false;
@@ -412,6 +420,13 @@ void EmulationController::startResume() {
 }
 
 bool EmulationController::replayButtonPressed() {
+  if (!nesLayout_) {
+    rn_input_record now{};
+    rn_input_sample_record(input_, rn_frame(session_), &now);
+    const bool pressed = rnf_input_record_buttons_pressed(&now, &replayRecord_) != 0;
+    replayRecord_ = now;
+    return pressed;
+  }
   uint8_t p1 = 0, p2 = 0;
   rn_input_sample_game(input_, rn_frame(session_), &p1, &p2);
   const uint16_t now = uint16_t(p1 | (p2 << 8));
@@ -509,6 +524,7 @@ EmulationController::Tick EmulationController::tick() {
     if (replayButtonPressed()) rerecordHere();
   } else {
     replayButtons_ = 0xFFFF;
+    std::memset(replayRecord_.bytes, 0xFF, sizeof replayRecord_.bytes);
   }
 
   bool emulatedLive = false;
@@ -624,12 +640,18 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   rn_mode mode = rn_get_mode(s);
   bool live = mode == RN_MODE_RECORD || mode == RN_MODE_PRACTICE || mode == RN_MODE_LIVE;
   uint8_t p1 = 0, p2 = 0;
+  rn_input_record record{};
   if (live) {
     // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
     uint64_t clock = mode == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
-    rn_input_sample_game(input_, clock, &p1, &p2);
-    // The first frame after the resume countdown: plus the buttons typed ahead during it (once).
-    if (!frameStep) rnf_resume_countdown_apply(resumeCountdown_, &p1, &p2);
+    if (nesLayout_) {
+      rn_input_sample_game(input_, clock, &p1, &p2);
+      // Apply buttons typed ahead during the countdown only on the first live frame.
+      if (!frameStep) rnf_resume_countdown_apply(resumeCountdown_, &p1, &p2);
+    } else {
+      rn_input_sample_record(input_, clock, &record);
+      if (!frameStep) rnf_resume_countdown_apply_record(resumeCountdown_, &record);
+    }
   }
   uint8_t ev = live ? pendingEvents_ : 0;
   pendingEvents_ = 0;
@@ -638,8 +660,16 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   // Live play goes through the retry bookkeeping (undo window, burst collapse); frame steps replay.
   const bool overwrite = !frameStep && rnf_tape_overwrites(mode, before, rn_take_length(s));
   rn_step_info info{};
-  rn_status st = mode == RN_MODE_LIVE ? rn_step(s, p1, p2, ev, &info) : frameStep ? rnf_transport_step(s, p1, p2, ev, &info)
-                           : rnf_retry_step(retry_, s, nowSeconds(), p1, p2, ev, &info);
+  rn_status st;
+  if (nesLayout_) {
+    st = mode == RN_MODE_LIVE ? rn_step(s, p1, p2, ev, &info) : frameStep ? rnf_transport_step(s, p1, p2, ev, &info)
+                             : rnf_retry_step(retry_, s, nowSeconds(), p1, p2, ev, &info);
+  } else {
+    record.bytes[2] = ev;
+    st = mode == RN_MODE_LIVE ? rn_step_record(s, &record, &info)
+         : frameStep ? rnf_transport_step_record(s, &record, &info)
+                     : rnf_retry_step_record(retry_, s, nowSeconds(), &record, &info);
+  }
   if (st != RN_OK) {
     setPaused(true);
     advanceRemaining_ = 0;
@@ -834,6 +864,11 @@ void EmulationController::arriveAtA() {
 }
 
 void EmulationController::dropInput() {
+  if (!nesLayout_) {
+    rn_input_record ignored{};
+    rn_input_sample_record(input_, practiceSeq_++, &ignored);
+    return;
+  }
   uint8_t p1 = 0, p2 = 0;
   rn_input_sample_game(input_, practiceSeq_++, &p1, &p2);
 }
@@ -864,8 +899,14 @@ bool EmulationController::tickResumeCountdown() {
   // it (stepOnce: rnf_resume_countdown_apply).
   uint8_t p1 = 0, p2 = 0;
   const uint64_t clock = rn_get_mode(s) == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
-  rn_input_sample_game(input_, clock, &p1, &p2);
-  rnf_resume_countdown_input(resumeCountdown_, p1, p2);
+  if (nesLayout_) {
+    rn_input_sample_game(input_, clock, &p1, &p2);
+    rnf_resume_countdown_input(resumeCountdown_, p1, p2);
+  } else {
+    rn_input_record record{};
+    rn_input_sample_record(input_, clock, &record);
+    rnf_resume_countdown_input_record(resumeCountdown_, &record);
+  }
   return true;
 }
 

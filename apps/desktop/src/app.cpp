@@ -321,6 +321,12 @@ int App::run(const AppOptions& opt) {
     d.message = m;
     ui_->showDialog(std::move(d));
   };
+  emu_->onInputLayout = [this](const char* json) {
+    input_->setLayout(json);
+    if (opt_.injectInput && opt_.perfSeconds > 0 && std::strcmp(rnf_input_layout_name(), "nes") != 0 && rnf_input_button_count())
+      rn_input_bind(input_->input(), "inject:b", rnf_input_button_id(0));
+    ui_->inputLayoutChanged();
+  };
   emu_->onPausedChanged = [this](bool p) { input_->setPausedStepMode(p); };
   emu_->pressSequence = [this] { return input_->pressSequence(); };
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
