@@ -23,7 +23,7 @@ std::string slotPrefix(int slot) { return "gc" + std::to_string(slot) + ":"; }
 }  // namespace
 
 InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
-    : in_(rn_input_new()), file_(std::move(bindingsFile)), settings_(settings), chord_(rnf_chord_new(0)) {}
+    : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)) {}
 
 InputRouter::~InputRouter() {
   closeAll();
@@ -45,6 +45,38 @@ bool InputRouter::applyPlan(rnf_list* unbind, rnf_list* bind) {
   return did;
 }
 
+void InputRouter::setLayout(const char* json) {
+  const std::string next = json ? json : "";
+  if (next == layoutJson_) return;
+  if (rnf_input_set_layout_json(json) != RN_OK) return;
+  const bool nes = std::strcmp(rnf_input_layout_name(), "nes") == 0;
+  // The existing NES input configuration is left untouched between NES sessions.
+  if (nes && nesLayout_) { layoutJson_ = next; return; }
+  if (rn_input_set_layout_json(in_, json) != RN_OK) return;
+  layoutJson_ = next;
+  nesLayout_ = nes;
+  char* filename = rnf_input_bindings_filename();
+  file_ = (std::filesystem::path(baseFile_).parent_path() / filename).string();
+  rnf_string_free(filename);
+  rn_input_release_all(in_);
+  pressed_.clear();
+  stickState_.clear();
+  load();
+}
+
+bool InputRouter::buttonTurbo(const std::string& action, int& period, int& duty) const {
+  auto it = buttonTurbo_.find(action);
+  if (it == buttonTurbo_.end()) { period = turboPeriod_; duty = turboDuty_; return false; }
+  period = it->second.first;
+  duty = it->second.second;
+  return true;
+}
+
+void InputRouter::setButtonTurbo(const std::string& action, int period, int duty) {
+  rn_input_set_button_turbo(in_, action.c_str(), uint32_t(period), uint32_t(duty));
+  persist();
+}
+
 void InputRouter::load() {
   std::string text = readFile(file_);
   bool loaded = !text.empty() && rn_input_load_json(in_, text.c_str()) == RN_OK;
@@ -59,7 +91,7 @@ void InputRouter::load() {
   refreshBindings();
   // One-time upgrades of saved bindings, unless the user customised the part concerned.
   int from = settings_ ? settings_->controllerLayoutVersion : RNF_CONTROLLER_LAYOUT_VERSION;
-  if (from < RNF_CONTROLLER_LAYOUT_VERSION) {
+  if (nesLayout_ && from < RNF_CONTROLLER_LAYOUT_VERSION) {
     bool changed = false;
     rnf_list *u = nullptr, *b = nullptr;
     if (from < 2) {
@@ -104,12 +136,18 @@ void InputRouter::load() {
 
 void InputRouter::refreshBindings() {
   bindingPairs_.clear();
+  buttonTurbo_.clear();
   char* json = rn_input_save_json(in_);
   rnf_input_config* c = nullptr;
   if (json && rnf_input_config_parse(json, &c) == RN_OK) {
     for (size_t i = 0, n = rnf_input_config_binding_count(c); i < n; ++i) {
       rnf_binding b{};
       if (rnf_input_config_binding_get(c, i, &b)) bindingPairs_.push_back({b.input, b.action});
+    }
+    for (size_t i = 0; i < rnf_input_button_count(); ++i) {
+      const char* id = rnf_input_button_id(i);
+      int period = 0, duty = 0;
+      if (rnf_input_config_button_turbo(c, id, &period, &duty)) buttonTurbo_[id] = {period, duty};
     }
     turboPeriod_ = rnf_input_config_turbo_period(c);
     turboDuty_ = rnf_input_config_turbo_duty(c);
@@ -315,6 +353,9 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
   size_t colon = id.find(':');
   if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
   std::string el = id.substr(colon + 1);
+  int slot = 0;
+  rnf_input_controller_slot(id.c_str(), &slot);
+  if (practicing_ && el == "face.north" && !practiceStopAvailable(slot)) return false;
   bool south = settings_ && settings_->southConfirm;
   if (down) {
     if (ui_ || !pausedStepMode_) return false;
@@ -338,12 +379,23 @@ bool InputRouter::routePausedTap(const std::string& id, bool down) {
 
 void InputRouter::setPracticing(bool on) { practicing_ = on; }
 
+bool InputRouter::practiceStopAvailable(int slot) const {
+  if (nesLayout_) return true;
+  const std::string physical = slotPrefix(slot) + "face.north";
+  for (const auto& binding : bindingPairs_)
+    if (binding.first == physical && binding.second.compare(0, 3, "hk.") != 0) return false;
+  return true;
+}
+
 // Practicing: Y (face.north) stops it - while playing, paused or in the countdown. Never game input
 // then (its release neither, also when practice has ended meanwhile).
 bool InputRouter::routePracticeStop(const std::string& id, bool down) {
   size_t colon = id.find(':');
   if (colon == std::string::npos || id.compare(0, 2, "gc") != 0) return false;
   if (!down) return practiceStops_.erase(id) > 0;
+  int slot = 0;
+  rnf_input_controller_slot(id.c_str(), &slot);
+  if (!practiceStopAvailable(slot)) return false;
   if (!practicing_ || ui_ || id.compare(colon + 1, std::string::npos, "face.north") != 0) return false;
   practiceStops_.insert(id);
   confirmTap_.cancel();
@@ -649,7 +701,15 @@ void InputRouter::padAxis(int slot, int axis, float v, double t) {
   else return;
   float x = left ? p.lx : p.rx, y = -(left ? p.ly : p.ry);
   const char* stick = left ? "lstick" : "rstick";
-  if (!ui_) rn_input_set_axis(in_, (g + stick).c_str(), x, y);
+  if (!ui_) {
+    rn_input_set_axis(in_, (g + stick).c_str(), x, y);
+    if (!nesLayout_) {
+      rn_input_set_axis_value(in_, (g + stick + ".x").c_str(), x);
+      rn_input_set_axis_value(in_, (g + stick + ".-x").c_str(), -x);
+      rn_input_set_axis_value(in_, (g + stick + ".y").c_str(), y);
+      rn_input_set_axis_value(in_, (g + stick + ".-y").c_str(), -y);
+    }
+  }
   stickDirections(slot, stick, x, y, t);
 }
 

@@ -37,6 +37,20 @@ std::string str(char* p) {
 }
 const char* txt(const char* key) { return !key || !*key ? "" : key[0] == '=' ? key + 1 : TR(key); }
 
+bool buttonTurboRow(const std::string& id, std::string& action, std::string& field) {
+  const std::string prefix = "controls.button_turbo.";
+  if (id.compare(0, prefix.size(), prefix) != 0) return false;
+  const size_t dot = id.find('.', prefix.size());
+  if (dot == std::string::npos) return false;
+  char* end = nullptr;
+  const std::string index = id.substr(prefix.size(), dot - prefix.size());
+  const unsigned long n = std::strtoul(index.c_str(), &end, 10);
+  if (index.empty() || *end || n >= rnf_input_button_count()) return false;
+  action = rnf_input_button_id(n);
+  field = id.substr(dot + 1);
+  return true;
+}
+
 const int kCrtLines[] = {110, 120, 140, 160, 180, 200, 220, 240};
 const double kAutosave[] = {2, 3, 5, 10, 30};
 
@@ -81,6 +95,14 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
 std::string UI::itemValue(const std::string& id) const {
   const Settings& s = *d_.settings;
   const InputRouter& in = *d_.input;
+  std::string action, field;
+  if (buttonTurboRow(id, action, field)) {
+    int period, duty;
+    const bool custom = in.buttonTurbo(action, period, duty);
+    if (field == "mode") return custom ? TR("Custom") : TR("Global");
+    if (field == "duty") return TRF("%lld frames", {duty});
+    return TRF("%.1f/s", {1.0 / d_.emu->framePeriod() / std::max(1, period)});
+  }
   if (id == "system.core") {
     bool available = false;
     for (size_t i = 0; i < rnf_product_core_count(); ++i)
@@ -106,6 +128,8 @@ std::string UI::itemValue(const std::string& id) const {
     return b;
   }
   if (id == "controls.turbo") {
+    if (std::strcmp(rnf_input_layout_name(), "nes") != 0)
+      return TRF("%.1f/s", {1.0 / d_.emu->framePeriod() / std::max(1, in.turboPeriod())});
     std::snprintf(b, sizeof b, "%.1f/s", 1.0 / d_.emu->framePeriod() / std::max(1, in.turboPeriod()));
     return b;
   }
@@ -159,6 +183,13 @@ bool UI::itemOn(const std::string& id) const {
 float UI::itemFraction(const std::string& id) const {
   const Settings& s = *d_.settings;
   const InputRouter& in = *d_.input;
+  std::string action, field;
+  if (buttonTurboRow(id, action, field)) {
+    int period, duty;
+    in.buttonTurbo(action, period, duty);
+    if (field == "period") return float(30 - std::clamp(period, 2, 30)) / 28.0f;
+    if (field == "duty") return period > 2 ? float(duty - 1) / float(period - 2) : 0.0f;
+  }
   if (id == "crt.lines") return float(std::clamp(s.crtLines, 110, 240) - 110) / 130.0f;
   if (id == "crt.antenna") return float((s.crtAntenna - 20) / 70);
   if (id == "controls.turbo") return float(30 - std::clamp(in.turboPeriod(), 2, 30)) / 28.0f;
@@ -195,6 +226,20 @@ void UI::adjustItem(const std::string& id, int dir) {
   if (!itemEnabled(id)) return;
   Settings& s = *d_.settings;
   InputRouter& in = *d_.input;
+  std::string action, field;
+  if (buttonTurboRow(id, action, field)) {
+    int period, duty;
+    const bool custom = in.buttonTurbo(action, period, duty);
+    if (field == "mode") in.setButtonTurbo(action, custom ? 0 : period, custom ? 0 : duty);
+    else if (dir != 0) {
+      if (field == "period") {
+        period = std::clamp(period - dir, 2, 30);
+        duty = std::min(duty, period - 1);
+      } else if (field == "duty") duty = std::clamp(duty + dir, 1, std::max(1, period - 1));
+      in.setButtonTurbo(action, period, duty);
+    }
+    return;
+  }
   rnf_menu_item_info info{};
   size_t page = 0, index = 0;
   if (!findItem(menu_, id, &page, &index, &info)) return;

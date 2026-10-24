@@ -106,9 +106,31 @@ UI::UI(Deps d) : d_(d) {
   // Offer a choice only when multiple product cores are available.
   if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
   menu_ = rnf_menu_new(menuFeatures_);
+  inputLayoutChanged();
   markers_ = rnf_markers_new();
   markerRepeat_ = rnf_step_repeater_new();
   coach_ = rnf_coach_new(d_.settings ? d_.settings->coachShown : 0);
+}
+
+void UI::inputLayoutChanged() {
+  menuFeatures_ &= ~uint32_t(RNF_MENU_FEATURE_LAYOUT_TURBO);
+  if (std::strcmp(rnf_input_layout_name(), "nes") != 0) menuFeatures_ |= RNF_MENU_FEATURE_LAYOUT_TURBO;
+  std::string catalog = rnf_input_layout_name();
+  for (size_t i = 0; i < rnf_input_action_count(); ++i) {
+    rnf_action_info action{};
+    rnf_input_action_get(i, &action);
+    catalog += "\n";
+    catalog += action.id;
+    char* label = rnf_input_action_label(action.id);
+    catalog += label ? label : "";
+    rnf_string_free(label);
+  }
+  if (catalog == inputCatalog_) return;
+  inputCatalog_ = std::move(catalog);
+  const std::string page = menuPageId();
+  rnf_menu_free(menu_);
+  menu_ = rnf_menu_new(menuFeatures_);
+  if (menuOpen_) openPage(page.empty() ? "quick" : page);
 }
 
 UI::~UI() {

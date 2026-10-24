@@ -58,6 +58,9 @@ class InputRouter {
 
   /// Saved bindings (or the defaults) + the core's layout migrations.
   void load();
+  void setLayout(const char* json);
+  bool buttonTurbo(const std::string& action, int& period, int& duty) const;
+  void setButtonTurbo(const std::string& action, int period, int duty);
 
   // Hooks.
   std::function<void()> onMenuButton;                    // hk.menu (L+R, Esc), R3 / F1
@@ -93,6 +96,7 @@ class InputRouter {
   /// Practicing (docs/design/VTR_UX.md): Y stops it (onPracticeStop); everything else is as in play.
   /// The practice countdown has no cancel tap of its own: NES buttons there are game input typed ahead.
   void setPracticing(bool on);
+  bool practiceStopAvailable(int slot) const;
 
   /// One SDL event (keyboard / gamepad). evTime: the event's time on the CLOCK_MONOTONIC clock.
   /// keyboardForUI: ImGui wants the keyboard (text field or menu).
@@ -163,6 +167,10 @@ class InputRouter {
 
   rn_input* in_ = nullptr;
   std::string file_;
+  std::string baseFile_;
+  std::string layoutJson_;
+  bool nesLayout_ = true;
+  std::map<std::string, std::pair<int, int>> buttonTurbo_;
   Settings* settings_;
   PadInfo pads_[kSlots];
   bool ui_ = false;

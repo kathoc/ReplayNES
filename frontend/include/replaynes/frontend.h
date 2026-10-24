@@ -338,12 +338,22 @@ typedef struct rnf_binding {
   const char* action; /* engine action, e.g. "p1.a", "hk.pause" */
 } rnf_binding;
 
-typedef enum rnf_action_group { RNF_GROUP_PLAYER1 = 0, RNF_GROUP_PLAYER2 = 1, RNF_GROUP_HOTKEY = 2 } rnf_action_group;
+typedef enum rnf_action_group { RNF_GROUP_PLAYER1 = 0, RNF_GROUP_PLAYER2 = 1, RNF_GROUP_HOTKEY = 2, RNF_GROUP_PLAYER3 = 3, RNF_GROUP_PLAYER4 = 4, RNF_GROUP_SYSTEM = 5 } rnf_action_group;
 typedef struct rnf_action_info {
   const char* id;    /* static */
   rnf_action_group group;
 } rnf_action_info;
 /* All actions in catalog order: player 1, player 2 (10 each), then hotkeys. */
+/* Active session layout; NULL restores the exact legacy NES catalog and defaults.
+ * Catalog pointers stay valid until the next layout change. Call on the UI thread. */
+rn_status rnf_input_set_layout_json(const char* json);
+const char* rnf_input_layout_name(void);
+char* rnf_input_bindings_filename(void);
+uint8_t rnf_input_record_directions(const rn_input_record* record);
+int rnf_input_record_buttons_pressed(const rn_input_record* now, const rn_input_record* previous);
+size_t rnf_input_button_count(void);
+const char* rnf_input_button_id(size_t index);
+char* rnf_input_turbo_rate_label(double fps, int period);
 size_t rnf_input_action_count(void);
 int rnf_input_action_get(size_t index, rnf_action_info* out);
 char* rnf_input_action_label(const char* action_id); /* localized; NULL for unknown ids */
@@ -377,6 +387,8 @@ size_t rnf_input_config_binding_count(const rnf_input_config* c);
 int rnf_input_config_binding_get(const rnf_input_config* c, size_t index, rnf_binding* out); /* valid until free */
 int rnf_input_config_turbo_period(const rnf_input_config* c);
 int rnf_input_config_turbo_duty(const rnf_input_config* c);
+/* Returns 1 for an override, 0 for global; outputs effective timing in both cases. */
+int rnf_input_config_button_turbo(const rnf_input_config* c, const char* id, int* period, int* duty);
 const char* rnf_input_config_socd(const rnf_input_config* c);
 double rnf_input_config_analog_threshold(const rnf_input_config* c);
 
@@ -664,7 +676,7 @@ int rnf_hold_speed(int tick);
  * Not thread-safe. */
 #define RNF_MENU_MAX_ITEMS 6
 #define RNF_MENU_MAX_CARDS 8
-#define RNF_MENU_MAX_DEPTH 4 /* Quick Menu > Settings > Display > CRT details */
+#define RNF_MENU_MAX_DEPTH 5 /* Quick Menu > Controls > Turbo > Buttons > Button timing */
 typedef enum rnf_menu_feature {
   RNF_MENU_FEATURE_EXPORT = 1u << 0,      /* Share > Export MP4 */
   RNF_MENU_FEATURE_STREAM = 1u << 1,      /* Share > Stream output (Syphon / Spout) */
@@ -677,7 +689,8 @@ typedef enum rnf_menu_feature {
   RNF_MENU_FEATURE_QUIT = 1u << 8,        /* System > Quit */
   RNF_MENU_FEATURE_FULLSCREEN = 1u << 9,  /* System > More > Full screen */
   RNF_MENU_FEATURE_UI_SCALE = 1u << 10,   /* System > More > UI size */
-  RNF_MENU_FEATURE_CORE = 1u << 11        /* System > Core (a second core is built in) */
+  RNF_MENU_FEATURE_CORE = 1u << 11,       /* System > Core (a second core is built in) */
+  RNF_MENU_FEATURE_LAYOUT_TURBO = 1u << 12 /* Non-NES layout: global and per-button Turbo pages */
 } rnf_menu_feature;
 typedef enum rnf_menu_page_kind {
   RNF_MENU_PAGE_TILES = 0,    /* one row of large icon tiles (Quick Menu, Retry, Share, Game) */
@@ -1229,6 +1242,7 @@ int rnf_record_toggle_restarts_on_play(int recording, int practicing, uint64_t f
  * Branching on purpose = resuming play (rn_step) from an earlier frame in RECORD. Stepping back is
  * rn_seek (take) / rn_rewind (practice). info (may be NULL) reports the session mode afterwards
  * (RECORD stays RECORD); branched is 0 for a replayed step. */
+rn_status rnf_transport_step_record(rn_session* s, const rn_input_record* record, rn_step_info* info);
 rn_status rnf_transport_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step_info* info);
 
 /* Paused D-pad stepping with key repeat: press steps at once, tick yields the repeats. */
@@ -1337,6 +1351,8 @@ typedef struct rnf_resume_countdown_state {
   double fraction; /* 0...1 within that number's second (rnf_practice_countdown_visual) */
   int done;        /* 1 on the tick it ends: play from this tick on (reported once) */
 } rnf_resume_countdown_state;
+void rnf_resume_countdown_input_record(rnf_resume_countdown* c, const rn_input_record* record);
+int rnf_resume_countdown_apply_record(rnf_resume_countdown* c, rn_input_record* record);
 rnf_resume_countdown* rnf_resume_countdown_new(void);
 rnf_resume_countdown* rnf_resume_countdown_clone(const rnf_resume_countdown* c);
 void rnf_resume_countdown_free(rnf_resume_countdown* c);
@@ -1621,6 +1637,7 @@ int rnf_retry_undo(rnf_retry* r, double now, uint64_t active_take, rn_mode mode,
  *   differs from before or info->branched.
  * rnf_retry_apply_undo: performs the undo (the frontend then pauses there and refreshes its take
  *   state). RN_ERR_NOT_FOUND when not available. */
+rn_status rnf_retry_step_record(rnf_retry* r, rn_session* s, double now, const rn_input_record* record, rn_step_info* info);
 rn_status rnf_retry_step(rnf_retry* r, rn_session* s, double now, uint8_t p1, uint8_t p2, uint8_t events,
                          rn_step_info* info);
 rn_status rnf_retry_apply_undo(rnf_retry* r, rn_session* s, double now);

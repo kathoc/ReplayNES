@@ -115,6 +115,7 @@ class UI : public DialogHost {
   bool wantsKeyboard() const;
   /// hk.menu (L+R, Esc, the pill): the Quick Menu on / off (the library: Settings on / off).
   void toggleMenu();
+  void inputLayoutChanged();
   void setMenu(bool open);
   bool menuOpen() const { return menuOpen_; }
   /// Id of the menu page shown ("" when the menu is closed); script / test hooks.
@@ -332,6 +333,7 @@ class UI : public DialogHost {
   UiMetrics metrics_;
   ImFont* font_ = nullptr;
   bool menuOpen_ = false;
+  std::string inputCatalog_;
   rnf_menu* menu_ = nullptr;
   uint32_t menuFeatures_ = 0;
   bool hadSession_ = false;

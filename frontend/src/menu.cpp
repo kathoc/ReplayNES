@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <memory>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,8 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_STEAM = RNF_MENU_FEATURE_STEAM, F_OSK = RNF_MENU_FEATURE_OSK, F_UPDATES = RNF_MENU_FEATURE_UPDATES,
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
-                   F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE;
+                   F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
+                   F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -69,6 +71,8 @@ const PageDef kPages[] = {
     {"controls.controller", RNF_L("Controller"), "device-gamepad", RNF_MENU_PAGE_CUSTOM, "", 0},
     {"controls.assign", RNF_L("Button Action"), "list", RNF_MENU_PAGE_LIST, "", 0},
     {"controls.keyboard", RNF_L("Keyboard"), "keyboard", RNF_MENU_PAGE_LIST, "", 0},
+    {"controls.turbo_buttons", RNF_L("Buttons"), "device-gamepad", RNF_MENU_PAGE_LIST, "", F_LAYOUT_TURBO},
+    {"controls.turbo_page", RNF_L("Turbo"), "bolt", RNF_MENU_PAGE_SETTINGS, "", F_LAYOUT_TURBO},
     {"controls.detail", RNF_L("More Controls"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"system.about", RNF_L("ReplayNES Version"), "info-circle", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"about.folders", RNF_L("Folders and License"), "folder", RNF_MENU_PAGE_SETTINGS, "", 0},
@@ -153,6 +157,11 @@ const std::vector<ItemDef>& items() {
        "keyboard", CHOICE, "", F_OSK, {RNF_L("Automatic"), RNF_L("Built-in"), "=Steam"}},
       {"settings.controls", "controls.detail", RNF_L("More"), RNF_L("Turbo, opposite directions, stick"),
        "adjustments", PAGE, "controls.detail", 0, {}},
+      {"settings.controls", "controls.turbo_page", RNF_L("Turbo"), RNF_L("Global and per-button turbo timing"), "bolt",
+       PAGE, "controls.turbo_page", F_LAYOUT_TURBO, {}},
+      {"controls.turbo_page", "controls.turbo", RNF_L("Turbo Speed"), RNF_L("Presses per second"), "bolt", SLIDER, "", 0, {}},
+      {"controls.turbo_page", "controls.turbo_duty", RNF_L("Turbo Press Length"), RNF_L("Frames each turbo press is held"), "clock", SLIDER, "", 0, {}},
+      {"controls.turbo_page", "controls.turbo_buttons", RNF_L("Buttons"), RNF_L("Per-button turbo timing"), "device-gamepad", PAGE, "controls.turbo_buttons", 0, {}},
       // Controls > More.
       {"controls.detail", "controls.rewind_pause", RNF_L("Pause After Rewind"), RNF_L("Pause when rewind / fast-forward is released"),
        "player-pause", TOGGLE, "", 0, {}},
@@ -257,6 +266,9 @@ const GroupDef* groupOf(const char* id) {
 }  // namespace
 
 struct rnf_menu {
+  std::deque<std::string> ownedText;
+  std::deque<ItemDef> ownedItems;
+  std::deque<PageDef> ownedPages;
   std::vector<Page> pages;
   std::vector<Level> stack;
 
@@ -347,9 +359,46 @@ rnf_menu* rnf_menu_new(uint32_t features) {
     Page p;
     p.def = &d;
     if (d.kind == RNF_MENU_PAGE_CARDS) p.count = RNF_MENU_MAX_CARDS;
-    for (const ItemDef& it : items())
-      if (std::strcmp(it.page, d.id) == 0 && featureOK(it.features, features)) p.items.push_back({&it});
+    for (const ItemDef& it : items()) {
+      const bool layoutTurbo = (features & F_LAYOUT_TURBO) != 0;
+      const bool globalTurbo = std::strcmp(it.id, "controls.turbo") == 0 || std::strcmp(it.id, "controls.turbo_duty") == 0;
+      if (layoutTurbo && globalTurbo && std::strcmp(it.page, "controls.detail") == 0) continue;
+      // Only layout-aware menus relocate OSK; legacy menus retain their exact row order.
+      const bool moveOsk = layoutTurbo && std::strcmp(it.id, "controls.osk") == 0;
+      const char* page = moveOsk ? "controls.detail" : it.page;
+      if (std::strcmp(page, d.id) != 0 || !featureOK(it.features, features)) continue;
+      if (moveOsk) {
+        m->ownedItems.push_back(it);
+        m->ownedItems.back().page = page;
+        p.items.push_back({&m->ownedItems.back()});
+      } else p.items.push_back({&it});
+    }
     m->pages.push_back(std::move(p));
+  }
+  auto text = [&](std::string value) { m->ownedText.push_back(std::move(value)); return m->ownedText.back().c_str(); };
+  const int buttonList = m->find("controls.turbo_buttons");
+  for (size_t i = 0; buttonList >= 0 && i < rnf_input_button_count(); ++i) {
+    const char* button = rnf_input_button_id(i);
+    char* raw = rnf_input_action_label(button);
+    std::string label = raw ? raw : button;
+    rnf_string_free(raw);
+    if (button[0] == 'p' && button[1] >= '1' && button[1] <= '4' && button[2] == '.')
+      label = trf(RNF_L("%lldP %@"), {argI(button[1] - '0'), argS(label)});
+    std::string id = "controls.button_turbo." + std::to_string(i);
+    const char* pageId = text(id);
+    m->ownedPages.push_back({pageId, text("=" + label), "bolt", RNF_MENU_PAGE_SETTINGS, "", 0});
+    Page child;
+    child.def = &m->ownedPages.back();
+    m->ownedItems.push_back({pageId, text(id + ".mode"), RNF_L("Turbo timing"), RNF_L("Use global or custom timing"), "bolt", CHOICE, "", 0, {RNF_L("Global"), RNF_L("Custom")}});
+    child.items.push_back({&m->ownedItems.back()});
+    m->ownedItems.push_back({pageId, text(id + ".period"), RNF_L("Period"), RNF_L("Frames per turbo cycle"), "clock", SLIDER, "", 0, {}});
+    child.items.push_back({&m->ownedItems.back()});
+    m->ownedItems.push_back({pageId, text(id + ".duty"), RNF_L("Press Length"), RNF_L("Frames held per cycle"), "clock", SLIDER, "", 0, {}});
+    child.items.push_back({&m->ownedItems.back()});
+    m->pages.push_back(std::move(child));
+    m->ownedItems.push_back({"controls.turbo_buttons", pageId, text("=" + label), RNF_L("Per-button turbo timing"), "bolt", PAGE, pageId, 0, {}});
+    m->pages[size_t(buttonList)].items.push_back({&m->ownedItems.back()});
+    ++m->pages[size_t(buttonList)].count;
   }
   // Items opening pages left out by the features are left out too.
   for (Page& p : m->pages)
