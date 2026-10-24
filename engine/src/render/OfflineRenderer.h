@@ -40,6 +40,7 @@ class OfflineRenderer {
   std::vector<InputRecord> recs_;  // records [recBase_, end_)
   uint64_t recBase_ = 0;
   std::vector<uint8_t> rom_;
+  std::string romPath_;
   std::vector<uint8_t> seed_;      // machine state after recBase_ frames (empty: power-on)
   CoreKind kind_ = CoreKind::Nestopia;
   MediaInfo media_;

@@ -59,6 +59,15 @@ class ICore {
  public:
   virtual ~ICore() = default;
   virtual Status loadROM(const uint8_t* data, size_t size) = 0;  // loads + powers on, frame=0
+  // Loads content: `data` is the file at `path`. Default: loadROM(data, size). A core that reads its
+  // content itself (an arcade set and the parent sets next to it) uses the path.
+  virtual Status loadContent(const std::string& path, const uint8_t* data, size_t size) {
+    (void)path;
+    return loadROM(data, size);
+  }
+  // Identity of the loaded content when the file's bytes are not it (a zip set repacked with other
+  // compression is the same game). Empty: the file's SHA-256 is the identity (the NES cores).
+  virtual std::string contentId() const { return {}; }
   virtual Status powerCycle() = 0;
   virtual Status softReset() = 0;
   // renderVideo=false skips only the final pixel conversion; emulation is identical.

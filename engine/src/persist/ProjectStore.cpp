@@ -482,6 +482,8 @@ Status ProjectStore::fullSave(Session& s) {
   }
   Json rom = Json::object();
   rom.set("sha256", s.romSha_);
+  // The core identifies its content (an arcade set): "sha256" holds that id, not the file's hash.
+  if (!s.core_->contentId().empty()) rom.set("identity", "content");
   rom.set("size", uint64_t(s.rom_.size()));
   rom.set("lastPath", s.romPath_);
   rom.set("name", baseName(s.romPath_));
@@ -613,7 +615,8 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
       return Error(Err::RomNotFound, "ROM not found at '" + romPath + "' (expected SHA-256 " + wantSha + ")");
     return rs;
   }
-  std::string gotSha = Sha256::hex(rom.data(), rom.size());
+  const bool contentIdentity = romJ["identity"].asString() == "content";
+  std::string gotSha = contentIdentity ? wantSha : Sha256::hex(rom.data(), rom.size());  // content: checked after power-on
   if (gotSha != wantSha)
     return Error(Err::RomMismatch, "ROM '" + romPath + "' has SHA-256 " + gotSha + ", project expects " + wantSha);
 
@@ -840,6 +843,9 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   uint64_t cursor = s->frame_;
   s->frame_ = 0;
   RN_TRY(s->powerOnFresh());
+  if (contentIdentity && s->core_->contentId() != wantSha)
+    return Error(Err::RomMismatch, "'" + romPath + "' is content '" + s->core_->contentId() + "', project expects '" +
+                                       wantSha + "'");
   if (s->layout_ != storedLayout)
     return Error(Err::CoreMismatch, "the project's input layout '" + storedLayout.name +
                                         "' differs from the core's '" + s->layout_.name + "'");

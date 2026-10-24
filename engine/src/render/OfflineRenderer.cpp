@@ -24,6 +24,7 @@ Status OfflineRenderer::create(const Session& s, uint64_t start, uint64_t end, s
     r->recs_.resize(size_t(end));
   }
   r->rom_ = s.rom();
+  r->romPath_ = s.romPath();
   r->kind_ = s.coreKind();
   r->media_ = s.mediaInfo();
   r->start_ = start;
@@ -35,7 +36,7 @@ Status OfflineRenderer::create(const Session& s, uint64_t start, uint64_t end, s
 
 Status OfflineRenderer::init() {
   core_ = createCore(kind_);
-  RN_TRY(core_->loadROM(rom_.data(), rom_.size()));
+  RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));
   if (!seed_.empty()) {
     Status st = core_->loadState(seed_.data(), seed_.size());
     if (!st.ok()) return Error(st.code, "render start checkpoint failed to load: " + st.message);

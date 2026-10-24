@@ -2,6 +2,7 @@
 // rn_session_samples_before, the renderer equivalents) and the external core registration, through
 // the public C API with a test core whose picture size changes, whose rows are padded, whose sound
 // is stereo with a constant number of sample frames per frame and whose frame rate is 59.63 Hz.
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -37,6 +38,17 @@ class WideStereoCore final : public ICore {
   }
   Status powerCycle() override { acc_ = seed_; return Status::Ok(); }
   Status softReset() override { acc_ ^= 0x5555; return Status::Ok(); }
+  // Like an arcade set: the content is named by its file name, whatever bytes the file holds.
+  Status loadContent(const std::string& path, const uint8_t* data, size_t size) override {
+    size_t slash = path.find_last_of("/\\");
+    std::string name = path.substr(slash == std::string::npos ? 0 : slash + 1);
+    id_ = "set:" + name.substr(0, name.find('.'));
+    const uint8_t* named = reinterpret_cast<const uint8_t*>(id_.data());
+    (void)data;
+    (void)size;
+    return loadROM(named, id_.size());
+  }
+  std::string contentId() const override { return id_; }
   Status stepFrame(uint8_t p1, uint8_t p2, bool renderVideo) override {
     if (!loaded_) return Error(Err::InvalidArg, "no content");
     acc_ = acc_ * 6364136223846793005ULL + 1442695040888963407ULL ^ (uint64_t(p1) << 8 | uint64_t(p2) << 16);
@@ -97,6 +109,7 @@ class WideStereoCore final : public ICore {
  private:
   bool loaded_ = false;
   uint64_t frame_ = 0, acc_ = 0, seed_ = 0;
+  std::string id_;
   uint32_t width_ = 320;
   std::vector<uint32_t> video_;
   std::vector<int16_t> audio_;
@@ -210,6 +223,23 @@ TEST_CASE("media: an external core with its own size, rate and stereo sound, end
   rn_renderer_free(r);
   rn_session_close(s);
   CHECK(rendered == recorded);
+
+  // Content identity: the manifest names the content, not the file's hash; a file with other bytes
+  // but the same name opens (a repacked set), another name is refused.
+  char* manText = nullptr;
+  REQUIRE(rn_project_manifest_json(project.c_str(), &manText) == RN_OK);
+  std::string man(manText);
+  rn_string_free(manText);
+  CHECK(man.find("\"identity\": \"content\"") != std::string::npos);
+  CHECK(man.find("set:content") != std::string::npos);
+  std::string other = tempDir("media-repacked");
+  std::string repacked = writeTestRom(other, "content.bin");
+  { std::FILE* f = std::fopen(repacked.c_str(), "ab"); REQUIRE(f); std::fputs("other bytes", f); std::fclose(f); }
+  REQUIRE(rn_session_open(project.c_str(), repacked.c_str(), &opt, &s) == RN_OK);
+  CHECK(replay(s) == recorded);
+  rn_session_close(s);
+  std::string renamed = writeTestRom(other, "another.bin");
+  CHECK(rn_session_open(project.c_str(), renamed.c_str(), &opt, &s) == RN_ERR_ROM_MISMATCH);
 
   unregisterExternalCore();
   CHECK_FALSE(rn_core_available(RN_CORE_EXTERNAL));

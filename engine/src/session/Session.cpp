@@ -25,6 +25,7 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
   s->romPath_ = romPath;
   s->romSha_ = Sha256::hex(s->rom_.data(), s->rom_.size());
   RN_TRY(s->powerOnFresh());
+  if (!s->core_->contentId().empty()) s->romSha_ = s->core_->contentId();
   out = std::move(s);
   return Status::Ok();
 }
@@ -32,7 +33,7 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
 std::string Session::projectDir() const { return store_ ? store_->dir() : std::string(); }
 
 Status Session::powerOnFresh() {
-  RN_TRY(core_->loadROM(rom_.data(), rom_.size()));
+  RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));
   layout_ = core_->inputLayout();
   frame_ = 0;
   audioValid_ = false;
@@ -522,7 +523,7 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
       if (!st.ok()) return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
       frame_ = cp->frame;
     } else {
-      RN_TRY(core_->loadROM(rom_.data(), rom_.size()));  // fresh power-on (video buffer untouched below)
+      RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));  // fresh power-on (video buffer untouched below)
       frame_ = 0;
     }
   }
