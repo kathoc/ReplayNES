@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "replaynes/product.h"
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -40,7 +41,7 @@ class LibraryThumbs {
   /// frames without input (the engine, no project, nothing written but the thumbnail) and that
   /// picture becomes the ROM's thumbnail. Asked by the library for the cards it shows; one ROM at a
   /// time, each ROM at most once per run (a ROM the engine cannot run stays a name tile).
-  static constexpr int kRomPictureFrame = 300;
+  static constexpr int kRomPictureFrame = RN_PRODUCT_LIBRARY_PICTURE_FRAME;  // 300 for ReplayNES
   void requestRomPicture(const std::string& romPath);
   /// Frame thread: stores the finished pictures (as save(): file + cache). True if any arrived.
   bool pollRomPictures();
