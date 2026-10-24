@@ -2,11 +2,13 @@
 #include "input_router.h"
 
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
+#include "../../../engine/src/util/Json.h"
 #include "settings.h"
 
 namespace rnl {
@@ -23,12 +25,17 @@ std::string slotPrefix(int slot) { return "gc" + std::to_string(slot) + ":"; }
 }  // namespace
 
 InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
-    : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)) {}
+    : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)) {
+  profiles_[0] = rn_input_new();
+  profiles_[1] = rn_input_new();
+  loadKindOverrides();
+}
 
 InputRouter::~InputRouter() {
   closeAll();
   rnf_chord_free(chord_);
   rn_input_free(in_);
+  for (auto* profile : profiles_) rn_input_free(profile);
 }
 
 void InputRouter::closeAll() {
@@ -43,6 +50,111 @@ bool InputRouter::applyPlan(rnf_list* unbind, rnf_list* bind) {
   rnf_list_free(unbind);
   rnf_list_free(bind);
   return did;
+}
+
+DeviceKind InputRouter::detectDeviceKind(SDL_JoystickType type, const std::string& name) {
+  std::string lower = name;
+  for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+  if (lower.find("steam deck") != std::string::npos) return DeviceKind::pad;
+  if (type == SDL_JOYSTICK_TYPE_ARCADE_STICK) return DeviceKind::stick;
+  for (const char* match : {"arcade", "fight stick", "fightstick", "fighting stick", "fighting commander",
+       "hori rap", "real arcade", "qanba", "victrix", "panthera", "mayflash f", "8bitdo arcade",
+       "astro city", "egret", "hitbox", "hit box", "snack box", "brook", "neogeo arcade"})
+    if (lower.find(match) != std::string::npos) return DeviceKind::stick;
+  return DeviceKind::pad;
+}
+
+KindOverride InputRouter::kindOverride(int slot) const {
+  if (slot < 0 || slot >= kSlots) return KindOverride::automatic;
+  auto it = kindOverrides_.find(pads_[slot].guid);
+  return it == kindOverrides_.end() ? KindOverride::automatic : it->second;
+}
+DeviceKind InputRouter::deviceKind(int slot) const {
+  if (nesLayout_ || slot < 0 || slot >= kSlots || !pads_[slot].pad) return DeviceKind::pad;
+  auto override = kindOverride(slot);
+  if (override != KindOverride::automatic) return override == KindOverride::stick ? DeviceKind::stick : DeviceKind::pad;
+  return pads_[slot].detectedKind;
+}
+DeviceKind InputRouter::editingKind() const { return deviceKind(editingSlot_ < 0 ? lastSlot_ : editingSlot_); }
+rn_input* InputRouter::editingInput() const { return nesLayout_ ? in_ : profiles_[editingKind() == DeviceKind::stick ? 1 : 0]; }
+void InputRouter::noteLastSlot(int slot) {
+  const DeviceKind previous = editingKind();
+  lastSlot_ = slot;
+  if (!nesLayout_ && editingSlot_ < 0 && editingKind() != previous) refreshBindings(false);
+}
+void InputRouter::setEditingSlot(int slot) {
+  if (slot < -1 || slot >= kSlots || (slot >= 0 && editingSlot_ == slot)) return;
+  editingSlot_ = slot;
+  refreshBindings(false);
+}
+std::string InputRouter::kindFile(DeviceKind kind) const {
+  if (nesLayout_) return file_;
+  char* name = rnf_input_bindings_filename_for_kind(kind == DeviceKind::stick);
+  std::string path = (std::filesystem::path(baseFile_).parent_path() / name).string();
+  rnf_string_free(name);
+  return path;
+}
+void InputRouter::loadKindOverrides() {
+  rn::Json root;
+  if (!rn::Json::parse(readFile((std::filesystem::path(baseFile_).parent_path() / "controller-kinds.json").string()), root)) return;
+  for (const auto& [guid, value] : root.members()) {
+    if (value.asString() == "pad") kindOverrides_[guid] = KindOverride::pad;
+    else if (value.asString() == "stick") kindOverrides_[guid] = KindOverride::stick;
+  }
+}
+void InputRouter::persistKindOverrides() {
+  rn::Json root = rn::Json::object();
+  for (const auto& [guid, kind] : kindOverrides_) root.set(guid, kind == KindOverride::stick ? "stick" : "pad");
+  auto path = std::filesystem::path(baseFile_).parent_path() / "controller-kinds.json";
+  const std::string tmp = path.string() + ".tmp";
+  { std::ofstream out(tmp); out << root.dump(); }
+  std::error_code ec;
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) std::fprintf(stderr, "cannot save %s\n", path.string().c_str());
+}
+void InputRouter::setKindOverride(int slot, KindOverride kind) {
+  if (slot < 0 || slot >= kSlots || pads_[slot].guid.empty() || nesLayout_) return;
+  if (kind == KindOverride::automatic) kindOverrides_.erase(pads_[slot].guid);
+  else kindOverrides_[pads_[slot].guid] = kind;
+  persistKindOverrides();
+  rebuildRuntime();
+  refreshBindings();
+  if (onPadsChanged) onPadsChanged();
+}
+void InputRouter::rebuildRuntime() {
+  if (nesLayout_) return;
+  // The engine receives a transient composition, never persisted: P1 supplies globals/keyboard,
+  // while each controller prefix comes from that slot's physical device kind.
+  rn::Json configs[2];
+  for (int k = 0; k < 2; ++k) {
+    char* text = rn_input_save_json(profiles_[k]);
+    if (text) rn::Json::parse(text, configs[k]);
+    rn_string_free(text);
+  }
+  int primary = deviceKind(0) == DeviceKind::stick ? 1 : 0;
+  rn::Json runtime = configs[primary], bindings = rn::Json::array();
+  for (int k = 0; k < 2; ++k) for (const auto& b : configs[k]["bindings"].items()) {
+    int slot = -1;
+    if (rnf_input_controller_slot(b["input"].asString().c_str(), &slot)) {
+      if (k == (deviceKind(slot) == DeviceKind::stick ? 1 : 0)) bindings.push(b);
+    } else if (k == primary) bindings.push(b);
+  }
+  runtime.set("bindings", bindings);
+  rn_input_release_all(in_);
+  rn_input_load_json(in_, runtime.dump().c_str());
+  pressed_.clear();
+  stickState_.clear();
+  for (auto& p : pads_) { p.lt = p.rt = false; p.lx = p.ly = p.rx = p.ry = 0; }
+  rnf_chord_reset(chord_);
+  confirmTap_.clear();
+  swallowedStarts_.clear();
+  practiceStops_.clear();
+  for (const auto& [id, dir] : holdMembers_) if (onMarkerHold) onMarkerHold(dir, false);
+  for (const auto& id : routedSteps_) {
+    auto it = stepDirs_.find(id);
+    if (it != stepDirs_.end() && onPausedStep) onPausedStep(it->second, false);
+  }
+  routedSteps_.clear();
 }
 
 void InputRouter::setLayout(const char* json) {
@@ -73,15 +185,29 @@ bool InputRouter::buttonTurbo(const std::string& action, int& period, int& duty)
 }
 
 void InputRouter::setButtonTurbo(const std::string& action, int period, int duty) {
-  rn_input_set_button_turbo(in_, action.c_str(), uint32_t(period), uint32_t(duty));
+  rn_input_set_button_turbo(editingInput(), action.c_str(), uint32_t(period), uint32_t(duty));
   persist();
 }
 
 void InputRouter::load() {
+  if (!nesLayout_) {
+    for (int k = 0; k < 2; ++k) {
+      rn_input_set_layout_json(profiles_[k], layoutJson_.c_str());
+      std::string text = readFile(kindFile(k ? DeviceKind::stick : DeviceKind::pad));
+      if (text.empty() || rn_input_load_json(profiles_[k], text.c_str()) != RN_OK) {
+        char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, k);
+        rn_input_load_json(profiles_[k], def);
+        rnf_string_free(def);
+      }
+    }
+    rebuildRuntime();
+    refreshBindings();
+    return;
+  }
   std::string text = readFile(file_);
   bool loaded = !text.empty() && rn_input_load_json(in_, text.c_str()) == RN_OK;
   if (!loaded) {
-    char* def = rnf_input_default_config_json(RNF_KEYBOARD_SDL);
+    char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, editingKind() == DeviceKind::stick);
     rn_input_load_json(in_, def);
     rnf_string_free(def);
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
@@ -134,10 +260,10 @@ void InputRouter::load() {
   }
 }
 
-void InputRouter::refreshBindings() {
+void InputRouter::refreshBindings(bool configureRuntime) {
   bindingPairs_.clear();
   buttonTurbo_.clear();
-  char* json = rn_input_save_json(in_);
+  char* json = rn_input_save_json(editingInput());
   rnf_input_config* c = nullptr;
   if (json && rnf_input_config_parse(json, &c) == RN_OK) {
     for (size_t i = 0, n = rnf_input_config_binding_count(c); i < n; ++i) {
@@ -158,18 +284,38 @@ void InputRouter::refreshBindings() {
   rn_string_free(json);
   bindingView_.clear();
   for (const auto& p : bindingPairs_) bindingView_.push_back(rnf_binding{p.first.c_str(), p.second.c_str()});
+  if (configureRuntime) configureRuntimeBindings();
+}
+
+void InputRouter::configureRuntimeBindings() {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  std::vector<rnf_binding> view;
+  char* json = rn_input_save_json(in_);
+  rnf_input_config* config = nullptr;
+  if (json && rnf_input_config_parse(json, &config) == RN_OK) {
+    for (size_t i = 0; i < rnf_input_config_binding_count(config); ++i) {
+      rnf_binding b{};
+      if (rnf_input_config_binding_get(config, i, &b)) pairs.emplace_back(b.input, b.action);
+    }
+    rnf_input_config_free(config);
+  }
+  rn_string_free(json);
+  for (const auto& p : pairs) view.push_back({p.first.c_str(), p.second.c_str()});
   stepDirs_.clear();
-  rnf_list* dirs = rnf_input_paused_step_directions(bindingView_.data(), bindingView_.size());
+  rnf_list* dirs = rnf_input_paused_step_directions(view.data(), view.size());
   for (size_t i = 0, n = rnf_list_count(dirs); i < n; ++i) stepDirs_[rnf_list_a(dirs, i)] = int(rnf_list_value(dirs, i));
   rnf_list_free(dirs);
   // The Quick Menu: combos go through the chord detector, single inputs open it directly.
-  rnf_chord_configure(chord_, bindingView_.data(), bindingView_.size(), "hk.menu");
+  rnf_chord_configure(chord_, view.data(), view.size(), "hk.menu");
   menuIds_.clear();
   gameMembers_.clear();
-  for (const rnf_binding& b : bindingView_) {
+  for (const rnf_binding& b : view) {
     if (std::string(b.action) == "hk.menu" && !rnf_input_combo_split(b.input, nullptr, nullptr)) menuIds_.insert(b.input);
-    // A combo member bound to a game button is held for the game (from the end of the chord window).
-    if (rnf_chord_is_member(chord_, b.input) && std::strncmp(b.action, "hk.", 3) != 0) gameMembers_.insert(b.input);
+    // Game buttons and arcade transport hotkeys stay held after the chord window.
+    bool heldTransport = !nesLayout_ && (std::strcmp(b.action, "hk.rewind") == 0 ||
+                                         std::strcmp(b.action, "hk.fast_forward") == 0);
+    if (rnf_chord_is_member(chord_, b.input) && (std::strncmp(b.action, "hk.", 3) != 0 || heldTransport))
+      gameMembers_.insert(b.input);
   }
   forwardedMembers_.clear();
   holdMembers_.clear();
@@ -177,58 +323,77 @@ void InputRouter::refreshBindings() {
 }
 
 void InputRouter::persist() {
-  char* json = rn_input_save_json(in_);
+  char* json = rn_input_save_json(editingInput());
   if (json) {
-    std::string tmp = file_ + ".tmp";
+    std::string tmp = kindFile(editingKind()) + ".tmp";
     {
       std::ofstream f(tmp, std::ios::trunc);
       f << json;
     }
     std::error_code ec;
-    std::filesystem::rename(tmp, file_, ec);  // replaces the old file (also on Windows)
+    std::filesystem::rename(tmp, kindFile(editingKind()), ec);  // replaces the old file (also on Windows)
     if (ec) std::fprintf(stderr, "cannot save %s\n", file_.c_str());
     rn_string_free(json);
   }
+  if (!nesLayout_) rebuildRuntime();
   refreshBindings();
 }
 
 void InputRouter::bind(const std::string& physical, const std::string& action) {
-  rn_input_bind(in_, physical.c_str(), action.c_str());
+  rn_input_bind(editingInput(), physical.c_str(), action.c_str());
   persist();
 }
 void InputRouter::unbind(const std::string& physical, const std::string& action) {
-  rn_input_unbind(in_, physical.c_str(), action.c_str());
+  rn_input_unbind(editingInput(), physical.c_str(), action.c_str());
   persist();
 }
 void InputRouter::setAssignment(const std::string& physical, const std::string& action) {
-  rn_input_unbind(in_, physical.c_str(), nullptr);
-  if (!action.empty()) rn_input_bind(in_, physical.c_str(), action.c_str());
+  rn_input_unbind(editingInput(), physical.c_str(), nullptr);
+  if (!action.empty()) rn_input_bind(editingInput(), physical.c_str(), action.c_str());
   persist();
 }
 void InputRouter::resetController(int slot) {
+  if (!nesLayout_) {
+    char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, editingKind() == DeviceKind::stick);
+    rnf_input_config* config = nullptr;
+    if (def && rnf_input_config_parse(def, &config) == RN_OK) {
+      const std::string prefix = slotPrefix(slot);
+      for (const auto& p : bindingPairs_)
+        if (p.first.find(prefix) == 0) rn_input_unbind(editingInput(), p.first.c_str(), nullptr);
+      for (size_t i = 0; i < rnf_input_config_binding_count(config); ++i) {
+        rnf_binding b{};
+        if (rnf_input_config_binding_get(config, i, &b) && std::string(b.input).find(prefix) == 0)
+          rn_input_bind(editingInput(), b.input, b.action);
+      }
+      rnf_input_config_free(config);
+    }
+    rnf_string_free(def);
+    persist();
+    return;
+  }
   rnf_list *u = nullptr, *b = nullptr;
   rnf_input_controller_reset_plan(bindingView_.data(), bindingView_.size(), slot, &u, &b);
   applyPlan(u, b);
   persist();
 }
 void InputRouter::resetToDefaults() {
-  char* def = rnf_input_default_config_json(RNF_KEYBOARD_SDL);
-  rn_input_load_json(in_, def);
+  char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, editingKind() == DeviceKind::stick);
+  rn_input_load_json(editingInput(), def);
   rnf_string_free(def);
   persist();
 }
 void InputRouter::setTurbo(int period, int duty) {
   int p = std::max(1, period), d = std::min(std::max(1, duty), p);
-  rn_input_set_turbo(in_, uint32_t(p), uint32_t(d));
+  rn_input_set_turbo(editingInput(), uint32_t(p), uint32_t(d));
   persist();
 }
 void InputRouter::setSOCD(const std::string& policy) {
   rn_socd v = policy == "last_wins" ? RN_SOCD_LAST_WINS : policy == "allow" ? RN_SOCD_ALLOW : RN_SOCD_NEUTRAL;
-  rn_input_set_socd(in_, v);
+  rn_input_set_socd(editingInput(), v);
   persist();
 }
 void InputRouter::setAnalogThreshold(double t) {
-  rn_input_set_analog_threshold(in_, float(std::min(std::max(t, 0.05), 0.95)));
+  rn_input_set_analog_threshold(editingInput(), float(std::min(std::max(t, 0.05), 0.95)));
   persist();
 }
 
@@ -427,6 +592,11 @@ void InputRouter::pumpChord() {
   while (rnf_chord_poll(chord_, &ev)) {
     std::string id = ev.input;
     int dir = ev.member == 0 ? -1 : 1;
+    int slot = -1;
+    if (!nesLayout_ && rnf_input_controller_slot(id.c_str(), &slot) && deviceKind(slot) == DeviceKind::stick) {
+      if (id == slotPrefix(slot) + "leftTrigger") dir = -1;
+      else if (id == slotPrefix(slot) + "leftShoulder") dir = 1;
+    }
     bool paused = pausedStepMode_ && !ui_;
     switch (ev.kind) {
       case RNF_CHORD_COMBO_DOWN:
@@ -551,6 +721,10 @@ void InputRouter::attach(SDL_JoystickID id) {
     p.id = id;
     const char* n = SDL_GetGamepadName(p.pad);
     p.name = n ? n : "";
+    char guid[33]{};
+    SDL_GUIDToString(SDL_GetJoystickGUID(SDL_GetGamepadJoystick(p.pad)), guid, sizeof(guid));
+    p.guid = guid;
+    p.detectedKind = detectDeviceKind(SDL_GetJoystickType(SDL_GetGamepadJoystick(p.pad)), p.name);
     p.family = rnf_sdl_controller_family(int(SDL_GetGamepadType(p.pad)), p.name.c_str());
     p.labels.clear();
     for (int b : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH}) {
@@ -558,6 +732,7 @@ void InputRouter::attach(SDL_JoystickID id) {
       if (l) p.labels[rnf_sdl_button_element(b)] = l;
     }
     std::fprintf(stderr, "gamepad: %s (slot %d, type %d)\n", p.name.c_str(), s, int(SDL_GetGamepadType(p.pad)));
+    if (!nesLayout_) { rebuildRuntime(); refreshBindings(); }
     if (onPadsChanged) onPadsChanged();
     return;
   }
@@ -592,6 +767,7 @@ void InputRouter::detach(SDL_JoystickID id) {
   }
   for (auto it = pressed_.begin(); it != pressed_.end();)
     it = it->compare(0, prefix.size(), prefix) == 0 ? pressed_.erase(it) : std::next(it);
+  if (!nesLayout_) { rebuildRuntime(); refreshBindings(); }
   if (onPadsChanged) onPadsChanged();
   if (onDisconnect) onDisconnect(name);
 }
@@ -600,7 +776,7 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
   const char* el = rnf_sdl_button_element(button);
   if (!el || rnf_input_element_ignored(el)) return;  // HOME / guide: the system's (Steam, Game Bar)
   std::string id = slotPrefix(slot) + el;
-  if (down) lastSlot_ = slot;
+  if (down) noteLastSlot(slot);
   if (isReserved(el)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -683,14 +859,21 @@ void InputRouter::padAxis(int slot, int axis, float v, double t) {
     bool now = state ? v > 0.35f : v > 0.5f;  // hysteresis
     if (now == state) return;
     state = now;
-    if (now) lastSlot_ = slot;
+    if (now) noteLastSlot(slot);
     std::string id = g + (right ? "rightTrigger" : "leftTrigger");
     if (now && capture_) {
       pressed_.insert(id);
       captureFrom(id, false);
       return;
     }
-    setPressed(id, now, t, !ui_);
+    if (!nesLayout_ && rnf_chord_feed(chord_, id.c_str(), now ? 1 : 0, t)) {
+      if (now) { pressed_.insert(id); confirmTap_.cancel(); }
+      else pressed_.erase(id);
+      pumpChord();
+    } else {
+      if (!nesLayout_) pumpChord();
+      setPressed(id, now, t, !ui_);
+    }
     return;
   }
   bool left = axis == SDL_GAMEPAD_AXIS_LEFTX || axis == SDL_GAMEPAD_AXIS_LEFTY;

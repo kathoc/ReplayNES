@@ -66,7 +66,7 @@ struct PageGeometry {
 /// reserveRows: SETTINGS / LIST panels keep room for that many rows (a list with several sheets keeps
 /// its size from sheet to sheet).
 PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader,
-                        size_t reserveRows = 0);
+                        size_t reserveRows = 0, float contentTopInset = 0);
 
 /// Height of one card's text strip (name + length) under its thumbnail.
 float cardTextHeight(const UiMetrics& m);

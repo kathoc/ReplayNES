@@ -343,7 +343,8 @@ void UI::activateItem(const std::string& id) {
   } else if (id == "controls.reset") {
     Dialog d;
     d.title = TR("Reset Controls");
-    d.message = TR("Every key and button back to the defaults");
+    d.message = d_.input->usesDeviceKinds() ? TR("Reset only this title and controller kind to defaults")
+                                          : TR("Every key and button back to the defaults");
     d.buttons = {TR("Reset"), TR("Cancel")};
     d.destructiveIndex = 0;
     d.cancelIndex = 1;
@@ -498,7 +499,7 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   float fs = std::max(m.hint() * 0.85f, 12 * k);
   diagramIds_.clear();
   diagramCenters_.clear();
-  if (diagramFocus_ >= int(n)) diagramFocus_ = 0;
+  if (diagramFocus_ >= int(n) + (d_.input->usesDeviceKinds() ? 1 : 0)) diagramFocus_ = 0;
   LRect focusRect;
   for (size_t i = 0; i < n; ++i) {
     rnf_diagram_element e{};
@@ -611,7 +612,9 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   };
   chip(IM_COL32(40, 110, 230, 230), TR("Game input (recorded)"));
   chip(IM_COL32(255, 149, 0, 235), TR("Hotkeys (not recorded)"));
-  std::string menuHint = menuChordGlyph(family, true) + ": " + TR("Quick Menu");
+  const std::string chord = in.usesDeviceKinds() && in.deviceKind(slot) == DeviceKind::stick
+      ? padGlyph(family, "leftShoulder") + "+" + padGlyph(family, "leftTrigger") : menuChordGlyph(family, true);
+  std::string menuHint = chord + ": " + TR("Quick Menu");
   dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, y), kTextDim, menuHint.c_str());
   description_ = diagramFocus_ < int(diagramIds_.size())
                      ? str(rnf_input_element_title(diagramIds_[size_t(diagramFocus_)].substr(prefix.size()).c_str(), family, nullptr))

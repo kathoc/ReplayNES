@@ -2799,3 +2799,17 @@ TEST_CASE("product without flash: live and paused pictures stay raw even after r
   rn_input_free(in);
 }
 #endif
+TEST_CASE("device profile heading reserves space without changing legacy geometry") {
+  for (float scale : {0.75f, 1.0f, 1.25f}) {
+    const UiMetrics m = UiMetrics::make(1280, 800, scale, 1.18f);
+    const PageGeometry legacy = layoutPage(m, RNF_MENU_PAGE_SETTINGS, 6, 1, true);
+    const PageGeometry explicitZero = layoutPage(m, RNF_MENU_PAGE_SETTINGS, 6, 1, true, 0, 0);
+    CHECK_EQ(legacy.panel.y, explicitZero.panel.y);
+    CHECK_EQ(legacy.panel.h, explicitZero.panel.h);
+    const float inset = m.hint() + 16 * m.s;
+    const PageGeometry profiles = layoutPage(m, RNF_MENU_PAGE_SETTINGS, 6, 1, true, 0, inset);
+    CHECK_EQ(profiles.content.y, legacy.content.y + inset);
+    CHECK(profiles.panel.y >= legacy.content.y + inset);
+    CHECK(pageFits(m, profiles, nullptr));
+  }
+}

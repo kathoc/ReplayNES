@@ -21,9 +21,11 @@ float cardTextHeight(const UiMetrics& m) { return m.label() + m.hint() + 22 * m.
 float libraryCardTextHeight(const UiMetrics& m) { return m.label() + m.hint() + 20 * m.s; }
 
 PageGeometry layoutPage(const UiMetrics& m, rnf_menu_page_kind kind, size_t count, int columns, bool hasHeader,
-                        size_t reserveRows) {
+                        size_t reserveRows, float contentTopInset) {
   PageGeometry g;
   g.content = m.content();
+  g.content.y += contentTopInset;
+  g.content.h -= contentTopInset;
   const LRect& c = g.content;
   const float s = m.s, gap = m.gap();
   switch (kind) {
