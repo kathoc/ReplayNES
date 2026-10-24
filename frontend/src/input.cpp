@@ -1065,7 +1065,11 @@ char* rnf_controller_family_title(rnf_controller_family f) {
     case RNF_FAMILY_XBOX: return dup("Xbox");
     case RNF_FAMILY_PLAYSTATION: return dup("PlayStation");
     case RNF_FAMILY_STEAM_DECK: return dup("Steam Deck");
-    case RNF_FAMILY_GENERIC: break;
+    case RNF_FAMILY_GENERIC:
+    case RNF_FAMILY_ARCADE_STICK:
+    case RNF_FAMILY_DIAGRAM_STANDARD:
+    case RNF_FAMILY_DIAGRAM_PLAYSTATION:
+    case RNF_FAMILY_DIAGRAM_STEAM_DECK: break;  // geometry-only families have no device title
   }
   return dup(tr(RNF_L("Other")));
 }

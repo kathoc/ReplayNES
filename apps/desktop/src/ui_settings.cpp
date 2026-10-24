@@ -459,12 +459,14 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   ImVec2 o(area.x + (area.w - cw) / 2, area.y + (area.h - legendH - ch) / 2);
   auto P = [&](double x, double y) { return ImVec2(o.x + float(x) * k, o.y + float(y) * k); };
   ImDrawList* dl = ImGui::GetWindowDrawList();
+  const auto geometry = rnf_diagram_family_for_layout(family, in.usesDeviceKinds(), in.deviceKind(slot) == DeviceKind::stick);
+  const bool arcadeStick = geometry == RNF_FAMILY_ARCADE_STICK;
   rnf_diagram_info info{};
-  rnf_diagram_info_get(family, &info);
+  rnf_diagram_info_get(geometry, &info);
   // The outline (rnf_diagram_decor): a rounded body without grips, the Steam Deck's screen, pads.
-  for (size_t i = 0, nd = rnf_diagram_decor_count(family); i < nd; ++i) {
+  for (size_t i = 0, nd = rnf_diagram_decor_count(geometry); i < nd; ++i) {
     rnf_diagram_decor d{};
-    if (!rnf_diagram_decor_get(family, i, &d)) continue;
+    if (!rnf_diagram_decor_get(geometry, i, &d)) continue;
     ImVec2 a = P(d.x, d.y), z = P(d.x + d.width, d.y + d.height);
     float r = float(d.radius) * k;
     switch (d.kind) {
@@ -482,43 +484,63 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
         break;
     }
   }
-  for (auto [x, y] : {std::pair<double, double>{info.left_stick_x, info.left_stick_y}, {info.right_stick_x, info.right_stick_y}}) {
-    dl->AddCircleFilled(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 36));
-    dl->AddCircle(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 110));
+  if (arcadeStick) {
+    dl->AddCircleFilled(P(info.dpad_x, info.dpad_y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 36));
+    dl->AddCircle(P(info.dpad_x, info.dpad_y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 110));
+  } else {
+    for (auto [x, y] : {std::pair<double, double>{info.left_stick_x, info.left_stick_y}, {info.right_stick_x, info.right_stick_y}}) {
+      dl->AddCircleFilled(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 36));
+      dl->AddCircle(P(x, y), float(info.stick_radius) * k, IM_COL32(255, 255, 255, 110));
+    }
+    dl->AddRectFilled(P(info.dpad_x - RNF_DIAGRAM_DPAD_ARM / 2, info.dpad_y - RNF_DIAGRAM_DPAD_ARM / 2),
+                      P(info.dpad_x + RNF_DIAGRAM_DPAD_ARM / 2, info.dpad_y + RNF_DIAGRAM_DPAD_ARM / 2), IM_COL32(255, 255, 255, 80));
   }
-  dl->AddRectFilled(P(info.dpad_x - RNF_DIAGRAM_DPAD_ARM / 2, info.dpad_y - RNF_DIAGRAM_DPAD_ARM / 2),
-                    P(info.dpad_x + RNF_DIAGRAM_DPAD_ARM / 2, info.dpad_y + RNF_DIAGRAM_DPAD_ARM / 2), IM_COL32(255, 255, 255, 80));
   std::map<std::string, std::pair<rnf_group_summary, std::string>> groups;
   for (const char* g : {"dpad", "lstick", "rstick"}) {
+    if (arcadeStick && std::strcmp(g, "dpad") != 0) continue;
     char* text = nullptr;
     rnf_group_summary gs = rnf_input_group_summary(b.data(), b.size(), g, slot, &text);
     groups[g] = {gs, str(text)};
   }
   std::string prefix = "gc" + std::to_string(slot) + ":";
-  size_t n = rnf_diagram_element_count(family);
+  size_t n = rnf_diagram_element_count(geometry);
   float fs = std::max(m.hint() * 0.85f, 12 * k);
+  const bool kindFocused = in.usesDeviceKinds() && diagramFocus_ >= 0 &&
+      size_t(diagramFocus_) < diagramIds_.size() && diagramIds_[size_t(diagramFocus_)] == "__kind__";
   diagramIds_.clear();
   diagramCenters_.clear();
-  if (diagramFocus_ >= int(n) + (d_.input->usesDeviceKinds() ? 1 : 0)) diagramFocus_ = 0;
+  size_t focusable = n;
+  for (size_t i = 0; i < n; ++i) {
+    rnf_diagram_element e{};
+    if (rnf_diagram_element_get(geometry, i, &e) && rnf_input_element_ignored(e.element)) --focusable;
+  }
+  if (kindFocused) diagramFocus_ = int(focusable);
+  if (diagramFocus_ >= int(focusable) + (in.usesDeviceKinds() ? 1 : 0)) diagramFocus_ = 0;
   LRect focusRect;
   for (size_t i = 0; i < n; ++i) {
     rnf_diagram_element e{};
-    if (!rnf_diagram_element_get(family, i, &e)) continue;
+    if (!rnf_diagram_element_get(geometry, i, &e)) continue;
     std::string el = e.element, id = prefix + el;
     ImVec2 c = P(e.cx, e.cy);
     float w = float(e.width) * k, h = float(e.height) * k;
     ImVec2 a(c.x - w / 2, c.y - h / 2), z(c.x + w / 2, c.y + h / 2);
     float hw = std::max(w, S(30)), hh = std::max(h, S(30));
-    ImGui::SetCursorScreenPos(ImVec2(c.x - hw / 2, c.y - hh / 2));
-    ImGui::PushID(el.c_str());
-    bool clicked = ImGui::InvisibleButton("##el", ImVec2(hw, hh));
-    bool hovered = ImGui::IsItemHovered();
-    ImGui::PopID();
+    const bool bindable = !rnf_input_element_ignored(el.c_str());
+    bool clicked = false, hovered = false;
+    if (bindable) {
+      ImGui::SetCursorScreenPos(ImVec2(c.x - hw / 2, c.y - hh / 2));
+      ImGui::PushID(el.c_str());
+      clicked = ImGui::InvisibleButton("##el", ImVec2(hw, hh));
+      hovered = ImGui::IsItemHovered();
+      ImGui::PopID();
+    }
     int index = int(diagramIds_.size());
-    diagramIds_.push_back(id);
-    diagramCenters_.push_back(c);
+    if (bindable) {
+      diagramIds_.push_back(id);
+      diagramCenters_.push_back(c);
+    }
     if (hovered && (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0)) diagramFocus_ = index;
-    bool focused = index == diagramFocus_;
+    bool focused = bindable && index == diagramFocus_;
     bool reserved = InputRouter::isReserved(el);
     if (clicked) {
       diagramFocus_ = index;

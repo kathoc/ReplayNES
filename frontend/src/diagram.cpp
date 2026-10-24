@@ -146,16 +146,72 @@ Layout build(rnf_controller_family family) {
   return l;
 }
 
+// Non-NES pads retain every element and badge position from the original diagrams.
+Layout simplified(rnf_controller_family family) {
+  Layout l = build(family);
+  l.decor.clear();
+  return l;
+}
+
+Layout arcadeStick() {
+  Layout l;
+  auto& i = l.info;
+  i.dpad_x = 110; i.dpad_y = 158;
+  i.stick_radius = RNF_DIAGRAM_STICK_RADIUS;
+  i.dpad_anchor_x = i.dpad_x; i.dpad_anchor_y = i.dpad_y + i.stick_radius + 4;
+  auto& e = l.elements;
+  // The lever reports D-pad directions, matching the existing stick defaults.
+  const double d = i.stick_radius - 9;
+  e.push_back(make("dpad.up", RNF_DIAGRAM_STICK_DIRECTION, i.dpad_x, i.dpad_y - d, 15, 15, RNF_SIDE_ABOVE, "dpad"));
+  e.push_back(make("dpad.down", RNF_DIAGRAM_STICK_DIRECTION, i.dpad_x, i.dpad_y + d, 15, 15, RNF_SIDE_BELOW, "dpad"));
+  e.push_back(make("dpad.left", RNF_DIAGRAM_STICK_DIRECTION, i.dpad_x - d, i.dpad_y, 15, 15, RNF_SIDE_LEFT, "dpad"));
+  e.push_back(make("dpad.right", RNF_DIAGRAM_STICK_DIRECTION, i.dpad_x + d, i.dpad_y, 15, 15, RNF_SIDE_RIGHT, "dpad"));
+  // X Y RB LB / A B RT LT, with the physical device still supplying labels.
+  const char* rows[2][4] = {
+      {"face.west", "face.north", "rightShoulder", "leftShoulder"},
+      {"face.south", "face.east", "rightTrigger", "leftTrigger"},
+  };
+  for (int row = 0; row < 2; ++row)
+    for (int col = 0; col < 4; ++col)
+      e.push_back(make(rows[row][col], RNF_DIAGRAM_FACE, 240 + col * 80, 122 + row * 76, 32, 32,
+                       row == 0 ? RNF_SIDE_ABOVE : RNF_SIDE_BELOW));
+  e.push_back(make("options", RNF_DIAGRAM_SMALL, 220, 38, 40, 18, RNF_SIDE_ABOVE));
+  e.push_back(make("menu", RNF_DIAGRAM_SMALL, 320, 38, 40, 18, RNF_SIDE_ABOVE));
+  // HOME remains system-owned: the UI draws it without an assignment target.
+  e.push_back(make("home", RNF_DIAGRAM_HOME, 420, 38, 24, 24, RNF_SIDE_ABOVE));
+  return l;
+}
+
 const Layout& layout(rnf_controller_family f) {
   static const Layout symmetric = build(RNF_FAMILY_PLAYSTATION);
   static const Layout standard = build(RNF_FAMILY_GENERIC);
   static const Layout deck = build(RNF_FAMILY_STEAM_DECK);
-  return f == RNF_FAMILY_PLAYSTATION ? symmetric : f == RNF_FAMILY_STEAM_DECK ? deck : standard;
+  static const Layout plainStandard = simplified(RNF_FAMILY_GENERIC);
+  static const Layout plainSymmetric = simplified(RNF_FAMILY_PLAYSTATION);
+  static const Layout plainDeck = simplified(RNF_FAMILY_STEAM_DECK);
+  static const Layout stick = arcadeStick();
+  switch (f) {
+    case RNF_FAMILY_ARCADE_STICK: return stick;
+    case RNF_FAMILY_DIAGRAM_STANDARD: return plainStandard;
+    case RNF_FAMILY_DIAGRAM_PLAYSTATION: return plainSymmetric;
+    case RNF_FAMILY_DIAGRAM_STEAM_DECK: return plainDeck;
+    case RNF_FAMILY_PLAYSTATION: return symmetric;
+    case RNF_FAMILY_STEAM_DECK: return deck;
+    default: return standard;
+  }
 }
 
 }  // namespace
 
 extern "C" {
+
+rnf_controller_family rnf_diagram_family_for_layout(rnf_controller_family family, int uses_device_kinds, int stick) {
+  if (!uses_device_kinds) return family;
+  if (stick) return RNF_FAMILY_ARCADE_STICK;
+  if (family == RNF_FAMILY_PLAYSTATION) return RNF_FAMILY_DIAGRAM_PLAYSTATION;
+  if (family == RNF_FAMILY_STEAM_DECK) return RNF_FAMILY_DIAGRAM_STEAM_DECK;
+  return RNF_FAMILY_DIAGRAM_STANDARD;
+}
 
 void rnf_diagram_info_get(rnf_controller_family f, rnf_diagram_info* out) {
   if (out) *out = layout(f).info;
