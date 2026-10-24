@@ -1,0 +1,100 @@
+{
+  "generation": 1,
+  "nextSegmentId": 3,
+  "seq": 2,
+  "nextCheckpointId": 118,
+  "segments": [
+    {
+      "id": 1,
+      "parent": 0,
+      "start": 0,
+      "count": 3000,
+      "createdSeq": 1,
+      "file": "timeline/segments/1.seg"
+    },
+    {
+      "id": 2,
+      "parent": 1,
+      "start": 1500,
+      "count": 500,
+      "createdSeq": 2,
+      "file": "timeline/segments/2.seg"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": 20,
+      "frame": 600,
+      "owner": 1,
+      "kind": "sparse",
+      "file": "states/20.state",
+      "crc32": 2369750455
+    },
+    {
+      "id": 40,
+      "frame": 1200,
+      "owner": 1,
+      "kind": "sparse",
+      "file": "states/40.state",
+      "crc32": 398356591
+    },
+    {
+      "id": 60,
+      "frame": 1800,
+      "owner": 1,
+      "kind": "sparse",
+      "file": "states/60.state",
+      "crc32": 346586480
+    },
+    {
+      "id": 80,
+      "frame": 2400,
+      "owner": 1,
+      "kind": "sparse",
+      "file": "states/80.state",
+      "crc32": 1465309513
+    },
+    {
+      "id": 100,
+      "frame": 3000,
+      "owner": 1,
+      "kind": "sparse",
+      "file": "states/100.state",
+      "crc32": 2327817424
+    },
+    {
+      "id": 110,
+      "frame": 1800,
+      "owner": 2,
+      "kind": "sparse",
+      "file": "states/110.state",
+      "crc32": 2057520271
+    },
+    {
+      "id": 117,
+      "frame": 2000,
+      "owner": 2,
+      "kind": "head",
+      "file": "states/117.state",
+      "crc32": 4141603883
+    }
+  ],
+  "meta": {
+    "activeHead": 2,
+    "cursorFrame": 2000,
+    "mode": "replay",
+    "romPath": "testcart.nes",
+    "nextBookmarkId": 1,
+    "undo": [
+      {
+        "head": 1,
+        "frame": 1500
+      }
+    ],
+    "bookmarks": [],
+    "practice": {
+      "nextSeq": 0,
+      "slots": []
+    }
+  }
+}

@@ -36,6 +36,10 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME testcart_generated_up_to_date
            COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/testcart/build.py --check)
 endif()
+# Fixed per-frame video/audio digests (Nestopia + Test Cartridge through the C API): any change of
+# an emulated frame fails here. RN_GOLDEN_UPDATE=1 rewrites tests/fixtures/golden/ when a change is intended.
+rn_add_test(test_golden)
+target_compile_definitions(test_golden PRIVATE RN_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden")
 # Practice mode + A/B repeat slots (engine + persistence + C API).
 rn_add_test(test_practice)
 # A/B slots defined from take frames (timeline selection: rn_practice_set_range).

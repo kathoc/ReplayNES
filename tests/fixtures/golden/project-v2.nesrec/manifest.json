@@ -1,0 +1,17 @@
+{
+  "format": "replaynes-project",
+  "formatVersion": 2,
+  "appVersion": "0.6.4",
+  "generation": 1,
+  "coreCompatId": "nestopia-ue@7b5c87d8dc3c+p2+adapter1+ntsc",
+  "coreBuild": "nestopia-ue 7b5c87d8dc3c817211545449683d1fcd897324ca patchlevel 2 gcc-11.4.0",
+  "stateFormatVersion": 1,
+  "inputFormatVersion": 1,
+  "region": "NTSC",
+  "rom": {
+    "sha256": "702551bc67b55b8839569b8d29c6cb87eba9402e5d878017d278750bb82be14f",
+    "size": 24592,
+    "lastPath": "testcart.nes",
+    "name": "testcart.nes"
+  }
+}
