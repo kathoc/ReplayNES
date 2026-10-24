@@ -1,6 +1,6 @@
 // Filmstrip thumbnails of the active take (Filmstrip.swift + TimelineActions.swift on macOS):
 //  * the cache and its policy are the shared core's rnf_thumb_cache (fixed grid of 5 s * 2^k,
-//    shared-prefix rebase on take switches); payloads are ThumbImage (128x120 BGRA, refcounted);
+//    shared-prefix rebase on take switches); payloads are ThumbImage (128 pixels wide, display aspect, refcounted);
 //  * live capture: a picture the emulation shows anyway is kept when the grid wants it;
 //  * background batches: the missing pictures are rendered from the take's checkpoints with one
 //    rn_renderer per picture (created on the frame thread, a few per frame), run on low-priority
@@ -24,13 +24,17 @@
 
 namespace rnl {
 
+bool thumbnailSize(const rn_video_frame_info& frame, const rn_media_info& media, uint32_t* width, uint32_t* height, bool nesPicture = false);
+
 struct ThumbImage {
   std::atomic<int> refs{1};
   uint64_t serial = 0;  // unique per image (texture atlas key)
-  uint32_t px[RNF_THUMB_WIDTH * RNF_THUMB_HEIGHT];
+  uint32_t width = RNF_THUMB_WIDTH, height = RNF_THUMB_HEIGHT;
+  std::vector<uint32_t> px;
   static ThumbImage* make(const uint32_t* frame256x240);
+  static ThumbImage* make(const rn_video_frame_info& frame, const rn_media_info& media, bool nesPicture = false);
   /// A copy of a thumbnail-sized picture (RNF_THUMB_WIDTH x RNF_THUMB_HEIGHT), new serial.
-  static ThumbImage* fromThumb(const uint32_t* px);
+  static ThumbImage* fromThumb(const uint32_t* px, uint32_t width = RNF_THUMB_WIDTH, uint32_t height = RNF_THUMB_HEIGHT);
   void retain() { refs.fetch_add(1); }
   void release() {
     if (refs.fetch_sub(1) == 1) delete this;
@@ -105,6 +109,7 @@ class ThumbnailManager : public FrameObserver {
     std::shared_ptr<Job> job;
     rn_renderer* renderer;
     uint64_t frame;
+    bool nesPicture;
   };
   void syncTake(rn_session* s);
   void reconcile(double now);

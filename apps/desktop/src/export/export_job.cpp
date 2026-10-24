@@ -7,6 +7,12 @@
 
 namespace rnl {
 
+double exportAudioSampleRate(const rn_session* session) {
+  rn_media_info media{};
+  if (rn_session_media_info(session, &media) != RN_OK || !media.fps_den) return 0;
+  return double(rn_session_samples_before(session, media.fps_num)) / double(media.fps_den);
+}
+
 // ------------------------------------------------------------------ ExportJob
 std::shared_ptr<rn_renderer> makeRetryRenderer(rn_session* session, uint64_t startFrame, uint64_t endFrame) {
   rn_renderer* r = nullptr;
@@ -48,6 +54,7 @@ bool ExportJob::start(rn_session* session, ExportOptions opt, std::string outPat
   }
   if (opt.encoder.empty() && !opt.retryRenderer)
     opt.retryRenderer = makeRetryRenderer(session, opt.settings.start_frame, opt.settings.end_frame);
+  opt.audioSampleRate = exportAudioSampleRate(session);
   total_ = rn_renderer_total_frames(r);
   running_ = true;
   worker_ = std::thread([this, r, opt = std::move(opt), outPath = std::move(outPath)]() {

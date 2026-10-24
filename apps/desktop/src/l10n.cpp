@@ -61,8 +61,8 @@ std::string chooseUILanguage(const std::vector<std::string>& preferred, const ch
   return rnf_ui_language_choose(p.data(), p.size());
 }
 
-std::string timecode(uint64_t frame) {
-  double t = double(frame) * rnf_frame_period();
+std::string timecode(uint64_t frame, double framePeriod) {
+  double t = double(frame) * (framePeriod > 0 ? framePeriod : rnf_frame_period());
   int m = int(t) / 60;
   double s = t - double(m * 60);
   char buf[32];

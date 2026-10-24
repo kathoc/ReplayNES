@@ -29,7 +29,6 @@ add_custom_command(
 add_library(rnl_app STATIC
   ${RNL_APP_SRC}/app.cpp
   ${RNL_APP_SRC}/audio_out.cpp
-  ${RNL_APP_SRC}/game_rect.cpp
   ${RNL_APP_SRC}/icons.cpp
   ${RNL_ICON_FONT_CPP}
   ${RNL_APP_SRC}/input_router.cpp

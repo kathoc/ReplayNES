@@ -1,4 +1,4 @@
-// Library card pictures: the last picture seen of each project and each ROM (a 128x120 thumbnail,
+// Library card pictures: the last picture seen of each project and each ROM (a 128-pixel-wide thumbnail,
 // ThumbImage), kept in <dir>/<hash>.thumb so the library shows them after a restart. Saved by the
 // UI while a game is open (menu opened, pause, every half minute) on a worker thread; read lazily
 // on the frame thread (one small file per card, cached).
@@ -30,6 +30,8 @@ class LibraryThumbs {
   /// The picture (256x240 BGRA) as the thumbnail of a project and / or a ROM ("" = skip). Written
   /// off the calling thread; the in-memory copy is replaced at once.
   void save(const std::string& projectPath, const std::string& romPath, const uint32_t* frame256x240);
+  void save(const std::string& projectPath, const std::string& romPath,
+            const rn_video_frame_info& frame, const rn_media_info& media, bool nesPicture = false);
   /// Retained thumbnail, or empty when there is none.
   ThumbRef forProject(const std::string& projectPath) { return get("p:" + projectPath); }
   ThumbRef forRom(const std::string& romPath) { return get("r:" + romPath); }
@@ -48,6 +50,7 @@ class LibraryThumbs {
 
  private:
   ThumbRef get(const std::string& key);
+  void saveImage(const std::string& projectPath, const std::string& romPath, ThumbImage* img);
   void put(const std::string& key, ThumbImage* img);  // takes a reference
 
   std::string dir_;
@@ -60,7 +63,7 @@ class LibraryThumbs {
   std::mutex picMutex_;
   std::condition_variable picCv_;
   std::deque<std::string> picQueue_;
-  std::vector<std::pair<std::string, std::vector<uint32_t>>> picDone_;
+  std::vector<std::pair<std::string, ThumbImage*>> picDone_;
   bool picStop_ = false;
   std::thread picThread_;
 };

@@ -1,4 +1,4 @@
-// Audio output through an SDL3 audio stream (48 kHz mono s16 in; SDL converts to the device).
+// Audio output through an SDL3 audio stream (core-rate interleaved s16 input; 48 kHz device output).
 // Dynamic rate control (rnf_audio_rate from the shared core, +-0.5 %) is applied with
 // SDL_SetAudioStreamFrequencyRatio, so emulation can follow the display (60.000 Hz) while the
 // stream level stays at its target. Underruns are counted in the stream's get-callback (the
@@ -14,6 +14,7 @@
 #include <string>
 
 #include "audio_sink.h"
+#include "audio_format.h"
 #include "replaynes/frontend.h"
 
 namespace rnl {
@@ -24,13 +25,16 @@ class AudioOut : public AudioSink {
   ~AudioOut() override;
   bool open(std::string* error);
   void close();
+  void configureMedia(const rn_media_info& media, double sampleRate) override;
+  const AudioStreamFormat& format() const { return format_; }
   /// Frames are emulated at `fps` (DRC base ratio = nominal / fps).
   void setEmulationRate(double fps);
   /// Emulated frames that may arrive together (2 on displays slower than the NES rate): the kept
   /// level grows by one frame of audio per extra frame, so the bursts do not drain it.
   void setFramesPerPush(int frames);
   /// One emulated frame's samples (only call while audible).
-  void push(const int16_t* pcm, size_t n) override;
+  void push(const int16_t* pcm, size_t n) override { push(pcm, n, 1); }
+  void push(const int16_t* pcm, size_t n, uint32_t channels) override;
   void setMuted(bool muted) override;
   /// 0...1 (settings).
   void setVolume(float v);
@@ -38,12 +42,13 @@ class AudioOut : public AudioSink {
 
   uint64_t underruns() const { return underruns_.load(); }
   double ratio() const { return rnf_audio_rate_ratio(drc_); }
-  double fillMs() const { return lastFill_ * 1000.0 / RN_SAMPLE_RATE; }
+  double fillMs() const { return lastFill_ * 1000.0 / format_.sampleRate; }
   int deviceFrames() const { return deviceFrames_; }
   const std::string& deviceName() const { return deviceName_; }
 
  private:
   static void SDLCALL onGet(void* user, SDL_AudioStream* stream, int additional, int total);
+  AudioStreamFormat format_;
   SDL_AudioStream* stream_ = nullptr;
   rnf_audio_rate* drc_ = nullptr;
   double rate_ = 0;        // emulation rate given to the DRC (re-applied when it is recreated)

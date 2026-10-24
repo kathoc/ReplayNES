@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "renderer.h"
+#include "game_rect.h"
 #include "replaynes/replaynes.h"
 
 namespace rnl {
@@ -30,6 +30,29 @@ GameRect computeGameRect(int width, int height, bool integerScale, bool par87, b
   double ch = std::round(srcH * ps), cw = std::round(ch * aspect);
   if (cw > width) { cw = width; ch = std::round(cw / aspect); }
   r.crt = CrtRect{float(std::round((width - cw) / 2)), float(std::round((height - ch) / 2)), float(cw), float(ch)};
+  return r;
+}
+
+GameRect computeGameRect(int width, int height, const rn_media_info& media,
+                         const rn_video_frame_info& frame, bool integerScale, bool gameAspect, bool hideOverscan) {
+  const bool nes = media.max_width == RN_VIDEO_WIDTH && media.max_height == RN_VIDEO_HEIGHT &&
+                   media.rotation == 0 && media.pixel_aspect_num == 8 && media.pixel_aspect_den == 7 &&
+                   frame.width == RN_VIDEO_WIDTH && frame.height == RN_VIDEO_HEIGHT;
+  if (nes) return computeGameRect(width, height, integerScale, gameAspect, hideOverscan);
+  GameRect r;
+  if (width <= 0 || height <= 0 || !frame.width || !frame.height) return r;
+  r.crop = hideOverscan ? std::min(8, int((std::min(frame.width, frame.height) - 1) / 2)) : 0;
+  double par = gameAspect && media.pixel_aspect_num && media.pixel_aspect_den
+                   ? double(media.pixel_aspect_num) / media.pixel_aspect_den : 1.0;
+  double sw = (frame.width - 2 * r.crop) * par, sh = frame.height - 2 * r.crop;
+  if (media.rotation & 1) std::swap(sw, sh);
+  double scale = std::min(width / sw, height / sh);
+  if (integerScale && scale >= 1) scale = std::floor(scale);
+  r.w = float(std::round(sw * scale));
+  r.h = float(std::round(sh * scale));
+  r.x = float(std::round((width - r.w) / 2));
+  r.y = float(std::round((height - r.h) / 2));
+  r.visible = r.w > 0 && r.h > 0;
   return r;
 }
 

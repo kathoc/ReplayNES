@@ -3,9 +3,9 @@
 //   Linux    FFmpeg's libav* (apps/linux/src/export/mp4_export.cpp)
 //   Windows  Media Foundation's sink writer (apps/windows/src/mp4_export_mf.cpp)
 // Timestamps come only from frame / sample counts, never from the wall clock:
-//   video PTS of frame f = (f - start) * 655171 in time base 1/39375000 (FFmpeg: exact, the MP4
-//   track timescale is 39375000; Media Foundation: the same instants in its 100 ns units, rounded),
-//   audio PTS = rn_audio_samples_before(f) - rn_audio_samples_before(start) at 48 kHz mono.
+//   Linux video PTS uses the media fps denominator in the fps numerator timescale; audio
+//   timestamps count sample frames at the encoder rate, independently of the channel count.
+//   NES remains 655171/39375000 s per frame and 48 kHz mono.
 // Shared by both: the frame helpers (export_frame.h) and ExportJob (export_job.cpp).
 // Geometry (presets, crops, 8:7, nearest-neighbour column/row maps, bit rate) comes from the shared
 // frontend core (frontend.h, "export + streaming geometry"). UI-free: replaynes-export (export_cli.cpp)
@@ -83,13 +83,17 @@ class ExportVideoProcessor {
 /// Defaults like the macOS ExportSettings: canvas 1280x960, crop top/bottom 8, whole take.
 rnf_export_settings defaultExportSettings();
 
+/// Exact average PCM rate from the session sample-position model.
+double exportAudioSampleRate(const rn_session* session);
+
 struct ExportOptions {
+  double audioSampleRate = RN_SAMPLE_RATE;  // callers with a session set exportAudioSampleRate(session)
   rnf_export_settings settings = defaultExportSettings();  // preset / crops / 8:7 / start / end
   /// Photosensitive flash reduction of the exported picture only (renderer, hash, project unaffected).
   rn_flash_level flash = RN_FLASH_OFF;
   /// rnf_export_quality: scales the YouTube-table video bit rate (Light x0.5 / Standard / High x2).
   int quality = 1;
-  int audioBitrate = 128000;  // AAC mono, YouTube's recommendation (rnf_export_audio_bitrate)
+  int audioBitrate = 128000;  // AAC bitrate per channel (rnf_export_audio_bitrate)
   /// "" = auto: a hardware encoder when there is one that works, else software. Linux: h264_vaapi,
   /// then libx264, then libopenh264 (first one that opens), or that FFmpeg encoder only. Windows: a
   /// hardware H.264 MFT when there is one, else Microsoft's software encoder; "mf_hardware" /
@@ -109,7 +113,7 @@ struct ExportOptions {
 
 struct ExportResult {
   uint64_t frames = 0, audioSamples = 0, rendererHash = 0;
-  double duration = 0;  // frames * 655171 / 39375000 s
+  double duration = 0;  // frames * media frame period
   std::string encoder;  // encoder that was used ("libx264", "h264_vaapi", "H264 Encoder MFT", ...)
   bool hardware = false;  // a hardware (GPU) encoder made the file
 };

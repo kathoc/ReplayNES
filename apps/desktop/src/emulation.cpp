@@ -91,6 +91,20 @@ void EmulationController::setPaused(bool p) {
 void EmulationController::install(rn_session* s) {
   if (s != session_) closeSession();
   session_ = s;
+  ++mediaGeneration_;
+  media_ = {RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+  if (s) rn_session_media_info(s, &media_);
+  pictureWidth_ = media_.max_width;
+  pictureHeight_ = media_.max_height;
+  display_.assign(size_t(pictureWidth_) * pictureHeight_, 0xFF000000u);
+  rn_flash_filter_set_size(flash_, pictureWidth_, pictureHeight_);
+  rnf_reel_free(reel_);
+  reel_ = rnf_reel_new_media(RNF_REEL_CAPACITY, &media_);
+  if (audio_) {
+    const double sampleRate = s ? double(rn_session_samples_before(s, media_.fps_num)) / double(media_.fps_den)
+                                : double(RN_SAMPLE_RATE);
+    audio_->configureMedia(media_, sampleRate);
+  }
   bool fresh = s && rn_take_length(s) == 0 && rn_frame(s) == 0 && (rn_get_mode(s) == RN_MODE_RECORD || rn_get_mode(s) == RN_MODE_LIVE);
   setPaused(!fresh);
   slow_ = 1;
@@ -147,6 +161,7 @@ void EmulationController::closeSession() {
   rnf_fast_forward_end(ff_, session_);
   rn_session_close(session_);
   session_ = nullptr;
+  signal_ = Signal();
   rnf_retry_reset(retry_);
   rn_input_release_all(input_);
   setMuted(true);
@@ -185,10 +200,24 @@ void EmulationController::resetFlashFilter() {
   flashAltered_ = false;
 }
 
-void EmulationController::show(const uint32_t* v) {
+bool EmulationController::crtAvailable() const {
+  rn_video_indices_info indices{};
+  return session_ && pictureWidth_ == RN_VIDEO_WIDTH && pictureHeight_ == RN_VIDEO_HEIGHT &&
+         media_.rotation == 0 && rn_video_indices(session_, &indices) == RN_OK && indices.codes;
+}
+
+void EmulationController::show(const rn_video_frame_info& frame) {
+  const uint32_t* v = frame.pixels;
+  if (!v || !frame.width || !frame.height || frame.stride < frame.width) return;
+  if (pictureWidth_ != frame.width || pictureHeight_ != frame.height) {
+    pictureWidth_ = frame.width;
+    pictureHeight_ = frame.height;
+    display_.resize(size_t(frame.width) * frame.height);
+    rn_flash_filter_set_size(flash_, frame.width, frame.height);
+  }
   signal_ = Signal();
   rn_video_indices_info vi{};
-  if (session_ && v == rn_video(session_) && rn_video_indices(session_, &vi) == RN_OK && vi.codes) {
+  if (crtAvailable() && frame.stride == RN_VIDEO_WIDTH && v == rn_video(session_) && rn_video_indices(session_, &vi) == RN_OK && vi.codes) {
     signal_.codes = vi.codes;
     signal_.burstPhase = vi.burst_phase;
     signal_.ordinal = vi.frame;
@@ -196,8 +225,9 @@ void EmulationController::show(const uint32_t* v) {
     signal_.ordinal = ++pictureOrdinal_;
   }
   int codesOk = 0;
-  if (flashLevel_ == RN_FLASH_OFF) {
-    std::memcpy(display_.data(), v, display_.size() * 4);
+  if (flashLevel_ == RN_FLASH_OFF || frame.width % 16 || frame.height % 16) {
+    for (uint32_t y = 0; y < frame.height; ++y)
+      std::memcpy(display_.data() + size_t(y) * frame.width, v + size_t(y) * frame.stride, size_t(frame.width) * 4);
     flashAltered_ = false;
   } else {
     rn_flash_info info{};
@@ -207,7 +237,7 @@ void EmulationController::show(const uint32_t* v) {
       rn_flash_filter_process_codes(flash_, v, display_.data(), signal_.codes, displayCodes_.data(), &info, &codesOk);
       if (codesOk) signal_.codes = displayCodes_.data();
     } else {
-      rn_flash_filter_process(flash_, v, display_.data(), &info);
+      rn_flash_filter_process_frame(flash_, &frame, display_.data(), &info);
     }
     flashAltered_ = info.altered != 0;
     if (flashAltered_) lastFlashTick_ = tickCount_;
@@ -244,7 +274,7 @@ void EmulationController::republishVideo() {
 }
 
 const int16_t* EmulationController::withHiss(const int16_t* pcm, size_t n) {
-  if (!crtDisplay_ || !pcm || n == 0) return nullptr;
+  if (!crtDisplay_ || !crtAvailable() || media_.audio_channels != 1 || !pcm || n == 0) return nullptr;
   rnf_crt_reception r{};
   rnf_crt_reception_at(rnf_crt_power_current(power_), rnf_crt_power_counter(power_), flashLevel_ != RN_FLASH_OFF ? 1 : 0, &r);
   if (r.hiss == 0 && rnf_crt_hiss_level(hiss_) == 0) return nullptr;
@@ -255,10 +285,10 @@ const int16_t* EmulationController::withHiss(const int16_t* pcm, size_t n) {
 
 void EmulationController::publishVideo(bool continuous) {
   if (!session_) return;
-  const uint32_t* v = rn_video(session_);
-  if (!v) return;
+  rn_video_frame_info frame{};
+  if (rn_session_video_frame(session_, &frame) != RN_OK || !frame.pixels) return;
   if (!continuous) resetFlashFilter();
-  show(v);
+  show(frame);
 }
 
 // ------------------------------------------------------------------ seek / step
@@ -292,7 +322,8 @@ void EmulationController::scrub(uint64_t f) {
 
 void EmulationController::jumpSeconds(double seconds) {
   if (!session_) return;
-  uint64_t n = uint64_t(std::abs(seconds) * 60);
+  const bool nesTiming = media_.fps_num == RN_FPS_NUM && media_.fps_den == RN_FPS_DEN;
+  uint64_t n = uint64_t(std::abs(seconds) * (nesTiming ? 60.0 : 1.0 / framePeriod()));
   if (seconds < 0) stepBack(n);
   else seekCommand(std::min(rn_take_length(session_), rn_frame(session_) + n));
 }
@@ -460,9 +491,10 @@ EmulationController::Tick EmulationController::tick() {
       size_t n = 0;
       const int16_t* pcm = rn_audio(s, &n);
       if (n && audio_ && slow_ == 1) {
-        std::vector<int16_t> tail(rnf_audio_fade_tail(pcm, n, 4, nullptr, 0));
-        rnf_audio_fade_tail(pcm, n, 4, tail.data(), tail.size());
-        audio_->push(tail.data(), tail.size());
+        const size_t count = rnf_audio_fade_tail_with_channels(pcm, n, 4, media_.audio_channels, nullptr, 0);
+        std::vector<int16_t> tail(count * media_.audio_channels);
+        rnf_audio_fade_tail_with_channels(pcm, n, 4, media_.audio_channels, tail.data(), count);
+        audio_->push(tail.data(), count, media_.audio_channels);
       }
     }
     wantRewind = rw != 0;
@@ -568,7 +600,7 @@ EmulationController::Tick EmulationController::tick() {
   // the tube needs a few pictures of it before the previous picture's phosphor light is gone
   // (kStaticSnowRepeats after the jump, then nothing).
   constexpr int kStaticSnowRepeats = 12;
-  if (crtDisplay_ && session_ && !pictureDirty_ && !vtrOn_ && rnf_crt_power_current(power_) == RNF_CRT_RECEPTION_NO_SIGNAL &&
+  if (crtDisplay_ && crtAvailable() && !pictureDirty_ && !vtrOn_ && rnf_crt_power_current(power_) == RNF_CRT_RECEPTION_NO_SIGNAL &&
       (flashLevel_ == RN_FLASH_OFF || snowRepeats_ < kStaticSnowRepeats)) {
     snowRepeats_ += 1;
     rnf_crt_power_tick(power_);
@@ -625,20 +657,21 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   // cursor. Takes are never shown; the structure / thumbnails follow.
   if (info.branched || info.take_id != takeBefore) markStructureDirty();
   else if (overwrite && observer) observer->takeCut(s, before);
-  if (const uint32_t* v = rn_video(s)) {
-    if (mode == RN_MODE_PRACTICE) rnf_reel_offer(reel_, rn_practice_frame(s), v);
+  rn_video_frame_info frame{};
+  if (rn_session_video_frame(s, &frame) == RN_OK && frame.pixels) {
+    if (mode == RN_MODE_PRACTICE) rnf_reel_offer_frame(reel_, rn_practice_frame(s), &frame);
     // The CRT reception: a step from `before` (practice: not a take frame) with the events applied.
     stepPending_ = true;
     stepBefore_ = mode == RN_MODE_PRACTICE ? UINT64_MAX : before;
     stepFrame_ = info.frame;
     stepEvents_ = info.events;
-    show(v);
+    show(frame);
   }
   if (audible && audio_) {
     size_t n = 0;
     const int16_t* pcm = rn_audio(s, &n);
     if (const int16_t* h = withHiss(pcm, n)) pcm = h;
-    if (n) audio_->push(pcm, n);
+    if (n) audio_->push(pcm, n, media_.audio_channels);
   }
   if (mode != RN_MODE_PRACTICE && mode != RN_MODE_LIVE) {
     pendingThumb_ = true;
@@ -741,9 +774,10 @@ void EmulationController::tickPractice() {
       size_t n = 0;
       const int16_t* pcm = rn_audio(s, &n);
       if (n && audio_) {
-        std::vector<int16_t> tail(rnf_audio_fade_tail(pcm, n, 4, nullptr, 0));
-        rnf_audio_fade_tail(pcm, n, 4, tail.data(), tail.size());
-        audio_->push(tail.data(), tail.size());
+        const size_t count = rnf_audio_fade_tail_with_channels(pcm, n, 4, media_.audio_channels, nullptr, 0);
+        std::vector<int16_t> tail(count * media_.audio_channels);
+        rnf_audio_fade_tail_with_channels(pcm, n, 4, media_.audio_channels, tail.data(), count);
+        audio_->push(tail.data(), count, media_.audio_channels);
       }
       dropInput();
       break;
@@ -757,7 +791,8 @@ void EmulationController::tickPractice() {
         resetFlashFilter();
       }
       int idx = rnf_reel_sweep_index(reel_, a.back);
-      if (const uint32_t* f = idx >= 0 ? rnf_reel_frame(reel_, idx) : nullptr) show(f);
+      rn_video_frame_info frame{};
+      if (idx >= 0 && rnf_reel_video_frame(reel_, idx, &frame)) show(frame);
       dropInput();
       break;
     }
@@ -864,7 +899,8 @@ void EmulationController::tickVtr() {
       vtrBaseSignal_ = signal_;
       vtrOn_ = true;
     }
-    rnf_vtr_apply(vtrBase_.data(), display_.data(), &p);
+    rn_video_frame_info frame{vtrBase_.data(), pictureWidth_, pictureHeight_, pictureWidth_};
+    rnf_vtr_apply_frame(&frame, display_.data(), pictureWidth_, &p);
     signal_ = vtrBaseSignal_;
     signal_.codes = nullptr;  // the CRT takes the altered picture (RGB), not the PPU codes
     signal_.ordinal = ++pictureOrdinal_;
@@ -982,7 +1018,7 @@ void EmulationController::practiceSetAAt(int slot, uint64_t frame) {
   if (rn_practice_set_a(s, uint32_t(slot)) == RN_OK) {
     refreshPracticeLength(slot);
     markStructureDirty();
-    notice(TRF("A/B %lld: A %@", {slot + 1, timecode(frame)}));
+    notice(TRF("A/B %lld: A %@", {slot + 1, timecode(frame, framePeriod())}));
   } else {
     reportError(TR("Couldn’t set A"));
   }
@@ -1001,7 +1037,7 @@ void EmulationController::practiceSetB(int slot) {
     markStructureDirty();
     rn_practice_slot_info si{};
     rn_practice_slot_get(s, uint32_t(slot), &si);
-    notice(TRF("Set B of section %lld (length %@). Use “Practice” to repeat it", {slot + 1, timecode(si.length_frames)}));
+    notice(TRF("Set B of section %lld (length %@). Use “Practice” to repeat it", {slot + 1, timecode(si.length_frames, framePeriod())}));
     return;
   }
   switch (st) {
@@ -1073,10 +1109,10 @@ void EmulationController::practiceSetRange(int slot, uint64_t a, uint64_t b, boo
   markStructureDirty();
   // The engine restores the picture of the cursor: show it again.
   publishVideo();
-  if (fromMarkers) notice(TRF("A/B %lld: A %@ → B %@", {slot + 1, timecode(a), timecode(b)}));
+  if (fromMarkers) notice(TRF("A/B %lld: A %@ → B %@", {slot + 1, timecode(a, framePeriod()), timecode(b, framePeriod())}));
   else
     notice(TRF("Section %lld: A %@ → B %@ (length %@). Click the section to practice it",
-               {slot + 1, timecode(a), timecode(b), timecode(b - a)}));
+               {slot + 1, timecode(a, framePeriod()), timecode(b, framePeriod()), timecode(b - a, framePeriod())}));
 }
 
 void EmulationController::timelineMarkA(int slot) {
@@ -1210,7 +1246,7 @@ void EmulationController::addBookmark(const std::string& name) {
     notice(practiceBlockedText());
     return;
   }
-  std::string n = name.empty() ? TRF("Bookmark %lld (%@)", {(long long)rn_bookmark_count(s) + 1, timecode(rn_frame(s))}) : name;
+  std::string n = name.empty() ? TRF("Bookmark %lld (%@)", {(long long)rn_bookmark_count(s) + 1, timecode(rn_frame(s), framePeriod())}) : name;
   uint64_t id = 0;
   if (rn_bookmark_add(s, n.c_str(), &id) == RN_OK) {
     markStructureDirty();

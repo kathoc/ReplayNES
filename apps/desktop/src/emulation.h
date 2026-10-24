@@ -146,6 +146,11 @@ class EmulationController {
   /// Closes the session (no save).
   void closeSession();
   rn_session* session() const { return session_; }
+  uint64_t mediaGeneration() const { return mediaGeneration_; }
+  const rn_media_info& media() const { return media_; }
+  rn_video_frame_info videoFrame() const { return {display_.data(), pictureWidth_, pictureHeight_, pictureWidth_}; }
+  double framePeriod() const { return rnf_frame_period_for_media(&media_); }
+  bool crtAvailable() const;
   bool live() const { return session_ && rn_get_mode(session_) == RN_MODE_LIVE; }
 
   struct Tick {
@@ -263,7 +268,7 @@ class EmulationController {
 
  private:
   void publishVideo(bool continuous = false);
-  void show(const uint32_t* v);
+  void show(const rn_video_frame_info& frame);
   /// The reception of the picture show() just made (rnf_crt_power: a step, a repeat or a jump).
   void trackReception();
   /// The re-filtered current picture (flash filter while nothing is emulated): a repeat.
@@ -307,6 +312,9 @@ class EmulationController {
   void markStructureDirty() { structureDirty_ = true; }
   void setMuted(bool m);
 
+  uint64_t mediaGeneration_ = 0;
+  rn_media_info media_{RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+  uint32_t pictureWidth_ = RN_VIDEO_WIDTH, pictureHeight_ = RN_VIDEO_HEIGHT;
   rn_session* session_ = nullptr;
   rn_input* input_;
   AudioSink* audio_;
