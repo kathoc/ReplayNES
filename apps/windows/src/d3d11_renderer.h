@@ -3,8 +3,8 @@
 //   * flip-model swap chain (DXGI_SWAP_EFFECT_FLIP_DISCARD, 3 buffers, B8G8R8A8), frame latency
 //     waitable object with SetMaximumFrameLatency(1), DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING when the
 //     system supports it (needed for variable refresh / tearing presents)
-//   * the 256x240 picture in a dynamic texture, drawn nearest-neighbour into the GameRect
-//     (integer / FILL / 8:7 / overscan crop), Dear ImGui (imgui_impl_dx11) on top
+//   * the current media picture in a capacity-sized dynamic texture, drawn into the GameRect
+//     (nearest / rotation / pixel aspect / overscan), Dear ImGui (imgui_impl_dx11) on top
 //   * pacing source: a waiter thread reads IDXGISwapChain::GetFrameStatistics whenever the frame
 //     latency waitable object is signalled (a frame left the queue) and every 2 ms while presents
 //     are pending: a present is on screen when the statistics' PresentCount reaches its
@@ -13,14 +13,13 @@
 //     the waitable object's signal time stands in (like vkWaitForPresentKHR returning on Linux).
 //     The frame loop's DisplayScheduler builds the vblank grid from these.
 //   * --vrr in full screen: Present(0, DXGI_PRESENT_ALLOW_TEARING) and no present timing (the loop
-//     paces on the host clock at the NES rate; a variable refresh display follows it)
+//     paces on the host clock at the media rate; a variable refresh display follows it)
 //   * CRT display (feature level 11_0+): the compute pipeline of crt_d3d11.h driven by the shared
 //     CrtDisplayPolicy (input choice, tube size, build-ahead, adaptive resolution), its show pass
 //     drawn into the GameRect's tube rectangle instead of the picture quad.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -30,12 +29,12 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "display_health.h"
 #include "render/crt_display_policy.h"
 #include "renderer.h"
+#include "d3d11_thumb_atlas.h"
 
 struct ID3D11Device;
 struct ID3D11DeviceContext;
@@ -72,6 +71,9 @@ class D3D11Renderer final : public Renderer {
 
   uint64_t drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui,
                           const FrameSignal* signal = nullptr) override;
+  void configureMedia(const rn_media_info& media, bool nesPicture = true) override;
+  uint64_t drawFrameAndPresent(const rn_video_frame_info* frame, const GameRect& rect, ImDrawData* ui,
+                              const FrameSignal* signal = nullptr) override;
   std::vector<PresentDone> takeCompleted() override;
   double lastAcquireWait() const override { return lastAcquireWait_; }
   /// From the frame statistics: (SyncQPCTime difference) / (SyncRefreshCount difference) over
@@ -84,8 +86,10 @@ class D3D11Renderer final : public Renderer {
   void setGpuBudget(double seconds) override { gpuBudget_ = seconds; }
   double gpuLeadExtra() const override { return status_.crtShown && !crtPolicy_.pipelined() ? crtPolicy_.gpuP90() : 0; }
 
-  void beginUIFrame() override { uiFrame_ += 1; }
+  void beginUIFrame() override { thumbs_.beginFrame(); }
   bool thumbTexture(uint64_t key, const uint32_t* px128x120, uint64_t* texId, float uv[4]) override;
+  bool thumbTextureSized(uint64_t key, const uint32_t* pixels, uint32_t width, uint32_t height,
+                         uint64_t* texId, float uv[4]) override;
   void requestScreenshot(const std::string& path) override { screenshotPath_ = path; }
 
   // Display watchdog (renderer.h). Failed presents / resizes are logged with their HRESULT
@@ -103,6 +107,7 @@ class D3D11Renderer final : public Renderer {
   void releaseTargets();
   bool resize(int w, int h);
   bool createPipeline(std::string* error);
+  bool createGameTexture();
   bool createTextures();
   void uploadThumbs();
   void saveScreenshot();
@@ -137,6 +142,10 @@ class D3D11Renderer final : public Renderer {
   std::string description_;
   bool imguiReady_ = false;
 
+  rn_media_info media_{RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
+  rn_video_frame_info frame_{nullptr, RN_VIDEO_WIDTH, RN_VIDEO_HEIGHT, RN_VIDEO_WIDTH};
+  bool mediaCrt_ = true;
+  std::vector<uint32_t> crtPicture_;  // packed NES rows when a frame has padding
   ID3D11Texture2D* gameTex_ = nullptr;
   ID3D11ShaderResourceView* gameSrv_ = nullptr;
   bool hasPicture_ = false;
@@ -147,20 +156,10 @@ class D3D11Renderer final : public Renderer {
   ID3D11RasterizerState* raster_ = nullptr;
   ID3D11BlendState* opaque_ = nullptr;
 
-  // Thumbnail atlas (1024x1024 BGRA, 8x8 cells of 128x120, LRU by UI frame).
-  static constexpr int kAtlasCell = 128, kAtlasSize = 1024, kAtlasCells = (kAtlasSize / kAtlasCell) * (kAtlasSize / kAtlasCell);
-  static constexpr int kAtlasUploadsPerFrame = 12;
+  // CPU atlas allocation is shared with the GPU-free Windows regression tests.
+  D3D11ThumbAtlas thumbs_;
   ID3D11Texture2D* atlas_ = nullptr;
   ID3D11ShaderResourceView* atlasSrv_ = nullptr;
-  uint64_t uiFrame_ = 0;
-  std::array<uint64_t, kAtlasCells> cellKey_{};
-  std::array<uint64_t, kAtlasCells> cellUsed_{};
-  std::unordered_map<uint64_t, int> keyCell_;
-  struct PendingThumb {
-    int cell;
-    std::vector<uint32_t> px;
-  };
-  std::vector<PendingThumb> pendingThumbs_;
 
   DisplayPostProcess post_;
   PostProcessStatus status_;

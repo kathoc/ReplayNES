@@ -1,13 +1,12 @@
 // Offline MP4 export on Windows (export/mp4_export.h) through Media Foundation's sink writer:
 // H.264 (a hardware MFT when the system has one - MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS - else
-// Microsoft's software encoder) + AAC-LC 48 kHz mono, MPEG-4 container. Same pipeline as the
+// Microsoft's software encoder) + AAC-LC mono/stereo, MPEG-4 container. Same pipeline as the
 // Linux FFmpeg exporter: an rn_renderer from the engine (fresh core, logical time), the shared
 // export geometry / presets / validation (frontend core), nearest scaling or the CRT processor,
 // the optional flash filter, and the exact BT.709 limited-range NV12 conversion (export_frame.h).
-// Timestamps come only from frame / sample counts: video frame n starts at n * 655171 / 39375000 s,
-// audio sample n at n / 48000 s, both in Media Foundation's 100 ns units (export_frame.h); the
-// finished file's video track is then given the exact timescale 39375000 / 655171 ticks per frame
-// (mp4_retime.h: the sink rounds it to fps x 1000). No B-frames (no reordering delay).
+// Timestamps come only from frame / sample counts in Media Foundation's 100 ns units.
+// The finished video track is retimed to the exact media frame period (mp4_retime.h: the sink
+// rounds it to fps x 1000). NES retains 39375000 / 655171 and 48 kHz mono. No B-frames.
 // The file is written as "<name>.part", self-checked (mp4_check.h + Media Foundation decodes its
 // first and last frames) and only then renamed: an export that dies before Finalize can't leave an
 // unplayable .mp4 (no moov) under the chosen name. Never touches the session / project; a failed
@@ -38,6 +37,7 @@
 #include <vector>
 
 #include "export_frame.h"
+#include "mf_export_media.h"
 #include "mp4_check.h"
 #include "mp4_export.h"
 #include "mp4_retime.h"
@@ -45,8 +45,6 @@
 namespace rnl {
 
 namespace {
-
-constexpr int kFrameW = RN_VIDEO_WIDTH, kFrameH = RN_VIDEO_HEIGHT;
 
 template <typename T>
 void release(T*& p) {
@@ -92,7 +90,7 @@ struct MfScope {
 };
 
 /// AAC-LC bit rates the Microsoft AAC encoder accepts (bytes per second).
-UINT32 aacBytesPerSecond(int bitsPerSecond) {
+UINT32 aacBytesPerSecond(int64_t bitsPerSecond) {
   const UINT32 allowed[] = {12000, 16000, 20000, 24000};
   UINT32 best = allowed[0];
   for (UINT32 a : allowed)
@@ -172,7 +170,8 @@ void identifyEncoder(Writer& w) {
 
 /// Creates the sink writer with an H.264 video and an AAC audio stream and starts writing.
 /// allowHardware + withDevice: hardware MFTs allowed and given a Direct3D 11 device manager.
-bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t bitrate, int audioBitrate, bool allowHardware,
+bool openWriter(const std::wstring& path, const rnf_export_geometry& g, const rnf_export_timing& timing, uint32_t audioRate,
+                int64_t bitrate, int audioBitrate, bool allowHardware,
                 bool withDevice, Writer& w, std::string* why) {
   IMFAttributes* attr = nullptr;
   HRESULT h = MFCreateAttributes(&attr, 4);
@@ -198,7 +197,7 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
     return false;
   }
   const UINT32 W = UINT32(g.canvas_width), H = UINT32(g.canvas_height);
-  // Video: H.264 High, progressive, square pixels, 39375000/655171 fps, BT.709 limited range.
+  // Video: H.264 High, progressive, square pixels, media frame rate, BT.709 limited range.
   IMFMediaType* out = nullptr;
   IMFMediaType* in = nullptr;
   MFCreateMediaType(&out);
@@ -208,7 +207,7 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   out->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
   out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High);
   MFSetAttributeSize(out, MF_MT_FRAME_SIZE, W, H);
-  MFSetAttributeRatio(out, MF_MT_FRAME_RATE, RN_FPS_NUM, RN_FPS_DEN);
+  MFSetAttributeRatio(out, MF_MT_FRAME_RATE, UINT32(timing.timescale), UINT32(timing.frame_duration));
   MFSetAttributeRatio(out, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
   setColorTags(out);
   h = w.sink->AddStream(out, &w.video);
@@ -228,7 +227,7 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   in->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
   in->SetUINT32(MF_MT_DEFAULT_STRIDE, W);
   MFSetAttributeSize(in, MF_MT_FRAME_SIZE, W, H);
-  MFSetAttributeRatio(in, MF_MT_FRAME_RATE, RN_FPS_NUM, RN_FPS_DEN);
+  MFSetAttributeRatio(in, MF_MT_FRAME_RATE, UINT32(timing.timescale), UINT32(timing.frame_duration));
   MFSetAttributeRatio(in, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
   setColorTags(in);
   // Encoder settings (ICodecAPI properties, applied by the sink writer when it creates the
@@ -246,7 +245,7 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
                    peak ? eAVEncCommonRateControlMode_PeakConstrainedVBR : eAVEncCommonRateControlMode_UnconstrainedVBR);
     enc->SetUINT32(CODECAPI_AVEncCommonMeanBitRate, UINT32(std::min<int64_t>(bitrate, 0xFFFFFFFF)));
     if (peak) enc->SetUINT32(CODECAPI_AVEncCommonMaxBitRate, UINT32(std::min<int64_t>(bitrate * 3 / 2, 0xFFFFFFFF)));
-    enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, RNF_EXPORT_GOP_FRAMES);
+    enc->SetUINT32(CODECAPI_AVEncMPVGOPSize, UINT32(timing.gop_frames));
     enc->SetUINT32(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
     h = w.sink->SetInputMediaType(w.video, in, enc);
     enc->Release();
@@ -257,14 +256,14 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
     *why = hrText(h == MF_E_TOPO_CODEC_NOT_FOUND ? "No H.264 encoder (Media Foundation)" : "H.264 encoder input (NV12)", h);
     return false;
   }
-  // Audio: AAC-LC, 48 kHz mono, from 16-bit PCM (the engine's samples as they are).
+  // Audio: AAC-LC, from interleaved 16-bit PCM at an encoder-supported sample rate.
   MFCreateMediaType(&out);
   out->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
   out->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC);
   out->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
-  out->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, RN_SAMPLE_RATE);
-  out->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 1);
-  out->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aacBytesPerSecond(audioBitrate));
+  out->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, audioRate);
+  out->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, timing.audio_channels);
+  out->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aacBytesPerSecond(int64_t(audioBitrate) * timing.audio_channels));
   out->SetUINT32(MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29);
   h = w.sink->AddStream(out, &w.audio);
   out->Release();
@@ -276,10 +275,10 @@ bool openWriter(const std::wstring& path, const rnf_export_geometry& g, int64_t 
   in->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
   in->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
   in->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
-  in->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, RN_SAMPLE_RATE);
-  in->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 1);
-  in->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 2);
-  in->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, RN_SAMPLE_RATE * 2);
+  in->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, audioRate);
+  in->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, timing.audio_channels);
+  in->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 2 * timing.audio_channels);
+  in->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, audioRate * 2 * timing.audio_channels);
   h = w.sink->SetInputMediaType(w.audio, in, nullptr);
   in->Release();
   if (FAILED(h)) {
@@ -323,7 +322,7 @@ bool writeSample(IMFSinkWriter* sink, DWORD stream, const void* data, size_t byt
 /// of video (up to the final frame) and read its last seconds of audio.
 /// strict = false (a file from elsewhere): the duration and the last frame's time are not compared
 /// with `frames` (frame times as this exporter writes them); the end is taken from the file.
-bool verifyPlayback(const std::wstring& path, uint64_t frames, bool strict, std::string* why) {
+bool verifyPlayback(const std::wstring& path, int64_t expected, int64_t lastFrame, bool strict, std::string* why) {
   IMFSourceReader* r = nullptr;
   HRESULT h = MFCreateSourceReaderFromURL(path.c_str(), nullptr, &r);
   if (FAILED(h)) {
@@ -331,7 +330,6 @@ bool verifyPlayback(const std::wstring& path, uint64_t frames, bool strict, std:
     return false;
   }
   std::unique_ptr<IMFSourceReader, void (*)(IMFSourceReader*)> reader(r, [](IMFSourceReader* p) { p->Release(); });
-  const int64_t expected = exportframe::frameTime100ns(frames);
   PROPVARIANT v;
   PropVariantInit(&v);
   h = r->GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &v);
@@ -400,7 +398,7 @@ bool verifyPlayback(const std::wstring& path, uint64_t frames, bool strict, std:
   }
   const int64_t end = strict ? expected : duration;
   h = readToEnd(V, end - 30000000, false, &n, &last);
-  const int64_t lastFrame = strict ? exportframe::frameTime100ns(frames - 1) : last;
+  if (!strict) lastFrame = last;
   if (FAILED(h) || n == 0 || last < lastFrame - 10000 || last > lastFrame + 10000 || last < end - 10000000) {
     char b[200];
     std::snprintf(b, sizeof b, "Self-check: decoding the end of the finished file (0x%08lx, %llu frames, last at %.3f s, expected %.3f s)",
@@ -443,7 +441,10 @@ bool verifyExportedMp4(const std::string& path, uint64_t frames, std::string* er
     err = hrText("Media Foundation (MFStartup)", h);
     return false;
   }
-  return verifyPlayback(widen(path), video->samples, frames != 0, &err);
+  const int64_t expected = mfmedia::time100ns(video->duration, 1, video->timescale);
+  const int64_t last = mfmedia::time100ns(video->samples - 1, video->duration / video->samples, video->timescale);
+  if (expected < 0 || last < 0) { err = "MP4 check: invalid video timing"; return false; }
+  return verifyPlayback(widen(path), expected, last, frames != 0, &err);
 }
 
 const std::vector<ExportEncoderChoice>& exportEncoderChoices() {
@@ -492,8 +493,21 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   }
 
   // ---- settings + geometry (shared frontend core)
+  rn_media_info media{};
+  rnf_export_timing timing{};
+  if (rn_renderer_media_info(renderer, &media) != RN_OK ||
+      rnf_export_timing_compute(&media, opt.audioSampleRate, &timing) != RN_OK ||
+      timing.timescale > UINT32_MAX || timing.frame_duration > UINT32_MAX || timing.gop_frames > UINT32_MAX) {
+    err = "invalid export media or unsupported MP4 timescale";
+    return false;
+  }
+  mfmedia::Audio audioConverter;
+  if (!audioConverter.init(timing.audio_sample_rate, timing.audio_channels)) {
+    err = "invalid export audio format";
+    return false;
+  }
   char* message = nullptr;
-  if (rnf_export_validate(&opt.settings, &message) != RN_OK) {
+  if (rnf_export_validate_media(&opt.settings, &media, 0, 0, &message) != RN_OK) {
     err = message ? message : "invalid export settings";
     rnf_string_free(message);
     return false;
@@ -504,16 +518,39 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     err = "There are no frames to export (the take is empty)";
     return false;
   }
+  if (mfmedia::time100ns(total, timing.frame_duration, uint32_t(timing.timescale)) < 0) {
+    err = "export duration exceeds Media Foundation timestamp range";
+    return false;
+  }
+  const uint32_t* video = nullptr;
+  const int16_t* audio = nullptr;
+  size_t n = 0;
+  uint64_t f = 0;
+  rn_video_frame_info picture{};
+  if (rn_renderer_next(renderer, &video, &audio, &n, &f) != RN_OK ||
+      rn_renderer_video_frame(renderer, &picture) != RN_OK || !picture.pixels) {
+    err = "the renderer returned no picture";
+    return false;
+  }
+  if (rnf_export_validate_media(&opt.settings, &media, picture.width, picture.height, &message) != RN_OK) {
+    err = message ? message : "invalid export settings";
+    rnf_string_free(message);
+    return false;
+  }
+  rnf_string_free(message);
   rnf_export_geometry g{};
-  rnf_export_geometry_compute(&opt.settings, &g);
-  std::vector<int> cols(size_t(std::max(0, g.dst_width))), rows(size_t(std::max(0, g.dst_height)));
-  rnf_export_column_map(&g, cols.data());
-  rnf_export_row_map(&g, rows.data());
+  rnf_export_geometry_compute_media(&opt.settings, &media, picture.width, picture.height, &g);
+  const int canvasWidth = g.canvas_width, canvasHeight = g.canvas_height;
+  uint32_t pictureWidth = picture.width, pictureHeight = picture.height;
+  rn_video_indices_info firstCodes{};
+  const bool crtPicture = picture.width == RN_VIDEO_WIDTH && picture.height == RN_VIDEO_HEIGHT &&
+      picture.stride == RN_VIDEO_WIDTH && media.rotation == 0 &&
+      rn_renderer_video_indices(renderer, &firstCodes) == RN_OK && firstCodes.codes;
   const int64_t bitrate = rnf_export_video_bitrate(&g, 0, opt.quality);
 
   // ---- optional processor (CRT), flash filter
   std::unique_ptr<ExportVideoProcessor> processor;
-  if (opt.makeProcessor) {
+  if (opt.makeProcessor && crtPicture) {
     std::string perr;
     processor = opt.makeProcessor(&perr);
     if (!processor) {
@@ -526,13 +563,13 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     }
   }
   std::unique_ptr<rn_flash_filter, void (*)(rn_flash_filter*)> flash(
-      opt.flash == RN_FLASH_OFF ? nullptr : rn_flash_filter_new(opt.flash), rn_flash_filter_free);
+      opt.flash == RN_FLASH_OFF ? nullptr : rn_flash_filter_new_sized(opt.flash, picture.width, picture.height), rn_flash_filter_free);
   if (opt.flash != RN_FLASH_OFF && !flash) {
     err = "invalid flash reduction level";
     return false;
   }
-  std::vector<uint32_t> filtered(flash ? size_t(kFrameW) * kFrameH : 0);
-  std::vector<uint16_t> filteredCodes(flash ? size_t(kFrameW) * kFrameH : 0);
+  std::vector<uint32_t> filtered(flash ? size_t(media.max_width) * media.max_height : 0);
+  std::vector<uint16_t> filteredCodes(flash ? size_t(media.max_width) * media.max_height : 0);
   // The CRT effect starts with the power-on intro (and its hiss).
   std::unique_ptr<ExportCrtIntro> intro(processor ? new ExportCrtIntro(opt.flash != RN_FLASH_OFF) : nullptr);
 
@@ -568,7 +605,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       if ((at.hw && forceSw) || (!at.hw && forceHw)) continue;
       auto cand = std::make_unique<Writer>();
       std::string why;
-      if (openWriter(wpath, g, bitrate, opt.audioBitrate, at.hw, at.device, *cand, &why)) {
+      if (openWriter(wpath, g, timing, audioConverter.rate(), bitrate, opt.audioBitrate, at.hw, at.device, *cand, &why)) {
         if (at.hw && !cand->hardware) {
           why = "no hardware H.264 encoder";
         } else {
@@ -602,7 +639,6 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   std::vector<uint8_t> canvas(canvasStride * size_t(H));
   std::vector<uint8_t> nv12(size_t(W) * H * 3 / 2);
   const uint64_t startFrame = opt.settings.start_frame;
-  const uint64_t sampleBase = rn_audio_samples_before(startFrame);
   uint64_t samplesQueued = 0;  // next audio sample position (relative to the start)
   uint64_t framesWritten = 0;
   std::vector<int16_t> pcm;
@@ -610,34 +646,47 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
 
   for (;;) {
     if (cancelled && cancelled()) return fail("cancelled");
-    const uint32_t* video = nullptr;
-    const int16_t* audio = nullptr;
-    size_t n = 0;
-    uint64_t f = 0;
-    rn_status st = rn_renderer_next(rend.get(), &video, &audio, &n, &f);
-    if (st == RN_ERR_END_OF_TAKE) break;
-    if (st != RN_OK) return fail(std::string(rn_status_name(st)) + ": " + rn_last_error());
-    if (!video) return fail("the renderer returned no picture");
+    if (framesWritten) {
+      const rn_status st = rn_renderer_next(rend.get(), &video, &audio, &n, &f);
+      if (st == RN_ERR_END_OF_TAKE) break;
+      if (st != RN_OK) return fail(std::string(rn_status_name(st)) + ": " + rn_last_error());
+      if (rn_renderer_video_frame(renderer, &picture) != RN_OK || !picture.pixels)
+        return fail("the renderer returned no picture");
+    }
+    if (!picture.width || !picture.height || picture.stride < picture.width ||
+        picture.width > media.max_width || picture.height > media.max_height)
+      return fail("invalid renderer picture size or stride");
+    if (picture.width != pictureWidth || picture.height != pictureHeight) {
+      if (flash && rn_flash_filter_set_size(flash.get(), picture.width, picture.height) != RN_OK)
+        return fail("unsupported flash filter picture size");
+      pictureWidth = picture.width;
+      pictureHeight = picture.height;
+      if (!mfmedia::resizeGeometry(opt.settings, media, pictureWidth, pictureHeight, canvasWidth, canvasHeight, &g))
+        return fail("invalid crop for the current picture size");
+    }
+    rn_video_indices_info frameCodes{};
+    const bool useProcessor = processor && picture.width == RN_VIDEO_WIDTH && picture.height == RN_VIDEO_HEIGHT &&
+        picture.stride == RN_VIDEO_WIDTH && rn_renderer_video_indices(renderer, &frameCodes) == RN_OK && frameCodes.codes;
 
     // Flash reduction: frames strictly in order through one filter (display only).
-    const uint32_t* pixels = video;
+    const uint32_t* pixels = picture.pixels;
     bool altered = false, codesOk = false;
     if (flash) {
       rn_flash_info info{};
       // With a CRT processor the PPU codes go through the filter too (the RF path stays in use).
       rn_video_indices_info vi{};
-      if (processor && rn_renderer_video_indices(rend.get(), &vi) == RN_OK && vi.codes) {
+      if (useProcessor && rn_renderer_video_indices(rend.get(), &vi) == RN_OK && vi.codes) {
         int ok = 0;
-        if (rn_flash_filter_process_codes(flash.get(), video, filtered.data(), vi.codes, filteredCodes.data(), &info, &ok) != RN_OK)
+        if (rn_flash_filter_process_codes(flash.get(), picture.pixels, filtered.data(), vi.codes, filteredCodes.data(), &info, &ok) != RN_OK)
           return fail(std::string("flash filter: ") + rn_last_error());
         codesOk = ok != 0;
-      } else if (rn_flash_filter_process(flash.get(), video, filtered.data(), &info) != RN_OK) {
+      } else if (rn_flash_filter_process_frame(flash.get(), &picture, filtered.data(), &info) != RN_OK) {
         return fail(std::string("flash filter: ") + rn_last_error());
       }
       pixels = filtered.data();
       altered = info.altered != 0;
     }
-    if (processor) {
+    if (useProcessor) {
       rn_video_indices_info info{};
       ExportFrameSignal sig;
       if (rn_renderer_video_indices(rend.get(), &info) == RN_OK && info.codes) {
@@ -653,11 +702,15 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       if (!processor->render(sig, pixels, canvas.data(), canvasStride, &perr))
         return fail(perr.empty() ? "The video effect failed" : perr);
     } else {
-      exportframe::scaleNearest(pixels, canvas.data(), canvasStride, g, cols, rows);
+      auto shown = picture;
+      shown.pixels = pixels;
+      if (flash) shown.stride = picture.width;
+      exportframe::scaleNearestFrame(shown, canvas.data(), canvasStride, g);
     }
     exportframe::convertToYuv(canvas.data(), canvasStride, W, H, nv12.data(), W, nv12.data() + size_t(W) * H, W, nullptr, 0);
     const uint64_t idx = f - startFrame;
-    const int64_t t0 = exportframe::frameTime100ns(idx), t1 = exportframe::frameTime100ns(idx + 1);
+    const int64_t t0 = mfmedia::time100ns(idx, timing.frame_duration, uint32_t(timing.timescale));
+    const int64_t t1 = mfmedia::time100ns(idx + 1, timing.frame_duration, uint32_t(timing.timescale));
     std::string why;
     if (!writeSample(w->sink, w->video, nv12.data(), nv12.size(), t0, t1 - t0, copyBytes, &why)) return failEncoder(why);
     ++framesWritten;
@@ -670,20 +723,16 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
       return false;
     }
 
-    // Audio: sample position from the absolute count at 48 kHz. The renderer's PCM is contiguous;
-    // a gap would be filled with silence and an overlap dropped so A/V never drift.
+    // The renderer supplies contiguous interleaved sample frames. Convert only when the
+    // core rate differs from AAC; timestamps count frames, not channel values.
     if (n > 0 && audio) {
-      if (intro) audio = intro->mixAudio(audio, n);
-      const uint64_t at = rn_audio_samples_before(f) - sampleBase;
-      size_t skip = 0;
-      pcm.clear();
-      uint64_t from = samplesQueued;
-      if (at > samplesQueued) pcm.insert(pcm.end(), size_t(at - samplesQueued), int16_t(0));
-      else if (at < samplesQueued) skip = size_t(std::min<uint64_t>(samplesQueued - at, n));
-      pcm.insert(pcm.end(), audio + skip, audio + n);
+      if (useProcessor && timing.audio_channels == 1) audio = intro->mixAudio(audio, n);
+      const uint64_t from = samplesQueued;
+      if (!audioConverter.process(audio, n, pcm)) return fail("audio resampling failed");
+      samplesQueued = audioConverter.frames();
       if (!pcm.empty()) {
-        samplesQueued = from + pcm.size();
-        const int64_t a0 = exportframe::sampleTime100ns(from), a1 = exportframe::sampleTime100ns(samplesQueued);
+        const int64_t a0 = mfmedia::time100ns(from, 1, audioConverter.rate());
+        const int64_t a1 = mfmedia::time100ns(samplesQueued, 1, audioConverter.rate());
         if (!writeSample(w->sink, w->audio, pcm.data(), pcm.size() * 2, a0, a1 - a0, copyBytes, &why)) return failEncoder(why);
       }
     }
@@ -691,15 +740,23 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
   }
 
   if (cancelled && cancelled()) return fail("cancelled");
+  const uint64_t from = samplesQueued;
+  audioConverter.finish(pcm);
+  samplesQueued = audioConverter.frames();
+  if (!pcm.empty()) {
+    const int64_t a0 = mfmedia::time100ns(from, 1, audioConverter.rate());
+    const int64_t a1 = mfmedia::time100ns(samplesQueued, 1, audioConverter.rate());
+    std::string why;
+    if (!writeSample(w->sink, w->audio, pcm.data(), pcm.size() * 2, a0, a1 - a0, copyBytes, &why)) return failEncoder(why);
+  }
   h = w->sink->Finalize();
   if (FAILED(h)) return failEncoder(hrText("Finishing the file", h));
   const std::string encName = w->encoderName + (w->hardware ? " (hardware)" : "");
   w.reset();
-  // The MPEG-4 sink stores the video at a rounded timescale (fps x 1000): exact NTSC frame times
-  // (timescale 39375000, 655171 per frame) as the FFmpeg exporter writes them.
+  // The MPEG-4 sink stores a rounded timescale (fps x 1000); restore the exact media period.
   {
     std::string why;
-    if (!retimeMp4Video(partPath, framesWritten, RN_FPS_NUM, RN_FPS_DEN, &why)) return failEncoder(why);
+    if (!retimeMp4Video(partPath, framesWritten, uint32_t(timing.timescale), uint32_t(timing.frame_duration), &why)) return failEncoder(why);
     // Self-check before the file gets its name: complete box structure, every chunk offset
     // pointing at its samples (also past 4 GiB), and Media Foundation plays it to the last frame.
     if (!verifyExportedMp4(partPath, framesWritten, &why)) return failEncoder(why);
@@ -717,7 +774,7 @@ bool exportOnce(rn_renderer* renderer, const ExportOptions& opt, const std::stri
     result->frames = framesWritten;
     result->audioSamples = samplesQueued;
     result->rendererHash = rn_renderer_hash(rend.get());
-    result->duration = double(framesWritten) * RN_FPS_DEN / RN_FPS_NUM;
+    result->duration = double(framesWritten) * double(timing.frame_duration) / double(timing.timescale);
     result->encoder = encName;
     result->hardware = usedHardware;
   }

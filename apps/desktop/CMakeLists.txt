@@ -90,6 +90,8 @@ if(RNL_DESKTOP_TESTS)
   file(MAKE_DIRECTORY ${RNL_TEST_TMP})
   add_executable(test_desktop_frontend tests/test_desktop_frontend.cpp ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp
     tests/test_media_audio.cpp tests/test_export_media.cpp tests/test_media_geometry.cpp tests/test_input_layout.cpp
+    ../windows/tests/test_d3d11_media.cpp
+    tests/test_mf_export_media.cpp
     tests/sparse_file.cpp src/export/export_frame.cpp src/export/mp4_retime.cpp src/export/mp4_check.cpp)
   target_include_directories(test_desktop_frontend PRIVATE ${RNL_REPO_ROOT}/tests)
   target_link_libraries(test_desktop_frontend PRIVATE rnl_logic)
