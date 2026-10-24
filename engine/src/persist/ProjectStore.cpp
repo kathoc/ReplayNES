@@ -22,7 +22,7 @@ const uint32_t kJrnMagic = 0x4C4A4E52;    // "RNJL"
 const uint32_t kRecMagic = 0x524A4E52;    // "RNJR" (per journal record, for resync/corruption detection)
 const uint32_t kPracMagic = 0x53504E52;   // "RNPS" (practice slot A state)
 const uint32_t kBinVersion = 1;
-enum : uint8_t { J_SEG_NEW = 1, J_SEG_APPEND = 2, J_META = 3, J_PRACTICE_STATE = 4 };
+enum : uint8_t { J_SEG_NEW = 1, J_SEG_APPEND = 2, J_META = 3, J_PRACTICE_STATE = 4, J_SPARSE_STATE = 5 };
 
 const char* kindName(CpKind k) {
   switch (k) {
@@ -538,6 +538,22 @@ Status ProjectStore::autosave(Session& s) {
     }
     pend.push_back({&seg, seg.records.size()});
   }
+  ByteWriter sparseRecords;
+  std::vector<uint64_t> pendStates;
+  for (const auto& kv : s.cps_.all()) {
+    const Checkpoint& c = kv.second;
+    if (c.kind != CpKind::Sparse || c.persisted) continue;
+    const auto b = encodeState(c);
+    // The durable file must precede its reference. An interrupted append leaves only an orphan.
+    RN_TRY(fs::writeFileAtomic(path(stateRel(c.id)), b.data(), b.size()));
+    ByteWriter p;
+    p.u64(c.id);
+    p.u64(c.frame);
+    p.u64(c.owner);
+    p.u32(c.crc);
+    putRecord(sparseRecords, J_SPARSE_STATE, p.buf);
+    pendStates.push_back(c.id);
+  }
   std::vector<PracticeSlot*> pendSlots;
   for (int i = 0; i < kPracticeSlots; ++i) {
     PracticeSlot& p = s.slots_[size_t(i)];
@@ -550,6 +566,8 @@ Status ProjectStore::autosave(Session& s) {
   std::string meta = metaJson(s);
   bool metaChanged = meta != lastMeta_;
   if (metaChanged) putRecord(w, J_META, std::vector<uint8_t>(meta.begin(), meta.end()));
+  // META establishes the active head before a crash can tear a sparse reference.
+  if (!sparseRecords.buf.empty()) w.bytes(sparseRecords.buf.data(), sparseRecords.buf.size());
   if (w.buf.empty()) return Status::Ok();
 
   const std::string jp = path(kJournalRel);
@@ -564,6 +582,7 @@ Status ProjectStore::autosave(Session& s) {
     p.seg->journalCreated = true;
     p.seg->journalCount = p.newCount;
   }
+  for (uint64_t id : pendStates) s.cps_.getMutable(id)->persisted = true;
   for (PracticeSlot* p : pendSlots) p->stateJournaled = true;
   if (metaChanged) lastMeta_ = meta;
   return Status::Ok();
@@ -787,6 +806,37 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
             RN_TRY(s->tl_.appendLoaded(id, off, recs));
             Segment& seg = s->tl_.mutableSegments().at(id);
             seg.journalCount = seg.records.size();
+            break;
+          }
+          case J_SPARSE_STATE: {
+            const uint64_t id = p.u64(), frame = p.u64(), owner = p.u64();
+            const uint32_t crc = p.u32();
+            if (!p.ok() || p.remaining() || id == 0 || id == UINT64_MAX)
+              return Error(Err::Corrupt, "bad journal SPARSE_STATE");
+            // Reserve even a dropped cache's id so future writes cannot alias this reference.
+            s->cps_.setNextId(id + 1);
+            const std::string rel = stateRel(id);
+            Checkpoint c;
+            std::vector<uint8_t> b;
+            Status st = fs::readFile(ps->path(rel), b);
+            if (st.ok()) st = decodeState(rel, b, c);
+            if (st.ok() && (c.id != id || c.frame != frame || c.owner != owner ||
+                            c.crc != crc || c.kind != CpKind::Sparse))
+              st = Error(Err::Corrupt, "state metadata disagrees with journal: " + rel);
+            if (st.ok() && c.compat != compat)
+              st = Error(Err::CoreMismatch, "state " + rel + " was produced by core '" + c.compat + "'");
+            if (!st.ok()) {
+              if (opt.dropCorruptStates && st.code != Err::CoreMismatch) {
+                rep.droppedStates.push_back(rel + ": " + st.message);
+                break;
+              }
+              if (st.code == Err::Corrupt || st.code == Err::NotFound)
+                return Error(Err::Corrupt, st.message +
+                    " (states are a cache: reopen with drop-corrupt-states to discard)");
+              return st;
+            }
+            c.persisted = true;
+            RN_TRY(s->cps_.insertLoaded(std::move(c)));
             break;
           }
           case J_PRACTICE_STATE: {

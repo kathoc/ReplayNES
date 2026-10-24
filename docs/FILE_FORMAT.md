@@ -131,6 +131,10 @@ Records: `u32 'RNJR', u32 len, len bytes body, u32 crc32(body)`; body = `u8 type
 | 2 SEG_APPEND | u64 id, u64 offset, u64 n, RLE records (n) — offset must equal the current length (idempotent overlap allowed if identical) |
 | 3 META | UTF-8 JSON, same schema as `index.json` `meta` |
 | 4 PRACTICE_STATE | u8 slot, u64 stateSeq, u32 stateFormatVersion, varint+bytes compatId, u64 n, n bytes core state (= practice state file body). Always written before the META that references it |
+| 5 SPARSE_STATE | u64 checkpoint id, u64 frame, u64 owner, u32 core-state data crc32; references `states/<id>.state`, whose kind must be Sparse |
+
+Type 5 extends the version-1 journal framing without changing the state file format.
+Journals containing only types 1–4 still open unchanged; older readers do not understand type 5.
 
 ## Write protocol
 
@@ -157,7 +161,12 @@ the practice machine state.
 
 **Autosave** (`rn_session_autosave`): append SEG_NEW / SEG_APPEND for unjournaled data,
 PRACTICE_STATE for practice A states not yet in a file or the journal, and META if it changed,
-then fsync. Cheap; call every few seconds.
+then fsync. Before appending, atomically write each not-yet-persisted sparse checkpoint to
+`states/<id>.state` and include its SPARSE_STATE reference after META. This keeps the active
+head metadata available if a crash tears a sparse reference. Mark checkpoints persisted only after the append succeeds. A crash before the reference
+leaves an unreferenced file; a torn reference is discarded by the usual tail recovery. The next
+full save includes recovered sparse checkpoints in the index and collects unreferenced files.
+Call every few seconds; already-persisted sparse checkpoints are not written again.
 
 ## Open / recovery rules
 
@@ -175,7 +184,10 @@ then fsync. Cheap; call every few seconds.
    incomplete or bad record at the **end** is a torn write from a crash: it is discarded and the
    file truncated. A bad record followed by any valid record → `RN_ERR_CORRUPT`. A journal with an
    older base is stale (already folded into the index) and ignored. `rn_session_recovered()` = 1
-   when records were replayed.
+   when records were replayed. SPARSE_STATE loads the referenced file using the same CRC,
+   metadata and compatibility checks as index checkpoints (including explicit drop-corrupt-states
+   recovery). A different compat ID is refused with `RN_ERR_CORE_MISMATCH`, even with that flag.
+   Unreferenced state files are never loaded.
 7. Practice slots (index meta + journal): each A state must exist (file of the index, or a
    journal PRACTICE_STATE record), pass CRC/size/slot/seq checks → else `RN_ERR_CORRUPT` naming the
    slot and file; a different compat ID → `RN_ERR_CORE_MISMATCH`. Practice states are user data,
