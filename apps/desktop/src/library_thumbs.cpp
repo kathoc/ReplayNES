@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "replaynes/product.h"
 #include "library_thumbs.h"
 
 #include <cstdio>
@@ -171,7 +172,12 @@ void LibraryThumbs::pictureWorker() {
     }
     // Power-on, no input, kRomPictureFrame frames: in memory only (no project directory).
     rn_session* s = nullptr;
-    if (rn_session_new(rom.c_str(), nullptr, nullptr, &s) != RN_OK || !s) continue;
+    // The product's default core (an external core reads files the NES cores cannot).
+    rn_session_options opt;
+    rn_session_options_init(&opt);
+    const bool external = std::strcmp(RN_PRODUCT_DEFAULT_CORE, "external") == 0;
+    if (external) opt.core = RN_CORE_EXTERNAL;
+    if (rn_session_new(rom.c_str(), nullptr, external ? &opt : nullptr, &s) != RN_OK || !s) continue;
     bool ok = true;
     for (int f = 0; ok && f < kRomPictureFrame; ++f) {
       ok = rn_step(s, 0, 0, 0, nullptr) == RN_OK;
