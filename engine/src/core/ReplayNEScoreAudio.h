@@ -8,7 +8,7 @@ namespace rn::replaynes_audio {
 
 struct State {
   static constexpr uint32_t kVersion = 2;
-  static constexpr uint32_t kProfile = 1;
+  static constexpr uint32_t kProfile = 2;
   uint32_t version{kVersion};
   uint32_t profile{kProfile};
   uint64_t phase{};
@@ -33,6 +33,10 @@ class Pipeline {
   static constexpr size_t kMaxFrameSlots = 29781;
   static constexpr int32_t kDcNumerator = 65372;
   static constexpr int32_t kDcDenominator = 65536;
+  // Core PCM stays unipolar at 32767. Match the host's 49152 playback
+  // scale only after DC removal, without feeding output gain into DC state.
+  static constexpr int32_t kOutputNumerator = 49152;
+  static constexpr int32_t kOutputDenominator = 32767;
 
   const State& state() const { return state_; }
 
@@ -90,7 +94,13 @@ class Pipeline {
         const int64_t recurrence = int64_t(averaged) - state_.dcInput +
           int64_t(kDcNumerator) * state_.dcOutput / kDcDenominator;
         const int32_t filtered = int32_t(std::clamp<int64_t>(recurrence, -32768, 32767));
-        output.push_back(int16_t(filtered));
+        // Symmetric nearest-integer rounding (ties away from zero), followed
+        // by final int16 saturation. The recurrence remains in core units.
+        const int64_t scaled = int64_t(filtered) * kOutputNumerator;
+        const int64_t rounded = scaled >= 0
+          ? (scaled + kOutputDenominator / 2) / kOutputDenominator
+          : -((-scaled + kOutputDenominator / 2) / kOutputDenominator);
+        output.push_back(int16_t(std::clamp<int64_t>(rounded, -32768, 32767)));
         ++state_.outputCursor;
         state_.dcInput = averaged;
         state_.dcOutput = filtered;

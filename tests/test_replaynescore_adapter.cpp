@@ -15,11 +15,55 @@ std::vector<uint8_t> rom(std::initializer_list<uint8_t> code) {
   return out;
 }
 }
-TEST_CASE("ReplayNESCore C5 identity and state format are synchronized") {
+TEST_CASE("ReplayNESCore 0.9.1 identity and state format are synchronized") {
   rn::ReplayNEScoreAdapter core;
-  CHECK_EQ(core.compatId(),std::string("replaynescore/nrom-live/accuracy-c5-v16"));
-  CHECK_EQ(core.buildId(),std::string("replaynescore-0.9.0+adapter-v16"));
+  CHECK_EQ(core.compatId(),std::string("replaynescore/nrom-live/accuracy-c5-v17"));
+  CHECK_EQ(core.buildId(),std::string("replaynescore-0.9.1+adapter-v17"));
   CHECK_EQ(core.stateFormatVersion(),3U);
+}
+TEST_CASE("ReplayNESCore rejects the prior identity and audio profile atomically") {
+  auto bytes=rom({0x4c,0,0x80});
+  rn::ReplayNEScoreAdapter core;
+  REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
+  std::vector<uint8_t> before;
+  REQUIRE(core.saveState(before).ok());
+  uint64_t frame=0; const uint8_t* payload=nullptr; size_t payloadSize=0;
+  REQUIRE(rn::stateenv::read(before.data(),before.size(),core.compatId(),frame,payload,payloadSize).ok());
+  std::vector<uint8_t> oldIdentity;
+  rn::stateenv::write(oldIdentity,"replaynescore/nrom-live/accuracy-c5-v16",frame,payload,payloadSize);
+  CHECK_FALSE(core.loadState(oldIdentity.data(),oldIdentity.size()).ok());
+  // The payload layout stays schema 3; only the audio semantics/profile change.
+  rn::ByteWriter oldProfile;
+  oldProfile.bytes(payload,28); oldProfile.u32(1U);
+  oldProfile.bytes(payload+32,payloadSize-32);
+  std::vector<uint8_t> oldAudio;
+  rn::stateenv::write(oldAudio,core.compatId(),frame,oldProfile.buf.data(),oldProfile.buf.size());
+  CHECK_FALSE(core.loadState(oldAudio.data(),oldAudio.size()).ok());
+  std::vector<uint8_t> after;
+  REQUIRE(core.saveState(after).ok()); CHECK(before==after);
+}
+TEST_CASE("ReplayNESCore initial DAC is silent across pre-output RESET and restore") {
+  const auto bytes=rom({0x4c,0,0x80}); // No APU writes: keep the initial DAC.
+  for(const bool resetBeforeOutput:{false,true}) {
+    rn::ReplayNEScoreAdapter core,restored;
+    REQUIRE(core.loadROM(bytes.data(),bytes.size()).ok());
+    REQUIRE(restored.loadROM(bytes.data(),bytes.size()).ok());
+    if(resetBeforeOutput) REQUIRE(core.softReset().ok());
+    std::vector<uint8_t> before;
+    REQUIRE(core.saveState(before).ok());
+    REQUIRE(restored.loadState(before.data(),before.size()).ok());
+    REQUIRE(core.stepFrame(0,0,false).ok());
+    REQUIRE(restored.stepFrame(0,0,false).ok());
+    size_t count=0,restoredCount=0;
+    const auto* audio=core.audio(&count); const auto* copy=restored.audio(&restoredCount);
+    REQUIRE_EQ(count,size_t(rn::audioSamplesForFrame(0)));
+    REQUIRE_EQ(count,restoredCount);
+    CHECK(std::all_of(audio,audio+count,[](int16_t value){return value==0;}));
+    CHECK(std::equal(audio,audio+count,copy));
+    std::vector<uint8_t> after,restoredAfter;
+    REQUIRE(core.saveState(after).ok()); REQUIRE(restored.saveState(restoredAfter).ok());
+    CHECK(after==restoredAfter);
+  }
 }
 TEST_CASE("Experimental core real pad bus, PCM contract, bounded MMIO fault") {
   rn::ReplayNEScoreAdapter core;

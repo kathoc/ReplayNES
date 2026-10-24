@@ -2,12 +2,19 @@
 #include "core/ReplayNEScoreAudio.h"
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
 #include <limits>
 #include <vector>
 
 namespace {
 using rn::replaynes_audio::Pipeline;
 using rn::replaynes_audio::State;
+
+// Floating-point oracle deliberately does not reuse production gain constants
+// or integer rounding. All int16 input products are exactly representable here.
+int16_t hostScale(int32_t value) {
+  return int16_t(std::clamp(std::round(double(value)*49152.0/32767.0),-32768.0,32767.0));
+}
 
 struct Oracle {
   uint64_t phase{};
@@ -35,7 +42,7 @@ struct Oracle {
         const int64_t recurrence=int64_t(input)-dcInput+
           int64_t(Pipeline::kDcNumerator)*dcOutput/Pipeline::kDcDenominator;
         const int32_t filtered=int32_t(std::clamp<int64_t>(recurrence,-32768,32767));
-        output.push_back(int16_t(filtered)); dcInput=input; dcOutput=filtered;
+        output.push_back(hostScale(filtered)); dcInput=input; dcOutput=filtered;
         ++cursor; phase=0; area=0;
       }
     }
@@ -85,9 +92,9 @@ TEST_CASE("ReplayNESCore audio profile has deterministic DC step and rejects cor
   REQUIRE(dc.push(constant.data(),constant.size(),dcOut));
   REQUIRE(step.push(edge.data(),edge.size(),stepOut));
   REQUIRE(dcOut.size()>20); REQUIRE(stepOut.size()>20);
-  CHECK(dcOut.front()==10000); CHECK(std::abs(dcOut.back())<std::abs(dcOut.front()));
+  CHECK(dcOut.front()==15000); CHECK(std::abs(dcOut.back())<std::abs(dcOut.front()));
   CHECK(std::any_of(stepOut.begin(),stepOut.end(),[](int16_t v){return v>0;}));
-  auto bad=dc.state(); bad.profile=2; CHECK_FALSE(step.restore(bad));
+  auto bad=dc.state(); bad.profile=1; CHECK_FALSE(step.restore(bad));
   bad=dc.state(); bad.phase=Pipeline::kOutputWidth; CHECK_FALSE(step.restore(bad));
   bad=dc.state(); bad.area=int64_t(bad.phase)*32768+1; CHECK_FALSE(step.restore(bad));
   bad=dc.state(); bad.dcOutput=32768; CHECK_FALSE(step.restore(bad));
@@ -136,7 +143,7 @@ TEST_CASE("ReplayNESCore frame mapping preserves cross-frame area phase and DC a
         : -int32_t((-area+int64_t(sampleWidth/2))/int64_t(sampleWidth));
       const int32_t filtered=int32_t(std::clamp<int64_t>(int64_t(averaged)-previousInput+
         int64_t(65372)*previousOutput/65536,-32768,32767));
-      expected.push_back(int16_t(filtered)); previousInput=averaged; previousOutput=filtered;
+      expected.push_back(hostScale(filtered)); previousInput=averaged; previousOutput=filtered;
     }
     CHECK(actual==expected);
     CHECK_EQ(pipeline.state().phase,end%sampleWidth);
@@ -172,4 +179,22 @@ TEST_CASE("ReplayNESCore frame mapping rejects invalid input atomically") {
   REQUIRE(pipeline.restore(overflow));
   CHECK_FALSE(pipeline.pushFrame(input.data(),input.size(),output));
   CHECK(pipeline.state()==overflow); CHECK(output==beforeOutput);
+}
+
+
+TEST_CASE("ReplayNESCore host scale is symmetric and saturation does not enter DC feedback") {
+  // Finish exactly one output interval from a valid checkpoint for every core
+  // unit value; this covers both rounding signs and the clipping boundaries.
+  for(int32_t input=-32768;input<=32767;++input) {
+    Pipeline pipeline;
+    State initial{};
+    initial.phase=Pipeline::kOutputWidth-Pipeline::kInputWidth;
+    initial.area=int64_t(input)*int64_t(initial.phase);
+    REQUIRE(pipeline.restore(initial));
+    std::vector<int16_t> output;
+    REQUIRE(pipeline.push(int16_t(input),output));
+    REQUIRE_EQ(output.size(),size_t{1});
+    CHECK_EQ(output.front(),hostScale(input));
+    CHECK_EQ(pipeline.state().dcOutput,input);
+  }
 }

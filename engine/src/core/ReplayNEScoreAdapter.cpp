@@ -133,6 +133,17 @@ Status ReplayNEScoreAdapter::stepFrame(uint8_t p1,uint8_t p2,bool renderVideo) {
       if(renderVideo) s.pixels=std::move(pending);
       const auto count=audioSamplesForFrame(s.frames);
       std::vector<int16_t> output;
+      if(!s.audioPipeline.state().hasInput) {
+        if(s.pendingSlots.empty())
+          return Error(Err::Internal,"ReplayNEScore first frame has no audio slots");
+        // The stopped DAC already drives a DC level at power-on. Start its
+        // history at the first real PCM value, not an artificial zero step.
+        // hasInput is serialized; RESET after playback keeps the DC history.
+        auto initial=s.audioPipeline.state();
+        initial.dcInput=s.pendingSlots.front();
+        if(!s.audioPipeline.restore(initial))
+          return Error(Err::Internal,"ReplayNEScore initial audio DC state is invalid");
+      }
       if(count==0 || !s.audioPipeline.pushFrame(s.pendingSlots.data(),s.pendingSlots.size(),output) ||
          output.size()!=count)
         return Error(Err::Internal,"ReplayNEScore continuous audio count disagrees with frame timeline");

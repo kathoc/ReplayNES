@@ -80,6 +80,11 @@ if(TARGET replaynes_frontend)
 endif()
 
 rn_add_test(test_core_selection)
+# Always validate the generated reference waveforms; compare both cores when built.
+rn_add_test(test_replaynescore_volume)
+# Nine independent cartridges each run for two emulated seconds. Keep the
+# diagnostic bounded while allowing the experimental core to run under CI load.
+set_tests_properties(test_replaynescore_volume PROPERTIES TIMEOUT 900)
 if(REPLAYNES_ENABLE_REPLAYNESCORE)
   rn_add_test(test_replaynescore_audio)
   rn_add_test(test_replaynescore_adapter)
