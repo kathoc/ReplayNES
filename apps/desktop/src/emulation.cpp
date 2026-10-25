@@ -396,6 +396,15 @@ bool EmulationController::coreBusy() const {
                       rnf_step_repeater_direction(stepRepeater_) != 0);
 }
 
+void EmulationController::idleWork(uint32_t budgetFrames) {
+  if (!session_ || coreBusy() || budgetFrames == 0) return;
+  const rn_mode mode = rn_get_mode(session_);
+  if (mode != RN_MODE_RECORD && mode != RN_MODE_REPLAY) return;
+  // Cache preparation is optional. An unsuccessful attempt must not interrupt
+  // paused navigation with a dialog; normal seek/rewind remains authoritative.
+  (void)rn_session_idle_work(session_, budgetFrames);
+}
+
 void EmulationController::pausedStep(int dir, bool down) {
   if (!session_) return;
   if (down) {

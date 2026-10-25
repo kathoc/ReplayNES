@@ -102,6 +102,9 @@ class Session {
   // Record/Replay: seek back on the take. Practice: rewind the practice run (bounded ring),
   // never before the current anchor (A or practice start).
   Status rewind(uint64_t n);
+  // Optional paused/idle maintenance. No presentation, cursor or continuity changes.
+  // At most budgetFrames core steps; Practice/Live and budget zero are no-ops.
+  Status idleWork(uint32_t budgetFrames);
 
   const uint32_t* video() const { return core_->video(); }
   MediaInfo mediaInfo() const { return core_->mediaInfo(); }
@@ -201,15 +204,21 @@ class Session {
     std::vector<uint8_t> resume;
   } rewindPrefetch_;
   void clearRewindCache();
-  void advanceRewindPrefetch(uint64_t budget);
-  void prefetchOlderRewindBlock(uint64_t target);
-  void finishRewindPrefetch(uint64_t target);
+  uint64_t advanceRewindPrefetch(uint64_t budget);
+  uint64_t prefetchOlderRewindBlock(uint64_t target, uint64_t budget = 5);
+  uint64_t finishRewindPrefetch(uint64_t target);
   const std::vector<uint8_t>* rewindState(uint64_t frame) const;
   void cacheRewindState(RewindBlock& block, uint64_t frame);
   void retainRewindBlock(RewindBlock block);
   Status resync(uint64_t target, bool forceReload, RewindBlock* block = nullptr);
   Status powerOnFresh();
-  void maybeCheckpoint(uint64_t frame);
+  void maybeCheckpoint(uint64_t frame, ICore* source = nullptr);
+  // One independent logical machine, not another per-frame state cache. Shared
+  // physical cores arbitrate instances exactly as they do for OfflineRenderer.
+  std::unique_ptr<ICore> warmCore_;
+  uint64_t warmNext_ = 0, warmEnd_ = 0;
+  bool idleWarmComplete_ = false;
+  Status warmRewindGap(uint64_t target, uint32_t budgetFrames, bool idle);
   Status captureState(std::vector<uint8_t>& out) { return core_->saveState(out); }
   // Take state at the cursor (the saved return state while practicing).
   Status cursorState(std::vector<uint8_t>& out);

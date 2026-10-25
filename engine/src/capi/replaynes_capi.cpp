@@ -337,6 +337,9 @@ rn_status rn_seek(rn_session* s, uint64_t frame) {
 rn_status rn_rewind(rn_session* s, uint64_t n) {
   return guard([&] { return s ? ret(s->s->rewind(n)) : invalid("null session"); });
 }
+rn_status rn_session_idle_work(rn_session* s, uint32_t budget_frames) {
+  return guard([&] { return s ? ret(s->s->idleWork(budget_frames)) : invalid("null session"); });
+}
 uint64_t rn_state_hash(rn_session* s) { return s ? s->s->stateHash() : 0; }
 uint64_t rn_video_hash(const rn_session* s) { return s ? s->s->videoHash() : 0; }
 uint64_t rn_audio_hash(const rn_session* s) { return s ? s->s->audioHash() : 0; }

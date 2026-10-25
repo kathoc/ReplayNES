@@ -56,7 +56,7 @@ const int16_t* Session::audio(size_t* count) const {
   return a;
 }
 
-void Session::maybeCheckpoint(uint64_t frame) {
+void Session::maybeCheckpoint(uint64_t frame, ICore* source) {
   const CheckpointPolicy& p = cps_.policy();
   bool sparse = frame % p.sparseInterval == 0;
   bool dense = frame % p.denseInterval == 0;
@@ -68,8 +68,9 @@ void Session::maybeCheckpoint(uint64_t frame) {
     return;
   }
   std::vector<uint8_t> st;
-  if (!captureState(st).ok()) return;  // a missing cache entry only costs seek time
-  cps_.add(frame, owner, sparse ? CpKind::Sparse : CpKind::Dense, core_->compatId(), core_->stateFormatVersion(),
+  ICore& machine = source ? *source : *core_;
+  if (!machine.saveState(st).ok()) return;  // a missing cache entry only costs seek time
+  cps_.add(frame, owner, sparse ? CpKind::Sparse : CpKind::Dense, machine.compatId(), machine.stateFormatVersion(),
            std::move(st));
 }
 
@@ -163,11 +164,15 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
 void Session::clearRewindCache() {
   rewindBlocks_.clear();
   rewindPrefetch_ = {};
+  warmCore_.reset();
+  warmNext_ = warmEnd_ = 0;
+  idleWarmComplete_ = false;
 }
 
-void Session::advanceRewindPrefetch(uint64_t budget) {
+uint64_t Session::advanceRewindPrefetch(uint64_t budget) {
+  uint64_t used = 0;
   auto& work = rewindPrefetch_;
-  if (!work.end) return;
+  if (!work.end) return 0;
   // This walk must not use resync/step: it changes neither cursor, continuity
   // nor the practice input ring. The caller always restores the
   // requested pre-frame state and renders the result afterwards, even on error.
@@ -185,6 +190,7 @@ void Session::advanceRewindPrefetch(uint64_t budget) {
         ? &pInputs_[size_t(work.next - pSnaps_.front().count)] : tl_.recordAt(work.next);
     if (!input) { st = Error(Err::Internal, "missing prefetch input"); break; }
     st = core_->stepRecord(*input, false);
+    ++used;
     if (st.ok()) {
       ++work.next;
       // A cold sparse gap can span many dense blocks. Keep the checkpoints
@@ -202,32 +208,35 @@ void Session::advanceRewindPrefetch(uint64_t budget) {
     // into an error. The ordinary restore/replay path remains authoritative.
     work = {};
   }
+  return used;
 }
 
-void Session::finishRewindPrefetch(uint64_t target) {
+uint64_t Session::finishRewindPrefetch(uint64_t target) {
   const auto& work = rewindPrefetch_;
   if (target > 0 && work.end && target - 1 >= work.block.first && target - 1 < work.end &&
       !rewindState(target - 1))
-    advanceRewindPrefetch(work.end - work.next);
+    return advanceRewindPrefetch(work.end - work.next);
+  return 0;
 }
 
-void Session::prefetchOlderRewindBlock(uint64_t target) {
+uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget) {
+  if (!budget) return 0;
   const uint64_t interval = cps_.policy().denseInterval;
   uint64_t first, end, seed;
   const std::vector<uint8_t>* initial = nullptr;
   if (mode_ == Mode::Practice) {
     size_t k = pSnaps_.size();
     while (k && pSnaps_[k - 1].count > target - 1) --k;
-    if (k < 2) return;
+    if (k < 2) return 0;
     end = pSnaps_[k - 1].count;
     const auto& snap = pSnaps_[k - 2];
     seed = snap.count;
     first = end - std::min(end - seed, interval);
-    if (end <= practiceFloor()) return;
+    if (end <= practiceFloor()) return 0;
     initial = &snap.state;
   } else {
     end = (target - 1) / interval * interval;
-    if (!end) return;
+    if (!end) return 0;
     first = end - interval;
     const auto* cp = cps_.best(first, tl_);
     seed = cp ? cp->frame : 0;
@@ -235,7 +244,7 @@ void Session::prefetchOlderRewindBlock(uint64_t target) {
     // Take frame zero is always fresh power-on, never a serialized state.
     first = std::max<uint64_t>(1, first);
   }
-  if (first >= end || (rewindState(first) && rewindState(end - 1))) return;
+  if (first >= end || (rewindState(first) && rewindState(end - 1))) return 0;
   auto& work = rewindPrefetch_;
   if (work.end != end || work.block.first != first) {
     work = {};
@@ -247,7 +256,57 @@ void Session::prefetchOlderRewindBlock(uint64_t target) {
   }
   // Five speculative frames plus the visible frame. A 30-frame block is
   // ready within six ticks, including at the frontend's maximum stride of 4.
-  advanceRewindPrefetch(5);
+  return advanceRewindPrefetch(budget);
+}
+
+Status Session::warmRewindGap(uint64_t target, uint32_t budgetFrames, bool idle) {
+  if (!budgetFrames || !target) return Status::Ok();
+  const uint64_t dense = cps_.policy().denseInterval;
+  const uint64_t span = uint64_t(cps_.policy().sparseInterval) * (idle ? 1 : 2);
+  const uint64_t floor = target > span ? target - span : 0;
+  // A jump or another reconstruction may have made the pending walk obsolete.
+  if (warmEnd_ && (warmEnd_ >= target || warmEnd_ <= floor ||
+      cps_.find(warmEnd_, tl_.stateOwner(warmEnd_)))) warmEnd_ = 0;
+  if (!warmEnd_) {
+    uint64_t end = (target - 1) / dense * dense;
+    while (end > floor && cps_.find(end, tl_.stateOwner(end))) end -= dense;
+    if (end <= floor) {
+      if (idle) idleWarmComplete_ = true;
+      return Status::Ok();
+    }
+    const auto* cp = cps_.best(end, tl_);
+    const uint64_t seed = cp ? cp->frame : 0;
+    if (!warmCore_) {
+      warmCore_ = createCore(core_->kind());
+      if (!warmCore_) return Error(Err::UnsupportedFormat, "no core for idle reconstruction");
+      Status loaded = warmCore_->loadContent(romPath_, rom_.data(), rom_.size());
+      if (!loaded.ok()) { warmCore_.reset(); return loaded; }
+    } else if (!seed) {
+      RN_TRY(warmCore_->loadContent(romPath_, rom_.data(), rom_.size()));
+    }
+    if (seed) RN_TRY(warmCore_->loadState(cp->data.data(), cp->data.size()));
+    warmNext_ = seed;
+    warmEnd_ = end;
+  }
+  for (uint32_t i = 0; i < budgetFrames && warmNext_ < warmEnd_; ++i) {
+    const auto* input = tl_.recordAt(warmNext_);
+    if (!input) { warmEnd_ = 0; return Error(Err::Internal, "missing warm-up input"); }
+    Status step = warmCore_->stepRecord(*input, false);
+    if (!step.ok()) { warmEnd_ = 0; return step; }
+    ++warmNext_;
+    maybeCheckpoint(warmNext_, warmCore_.get());
+  }
+  if (warmNext_ == warmEnd_) warmEnd_ = 0;
+  return Status::Ok();
+}
+
+Status Session::idleWork(uint32_t budgetFrames) {
+  if (!budgetFrames || idleWarmComplete_ || mode_ == Mode::Practice || mode_ == Mode::Live)
+    return Status::Ok();
+  // Use another logical instance: loading a saved state into the foreground
+  // core would clear audio or change video on several supported cores. Keeping
+  // it untouched also preserves frame-zero and load-only presentation exactly.
+  return warmRewindGap(frame_, budgetFrames, true);
 }
 
 const std::vector<uint8_t>* Session::rewindState(uint64_t frame) const {
@@ -329,13 +388,19 @@ Status Session::rewind(uint64_t n) {
   if (mode_ == Mode::Practice) return practiceRewind(n);
   const uint64_t target = frame_ - std::min(n, frame_);
   if (target != frame_) {
+    idleWarmComplete_ = false;
     if (target > 0) {
-      finishRewindPrefetch(target);
+      const uint64_t finished = finishRewindPrefetch(target);
       if (const auto* state = rewindState(target - 1)) {
         // Prefetch may evict a block. Own the state that restores this tick,
         // then render its final frame AFTER all speculative core work.
         const auto saved = *state;
-        prefetchOlderRewindBlock(target);
+        const uint64_t remaining = finished < 8 ? 8 - finished : 0;
+        const uint64_t used = prefetchOlderRewindBlock(target, std::min<uint64_t>(5, remaining));
+        // Near-block snapshots and the farther cold-gap walk share eight
+        // speculative frames. At stride four each consumes ~four frames/tick;
+        // warming only the adjacent block discovers a sparse gap too late.
+        (void)warmRewindGap(target, uint32_t(remaining - used), false);
         ++emuEpoch_;  // exactly the discontinuity that resync would report
         RN_TRY(core_->loadState(saved.data(), saved.size()));
         frame_ = target - 1;

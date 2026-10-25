@@ -18,6 +18,7 @@ struct ThumbnailSchedulingProbe {
 }
 namespace {
 std::atomic<int> creations{0};
+std::atomic<uint64_t> coreSteps{0}, coreLoads{0};
 class ThumbnailCore final : public rn::ICore {
  public:
   ThumbnailCore() {
@@ -28,7 +29,7 @@ class ThumbnailCore final : public rn::ICore {
   rn::Status loadROM(const uint8_t*, size_t) override { return powerCycle(); }
   rn::Status powerCycle() override { frame_ = 0; return rn::Status::Ok(); }
   rn::Status softReset() override { return rn::Status::Ok(); }
-  rn::Status stepFrame(uint8_t, uint8_t, bool) override { ++frame_; return rn::Status::Ok(); }
+  rn::Status stepFrame(uint8_t, uint8_t, bool) override { ++coreSteps; ++frame_; return rn::Status::Ok(); }
   uint64_t frameIndex() const override { return frame_; }
   const uint32_t* video() const override { return pixels_.data(); }
   const int16_t* audio(size_t* n) const override { *n = 0; return nullptr; }
@@ -37,6 +38,7 @@ class ThumbnailCore final : public rn::ICore {
   }
   rn::Status loadState(const uint8_t* bytes, size_t n) override {
     if (n != sizeof frame_) return rn::Error(rn::Err::UnsupportedFormat, "bad test state");
+    ++coreLoads;
     std::memcpy(&frame_, bytes, n); return rn::Status::Ok();
   }
   std::string compatId() const override { return "thumbnail-scheduling/1"; }
@@ -169,3 +171,83 @@ void scheduling(bool shared) {
 
 TEST_CASE("shared machine thumbnails wait for paused idle transport") { scheduling(true); }
 TEST_CASE("independent machine thumbnails render while transport is busy") { scheduling(false); }
+
+namespace {
+void idleScheduling(bool shared) {
+  rn::registerExternalCore({"thumbnail-scheduling", "thumbnail-scheduling/1",
+    uint32_t(rn::CapState | rn::CapRecording | (shared ? uint32_t(rn::CapSharesMachine) : 0u)),
+    [] { return std::make_unique<ThumbnailCore>(); }});
+  struct Registration { ~Registration() { rn::unregisterExternalCore(); } } registration;
+  const auto root = std::filesystem::path(RNL_TEST_TMP) / (shared ? "idle-shared" : "idle-independent");
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root);
+  const auto rom = root / "idle.bin", project = root / "project";
+  { std::ofstream out(rom, std::ios::binary); out << "idle core"; }
+  rn_session_options options;
+  rn_session_options_init(&options);
+  options.core = RN_CORE_EXTERNAL;
+  rn_session* session = nullptr;
+  REQUIRE_EQ(rn_session_new(rom.string().c_str(), project.string().c_str(), &options, &session), RN_OK);
+  for (unsigned i = 0; i < 4316; ++i) REQUIRE_EQ(rn_step(session, 0, 0, 0, nullptr), RN_OK);
+  REQUIRE_EQ(rn_session_autosave(session), RN_OK);
+  rn_session_close(session);
+  REQUIRE_EQ(rn_session_open(project.string().c_str(), nullptr, &options, &session), RN_OK);
+  std::unique_ptr<rn_input, decltype(&rn_input_free)> input(rn_input_new(), rn_input_free);
+  rnl::EmulationController emu(input.get(), nullptr);
+  emu.install(session);
+  REQUIRE(emu.paused());
+  REQUIRE_EQ(rn_frame(session), uint64_t(4316));
+  auto blocked = [&] {
+    const uint64_t steps = coreSteps.load(), loads = coreLoads.load();
+    const int instances = creations.load();
+    emu.idleWork(4);
+    CHECK_EQ(coreSteps.load(), steps);
+    CHECK_EQ(coreLoads.load(), loads);
+    CHECK_EQ(creations.load(), instances);
+  };
+  // Both running modes, pending frame steps, held transport, and practice must
+  // keep even the first scratch-core allocation out of the foreground path.
+  emu.setPaused(false);
+  blocked();
+  emu.setRecording(false);
+  blocked();
+  emu.setPaused(true);
+  emu.setRewindHeld(true); blocked(); emu.setRewindHeld(false);
+  emu.setFastForwardHeld(true); blocked(); emu.setFastForwardHeld(false);
+  emu.setStepRepeatHeld(true); blocked(); emu.setStepRepeatHeld(false);
+  emu.pausedStep(-1, true); blocked(); emu.pausedStep(-1, false);
+  emu.frameAdvance(2); blocked();
+  emu.tick(); emu.tick();
+  REQUIRE_EQ(rn_set_mode(session, RN_MODE_PRACTICE), RN_OK);
+  REQUIRE(emu.paused());
+  blocked();
+  emu.setPaused(false); blocked(); emu.setPaused(true);
+  REQUIRE_EQ(rn_set_mode(session, RN_MODE_RECORD), RN_OK);
+  REQUIRE(!emu.coreBusy());
+
+  const uint64_t frame = rn_frame(session), state = rn_state_hash(session);
+  const uint64_t video = rn_video_hash(session), audio = rn_audio_hash(session);
+  const uint64_t before = coreSteps.load();
+  emu.idleWork(4);
+  CHECK(coreSteps.load() > before);
+  CHECK(coreSteps.load() - before <= 4u);
+  bool finished = false;
+  for (unsigned i = 0; i < 1000; ++i) {
+    const uint64_t steps = coreSteps.load();
+    emu.idleWork(4);
+    CHECK(coreSteps.load() - steps <= 4u);
+    CHECK_EQ(rn_frame(session), frame);
+    CHECK_EQ(rn_state_hash(session), state);
+    CHECK_EQ(rn_video_hash(session), video);
+    CHECK_EQ(rn_audio_hash(session), audio);
+    if (steps == coreSteps.load()) { finished = true; break; }
+  }
+  CHECK(finished);
+  for (unsigned i = 0; i < 3; ++i) blocked();  // complete work is cheap to poll
+  emu.closeSession();
+  blocked();  // no session
+}
+}  // namespace
+
+TEST_CASE("shared machine idle warm-up only runs for paused idle transport") { idleScheduling(true); }
+TEST_CASE("independent machine idle warm-up uses the same foreground gate") { idleScheduling(false); }

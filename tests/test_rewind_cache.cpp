@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/MockCore.h"
+#include "replaynes/replaynes.h"
 #include "persist/ProjectStore.h"
 #include "support/TestUtil.h"
 #include "support/rn_test.h"
@@ -44,10 +45,10 @@ class CountingCore final : public ICore {
 };
 struct RegisteredCounter {
   std::shared_ptr<Counts> counts = std::make_shared<Counts>();
-  RegisteredCounter() {
+  explicit RegisteredCounter(uint32_t flags = CapAudio | CapState | CapSoftReset | CapRecording) {
     auto c = counts;
     registerExternalCore({"counting-rewind-test", "counting-rewind-test/1",
-      uint32_t(CapAudio | CapState | CapSoftReset | CapRecording),
+      flags,
       [c] { return std::unique_ptr<ICore>(new CountingCore(c)); }});
   }
   ~RegisteredCounter() { unregisterExternalCore(); }
@@ -430,7 +431,7 @@ TEST_CASE("rewind prefetch: autosave sparse replay leaves dense checkpoints for 
           CHECK_EQ(checkpointCore->machineHash(), checkpointReference->stateHash());
         }
       } else if (crossedSparseGap) {
-        CHECK(work <= 6u);
+        CHECK(work <= 9u);
         if ((previous - 1) / 30 != (target - 1) / 30) {
           maxLaterEntry = std::max(maxLaterEntry, work);
           MESSAGE("sparse stride=" << stride << ", entry=" << target << ", core frames=" << work);
@@ -442,6 +443,176 @@ TEST_CASE("rewind prefetch: autosave sparse replay leaves dense checkpoints for 
     REQUIRE(crossedSparseGap);
     MESSAGE("sparse stride=" << stride << ", first entry=" << firstEntryWork
             << ", max later entry=" << maxLaterEntry);
+  }
+}
+
+TEST_CASE("idle work: bounded scratch warming preserves the current output and stops") {
+  RegisteredCounter registration(CapAudio | CapState | CapSoftReset | CapRecording | CapSharesMachine);
+  const CheckpointPolicy policy{10, 1200, 120};
+  const auto script = DeterminismHarness::randomScript(296, 1714);
+  for (CoreKind kind : {CoreKind::Mock, CoreKind::Nestopia, CoreKind::External}) {
+    if (!coreAvailable(kind)) continue;
+    const std::string root = tempDir("idle-output");
+    const std::string romPath = writeTestRom(root);
+    const std::string project = fs::join(root, "run.nesrec");
+    SessionOptions options;
+    options.core = kind; options.checkpoints = policy;
+    std::unique_ptr<Session> actual;
+    REQUIRE(Session::create(buildTestRom(), romPath, options, actual).ok());
+    REQUIRE(actual->saveAs(project).ok());
+    REQUIRE(recordScript(*actual, script).ok());
+    REQUIRE(actual->autosave().ok());
+    actual.reset();
+    REQUIRE(ProjectStore::open(project, "", options, actual).ok());
+    auto reference = newSession(kind == CoreKind::External ? CoreKind::Mock : kind, policy);
+    REQUIRE(reference); REQUIRE(recordScript(*reference, script).ok());
+    // Keep valid audible output, not only the already-silent output of an open/seek.
+    REQUIRE(actual->step(0x41, 0x83, 0).ok()); REQUIRE(reference->step(0x41, 0x83, 0).ok());
+    REQUIRE(actual->practiceSetA(0).ok()); REQUIRE(reference->practiceSetA(0).ok());
+    ICore& ac = actual->core(); ICore& rc = reference->core();
+    size_t samples = 0; actual->audio(&samples); REQUIRE(samples > 0);
+    const bool dirty = actual->unsavedChanges();
+    const uint64_t before = registration.counts->steps;
+    REQUIRE(actual->idleWork(0).ok());
+    CHECK_EQ(registration.counts->steps, before);
+    equalSessions(*actual, *reference, ac, rc);
+    for (unsigned call = 0; call < 100; ++call) {
+      const uint64_t count = registration.counts->steps;
+      REQUIRE(actual->idleWork(4).ok());
+      if (kind == CoreKind::External) CHECK(registration.counts->steps - count <= 4u);
+      equalSessions(*actual, *reference, ac, rc);
+      CHECK_EQ(actual->unsavedChanges(), dirty);
+    }
+    REQUIRE(actual->checkpoints().find(230, actual->timeline().stateOwner(230), int(CpKind::Dense)));
+    if (kind == CoreKind::External) CHECK(registration.counts->steps > before);
+    const uint64_t completed = registration.counts->steps;
+    for (unsigned call = 0; call < 20; ++call) REQUIRE(actual->idleWork(4).ok());
+    CHECK_EQ(registration.counts->steps, completed);
+    equalSessions(*actual, *reference, ac, rc);
+    if (kind == CoreKind::Nestopia)
+      pictureEvidence(actual->videoFrame(), reference->videoFrame(), "idle-take-297");
+    // Returning to foreground emulation must also preserve the scratch-free reference.
+    REQUIRE(actual->step(0x13, 0x72, 0).ok()); REQUIRE(reference->step(0x13, 0x72, 0).ok());
+    equalSessions(*actual, *reference, ac, rc);
+    REQUIRE(actual->setMode(Mode::Practice).ok()); REQUIRE(reference->setMode(Mode::Practice).ok());
+    const uint64_t practicing = registration.counts->steps;
+    REQUIRE(actual->idleWork(4).ok());
+    CHECK_EQ(registration.counts->steps, practicing);
+    equalSessions(*actual, *reference, ac, rc);
+  }
+}
+
+TEST_CASE("idle work: live sessions are a no-op") {
+  RegisteredCounter registration(CapAudio | CapState | CapSoftReset | CapSharesMachine);
+  auto s = newSession(CoreKind::External);
+  REQUIRE(s); REQUIRE_EQ(s->mode(), Mode::Live);
+  REQUIRE(s->step(13, 29, 0).ok());
+  const uint64_t count = registration.counts->steps;
+  const uint64_t state = s->stateHash(), video = s->videoHash(), audio = s->audioHash();
+  REQUIRE(s->idleWork(4).ok());
+  CHECK_EQ(registration.counts->steps, count);
+  CHECK_EQ(s->stateHash(), state); CHECK_EQ(s->videoHash(), video); CHECK_EQ(s->audioHash(), audio);
+}
+
+TEST_CASE("idle work: rewind invalidates a completed idle window") {
+  RegisteredCounter registration;
+  const std::string root = tempDir("idle-rewind-window");
+  const std::string romPath = writeTestRom(root), project = fs::join(root, "run.nesrec");
+  SessionOptions options; options.core = CoreKind::External;
+  std::unique_ptr<Session> actual;
+  REQUIRE(Session::create(buildTestRom(), romPath, options, actual).ok());
+  REQUIRE(actual->saveAs(project).ok());
+  REQUIRE(recordScript(*actual, DeterminismHarness::randomScript(4316, 1716)).ok());
+  REQUIRE(actual->autosave().ok()); actual.reset();
+  REQUIRE(ProjectStore::open(project, "", options, actual).ok());
+  for (unsigned call = 0; call < 200; ++call) REQUIRE(actual->idleWork(4).ok());
+  uint64_t count = registration.counts->steps;
+  REQUIRE(actual->idleWork(4).ok()); CHECK_EQ(registration.counts->steps, count);
+  REQUIRE(actual->rewind(1500).ok()); REQUIRE_EQ(actual->frame(), 2816u);
+  CHECK(!actual->checkpoints().find(2370, actual->timeline().stateOwner(2370), int(CpKind::Dense)));
+  count = registration.counts->steps;
+  for (unsigned call = 0; call < 200; ++call) REQUIRE(actual->idleWork(4).ok());
+  CHECK(registration.counts->steps > count);
+  CHECK(actual->checkpoints().find(2370, actual->timeline().stateOwner(2370), int(CpKind::Dense)));
+  count = registration.counts->steps;
+  REQUIRE(actual->idleWork(4).ok()); CHECK_EQ(registration.counts->steps, count);
+}
+
+TEST_CASE("idle work: C API preserves paused output and accepts a zero budget") {
+  RegisteredCounter registration(CapAudio | CapState | CapSoftReset | CapRecording | CapSharesMachine);
+  const std::string root = tempDir("idle-capi");
+  const std::string rom = writeTestRom(root), project = fs::join(root, "run.nesrec");
+  rn_session_options options;
+  rn_session_options_init(&options);
+  options.core = RN_CORE_EXTERNAL; options.dense_interval = 10; options.sparse_interval = 120;
+  rn_session* session = nullptr;
+  REQUIRE_EQ(rn_session_new(rom.c_str(), project.c_str(), &options, &session), RN_OK);
+  for (unsigned i = 0; i < 296; ++i) REQUIRE_EQ(rn_step(session, uint8_t(i), uint8_t(i >> 1), 0, nullptr), RN_OK);
+  REQUIRE_EQ(rn_session_autosave(session), RN_OK);
+  rn_session_close(session); session = nullptr;
+  REQUIRE_EQ(rn_session_open(project.c_str(), nullptr, &options, &session), RN_OK);
+  REQUIRE_EQ(rn_step(session, 0x31, 0x91, 0, nullptr), RN_OK);
+  const uint64_t state = rn_state_hash(session), video = rn_video_hash(session), audio = rn_audio_hash(session);
+  const uint64_t count = registration.counts->steps;
+  REQUIRE_EQ(rn_session_idle_work(nullptr, 4), RN_ERR_INVALID_ARG);
+  REQUIRE_EQ(rn_session_idle_work(session, 0), RN_OK);
+  CHECK_EQ(registration.counts->steps, count);
+  for (unsigned call = 0; call < 100; ++call) {
+    const uint64_t before = registration.counts->steps;
+    REQUIRE_EQ(rn_session_idle_work(session, 4), RN_OK);
+    CHECK(registration.counts->steps - before <= 4u);
+    CHECK_EQ(rn_frame(session), 297u);
+    CHECK_EQ(rn_state_hash(session), state); CHECK_EQ(rn_video_hash(session), video); CHECK_EQ(rn_audio_hash(session), audio);
+  }
+  CHECK(registration.counts->steps > count);
+  const uint64_t complete = registration.counts->steps;
+  REQUIRE_EQ(rn_session_idle_work(session, 4), RN_OK);
+  CHECK_EQ(registration.counts->steps, complete);
+  rn_session_close(session);
+}
+
+TEST_CASE("rewind lookahead: idle head start keeps several cold sparse gaps within the tick budget") {
+  RegisteredCounter registration(CapAudio | CapState | CapSoftReset | CapRecording | CapSharesMachine);
+  const auto script = DeterminismHarness::randomScript(4316, 1715);
+  for (uint64_t stride : {2u, 3u, 4u, 0u}) {
+    const std::string root = tempDir("lookahead-sparse");
+    const std::string romPath = writeTestRom(root), project = fs::join(root, "run.nesrec");
+    SessionOptions options; options.core = CoreKind::External;
+    std::unique_ptr<Session> actual;
+    REQUIRE(Session::create(buildTestRom(), romPath, options, actual).ok());
+    REQUIRE(actual->saveAs(project).ok());
+    REQUIRE(recordScript(*actual, script).ok()); REQUIRE(actual->autosave().ok());
+    actual.reset(); REQUIRE(ProjectStore::open(project, "", options, actual).ok());
+    auto reference = newSession(CoreKind::Mock);
+    REQUIRE(reference); REQUIRE(recordScript(*reference, script).ok());
+    REQUIRE(reference->seek(4315).ok()); REQUIRE(reference->seek(4316).ok());
+    ICore& ac = actual->core(); ICore& rc = reference->core();
+    for (unsigned call = 0; call < 200; ++call) {
+      const uint64_t before = registration.counts->steps;
+      REQUIRE(actual->idleWork(4).ok()); CHECK(registration.counts->steps - before <= 4u);
+      equalSessions(*actual, *reference, ac, rc);
+    }
+    // Idle only primes the nearby gap; the next older gaps still need rewind lookahead.
+    REQUIRE(actual->checkpoints().find(4170, actual->timeline().stateOwner(4170), int(CpKind::Dense)));
+    CHECK(!actual->checkpoints().find(3570, actual->timeline().stateOwner(3570), int(CpKind::Dense)));
+    uint64_t tick = 0, maxTick = 0, maxEntry = 0;
+    while (actual->frame() > 2816) {
+      const uint64_t previous = actual->frame(), back = stride ? stride : 2 + tick % 3;
+      const uint64_t target = previous - back, before = registration.counts->steps;
+      REQUIRE(actual->rewind(back).ok());
+      const uint64_t work = registration.counts->steps - before;
+      if (tick) {
+        maxTick = std::max(maxTick, work);
+        if (work > 9) MESSAGE("lookahead over budget stride=" << stride << ", target=" << target << ", work=" << work);
+        CHECK(work <= 9u);
+      }
+      if ((previous - 1) / 30 != (target - 1) / 30) {
+        maxEntry = std::max(maxEntry, work); CHECK(work <= 30u);
+      }
+      REQUIRE(reference->seek(target).ok()); equalSessions(*actual, *reference, ac, rc);
+      ++tick;
+    }
+    MESSAGE("lookahead stride=" << stride << ", max tick=" << maxTick << ", max entry=" << maxEntry);
   }
 }
 

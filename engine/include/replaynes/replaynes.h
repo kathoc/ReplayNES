@@ -263,6 +263,11 @@ rn_status rn_seek(rn_session* s, uint64_t frame);
  * in-memory ring, same policy as dense checkpoints), clamped at the current anchor (last A set /
  * goto A, or the practice start) and at the oldest kept snapshot; never touches the take. */
 rn_status rn_rewind(rn_session* s, uint64_t nframes);
+/* Optional paused/idle work: prepare dense checkpoints below the cursor, at most
+ * budget_frames core steps. Preserves state, video, audio, cursor and continuity.
+ * Call only while paused with no foreground input/transport in progress; the
+ * engine has no pause flag. Zero budget, PRACTICE and LIVE do no work. */
+rn_status rn_session_idle_work(rn_session* s, uint32_t budget_frames);
 
 /* Verification hashes (determinism diagnostics, tests, CLI). */
 uint64_t rn_state_hash(rn_session* s);

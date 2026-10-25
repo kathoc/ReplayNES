@@ -530,6 +530,7 @@ int App::run(const AppOptions& opt) {
       app_->update(now);
       ui_->slack(now);
       emu_->setStepRepeatHeld(input_->stepRepeatHeld());
+      emu_->idleWork();
       thumbs_->pump(emu_->session(), now, emu_->coreBusy());
       library_->poll();
     }

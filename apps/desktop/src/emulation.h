@@ -193,6 +193,8 @@ class EmulationController {
   bool paused() const { return paused_; }
   /// Foreground transport owns the core until it is paused with no held/pending navigation.
   bool coreBusy() const;
+  /// Optional checkpoint warm-up, only while paused with no transport work or practice.
+  void idleWork(uint32_t budgetFrames = 4);
   void setStepRepeatHeld(bool held) { stepRepeatHeld_ = held; }
   void frameAdvance(int n = 1);
   void stepBack(uint64_t n = 1);
