@@ -3,7 +3,7 @@
 # Included by apps/linux/CMakeLists.txt and apps/windows/CMakeLists.txt after rnl_logic exists
 # (apps/desktop/CMakeLists.txt, added through the root CMakeLists.txt). Inputs:
 #   RNL_SDL3_TARGET    SDL3::SDL3 (Linux, the runtime's) / SDL3::SDL3-static (Windows, third_party/SDL)
-#   RNL_APP_VERSION    the release version (root CMakeLists.txt)
+#   RNL_APP_VERSION    the product release version (or Windows update-test override)
 #   RNL_APP_FEATURES   compile definitions of ui_features.h (RNL_HAVE_STEAM=1, RNL_HAVE_MP4_EXPORT=0 ...)
 # The platform executable adds: main(), a Renderer, fonts.h, the MP4 export (export/mp4_export.h)
 # and the CRT export processor (render/crt_export.h), or their "not available" stubs.

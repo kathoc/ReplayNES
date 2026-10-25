@@ -34,6 +34,9 @@ rn_add_test(test_testcart)
 # The committed ROM image (engine/src/testrom/TestCartridge*.inc) matches its 6502 source.
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME product_release_identity
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_product_release.py
+             --source ${PROJECT_SOURCE_DIR} --cmake ${CMAKE_COMMAND})
   add_test(NAME testcart_generated_up_to_date
            COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/testcart/build.py --check)
 endif()

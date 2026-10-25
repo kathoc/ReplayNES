@@ -16,7 +16,6 @@ if(RN_PRODUCT_NES)
     RN_NESTOPIA_COMMIT="${REPLAYNES_NESTOPIA_COMMIT}"
     RN_NESTOPIA_PATCHLEVEL=${REPLAYNES_NESTOPIA_PATCHLEVEL})
 endif()
-target_compile_definitions(replaynes_engine PRIVATE RN_ENGINE_VERSION="${PROJECT_VERSION}")
 set_target_properties(replaynes_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 find_package(Threads REQUIRED)
 target_link_libraries(replaynes_engine PUBLIC Threads::Threads)

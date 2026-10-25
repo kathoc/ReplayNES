@@ -24,10 +24,6 @@
 #include "util/Hash.h"
 #include "video/FlashFilter.h"
 
-#ifndef RN_ENGINE_VERSION
-#define RN_ENGINE_VERSION "0.0.0"
-#endif
-
 static_assert(int(RN_ERR_CORE_MISMATCH) == int(rn::Err::CoreMismatch), "status codes must match");
 static_assert(int(RN_ERR_END_OF_TAKE) == int(rn::Err::EndOfTake), "status codes must match");
 static_assert(int(RN_ERR_DISCONTINUITY) == int(rn::Err::Discontinuity), "status codes must match");
@@ -122,7 +118,7 @@ rn_core_kind rn_session_core_kind(const rn_session* s) {
   return s ? static_cast<rn_core_kind>(s->s->coreKind()) : static_cast<rn_core_kind>(-1);
 }
 
-const char* rn_version(void) { return RN_ENGINE_VERSION; }
+const char* rn_version(void) { return RN_PRODUCT_VERSION; }
 const char* rn_core_compat_id(void) {
 #if RN_PRODUCT_NES
   static const std::string id = rn::NestopiaCore::staticCompatId();

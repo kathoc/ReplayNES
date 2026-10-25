@@ -87,9 +87,8 @@ foreach(sh blit.vert blit.frag)
   list(APPEND SHADER_INCS ${out})
 endforeach()
 
-# The version of the release (root CMakeLists.txt): --version, the update notice.
-file(STRINGS ${REPLAYNES_ROOT}/CMakeLists.txt RNL_ROOT_PROJECT REGEX "^project\\(ReplayNES VERSION")
-string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" RNL_APP_VERSION "${RNL_ROOT_PROJECT}")
+# Product release version: --version, About and update comparisons.
+set(RNL_APP_VERSION "${RN_PRODUCT_VERSION}")
 
 # The shared application (apps/desktop/app.cmake): rn_imgui + rnl_app.
 set(RNL_SDL3_TARGET SDL3::SDL3)

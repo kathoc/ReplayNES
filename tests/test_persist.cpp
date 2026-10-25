@@ -4,6 +4,8 @@
 
 #include "core/MockCore.h"
 #include "persist/ProjectStore.h"
+#include "replaynes/product.h"
+#include "replaynes/replaynes.h"
 #include "util/Bytes.h"
 #include "util/Hash.h"
 #include "support/TestUtil.h"
@@ -378,6 +380,26 @@ TEST_CASE("persist: disk full during save/autosave is reported and leaves a cons
   REQUIRE(reopen(dir, r).ok());
   CHECK(r->recovered());
   CHECK(r->timeline().flattenActive() == all);
+}
+
+TEST_CASE("persist: saved manifest records the current product release version") {
+  const std::string dir = fs::join(tempDir("product-version"), "release.nesrec");
+  auto s = newSession(CoreKind::Mock);
+  REQUIRE(s);
+  REQUIRE(s->saveAs(dir).ok());
+  std::string text;
+  Json manifest;
+  REQUIRE(fs::readText(fs::join(dir, "manifest.json"), text).ok());
+  REQUIRE(Json::parse(text, manifest));
+  CHECK_EQ(manifest["appVersion"].asString(), std::string(RN_PRODUCT_VERSION));
+  CHECK_EQ(std::string(rn_version()), std::string(RN_PRODUCT_VERSION));
+
+  // Saving an existing project identifies the writer of this revision, not the previous one.
+  editManifest(dir, "appVersion", "0.0.0-old");
+  REQUIRE(s->save().ok());
+  REQUIRE(fs::readText(fs::join(dir, "manifest.json"), text).ok());
+  REQUIRE(Json::parse(text, manifest));
+  CHECK_EQ(manifest["appVersion"].asString(), std::string(RN_PRODUCT_VERSION));
 }
 
 TEST_CASE("persist: refuses to create into a non-empty directory; in-memory save needs a dir") {

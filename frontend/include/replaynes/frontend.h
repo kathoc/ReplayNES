@@ -44,6 +44,15 @@
 #include "replaynes/product.h"
 #endif
 #endif
+#ifndef RN_PRODUCT_VERSION
+#define RN_PRODUCT_VERSION "0.6.4"
+#endif
+#ifndef RN_PRODUCT_WINDOWS_APPCAST_URL
+#define RN_PRODUCT_WINDOWS_APPCAST_URL "https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml"
+#endif
+#ifndef RN_PRODUCT_UPDATE_PUBLIC_KEY
+#define RN_PRODUCT_UPDATE_PUBLIC_KEY "epSlR4TX073wn6yhEigPygjpRMr2K39iu9ZbQg3OPgQ="
+#endif
 #ifndef RN_PRODUCT_PROJECT_EXT
 #define RN_PRODUCT_PROJECT_EXT ".nesrec"
 #endif

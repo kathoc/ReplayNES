@@ -5,7 +5,7 @@
 // "windows-x64" / "windows-arm64"; scripts/release-windows.sh). WinSparkle checks (automatically
 // once a day if the user agreed - it asks on the second launch, as Sparkle does - or with "Check
 // for Updates…"), shows its own dialogs, downloads the zip and verifies its
-// signature with the public key built in (SUPublicEDKey of apps/macos/project.yml, or the CMake
+// signature with the product public key built in (RN_PRODUCT_UPDATE_PUBLIC_KEY, or the CMake
 // cache variable RNW_UPDATE_PUBLIC_KEY). Installing a zip is ours (WinSparkle runs installers):
 //   1. the zip is extracted with Windows' tar.exe into %LOCALAPPDATA%\ReplayNES\Update\<n>;
 //   2. its ReplayNES.exe is started as `--finish-update <install dir> <pid> -- <arguments>`;

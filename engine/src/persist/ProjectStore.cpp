@@ -9,10 +9,6 @@
 #include "util/Hash.h"
 #include "util/Json.h"
 
-#ifndef RN_ENGINE_VERSION
-#define RN_ENGINE_VERSION "0.0.0"
-#endif
-
 namespace rn {
 
 namespace {
@@ -466,7 +462,7 @@ Status ProjectStore::fullSave(Session& s) {
   Json man = Json::object();
   man.set("format", RN_PRODUCT_PROJECT_FORMAT);
   man.set("formatVersion", kProjectFormatVersion);
-  man.set("appVersion", RN_ENGINE_VERSION);
+  man.set("appVersion", RN_PRODUCT_VERSION);
   man.set("generation", newGen);
   man.set("coreCompatId", s.core_->compatId());
   man.set("coreBuild", s.core_->buildId());
