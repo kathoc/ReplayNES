@@ -113,8 +113,8 @@ UI::UI(Deps d) : d_(d) {
 }
 
 void UI::inputLayoutChanged() {
-  menuFeatures_ &= ~uint32_t(RNF_MENU_FEATURE_LAYOUT_TURBO);
-  if (std::strcmp(rnf_input_layout_name(), "nes") != 0) menuFeatures_ |= RNF_MENU_FEATURE_LAYOUT_TURBO;
+  menuFeatures_ &= ~uint32_t(RNF_MENU_FEATURE_LAYOUT_TURBO | RNF_MENU_FEATURE_MOUSE);
+  if (std::strcmp(rnf_input_layout_name(), "nes") != 0) menuFeatures_ |= RNF_MENU_FEATURE_LAYOUT_TURBO | RNF_MENU_FEATURE_MOUSE;
   std::string catalog = rnf_input_layout_name();
   for (size_t i = 0; i < rnf_input_action_count(); ++i) {
     rnf_action_info action{};

@@ -178,15 +178,20 @@ rnf_practice_action act(rnf_practice_action_kind k, double back = 0) {
   return a;
 }
 
+int gCountdownSeconds = int(RNF_PRACTICE_COUNTDOWN_SECONDS);
+
 rnf_practice_action countdownAction(double elapsed) {
   rnf_practice_action a = act(RNF_PRACTICE_COUNTDOWN);
   double e = std::max(0.0, elapsed);
   int whole = int(std::floor(e));
-  a.count = std::max(1, int(RNF_PRACTICE_COUNTDOWN_SECONDS) - whole);
+  a.count = std::max(1, gCountdownSeconds - whole);
   a.fraction = std::min(1.0, std::max(0.0, e - double(whole)));
   return a;
 }
 }  // namespace
+
+void rnf_countdown_set_seconds(int seconds) { gCountdownSeconds = std::max(1, std::min(3, seconds)); }
+int rnf_countdown_seconds(void) { return gCountdownSeconds; }
 
 rnf_practice_action rnf_practice_loop_tick(rnf_practice_loop* l, double now, uint64_t counter, int has_length,
                                            uint64_t length) {
@@ -227,7 +232,7 @@ rnf_practice_action rnf_practice_loop_tick(rnf_practice_loop* l, double now, uin
     }
     case RNF_PHASE_COUNTDOWN: {
       double e = now - l->since;
-      if (e >= RNF_PRACTICE_COUNTDOWN_SECONDS) {
+      if (e >= double(gCountdownSeconds)) {
         l->phase = RNF_PHASE_PLAYING;
         l->since = 0;
         // Play on in this same tick: the countdown's "1" is followed by the first frame at once.
@@ -382,7 +387,7 @@ rnf_resume_countdown_state rnf_resume_countdown_tick(rnf_resume_countdown* c, do
   rnf_resume_countdown_state st{};
   if (!c || !c->active) return st;
   double e = now - c->since;
-  if (e >= RNF_PRACTICE_COUNTDOWN_SECONDS) {
+  if (e >= double(gCountdownSeconds)) {
     finishCountdown(c);
     st.done = 1;
     return st;

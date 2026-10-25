@@ -696,14 +696,16 @@ void UI::buildCardsPage(const PageGeometry& g, double now) {
   if (hasA) prompt({"face.north"}, TR("Rename"));
   if (active) prompt({"face.west"}, TR("Stop"));
   else if (hasA) prompt({"face.west"}, TR("Clear"));
-  // The countdown after returning to A (3, 2, 1): a setting of practice, toggled here (View / Tab, or
-  // a click on the hint).
-  prompt({"options"}, d_.settings->practiceCountdown ? TR("Countdown: On") : TR("Countdown: Off"), [this] { toggleCountdown(); });
+  // The countdown (3 / 1 / none; also Settings > System > More), cycled here (View / Tab, or a click on
+  // the hint).
+  const int cs = d_.settings->countdownSeconds;
+  prompt({"options"}, cs >= 3 ? TR("Countdown: 3") : cs >= 1 ? TR("Countdown: 1") : TR("Countdown: None"), [this] { toggleCountdown(); });
   prompt({"ui.cancel"}, TR("Back"));
 }
 
 void UI::toggleCountdown() {
-  d_.settings->practiceCountdown = !d_.settings->practiceCountdown;
+  int& cs = d_.settings->countdownSeconds;
+  cs = cs >= 3 ? 1 : cs >= 1 ? 0 : 3;  // 3 -> 1 -> none -> 3
   changed();
 }
 

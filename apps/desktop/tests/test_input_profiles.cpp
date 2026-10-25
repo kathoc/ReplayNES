@@ -2,6 +2,7 @@
 #include "input_router.h"
 #include "settings.h"
 #include "support/rn_test.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -347,6 +348,8 @@ TEST_CASE("P arcade defaults: MAME's keys play every game, the mouse a game with
     if (!p.count(want)) std::printf("    missing: %s\n", want);
     CHECK(p.count(want));
   }
+  CHECK_FALSE(router.mouseGame());  // Mouse is off by default (Settings > Controls > More)
+  settings.mouseControls = true;
   CHECK(router.mouseGame());
   // Hotkeys keep their keys: Space pauses, no game button on it.
   CHECK(p.count("kb:44=hk.pause"));
@@ -402,6 +405,7 @@ TEST_CASE("P the captured mouse: stick position, dial motion per frame, wheel le
   Files files;
   Devices devices;
   rnl::Settings settings;
+  settings.mouseControls = true;
   rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
   router.setLayout(kFlightLayout);
   // Not captured (the UI has the pointer): nothing reaches the game.
@@ -458,4 +462,107 @@ TEST_CASE("P the captured mouse: stick position, dial motion per frame, wheel le
   CHECK_EQ(held, 8);
   mouseWheel(router, -1);
   CHECK_EQ((sample(router, 40).bytes[3] >> 1) & 1, 1);
+}
+
+TEST_CASE("P the mouse is off by default; a pad or a game key puts its stick back in the middle") {
+  Files files;
+  Devices devices;
+  const auto id = devices.add("Generic Pad", 5);
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  connect(router, id);
+  // Off: no capture wanted, and a captured mouse (the setting turned off while playing) moves nothing.
+  CHECK_FALSE(router.mouseGame());
+  router.setMouseCaptured(true);
+  mouseMotion(router, 200, 0);
+  mouseWheel(router, 2);
+  rn_input_record r = sample(router, 0);
+  CHECK_EQ(axisAt(r, 5), 0);
+  CHECK_EQ(axisAt(r, 9), 0);
+  router.setMouseCaptured(false);
+
+  settings.mouseControls = true;
+  CHECK(router.mouseGame());
+  router.setMouseCaptured(true);
+  const int16_t half = int16_t(std::lround(0.6f * 32767));
+  auto push = [&] { mouseMotion(router, 200, 0); mouseWheel(router, 2); };
+  push();
+  CHECK_EQ(axisAt(sample(router, 1), 5), half);
+  // A pad button: the mouse's stick and lever back in the middle (they would add to the pad's).
+  SDL_Event e{};
+  e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+  e.gbutton.which = id;
+  e.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+  e.gbutton.down = true;
+  router.handleEvent(e, 1, false);
+  r = sample(router, 2);
+  CHECK_EQ(axisAt(r, 5), 0);
+  CHECK_EQ(axisAt(r, 9), 0);
+  // The mouse moved again takes the stick from the middle.
+  mouseMotion(router, 200, 0);
+  CHECK_EQ(axisAt(sample(router, 3), 5), half);
+  // A stick resting off centre (drift) keeps the mouse; pushed past half, the pad has it.
+  SDL_Event a{};
+  a.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
+  a.gaxis.which = id;
+  a.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTY;
+  a.gaxis.value = 3000;
+  router.handleEvent(a, 2, false);
+  CHECK_EQ(axisAt(sample(router, 4), 5), half);
+  a.gaxis.value = 30000;
+  router.handleEvent(a, 3, false);
+  CHECK_EQ(axisAt(sample(router, 5), 5), 0);
+  // A key of the game.
+  push();
+  CHECK_EQ(axisAt(sample(router, 6), 5), half);
+  SDL_Event k{};
+  k.type = SDL_EVENT_KEY_DOWN;
+  k.key.scancode = SDL_SCANCODE_Z;
+  k.key.down = true;
+  router.handleEvent(k, 4, false);
+  r = sample(router, 7);
+  CHECK_EQ(axisAt(r, 5), 0);
+  CHECK_EQ(axisAt(r, 9), 0);
+}
+
+TEST_CASE("P the paused seek bar: L / R switch the practice section on a pad and on a stick, no repeats") {
+  for (const bool stick : {false, true}) {
+    Files files;
+    Devices devices;
+    const auto id = devices.add(stick ? "Qanba Arcade" : "Generic Pad", stick ? 4 : 5);
+    rnl::Settings settings;
+    rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+    router.setLayout(layout);
+    connect(router, id);
+    CHECK(router.deviceKind(0) == (stick ? rnl::DeviceKind::stick : rnl::DeviceKind::pad));
+    std::vector<int> dirs;
+    router.onPausedShoulder = [&](int dir) { dirs.push_back(dir); };
+    auto button = [&](int b, bool down, double time) {
+      SDL_Event e{};
+      e.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+      e.gbutton.which = id;
+      e.gbutton.button = b;
+      e.gbutton.down = down;
+      router.handleEvent(e, time, false);
+    };
+    router.setPausedStepMode(true);
+    double t = 10;
+    for (int b : {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER}) {
+      button(b, true, t);
+      router.tick(t + 0.03);
+      button(b, false, t + 0.05);
+      router.tick(t + 0.3);
+      t += 1;
+    }
+    CHECK((dirs == std::vector<int>{1, 1, -1}));
+    // Held: one switch, not a repeat every interval.
+    dirs.clear();
+    button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, true, t);
+    for (double h = 0.05; h < 2.0; h += 0.05) router.tick(t + h);
+    button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, false, t + 2.0);
+    router.tick(t + 2.3);
+    CHECK(dirs.size() <= 1);
+    CHECK(std::count(dirs.begin(), dirs.end(), -1) == 0);
+  }
 }

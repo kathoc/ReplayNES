@@ -132,6 +132,10 @@ class UI : public DialogHost {
   /// Pad 1's gestures (InputRouter::onPauseGesture): 0 = pause (the seek bar); -1 / +1 = R held + L /
   /// L held + R (EmulationController::followGesture: in play slow 1/2 / pause, paused a frame step).
   void pauseGesture(int dir, bool repeat = false);
+  /// L + START while practising: back to the first marker at once.
+  void practiceToA();
+  /// The selected practice section, 1 ... 8 (the seek bar's markers stand for it).
+  int selectedSection() const;
   /// Y while practicing (InputRouter::onPracticeStop): stop practice.
   void stopPracticeFromPad();
   /// The seek bar's focus for the InputRouter: 0 the bar, 1 a marker, 2 editing.
@@ -411,6 +415,8 @@ class UI : public DialogHost {
   int markerHoldDir_ = 0, markerHoldTicks_ = 0;  // L / R held while editing (rnf_hold_speed)
   double markerHintUntil_ = 0, markerNow_ = 0;
   std::string markerHint_;
+  std::vector<uint64_t> sectionMarkers(int slot) const;
+  void markerNotice(const std::string& text);
   // Timeline (seek bar).
   enum class Drag { none, scrub, select, handle, body, ignore };
   Drag drag_ = Drag::none;

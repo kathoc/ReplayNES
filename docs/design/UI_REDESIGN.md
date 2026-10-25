@@ -111,6 +111,27 @@ The markers are the controller's view of the **selected A/B slot** ("A/B n" in t
 - Practicing: no markers (the bar shows the practice run). **Stopping practice** (2026-10-17): the bottom-left status label is the button **■ 練習をやめる / ■ Stop Practice** (click / tap; playing and paused), **Y** stops it (playing, paused or in the countdown; Y is not game input while practicing), the paused hint row shows "Y Stop Practicing", the active card and ⇧⌘P as before. It returns exactly to the take position from before practice and shows the toast 練習をやめました / Practice stopped. The mouse / touch timeline (drag a range, handles) is unchanged.
 - **Y = practice** (2026-10-09): Y tapped on the bar (or with a marker focused, not while editing) starts practice of the selected slot from its A when the slot has a section on this take - A and B, or A only (then it plays without a loop, like the Practice page). The decision (`rnf_markers_face`: Y practice / X next slot / X delete) is the shared core's. Slot cycling moved from Y to X: X on the bar = next slot, X on a focused marker = delete it (unchanged).
 
+### Practice markers, simpler (2026-10-25, desktop)
+
+Players found the A/B marker editing above hard to follow. The desktop frontend (ImGui; the macOS app keeps the scheme above for now) replaces it on the paused seek bar with this:
+
+- **North** puts a marker at the cursor: none → one marker; one → two (the left one is A, the right one B: `rn_practice_set_range`); two → a notice ("Two markers already: put the cursor on one to delete it"). With the cursor **on** a marker, that marker is lit (the flag changes color) and north **deletes** it (the hint reads "Delete Marker"); the one left over stays as "A only". Decision: `markerNorth` / `markerUnderCursor` (`apps/desktop/src/ui_logic.cpp`, tested).
+- **West** starts practice when the section has two markers (otherwise the notice "Place two markers to practice"). While practicing, west on the paused bar stops practice (back to the take position from before, as before). North no longer stops practice.
+- **L / R** on the paused bar switch the practice section (slot 1 … 8, the notice "Section n"); while practicing they start the new section when it has two markers. They no longer step frames there (one switch per press, no repeat; on an arcade stick R1, which is not part of the menu chord, works the same).
+- **L + START** while practicing goes straight back to the first marker (A) with the countdown.
+- Countdown length (Settings > System > More > Countdown): **3**, **1** (default) or **None**. At 1 only the ring timer is drawn, no numeral; None skips both the practice and the resume countdowns. `rnf_countdown_set_seconds` (shared core) holds the length.
+
+Considered and not taken: keeping the confirm button for markers (it already resumes play on the bar, players pressed it to resume and dropped markers); stepping frames with L / R and switching sections elsewhere (L / R were the only free pair on every pad and stick).
+
+## Mouse as game input (2026-10-25)
+
+Games with analog controls (FBNeo sticks, dials, levers) get mouse bindings by default (`ms:x` / `ms:y` a stick position the motion moves, `ms:dx` / `ms:dy` per-frame motion, `ms:wheel` a lever; buttons 1-3 on the mouse buttons). Two problems came up: the mouse played games that do not need it, and a stick position left where the mouse put it kept the lever pushed - the engine **adds** the sources bound to one axis (`InputPipeline::axisValue`), so the mouse's leftover position added to the pad's stick.
+
+- **Settings > Controls > More > Mouse** (`mouseControls`, **off by default**; non-NES layouts only, `RNF_MENU_FEATURE_MOUSE`). Off: the mouse is never captured and its axes stay at 0; the bindings are kept, so turning it on brings them back.
+- A pad button pressed, a pad stick or trigger pushed past half (a resting stick's drift does not count), or a game key pressed puts the mouse's stick and lever back in the middle (`InputRouter::centerMouse`); moving the mouse takes them again from there.
+
+Considered: a per-game setting (rejected for now: one switch is easier to find, and the default bindings already limit the mouse to analog games); taking the mouse away for a while after pad input (rejected: the last device used wins, nothing to time).
+
 ## Practice: return to A (2026-10-09)
 
 One sequence for every arrival at A - reaching B, **L2 + R2** pressed together while practicing (from anywhere in the section), starting practice (menu, seek bar Y): brief hold (at B only, 0.5 s) → **1 s VTR rewind** → A's picture → **3, 2, 1** → play. State machine `rnf_practice_loop` (shared core, tested on a fake clock); the frontends only apply its actions.

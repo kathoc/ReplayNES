@@ -58,6 +58,10 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
+    else if (k == "countdownSeconds") {
+      const int n = std::atoi(v.c_str());
+      s.countdownSeconds = n >= 3 ? 3 : n >= 1 ? 1 : 0;
+    }
     else if (k == "playInBackground") s.playInBackground = parseBool(v, s.playInBackground);
     else if (k == "showStats") s.showStats = parseBool(v, s.showStats);
 #if RN_PRODUCT_FLASH_FILTER
@@ -77,6 +81,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "pauseAfterRewind2") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);  // "pauseAfterRewind" (<= 0.5.0): ignored, settings.h
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
+    else if (k == "mouseControls") s.mouseControls = parseBool(v, s.mouseControls);
     else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
     else if (k == "onScreenKeyboard" && (v == "auto" || v == "builtin" || v == "steam")) s.onScreenKeyboard = v;
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
@@ -105,6 +110,7 @@ std::string Settings::serialize() const {
   o << "vtrEffect=" << int(vtrEffect) << "\n";
   o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "resumeCountdown=" << int(resumeCountdown) << "\n";
+  o << "countdownSeconds=" << countdownSeconds << "\n";
   o << "playInBackground=" << int(playInBackground) << "\n";
   o << "showStats=" << int(showStats) << "\n";
 #if RN_PRODUCT_FLASH_FILTER
@@ -129,6 +135,7 @@ std::string Settings::serialize() const {
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";
+  o << "mouseControls=" << int(mouseControls) << "\n";
   o << "southConfirm=" << int(southConfirm) << "\n";
   o << "onScreenKeyboard=" << onScreenKeyboard << "\n";
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";

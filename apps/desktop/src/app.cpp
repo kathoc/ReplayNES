@@ -134,8 +134,10 @@ void App::applySettings() {
   emu_->autosaveInterval = settings_.autosaveInterval;
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
   emu_->setVtrEffect(settings_.vtrEffect);
-  emu_->setPracticeCountdown(settings_.practiceCountdown);
-  emu_->setResumeCountdown(settings_.resumeCountdown);
+  // One countdown setting for both (3 / 1 / none): the length, and whether there is one at all.
+  rnf_countdown_set_seconds(std::max(1, settings_.countdownSeconds));
+  emu_->setPracticeCountdown(settings_.countdownSeconds > 0);
+  emu_->setResumeCountdown(settings_.countdownSeconds > 0);
   audio_.setVolume(settings_.volume);
   applyPostProcess();
 }
@@ -372,6 +374,7 @@ int App::run(const AppOptions& opt) {
   input_->onMarkerHold = [this](int dir, bool down) { ui_->markerHold(dir, down); };
   input_->onPausedShoulder = [this](int dir) { ui_->pausedShoulder(dir); };
   input_->onPauseGesture = [this](int dir, bool repeat) { ui_->pauseGesture(dir, repeat); };
+  input_->onPracticeToA = [this] { ui_->practiceToA(); };
   input_->onUiShoulder = [this](int dir) { ui_->shoulder(dir); };
   ui_->onLanguage = [this](const std::string& l) { pendingLanguage_ = l; };
   input_->onDisconnect = [this](const std::string& name) {

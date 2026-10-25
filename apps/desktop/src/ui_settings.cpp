@@ -83,6 +83,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
     return 0;
   }
   if (id == "system.language") return s.language == "ja" ? 1 : s.language == "en" ? 2 : 0;
+  if (id == "system.resume_countdown") return s.countdownSeconds >= 3 ? 0 : s.countdownSeconds >= 1 ? 1 : 2;  // 3 / 1 / none
   if (id == "system.autosave") {
     for (int i = 0; i < 5; ++i)
       if (s.autosaveInterval <= kAutosave[i] + 0.01) return i;
@@ -170,10 +171,10 @@ bool UI::itemOn(const std::string& id) const {
   if (id == "crt.persistence") return s.crtPersistence;
   if (id == "crt.supply") return s.crtSupply;
   if (id == "controls.dpad_paused") return s.dpadStepWhenPaused;
+  if (id == "controls.mouse") return s.mouseControls;
   if (id == "controls.rewind_pause") return s.pauseAfterRewind;
   if (id == "system.fullscreen") return isFullscreen && isFullscreen();
   if (id == "system.flash_badge") return s.showFlashIndicator;
-  if (id == "system.resume_countdown") return s.resumeCountdown;
   if (id == "system.background") return s.playInBackground;
   if (id == "system.stats") return s.showStats;
   if (id == "updates.auto") return d_.updates && d_.updates->ownsDialogs() ? d_.updates->autoCheckEnabled() : s.checkForUpdates;
@@ -254,12 +255,12 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "crt.persistence") s.crtPersistence = !s.crtPersistence;
     else if (id == "crt.supply") s.crtSupply = !s.crtSupply;
     else if (id == "controls.dpad_paused") s.dpadStepWhenPaused = !s.dpadStepWhenPaused;
+    else if (id == "controls.mouse") s.mouseControls = !s.mouseControls;
     else if (id == "controls.rewind_pause") s.pauseAfterRewind = !s.pauseAfterRewind;
     else if (id == "system.fullscreen") {
       if (onFullscreen) onFullscreen(!(isFullscreen && isFullscreen()));
       return;
     } else if (id == "system.flash_badge") s.showFlashIndicator = !s.showFlashIndicator;
-    else if (id == "system.resume_countdown") s.resumeCountdown = !s.resumeCountdown;
     else if (id == "system.background") s.playInBackground = !s.playInBackground;
     else if (id == "system.stats") s.showStats = !s.showStats;
     else if (id == "updates.auto") {
@@ -293,6 +294,7 @@ void UI::adjustItem(const std::string& id, int dir) {
       if (onLanguage) onLanguage(s.language);
       return;
     } else if (id == "system.autosave") s.autosaveInterval = kAutosave[next];
+    else if (id == "system.resume_countdown") s.countdownSeconds = next == 0 ? 3 : next == 1 ? 1 : 0;
     changed();
     return;
   }

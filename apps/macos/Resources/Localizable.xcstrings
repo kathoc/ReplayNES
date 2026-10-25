@@ -1,6 +1,106 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Before play resumes after a pause, and before each practice run (1: the ring alone)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止からの再開と、練習の各回の前（1 のときは円のタイマーだけ）"
+          }
+        }
+      }
+    },
+    "Countdown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン"
+          }
+        }
+      }
+    },
+    "Countdown: 1": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン: 1"
+          }
+        }
+      }
+    },
+    "Countdown: 3": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン: 3"
+          }
+        }
+      }
+    },
+    "Countdown: None": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウン: なし"
+          }
+        }
+      }
+    },
+    "Delete Marker": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マーカーを消す"
+          }
+        }
+      }
+    },
+    "Mouse": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マウス"
+          }
+        }
+      }
+    },
+    "Place two markers to practice": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "練習するにはマーカーを2個置いてください"
+          }
+        }
+      }
+    },
+    "The mouse moves the sticks, dials and levers of games with analog controls": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アナログ操作のゲームで、マウスでスティック・ダイヤル・レバーを動かす"
+          }
+        }
+      }
+    },
+    "Two markers already: put the cursor on one to delete it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マーカーは2個までです（消すにはカーソルをマーカーに合わせます）"
+          }
+        }
+      }
+    },
     "Play in the Background": {
       "localizations": {
         "ja": {

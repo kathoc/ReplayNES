@@ -91,6 +91,8 @@ class InputRouter {
   /// repeat = true while held; EmulationController::followGesture decides), L or R held + START = 0
   /// (pause: the seek bar).
   std::function<void(int dir, bool repeat)> onPauseGesture;
+  /// L held + START while practising: back to the first marker at once (R held + START still pauses).
+  std::function<void()> onPracticeToA;
   /// L / R held while a marker is edited: the marker moves (-1 / +1) until released.
   std::function<void(int dir, bool down)> onMarkerHold;
   /// L / R in the UI (menus, library): -1 / +1 when pressed (alone: after the chord detector).
@@ -123,8 +125,11 @@ class InputRouter {
   /// controls). While captured (the app: playing, not paused, window focused; SDL relative mode)
   /// its buttons, motion and wheel reach the game: "ms:x" / "ms:y" a stick position the motion
   /// moves, "ms:dx" / "ms:dy" the motion of each frame (dials, trackballs), "ms:wheel" a lever the
-  /// wheel moves, "ms:wheel.up" / ".down" a press of a few frames per notch.
-  bool mouseGame() const { return mouseGame_; }
+  /// wheel moves, "ms:wheel.up" / ".down" a press of a few frames per notch. Only with Mouse on
+  /// (Settings > Controls > More; off by default). A pad or a game key pressed puts the mouse's stick and
+  /// lever back in the middle (they add to the pad's: left where the mouse put them, they would keep
+  /// the lever pushed); moving the mouse takes them again.
+  bool mouseGame() const;
   void setMouseCaptured(bool on);
   /// The window went to the background: every controller's buttons and sticks are let go (the
   /// app passes it no controller events until it is back).
@@ -203,6 +208,8 @@ class InputRouter {
 
   void mouseEvent(const SDL_Event& e, double t);
   void setMouseAxes();
+  bool mouseOn() const;
+  void centerMouse();
 
   rn_input* in_ = nullptr;
   rn_input* profiles_[2] = {nullptr, nullptr};

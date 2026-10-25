@@ -25,6 +25,19 @@ int scrubStepFrames(double heldSeconds);
 /// that direction (clamped to the recorded range).
 uint64_t timelineJumpTarget(uint64_t frame, uint64_t takeLength, const std::vector<uint64_t>& bookmarks, int dir);
 
+/// The seek bar's markers (docs/design/VTR_UX.md, "Practice markers"): the selected section's A / B
+/// as markers, the playhead as the cursor. North places a marker at the cursor (at most two) or, on
+/// a marker, deletes it; west practises the section between two markers.
+struct MarkerEdit {
+  enum Kind { none, setA, setRange, clear, full, practice, needTwo } kind = none;
+  uint64_t a = 0, b = 0;  // setA: a; setRange: a < b
+};
+/// markers: the section's marker frames (0, 1 or 2, left to right); cursor: the playhead.
+MarkerEdit markerNorth(const std::vector<uint64_t>& markers, uint64_t cursor);
+MarkerEdit markerWest(const std::vector<uint64_t>& markers);
+/// The marker under the cursor (-1: none): it is drawn lit and north deletes it.
+int markerUnderCursor(const std::vector<uint64_t>& markers, uint64_t cursor);
+
 /// Button prompt glyph of a controller element ("face.south", "leftShoulder", "menu", ...) for the
 /// family: Steam Deck / Xbox A B X Y, PlayStation ✕ ○ □ △, Nintendo by position (south = B).
 std::string padGlyph(rnf_controller_family family, const char* element);

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <filesystem>
@@ -634,8 +635,7 @@ void InputRouter::pumpChord() {
           setPressed(id, true, ev.time, true);
         }
         break;
-      case RNF_CHORD_ALONE_REPEAT:
-        if (paused && seekFocus_ < 2 && onPausedShoulder) onPausedShoulder(dir);
+      case RNF_CHORD_ALONE_REPEAT:  // the paused seek bar switches sections one press at a time
         break;
       case RNF_CHORD_ALONE_UP:  // the trigger of a single press
         if (holdMembers_.erase(id)) {
@@ -647,7 +647,11 @@ void InputRouter::pumpChord() {
         } else if (ui_) {
           if (onUiShoulder) onUiShoulder(dir);
         } else if (paused) {
-          if (ev.repeats == 0 && onPausedShoulder) onPausedShoulder(dir);
+          // The practice section: L back, R forward (by the shoulder itself, also on a stick, whose
+          // step directions were L2 / L1); L2 / R2 alone switch nothing.
+          const std::string el = id.substr(id.find(':') + 1);
+          const int section = el == "leftShoulder" ? -1 : el == "rightShoulder" ? 1 : 0;
+          if (ev.repeats == 0 && section && onPausedShoulder) onPausedShoulder(section);
         } else {
           // A tap of its own action (none by default since layout 8): the hotkey fires on the press edge.
           setPressed(id, true, ev.time, true);
@@ -698,15 +702,27 @@ void InputRouter::routeButton(const std::string& id, bool down, double t) {
     else pressed_.erase(id);
     return;
   }
-  if (routePracticeStop(id, down)) {
-    if (down) pressed_.insert(id);
-    else pressed_.erase(id);
-    return;
-  }
   if (routePausedStep(id, down)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
     return;
+  }
+  // The paused seek bar: L / R switch the practice section also where they are not the chord's
+  // members (an arcade stick: R1 is a game button, the menu chord L1+L2) - at the press, the game
+  // being paused.
+  {
+    const size_t colon = id.find(':');
+    const std::string el = colon == std::string::npos ? std::string() : id.substr(colon + 1);
+    if (pausedStepMode_ && seekFocus_ == 0 && (el == "leftShoulder" || el == "rightShoulder") && id.compare(0, 2, "gc") == 0) {
+      if (down) {
+        pressed_.insert(id);
+        confirmTap_.cancel();
+        if (onPausedShoulder) onPausedShoulder(el == "leftShoulder" ? -1 : 1);
+      } else {
+        pressed_.erase(id);
+      }
+      return;
+    }
   }
   setPressed(id, down, t, true);
   routePausedTap(id, down);
@@ -830,7 +846,10 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
       pressed_.insert(id);
       confirmTap_.cancel();
       swallowedStarts_.insert(id);
-      if (onPauseGesture) onPauseGesture(0, false);
+      const std::string pre = slotPrefix(slot);
+      const bool leftHeld = pressed_.count(pre + "leftShoulder") && !pressed_.count(pre + "rightShoulder");
+      if (practicing_ && leftHeld && onPracticeToA) onPracticeToA();
+      else if (onPauseGesture) onPauseGesture(0, false);
       return;
     }
   }
@@ -925,11 +944,15 @@ void InputRouter::handleEvent(const SDL_Event& e, double evTime, bool keyboardFo
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
       int s = slotOf(e.gbutton.which);
+      if (s >= 0 && e.gbutton.down && !ui_) centerMouse();
       if (s >= 0) padButton(s, e.gbutton.button, e.gbutton.down, evTime);
       break;
     }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
       int s = slotOf(e.gaxis.which);
+      // A stick pushed or a trigger pulled on purpose (past half: a resting stick's drift does not
+      // take the mouse away).
+      if (s >= 0 && !ui_ && std::abs(int(e.gaxis.value)) > 16384) centerMouse();
       if (s >= 0) padAxis(s, e.gaxis.axis, float(e.gaxis.value) / 32767.0f, evTime);
       break;
     }
@@ -956,6 +979,7 @@ void InputRouter::handleEvent(const SDL_Event& e, double evTime, bool keyboardFo
         if (!ui_) rn_input_set_pressed(in_, id.c_str(), 0);
         break;
       }
+      if (game) centerMouse();
       setPressed(id, true, evTime, game);
       break;
     }
@@ -987,10 +1011,20 @@ float pastDeadzone(float v, float dz) {
 }
 }  // namespace
 
+bool InputRouter::mouseOn() const { return !settings_ || settings_->mouseControls; }
+bool InputRouter::mouseGame() const { return mouseGame_ && mouseOn(); }
+
 void InputRouter::setMouseAxes() {
+  if (!mouseOn()) mouseX_ = mouseY_ = mouseLever_ = 0;
   rn_input_set_axis_value(in_, "ms:x", pastDeadzone(mouseX_, stickDeadzone_));
   rn_input_set_axis_value(in_, "ms:y", pastDeadzone(mouseY_, stickDeadzone_));
   rn_input_set_axis_value(in_, "ms:wheel", pastDeadzone(mouseLever_, stickDeadzone_));
+}
+
+void InputRouter::centerMouse() {
+  if (mouseX_ == 0 && mouseY_ == 0 && mouseLever_ == 0) return;
+  mouseX_ = mouseY_ = mouseLever_ = 0;
+  setMouseAxes();
 }
 
 void InputRouter::setMouseCaptured(bool on) {
@@ -1008,7 +1042,7 @@ void InputRouter::setMouseCaptured(bool on) {
 }
 
 void InputRouter::beginMouseFrame() {
-  if (!mouseGame_) return;
+  if (!mouseGame()) return;
   rn_input_set_axis_value(in_, "ms:dx", pastDeadzone(mouseDx_ / kDialPixels, dialDeadzone_));
   rn_input_set_axis_value(in_, "ms:dy", pastDeadzone(mouseDy_ / kDialPixels, dialDeadzone_));
   mouseDx_ = mouseDy_ = 0;

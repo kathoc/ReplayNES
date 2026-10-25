@@ -2672,6 +2672,39 @@ TEST_CASE("pad 1 follow gesture: in play L held + R pauses and R held + L toggle
   CHECK_EQ(w.emu->status().slow, 1);  // a paused step never changes the speed
 }
 
+TEST_CASE("practice markers: north places one at the cursor or deletes the one under it, west needs two") {
+  using K = MarkerEdit;
+  // None yet: the first marker (the section's A).
+  MarkerEdit e = markerNorth({}, 500);
+  CHECK(e.kind == K::setA);
+  CHECK_EQ(e.a, 500u);
+  // One: the second, the section between them (left to right), whichever side the cursor is on.
+  e = markerNorth({500}, 200);
+  CHECK(e.kind == K::setRange);
+  CHECK_EQ(e.a, 200u);
+  CHECK_EQ(e.b, 500u);
+  e = markerNorth({500}, 900);
+  CHECK(e.kind == K::setRange);
+  CHECK_EQ(e.a, 500u);
+  CHECK_EQ(e.b, 900u);
+  // On a marker: it is lit, and north deletes it (the other one stays).
+  CHECK_EQ(markerUnderCursor({200, 500}, 500), 1);
+  CHECK_EQ(markerUnderCursor({200, 500}, 499), -1);
+  e = markerNorth({200, 500}, 500);
+  CHECK(e.kind == K::setA);
+  CHECK_EQ(e.a, 200u);
+  e = markerNorth({200, 500}, 200);
+  CHECK(e.kind == K::setA);
+  CHECK_EQ(e.a, 500u);
+  CHECK(markerNorth({500}, 500).kind == K::clear);
+  // Two, elsewhere: no third.
+  CHECK(markerNorth({200, 500}, 300).kind == K::full);
+  // West: practice between two; with fewer, a notice.
+  CHECK(markerWest({200, 500}).kind == K::practice);
+  CHECK(markerWest({200}).kind == K::needTwo);
+  CHECK(markerWest({}).kind == K::needTwo);
+}
+
 TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture from a background run") {
   RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("rom-picture");

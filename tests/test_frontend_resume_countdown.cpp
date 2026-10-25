@@ -70,6 +70,41 @@ TEST_CASE("resume countdown: 3 2 1, one number per second, then done once") {
   rnf_resume_countdown_free(c);
 }
 
+TEST_CASE("countdown length: 1 second is a single 1, as is the practice countdown; 3 by default") {
+  CHECK_EQ(rnf_countdown_seconds(), int(RNF_PRACTICE_COUNTDOWN_SECONDS));
+  rnf_countdown_set_seconds(1);
+  rnf_resume_countdown* c = rnf_resume_countdown_new();
+  double now = 50;
+  CHECK_EQ(rnf_resume_countdown_start(c, now, RN_MODE_RECORD, RNF_PHASE_PLAYING), 1);
+  Count r = runToEnd(c, now);
+  CHECK((r.counts == std::vector<int>{1}));
+  CHECK(std::fabs(r.seconds - 1.0) < 2 * kTick);
+  rnf_resume_countdown_free(c);
+  // The practice loop's countdown after the return to A: 1 second as well.
+  rnf_practice_loop* l = rnf_practice_loop_new();
+  rnf_practice_loop_set_countdown(l, 1);
+  double t = 0;
+  rnf_practice_action a{};
+  for (int i = 0; i < 2000 && a.kind != RNF_PRACTICE_RESTART; ++i, t += kTick) a = rnf_practice_loop_tick(l, t, 100, 1, 100);
+  REQUIRE(a.kind == RNF_PRACTICE_RESTART);
+  const double countdownStart = t;
+  std::vector<int> counts;
+  for (int i = 0; i < 2000; ++i, t += kTick) {
+    a = rnf_practice_loop_tick(l, t, 0, 1, 100);
+    if (a.kind != RNF_PRACTICE_COUNTDOWN) break;
+    if (counts.empty() || counts.back() != a.count) counts.push_back(a.count);
+  }
+  CHECK((counts == std::vector<int>{1}));
+  CHECK(std::fabs((t - countdownStart) - 1.0) < 3 * kTick);
+  rnf_practice_loop_free(l);
+  // Clamped to 1 ... 3; back to the default for the other tests.
+  rnf_countdown_set_seconds(9);
+  CHECK_EQ(rnf_countdown_seconds(), 3);
+  rnf_countdown_set_seconds(0);
+  CHECK_EQ(rnf_countdown_seconds(), 1);
+  rnf_countdown_set_seconds(int(RNF_PRACTICE_COUNTDOWN_SECONDS));
+}
+
 TEST_CASE("resume countdown: the fraction runs 0..1 within each number (the practice countdown's look)") {
   rnf_resume_countdown* c = rnf_resume_countdown_new();
   double t0 = 10;

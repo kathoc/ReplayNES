@@ -719,7 +719,8 @@ typedef enum rnf_menu_feature {
   RNF_MENU_FEATURE_UI_SCALE = 1u << 10,   /* System > More > UI size */
   RNF_MENU_FEATURE_CORE = 1u << 11,       /* System > Core (a second core is built in) */
   RNF_MENU_FEATURE_LAYOUT_TURBO = 1u << 12, /* Non-NES layout: global and per-button Turbo pages */
-  RNF_MENU_FEATURE_BACKGROUND = 1u << 13    /* System > More > Play in the background (RN_PRODUCT_FOCUS_PAUSE) */
+  RNF_MENU_FEATURE_BACKGROUND = 1u << 13,   /* System > More > Play in the background (RN_PRODUCT_FOCUS_PAUSE) */
+  RNF_MENU_FEATURE_MOUSE = 1u << 14         /* Controls > More > Mouse (non-NES layout: the mouse plays analog controls) */
 } rnf_menu_feature;
 typedef enum rnf_menu_page_kind {
   RNF_MENU_PAGE_TILES = 0,    /* one row of large icon tiles (Quick Menu, Retry, Share, Game) */
@@ -1299,6 +1300,10 @@ int rnf_step_repeater_direction(const rnf_step_repeater* r);
 #define RNF_PRACTICE_HOLD_SECONDS 0.5
 #define RNF_PRACTICE_REWIND_SECONDS 1.0
 #define RNF_PRACTICE_COUNTDOWN_SECONDS 3.0
+/* The countdown's length (the practice and resume countdowns), 1 ... 3 seconds; RNF_PRACTICE_COUNTDOWN_SECONDS
+ * until set. A frontend shows a 1-second countdown as the ring alone (no numeral). */
+void rnf_countdown_set_seconds(int seconds);
+int rnf_countdown_seconds(void);
 typedef enum rnf_practice_phase {
   RNF_PHASE_PLAYING = 0, RNF_PHASE_HOLDING = 1, RNF_PHASE_REWINDING = 2, RNF_PHASE_COUNTDOWN = 3
 } rnf_practice_phase;

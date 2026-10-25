@@ -48,7 +48,8 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
-                   F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND;
+                   F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND,
+                   F_MOUSE = RNF_MENU_FEATURE_MOUSE;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -179,6 +180,8 @@ const std::vector<ItemDef>& items() {
        SLIDER, "", 0, {}},
       {"controls.detail", "controls.turbo_duty", RNF_L("Turbo Press Length"), RNF_L("Frames each turbo press is held"), "clock",
        SLIDER, "", 0, {}},
+      {"controls.detail", "controls.mouse", RNF_L("Mouse"), RNF_L("The mouse moves the sticks, dials and levers of games with analog controls"),
+       "target", TOGGLE, "", F_MOUSE, {}},
       {"controls.detail", "controls.socd", RNF_L("Opposite Directions"), RNF_L("← and → (or ↑ and ↓) pressed together"),
        "arrows-diff", CHOICE, "", 0, {RNF_L("Neutral"), RNF_L("Last Wins"), RNF_L("Both")}},
       {"controls.detail", "controls.stick", RNF_L("Stick Threshold"), RNF_L("How far the stick moves before it counts"),
@@ -229,8 +232,9 @@ const std::vector<ItemDef>& items() {
       {"system.detail", "system.autosave", RNF_L("Autosave"), RNF_L("How often the recording is saved"), "device-floppy",
        CHOICE, "", 0, {RNF_L("2 s"), RNF_L("3 s"), RNF_L("5 s"), RNF_L("10 s"), RNF_L("30 s")}},
       // Here, not under Controls: Controls and Controls > More are full on Linux (docs/design/UI_REDESIGN.md).
-      {"system.detail", "system.resume_countdown", RNF_L("Resume Countdown"), RNF_L("3, 2, 1 before play resumes after a pause"),
-       "player-play", TOGGLE, "", 0, {}},
+      {"system.detail", "system.resume_countdown", RNF_L("Countdown"),
+       RNF_L("Before play resumes after a pause, and before each practice run (1: the ring alone)"), "player-play", CHOICE,
+       "", 0, {"=3", "=1", RNF_L("None")}},
 #if RN_PRODUCT_FOCUS_PAUSE
       {"system.detail", "system.background", RNF_L("Play in the Background"),
        RNF_L("Keep playing and take the controllers while another window is in front"), "player-play", TOGGLE, "",

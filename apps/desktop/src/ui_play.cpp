@@ -107,61 +107,47 @@ void UI::updateMarkers(double now) {
   }
 }
 
+// The selected section's markers (its A, and B once set), left to right.
+std::vector<uint64_t> UI::sectionMarkers(int slot) const {
+  for (const rnf_timeline_range& r : d_.emu->visibleRanges())
+    if (r.slot == slot) return r.has_b ? std::vector<uint64_t>{r.a, r.b} : std::vector<uint64_t>{r.a};
+  return {};
+}
+
+void UI::markerNotice(const std::string& text) {
+  markerHint_ = text;
+  markerHintUntil_ = markerNow_ + 2.5;
+}
+
+// The paused seek bar (docs/design/VTR_UX.md, "Practice markers"): north places a marker at the
+// cursor or deletes the one under it, west practises between the two markers, and while practising
+// (paused) stops it.
 void UI::seekInput(int input, bool down) {
   using SI = InputRouter::SeekInput;
-  if (!markersActive()) return;
-  uint64_t head = d_.emu->status().frame;
-  bool editing = rnf_markers_editing(markers_) != 0;
-  switch (SI(input)) {
-    case SI::left:
-    case SI::right: {
-      int dir = SI(input) == SI::left ? -1 : 1;
-      if (editing) {
-        if (down) applyMarkers(rnf_markers_nudge(markers_, rnf_step_repeater_press(markerRepeat_, dir)));
-        else rnf_step_repeater_release(markerRepeat_, dir);
-      } else if (down) {
-        applyMarkers(rnf_markers_move(markers_, dir, 0, head));
-      }
-      break;
+  if (!down || !hasSession() || menuOpen_ || interactive()) return;
+  const EmuStatus& st = d_.emu->status();
+  if (!st.paused) return;
+  if (st.practicing) {
+    if (SI(input) == SI::x) d_.emu->stopPractice();
+    return;
+  }
+  const int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
+  const std::vector<uint64_t> markers = sectionMarkers(slot);
+  if (SI(input) == SI::y) {
+    const MarkerEdit e = markerNorth(markers, st.frame);
+    switch (e.kind) {
+      case MarkerEdit::setA:
+        if (!markers.empty()) d_.emu->practiceClear(slot);  // the other marker stays, as the only one
+        d_.emu->practiceSetAAt(slot, e.a);
+        break;
+      case MarkerEdit::setRange: d_.emu->practiceSetRange(slot, e.a, e.b, true); break;
+      case MarkerEdit::clear: d_.emu->practiceClear(slot); break;
+      case MarkerEdit::full: markerNotice(TR("Two markers already: put the cursor on one to delete it")); break;
+      default: break;
     }
-    case SI::up:
-      if (down) {
-        // ↑ enters the marker lane: its hints (and the markers, when there are any). Without
-        // markers a second ↑ leaves it again.
-        bool onBar = !editing && rnf_markers_focus(markers_) < 0;
-        rnf_markers_result r = rnf_markers_move(markers_, 0, -1, head);
-        laneHints_ = onBar && r.outcome == RNF_MARKERS_IGNORED ? !laneHints_ : true;
-        applyMarkers(r);
-      }
-      break;
-    case SI::down:
-      if (down) applyMarkers(rnf_markers_move(markers_, 0, 1, head));
-      break;
-    case SI::ok:
-      if (down) applyMarkers(rnf_markers_confirm(markers_, head));
-      break;
-    case SI::cancel:
-      if (down) applyMarkers(rnf_markers_cancel(markers_));
-      break;
-    case SI::x:  // a focused marker: delete it; on the bar: the next A/B slot (the markers show that one)
-    case SI::y:  // practice the selected slot's section from its A
-      if (!down) break;
-      switch (rnf_markers_face(markers_, SI(input) == SI::y ? 1 : 0)) {
-        case RNF_SEEK_FACE_DELETE_MARKER: applyMarkers(rnf_markers_delete(markers_)); break;
-        case RNF_SEEK_FACE_NEXT_SLOT:
-          d_.settings->timelineSlot = (std::clamp(d_.settings->timelineSlot, 0, 7) + 1) % 8;
-          rnf_markers_leave(markers_);
-          changed();
-          break;
-        case RNF_SEEK_FACE_PRACTICE: {
-          int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
-          rnf_markers_leave(markers_);
-          d_.emu->startPractice(slot);  // plays (after the countdown) from A
-          break;
-        }
-        case RNF_SEEK_FACE_NONE: break;
-      }
-      break;
+  } else if (SI(input) == SI::x) {
+    if (markerWest(markers).kind == MarkerEdit::practice) d_.emu->startPractice(slot);  // from A, after the countdown
+    else markerNotice(TR("Place two markers to practice"));
   }
 }
 
@@ -175,15 +161,31 @@ void UI::markerHold(int dir, bool down) {
   applyMarkers(rnf_markers_nudge(markers_, int64_t(dir) * rnf_hold_speed(1)));
 }
 
+// L / R on the paused seek bar: the previous / next practice section (no frame steps there); while
+// practising, the practice moves to that section when it has two markers.
 void UI::pausedShoulder(int dir) {
-  if (!hasSession() || menuOpen_ || interactive() || !d_.emu->paused() || rnf_markers_editing(markers_)) return;
-  d_.emu->step(dir);
+  if (!hasSession() || menuOpen_ || interactive() || !d_.emu->paused()) return;
+  int& slot = d_.settings->timelineSlot;
+  slot = (std::clamp(slot, 0, 7) + dir + 8) % 8;
+  changed();
+  const bool complete = sectionMarkers(slot).size() >= 2;
+  if (d_.emu->status().practicing && complete) d_.emu->startPractice(slot);
+  markerNotice(TRF("Section %lld", {slot + 1}));
 }
 
 void UI::pauseGesture(int dir, bool repeat) {
-  if (!hasSession() || menuOpen_ || interactive() || rnf_markers_editing(markers_)) return;
+  if (!hasSession() || menuOpen_ || interactive()) return;
   if (dir == 0) d_.emu->setPaused(true);
-  else d_.emu->followGesture(dir, repeat);
+  else if (!d_.emu->paused()) d_.emu->followGesture(dir, repeat);  // no L / R frame steps on the seek bar
+}
+
+int UI::selectedSection() const { return std::clamp(d_.settings->timelineSlot, 0, 7) + 1; }
+
+// L + START while practising: back to the first marker at once (a new run from A).
+void UI::practiceToA() {
+  if (!hasSession() || menuOpen_ || interactive()) return;
+  const EmuStatus& st = d_.emu->status();
+  if (st.practicing) d_.emu->startPractice(st.practiceSlot);
 }
 
 // ------------------------------------------------------------------ seek bar
@@ -245,35 +247,21 @@ void UI::buildSeekBar(double now) {
   };
   const std::string play = st.atTapeEnd ? TR("Continue (tape)") : TR("Play");
   if (controllerConnected()) {
-    size_t count = rnf_markers_count(markers_);
-    int focus = rnf_markers_focus(markers_);
-    bool editing = rnf_markers_editing(markers_) != 0, markers = markersActive();
-    int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
-    if (markers && editing) {
-      hint({"dpad.lr"}, "\xC2\xB1" "1");
-      hint({"leftShoulder", "rightShoulder"}, TR("Move"));
-      hint({"ui.confirm"}, TR("Done"));
-      hint({"ui.cancel"}, TR("Undo"));
-    } else if (markers && focus >= 0) {
-      hint({"dpad.lr"}, "A \xE2\x87\x84 B");  // A ⇄ B
-      hint({"ui.confirm"}, TR("Move"));
-      hint({"face.west"}, TR("Delete"));
-      hint({"ui.cancel"}, TR("Back"));
-    } else if (markers && laneHints_) {
-      // The marker lane (↑): drop a marker, pick one, practice the section, the next A/B slot.
-      if (count < 2) hint({"ui.confirm"}, TR("Marker"));
-      if (count > 0) hint({"dpad.up"}, TR("Markers"));
-      if (count > 0) hint({"face.north"}, TR("Practice"));
-      hint({"face.west"}, TRF("Section %lld", {slot + 1}));
-    } else {
-      // At most four: play, frame step, rewind / fast-forward, the marker lane.
-      hint({"ui.cancel"}, play);
-      hint({"leftShoulder", "rightShoulder"}, TR("Step"));
-      if (st.practicing && d_.input->practiceStopAvailable(std::max(0, d_.input->lastSlot())))
-        hint({"face.north"}, TR("Stop Practicing"));
-      if (st.practicing) hint({"leftTrigger"}, TR("Rewind"));
-      else hint({"leftTrigger", "rightTrigger"}, std::string(TR("Rewind")) + " / " + TR("Fast-Forward"));
-      if (markers) hint({}, TR("↑ Practice sections"));
+    // At most four (docs/design/VTR_UX.md, "Practice markers").
+    const int slot = std::clamp(d_.settings->timelineSlot, 0, 7);
+    const std::string section = TRF("Section %lld", {slot + 1});
+    const bool markers = markersActive();
+    hint({"ui.cancel"}, play);
+    if (st.practicing) {
+      hint({"face.west"}, TR("Stop Practicing"));
+      hint({"leftShoulder", "rightShoulder"}, section);
+      hint({"leftShoulder", "menu"}, TR("Back to A"));
+    } else if (markers) {
+      const std::vector<uint64_t> mk = sectionMarkers(slot);
+      if (markerUnderCursor(mk, st.frame) >= 0) hint({"face.north"}, TR("Delete Marker"));
+      else if (mk.size() < 2) hint({"face.north"}, TR("Marker"));
+      if (mk.size() >= 2) hint({"face.west"}, TR("Practice"));
+      hint({"leftShoulder", "rightShoulder"}, section);
     }
     if (markers && now < markerHintUntil_ && !markerHint_.empty()) {
       float w = measure(m.hint(), markerHint_.c_str()).x;
@@ -496,13 +484,14 @@ void UI::buildTimeline(const LRect& strip, const LRect& lane, double now, bool i
     }
   }
   // Marker flags: a pole through the filmstrip and a small flag in the lane (A to the left of its
-  // pole, B to the right; letters once both exist), the focused one ringed, the edited one lit.
+  // pole, B to the right; letters once both exist), the one under the cursor lit (north deletes it).
   if (flags) {
-    int focus = rnf_markers_focus(markers_);
-    bool editing = rnf_markers_editing(markers_) != 0;
+    std::vector<uint64_t> mk;
+    for (size_t i = 0; i < markerCount; ++i) mk.push_back(rnf_markers_frame(markers_, i));
+    const int under = markerUnderCursor(mk, scrubFrame_ ? *scrubFrame_ : st.frame);  // north deletes it
     for (size_t i = 0; i < markerCount; ++i) {
       float x = X(rnf_markers_frame(markers_, i));
-      bool f = int(i) == focus, lit = f && editing;
+      bool f = false, editing = false, lit = int(i) == under;
       ImU32 c = lit ? kBrand : slotColor(sel, 1.0f);
       dl->AddRectFilled(ImVec2(x - (lit ? 1.5f : 1.0f), top), ImVec2(x + (lit ? 1.5f : 1.0f), s1.y), c);
       float fw = laneH * 1.15f, fh = laneH - S(2);
@@ -594,10 +583,13 @@ void UI::buildCountdown() {
     dl->PathArcTo(c, rr, top, top + 2 * 3.14159265f * v.ring, 96);
     dl->PathStroke(alpha(IM_COL32(255, 255, 255, 255), 0.85f * a), 0, ringW);
   }
-  std::string n = std::to_string(v.number);
-  float fs = r * 1.25f * v.scale;
-  ImVec2 ts = measure(fs, n.c_str());
-  dl->AddText(ImGui::GetFont(), fs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), alpha(IM_COL32(255, 255, 255, 255), a), n.c_str());
+  // A 1-second countdown is the ring alone (Settings > System > More > Countdown: 1).
+  if (rnf_countdown_seconds() > 1) {
+    std::string n = std::to_string(v.number);
+    float fs = r * 1.25f * v.scale;
+    ImVec2 ts = measure(fs, n.c_str());
+    dl->AddText(ImGui::GetFont(), fs, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), alpha(IM_COL32(255, 255, 255, 255), a), n.c_str());
+  }
   // Play resumes before the end of the tape: one line under the numeral, in the same pass.
   if (st.retryNotice) {
     const char* line = TR("Retrying from here");

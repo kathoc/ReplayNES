@@ -5,6 +5,43 @@
 
 namespace rnl {
 
+int markerUnderCursor(const std::vector<uint64_t>& markers, uint64_t cursor) {
+  for (size_t i = 0; i < markers.size() && i < 2; ++i)
+    if (markers[i] == cursor) return int(i);
+  return -1;
+}
+
+MarkerEdit markerNorth(const std::vector<uint64_t>& markers, uint64_t cursor) {
+  MarkerEdit e;
+  const int on = markerUnderCursor(markers, cursor);
+  if (on >= 0) {  // delete it: the other one (if any) stays as the section's only marker
+    if (markers.size() < 2) {
+      e.kind = MarkerEdit::clear;
+    } else {
+      e.kind = MarkerEdit::setA;
+      e.a = markers[size_t(1 - on)];
+    }
+    return e;
+  }
+  if (markers.empty()) {
+    e.kind = MarkerEdit::setA;
+    e.a = cursor;
+  } else if (markers.size() == 1) {
+    e.kind = MarkerEdit::setRange;
+    e.a = std::min(markers[0], cursor);
+    e.b = std::max(markers[0], cursor);
+  } else {
+    e.kind = MarkerEdit::full;
+  }
+  return e;
+}
+
+MarkerEdit markerWest(const std::vector<uint64_t>& markers) {
+  MarkerEdit e;
+  e.kind = markers.size() >= 2 ? MarkerEdit::practice : MarkerEdit::needTwo;
+  return e;
+}
+
 int scrubStepFrames(double heldSeconds) {
   if (heldSeconds < 0.6) return 1;
   if (heldSeconds < 1.5) return 4;

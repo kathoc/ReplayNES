@@ -269,10 +269,10 @@ void Script::step(double now) {
       emu_->frameAdvance(std::atoi(arg(1, "1").c_str()));
     } else if (op == "status") {
       const EmuStatus st = emu_->status();
-      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s mouse=%d\n",
+      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s mouse=%d section=%d practicing=%d\n",
                    (unsigned long long)st.frame, (unsigned long long)st.takeLength, (unsigned long long)st.activeTake,
                    st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0, ui_->shownMenuPage().c_str(),
-                   mouseCaptured && mouseCaptured() ? 1 : 0);
+                   mouseCaptured && mouseCaptured() ? 1 : 0, ui_->selectedSection(), st.practicing ? 1 : 0);
     } else if (op == "dialog") {
       ui_->answerDialog(std::atoi(arg(1, "0").c_str()));
     } else if (op == "resetprompt") {

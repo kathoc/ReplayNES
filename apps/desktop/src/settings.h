@@ -45,9 +45,16 @@ struct Settings {
   bool pauseAfterRewind = false;
   double autosaveInterval = 2.0;  // seconds
   bool dpadStepWhenPaused = true;
+  // The mouse plays games with analog controls (sticks, dials, levers; Controls > More). Off by default: a
+  // mouse moved by accident would leave the lever pushed.
+  bool mouseControls = false;
   bool practiceCountdown = true;  // 3, 2, 1 after the practice run returned to A (Practice page, View)
   // 3, 2, 1 before play resumes from a pause (System > More); independent of practiceCountdown.
   bool resumeCountdown = true;
+  // The countdown before play resumes and before each practice run: 3 or 1 second(s) (1: the ring
+  // alone, no numeral), 0 = none. It decides both countdowns (resumeCountdown / practiceCountdown
+  // above are kept in the file but no longer used).
+  int countdownSeconds = 1;
   // Another window in front (focus lost): off = pause and take no controller input until it comes
   // back; on = keep playing with the controllers (the keyboard is the focused window's in any case).
   bool playInBackground = false;
