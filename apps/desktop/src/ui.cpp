@@ -98,7 +98,7 @@ float keycap(ImDrawList* dl, ImVec2 p, float h, const std::string& label, bool r
 // ------------------------------------------------------------------ setup
 
 UI::UI(Deps d) : d_(d) {
-  menuFeatures_ = RNF_MENU_FEATURE_QUIT | RNF_MENU_FEATURE_FULLSCREEN | RNF_MENU_FEATURE_UI_SCALE;
+  menuFeatures_ = RNF_MENU_FEATURE_QUIT | RNF_MENU_FEATURE_FULLSCREEN | RNF_MENU_FEATURE_UI_SCALE | RNF_MENU_FEATURE_BACKGROUND;
   if (RNL_HAVE_MP4_EXPORT) menuFeatures_ |= RNF_MENU_FEATURE_EXPORT;
   if (RNL_HAVE_CRT) menuFeatures_ |= RNF_MENU_FEATURE_CRT;
   if (RNL_HAVE_STEAM) menuFeatures_ |= RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK;

@@ -393,6 +393,9 @@ void UI::buildLibrary(double now) {
         if (lib->projectsFor(*rom).empty()) d_.libraryThumbs->requestRomPictureLater(rom->path);
   }
   handleLibraryInput(now, size_t(n), size_t(pages), hero);
+  // The input may have turned the page (PageUp / PageDown, the mouse wheel: UI::shoulder) past
+  // either end: the cards below index roms from it. Its first card is focused on the next frame.
+  libPage_ = std::clamp(libPage_, 0, pages - 1);
   if (!hasSession() && menuOpen_) return;  // Settings over the library draw everything
 
   ImGui::SetNextWindowPos(ImVec2(0, 0));

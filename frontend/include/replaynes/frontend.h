@@ -718,7 +718,8 @@ typedef enum rnf_menu_feature {
   RNF_MENU_FEATURE_FULLSCREEN = 1u << 9,  /* System > More > Full screen */
   RNF_MENU_FEATURE_UI_SCALE = 1u << 10,   /* System > More > UI size */
   RNF_MENU_FEATURE_CORE = 1u << 11,       /* System > Core (a second core is built in) */
-  RNF_MENU_FEATURE_LAYOUT_TURBO = 1u << 12 /* Non-NES layout: global and per-button Turbo pages */
+  RNF_MENU_FEATURE_LAYOUT_TURBO = 1u << 12, /* Non-NES layout: global and per-button Turbo pages */
+  RNF_MENU_FEATURE_BACKGROUND = 1u << 13    /* System > More > Play in the background (RN_PRODUCT_FOCUS_PAUSE) */
 } rnf_menu_feature;
 typedef enum rnf_menu_page_kind {
   RNF_MENU_PAGE_TILES = 0,    /* one row of large icon tiles (Quick Menu, Retry, Share, Game) */

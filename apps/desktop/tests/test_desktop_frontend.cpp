@@ -2709,6 +2709,22 @@ TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture fr
   CHECK_FALSE(thumbs.forRom(bad));
 }
 
+TEST_CASE("library thumbs: a blank picture (black, one colour) waits for a later one") {
+  auto image = [](auto pixel) {
+    std::vector<uint32_t> px(size_t(RNF_THUMB_WIDTH) * RNF_THUMB_HEIGHT);
+    for (size_t i = 0; i < px.size(); ++i) px[i] = 0xFF000000u | pixel(i);
+    return ThumbRef(ThumbImage::fromThumb(px.data()));
+  };
+  CHECK(LibraryThumbs::blankPicture(*image([](size_t) { return 0u; }).get()));         // black
+  CHECK(LibraryThumbs::blankPicture(*image([](size_t) { return 0x2040C0u; }).get()));  // one colour
+  CHECK(LibraryThumbs::blankPicture(*image([](size_t i) { return uint32_t(i % 3) * 0x010101u; }).get()));  // noise
+  // Almost black: a line, a notice in small letters (2 % of the picture). A title screen is not.
+  CHECK(LibraryThumbs::blankPicture(*image([](size_t i) { return i % 50 == 0 ? 0xFFFFFFu : 0u; }).get()));
+  CHECK_FALSE(LibraryThumbs::blankPicture(*image([](size_t i) { return i % 10 == 0 ? 0xFFFFFFu : 0u; }).get()));
+  CHECK_FALSE(LibraryThumbs::blankPicture(*image([](size_t i) { return (i / RNF_THUMB_WIDTH) % 16 < 8 ? 0x0000FFu : 0xFF0000u; }).get()));
+  CHECK_EQ(LibraryThumbs::kRomPictureMaxFrame, 6 * LibraryThumbs::kRomPictureFrame);
+}
+
 TEST_CASE("library thumbs: ROMs not on screen get their pictures later, never while a game is open") {
   RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("rom-picture-later");

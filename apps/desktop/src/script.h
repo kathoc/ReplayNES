@@ -15,6 +15,7 @@
 //   key <scancode name> [<s>]  a key press (SDL_GetScancodeFromName: "Escape", "Return", "Space", ...),
 //                           held <s> seconds (default: released at once)
 //   wheel <y> [<x>]         mouse wheel notches (+y = up / away from the user, +x = right)
+//   focus lost|gained       the window loses / gets the input focus (another window in front)
 //   mousemove <dx> <dy> [<frames>]   relative mouse motion (a captured mouse), spread over frames
 //   mousebutton left|right|middle [<s>]  a mouse button press held <s> seconds (default 0.05)
 //   osktype <text>          types <text> on the built-in on-screen keyboard

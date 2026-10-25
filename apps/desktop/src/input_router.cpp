@@ -1056,4 +1056,13 @@ void InputRouter::mouseEvent(const SDL_Event& e, double t) {
   }
 }
 
+void InputRouter::releaseControllers() {
+  rn_input_release_prefix(in_, "gc");
+  for (auto it = pressed_.begin(); it != pressed_.end();) it = it->compare(0, 2, "gc") == 0 ? pressed_.erase(it) : std::next(it);
+  for (auto& p : pads_) { p.lt = p.rt = false; p.lx = p.ly = p.rx = p.ry = 0; }
+  stickState_.clear();
+  rnf_chord_reset(chord_);
+  confirmTap_.clear();
+}
+
 }  // namespace rnl

@@ -58,6 +58,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
+    else if (k == "playInBackground") s.playInBackground = parseBool(v, s.playInBackground);
     else if (k == "showStats") s.showStats = parseBool(v, s.showStats);
 #if RN_PRODUCT_FLASH_FILTER
     else if (k == "flash" && num && d >= 0 && d <= 3 && d == std::floor(d)) s.flash = int(d);
@@ -104,6 +105,7 @@ std::string Settings::serialize() const {
   o << "vtrEffect=" << int(vtrEffect) << "\n";
   o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "resumeCountdown=" << int(resumeCountdown) << "\n";
+  o << "playInBackground=" << int(playInBackground) << "\n";
   o << "showStats=" << int(showStats) << "\n";
 #if RN_PRODUCT_FLASH_FILTER
   o << "flash=" << flash << "\n";

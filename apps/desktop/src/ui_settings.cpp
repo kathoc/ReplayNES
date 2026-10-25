@@ -174,6 +174,7 @@ bool UI::itemOn(const std::string& id) const {
   if (id == "system.fullscreen") return isFullscreen && isFullscreen();
   if (id == "system.flash_badge") return s.showFlashIndicator;
   if (id == "system.resume_countdown") return s.resumeCountdown;
+  if (id == "system.background") return s.playInBackground;
   if (id == "system.stats") return s.showStats;
   if (id == "updates.auto") return d_.updates && d_.updates->ownsDialogs() ? d_.updates->autoCheckEnabled() : s.checkForUpdates;
   if (id == "retry.playback") return hasSession() && !d_.emu->status().recording && !d_.emu->status().practicing;
@@ -259,6 +260,7 @@ void UI::adjustItem(const std::string& id, int dir) {
       return;
     } else if (id == "system.flash_badge") s.showFlashIndicator = !s.showFlashIndicator;
     else if (id == "system.resume_countdown") s.resumeCountdown = !s.resumeCountdown;
+    else if (id == "system.background") s.playInBackground = !s.playInBackground;
     else if (id == "system.stats") s.showStats = !s.showStats;
     else if (id == "updates.auto") {
       if (d_.updates && d_.updates->ownsDialogs()) {

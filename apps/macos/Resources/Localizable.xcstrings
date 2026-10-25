@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Play in the Background": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "背面でも動かす"
+          }
+        }
+      }
+    },
+    "Keep playing and take the controllers while another window is in front": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのウィンドウが前面にあっても止めずに、コントローラーを受け付けます"
+          }
+        }
+      }
+    },
     "Mouse Left Button": {
       "localizations": {
         "ja": {

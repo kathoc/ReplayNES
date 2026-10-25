@@ -48,7 +48,7 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
-                   F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO;
+                   F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -231,6 +231,11 @@ const std::vector<ItemDef>& items() {
       // Here, not under Controls: Controls and Controls > More are full on Linux (docs/design/UI_REDESIGN.md).
       {"system.detail", "system.resume_countdown", RNF_L("Resume Countdown"), RNF_L("3, 2, 1 before play resumes after a pause"),
        "player-play", TOGGLE, "", 0, {}},
+#if RN_PRODUCT_FOCUS_PAUSE
+      {"system.detail", "system.background", RNF_L("Play in the Background"),
+       RNF_L("Keep playing and take the controllers while another window is in front"), "player-play", TOGGLE, "",
+       F_BACKGROUND, {}},
+#endif
 #if RN_PRODUCT_FLASH_FILTER
       {"system.detail", "system.flash_badge", RNF_L("Flash Badge"), RNF_L("Show a badge while flashes are reduced"), "bolt-off",
        TOGGLE, "", 0, {}},

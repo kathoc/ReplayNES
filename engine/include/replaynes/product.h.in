@@ -19,6 +19,7 @@
 #cmakedefine01 RN_PRODUCT_NES
 #cmakedefine01 RN_PRODUCT_FLASH_FILTER
 #cmakedefine01 RN_PRODUCT_OVERSCAN_CROP
+#cmakedefine01 RN_PRODUCT_FOCUS_PAUSE
 #cmakedefine01 RN_PRODUCT_UPDATES
 
 #ifdef __cplusplus

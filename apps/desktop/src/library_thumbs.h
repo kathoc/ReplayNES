@@ -37,10 +37,15 @@ class LibraryThumbs {
   ThumbRef forRom(const std::string& romPath) { return get("r:" + romPath); }
 
   /// A ROM with no picture yet: a worker thread emulates it from power-on for kRomPictureFrame
-  /// frames without input (the engine, no project, nothing written but the thumbnail) and that
+  /// frames (more while the picture is blank, see below) without input (the engine, no project, nothing written but the thumbnail) and that
   /// picture becomes the ROM's thumbnail. Asked by the library for the cards it shows; one ROM at a
   /// time, each ROM at most once per run (a ROM the engine cannot run stays a name tile).
   static constexpr int kRomPictureFrame = RN_PRODUCT_LIBRARY_PICTURE_FRAME;  // 300 for ReplayNES
+  /// A picture that is blank (black, or one colour: a game still starting) waits kRomPictureFrame
+  /// frames more, up to kRomPictureMaxFrame; the last one is kept in any case.
+  static constexpr int kRomPictureMaxFrame = 6 * kRomPictureFrame;
+  /// Almost one colour: under 5 % of the pixels differ clearly from the commonest colour.
+  static bool blankPicture(const ThumbImage& img);
   void requestRomPicture(const std::string& romPath);
   /// The same for a ROM not on screen, after every shown card's picture: skipped when its file
   /// already exists, run at a low thread priority and at most half of one core's time, and kept

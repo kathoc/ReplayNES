@@ -28,6 +28,11 @@ endif()
 if(NOT DEFINED RN_PRODUCT_OVERSCAN_CROP)
   set(RN_PRODUCT_OVERSCAN_CROP ON)
 endif()
+# Optional: another window in front pauses the game and keeps the controllers away from it, with
+# Settings > System > More > Play in the Background to keep playing instead (off: plays on, as always).
+if(NOT DEFINED RN_PRODUCT_FOCUS_PAUSE)
+  set(RN_PRODUCT_FOCUS_PAUSE OFF)
+endif()
 # Optional Windows branding and update capability; old external profiles remain valid.
 if(NOT DEFINED RN_PRODUCT_WINDOWS_ICON)
   set(RN_PRODUCT_WINDOWS_ICON "${CMAKE_CURRENT_LIST_DIR}/../apps/windows/resources/replaynes.ico")

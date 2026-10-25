@@ -112,6 +112,7 @@ class App {
   double lastPictureSample_ = 0;
   bool running_ = true;
   bool fullscreen_ = false;
+  bool focused_ = true;  // the window has the input focus (another window in front: false)
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
   int lastWidth_ = 0;
@@ -174,6 +175,23 @@ void App::updateNavigation() {
 }
 
 void App::handleEvent(const SDL_Event& e, double now) {
+  // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
+  // game pauses and the controllers reach neither the game nor the menus until the window is back.
+  // The game stays paused then (play resumes when the player says so).
+  if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+    focused_ = false;
+    if (RN_PRODUCT_FOCUS_PAUSE && !settings_.playInBackground) {
+      if (emu_->session() && !emu_->paused()) emu_->setPaused(true);
+      input_->releaseControllers();
+    }
+  } else if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+    focused_ = true;
+  }
+  if (RN_PRODUCT_FOCUS_PAUSE && !focused_ && !settings_.playInBackground &&
+      (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP ||
+       e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN ||
+       e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP))
+    return;
   // A text field with an on-screen keyboard takes the controller and taps on the keyboard
   // (ui_osk.cpp); PadNavFeed still follows the pads (it feeds ImGui nothing meanwhile).
   bool textEntry = ui_->textEntryEvent(e, now);

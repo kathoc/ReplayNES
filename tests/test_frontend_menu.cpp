@@ -541,6 +541,15 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
     CHECK(std::count(controls.begin(), controls.end(), std::string("system.resume_countdown")) == 0);
     rnf_menu_free(d);
   }
+  // Play in the Background: System > More, for the frontends that pause when another window is in front.
+  for (uint32_t f : {0u, uint32_t(RNF_MENU_FEATURE_BACKGROUND), kAll | RNF_MENU_FEATURE_BACKGROUND}) {
+    rnf_menu* d = rnf_menu_new(f);
+    std::vector<std::string> ids = itemIds(d, "system.detail");
+    CHECK_EQ(std::count(ids.begin(), ids.end(), std::string("system.background")),
+             RN_PRODUCT_FOCUS_PAUSE && (f & RNF_MENU_FEATURE_BACKGROUND) ? 1 : 0);
+    CHECK(ids.size() <= size_t(RNF_MENU_MAX_ITEMS));
+    rnf_menu_free(d);
+  }
   m = rnf_menu_new(RNF_MENU_FEATURE_STREAM | RNF_MENU_FEATURE_SLOW_AUDIO | RNF_MENU_FEATURE_LOW_LATENCY);
   CHECK((itemIds(m, "share") == std::vector<std::string>{"share.stream"}));
   CHECK((itemIds(m, "settings.sound") == std::vector<std::string>{"sound.volume", "sound.slow", "sound.low_latency"}));

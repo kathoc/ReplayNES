@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <vector>
 
@@ -194,6 +195,26 @@ void LibraryThumbs::requestRomPictureLater(const std::string& romPath) {
   startPictureWorker();
 }
 
+bool LibraryThumbs::blankPicture(const ThumbImage& img) {
+  if (img.px.empty()) return true;
+  // The commonest colour (16 levels a channel), then the pixels clearly away from it: under 5 % of
+  // the picture is blank (black with a line or a notice in small letters: a game still starting).
+  std::map<uint32_t, size_t> counts;
+  for (uint32_t p : img.px) ++counts[p & 0xF0F0F0u];
+  uint32_t common = 0;
+  size_t most = 0;
+  for (auto& [c, n] : counts)
+    if (n > most) { most = n; common = c; }
+  auto channel = [](uint32_t p, int shift) { return int((p >> shift) & 0xFF); };
+  size_t away = 0;
+  for (uint32_t p : img.px) {
+    int d = 0;
+    for (int shift : {0, 8, 16}) d = std::max(d, std::abs(channel(p, shift) - (channel(common, shift) + 8)));
+    if (d > 40) ++away;
+  }
+  return away * 20 < img.px.size();
+}
+
 void LibraryThumbs::setPicturesPaused(bool paused) {
   {
     std::lock_guard<std::mutex> lk(picMutex_);
@@ -234,7 +255,7 @@ void LibraryThumbs::pictureWorker() {
     }
     std::error_code ec;
     if (later && std::filesystem::exists(std::filesystem::path(fileFor("r:" + rom)), ec)) continue;
-    // Power-on, no input, kRomPictureFrame frames: in memory only (no project directory).
+    // Power-on, no input, kRomPictureFrame frames (more while blank): in memory only (no project directory).
     rn_session* s = nullptr;
     // The product's default core (an external core reads files the NES cores cannot).
     rn_session_options opt;
@@ -243,7 +264,8 @@ void LibraryThumbs::pictureWorker() {
     if (external) opt.core = RN_CORE_EXTERNAL;
     if (rn_session_new(rom.c_str(), nullptr, external ? &opt : nullptr, &s) != RN_OK || !s) continue;
     bool ok = true;
-    for (int f = 0; ok && f < kRomPictureFrame; ++f) {
+    ThumbImage* img = nullptr;
+    for (int f = 0; ok && f < kRomPictureMaxFrame; ++f) {
       const auto t0 = std::chrono::steady_clock::now();
       ok = rn_step(s, 0, 0, 0, nullptr) == RN_OK;
       std::unique_lock<std::mutex> lk(picMutex_);
@@ -256,18 +278,27 @@ void LibraryThumbs::pictureWorker() {
         // As long a rest as the frame took: half of one core at most. Woken by a pause or stop.
         picCv_.wait_for(lk, std::chrono::steady_clock::now() - t0, [this] { return picStop_ || picPaused_; });
       }
+      lk.unlock();
+      if (!ok || (f + 1) % kRomPictureFrame != 0) continue;
+      // Frame 300, 600, ...: the picture, unless it is still blank and there is time left.
+      rn_video_frame_info frame{};
+      rn_media_info media{};
+      if (rn_session_video_frame(s, &frame) != RN_OK || rn_session_media_info(s, &media) != RN_OK) { ok = false; break; }
+      if (img) img->release();
+      img = ThumbImage::make(frame, media, rn_session_core_kind(s) != RN_CORE_EXTERNAL);
+      if (!img || !blankPicture(*img)) break;
     }
-    rn_video_frame_info frame{};
-    rn_media_info media{};
-    if (ok && rn_session_video_frame(s, &frame) == RN_OK && rn_session_media_info(s, &media) == RN_OK) {
-      if (ThumbImage* img = ThumbImage::make(frame, media, rn_session_core_kind(s) != RN_CORE_EXTERNAL)) {
-        // Written before it is announced, so a card never looks for a file still to come.
-        std::filesystem::create_directories(std::filesystem::path(dir_), ec);
-        const std::string path = fileFor("r:" + rom);
-        if (!writeFile(path, img->px, img->width, img->height)) std::fprintf(stderr, "cannot write %s\n", path.c_str());
-        std::lock_guard<std::mutex> lk(picMutex_);
-        picDone_.emplace_back(rom, img);
-      }
+    if (!ok && img) {
+      img->release();
+      img = nullptr;
+    }
+    if (img) {
+      // Written before it is announced, so a card never looks for a file still to come.
+      std::filesystem::create_directories(std::filesystem::path(dir_), ec);
+      const std::string path = fileFor("r:" + rom);
+      if (!writeFile(path, img->px, img->width, img->height)) std::fprintf(stderr, "cannot write %s\n", path.c_str());
+      std::lock_guard<std::mutex> lk(picMutex_);
+      picDone_.emplace_back(rom, img);
     }
     rn_session_close(s);
   }

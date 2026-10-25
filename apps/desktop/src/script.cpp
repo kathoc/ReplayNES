@@ -184,6 +184,14 @@ void Script::step(double now) {
       pending_.push_back({now, "key:" + std::to_string(int(sc)), true});
       pending_.push_back({now + held, "key:" + std::to_string(int(sc)), false});
       return;
+    } else if (op == "focus") {  // lost | gained: the window's input focus (another window in front)
+      SDL_Event e;
+      SDL_zero(e);
+      e.common.timestamp = SDL_GetTicksNS();
+      e.type = arg(1, "lost") == "gained" ? SDL_EVENT_WINDOW_FOCUS_GAINED : SDL_EVENT_WINDOW_FOCUS_LOST;
+      e.window.windowID = windowId ? windowId() : 0;
+      SDL_PushEvent(&e);
+      return;
     } else if (op == "mousemove") {  // <dx> <dy> [<frames>]: relative motion, spread over frames (60 Hz)
       const int n = std::max(1, std::atoi(arg(3, "1").c_str()));
       const double dx = std::atof(arg(1, "0").c_str()) / n, dy = std::atof(arg(2, "0").c_str()) / n;

@@ -126,6 +126,9 @@ class InputRouter {
   /// wheel moves, "ms:wheel.up" / ".down" a press of a few frames per notch.
   bool mouseGame() const { return mouseGame_; }
   void setMouseCaptured(bool on);
+  /// The window went to the background: every controller's buttons and sticks are let go (the
+  /// app passes it no controller events until it is back).
+  void releaseControllers();
   bool mouseCaptured() const { return mouseCaptured_; }
   /// Before each sample of a frame's game input: that frame's motion and wheel presses.
   void beginMouseFrame();
