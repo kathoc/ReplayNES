@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/MockCore.h"
+#include "persist/ProjectStore.h"
 #include "support/TestUtil.h"
 #include "support/rn_test.h"
 
@@ -33,7 +34,7 @@ class CountingCore final : public ICore {
     if (result.ok()) counts_->loads.push_back(core_.frameIndex());
     return result;
   }
-  std::string compatId() const override { return core_.compatId(); }
+  std::string compatId() const override { return "counting-rewind-test/1"; }
   std::string buildId() const override { return "counting-rewind-test"; }
   uint32_t stateFormatVersion() const override { return core_.stateFormatVersion(); }
   CoreKind kind() const override { return CoreKind::External; }
@@ -45,7 +46,7 @@ struct RegisteredCounter {
   std::shared_ptr<Counts> counts = std::make_shared<Counts>();
   RegisteredCounter() {
     auto c = counts;
-    registerExternalCore({"counting-rewind-test", MockCore::kCompatId,
+    registerExternalCore({"counting-rewind-test", "counting-rewind-test/1",
       uint32_t(CapAudio | CapState | CapSoftReset | CapRecording),
       [c] { return std::unique_ptr<ICore>(new CountingCore(c)); }});
   }
@@ -363,6 +364,84 @@ TEST_CASE("rewind prefetch: step and seek discard pending reconstruction") {
       CHECK(loads == registration.counts->loads);
       equalSessions(*actual, *cold, ac, cc);
     }
+  }
+}
+
+TEST_CASE("rewind prefetch: autosave sparse replay leaves dense checkpoints for older blocks") {
+  RegisteredCounter registration;
+  const auto script = DeterminismHarness::randomScript(4316, 1713);
+  for (uint64_t stride : {2u, 3u, 4u, 0u}) {
+    const std::string root = tempDir("rewind-sparse");
+    const std::string romPath = writeTestRom(root);
+    const std::string project = fs::join(root, "run.nesrec");
+    SessionOptions options;
+    options.core = CoreKind::External;
+    std::unique_ptr<Session> actual;
+    REQUIRE(Session::create(buildTestRom(), romPath, options, actual).ok());
+    REQUIRE(actual->saveAs(project).ok());  // only the initial empty project is fully saved
+    REQUIRE(recordScript(*actual, script).ok());
+    REQUIRE(actual->autosave().ok());
+    actual.reset();
+    const uint64_t beforeOpen = registration.counts->steps;
+    REQUIRE(ProjectStore::open(project, "", options, actual).ok());
+    CHECK_EQ(actual->coreKind(), CoreKind::External);
+    CHECK_EQ(registration.counts->steps - beforeOpen, 116u);
+    REQUIRE_EQ(actual->frame(), 4316u);
+    const Checkpoint* seed = actual->checkpoints().best(4199, actual->timeline());
+    REQUIRE(seed);
+    REQUIRE_EQ(seed->frame, 3600u);
+    CHECK_EQ(seed->kind, CpKind::Sparse);
+    // Opening only reconstructs 4200..4316. The preceding sparse gap remains cold.
+    for (const auto& entry : actual->checkpoints().all())
+      if (entry.second.frame > 3600 && entry.second.frame < 4200)
+        CHECK(entry.second.kind != CpKind::Dense);
+
+    auto reference = newSession(CoreKind::Mock);
+    REQUIRE(reference);
+    REQUIRE(recordScript(*reference, script).ok());
+    ICore& ac = actual->core(); ICore& rc = reference->core();
+    uint64_t tick = 0, firstEntryWork = 0, maxLaterEntry = 0;
+    bool crossedSparseGap = false;
+    while (actual->frame() > 3960) {
+      const uint64_t back = stride ? stride : 2 + tick % 3;
+      const uint64_t previous = actual->frame();
+      const uint64_t target = previous - back;
+      const uint64_t before = registration.counts->steps;
+      REQUIRE(actual->rewind(back).ok());
+      const uint64_t work = registration.counts->steps - before;
+      REQUIRE(reference->seek(target).ok());
+      equalSessions(*actual, *reference, ac, rc);
+      if (previous > 4200 && target <= 4200) {
+        crossedSparseGap = true;
+        firstEntryWork = work;  // one replay of the cold sparse gap is allowed
+        // Every checkpoint uses the traversed frame's owner, not the visible cursor's.
+        auto checkpointCore = createCore(CoreKind::Mock);
+        auto checkpointReference = newSession(CoreKind::Mock);
+        REQUIRE(checkpointCore); REQUIRE(checkpointReference);
+        const auto rom = buildTestRom();
+        REQUIRE(checkpointCore->loadROM(rom.data(), rom.size()).ok());
+        REQUIRE(recordScript(*checkpointReference, script).ok());
+        for (uint64_t frame = 3630; frame < 4200; frame += 30) {
+          const auto* cp = actual->checkpoints().find(frame, actual->timeline().stateOwner(frame), int(CpKind::Dense));
+          CHECK(cp != nullptr);
+          if (!cp) continue;
+          REQUIRE(checkpointCore->loadState(cp->data.data(), cp->data.size()).ok());
+          REQUIRE(checkpointReference->seek(frame).ok());
+          CHECK_EQ(checkpointCore->machineHash(), checkpointReference->stateHash());
+        }
+      } else if (crossedSparseGap) {
+        CHECK(work <= 6u);
+        if ((previous - 1) / 30 != (target - 1) / 30) {
+          maxLaterEntry = std::max(maxLaterEntry, work);
+          MESSAGE("sparse stride=" << stride << ", entry=" << target << ", core frames=" << work);
+          CHECK(work <= 30u);
+        }
+      }
+      ++tick;
+    }
+    REQUIRE(crossedSparseGap);
+    MESSAGE("sparse stride=" << stride << ", first entry=" << firstEntryWork
+            << ", max later entry=" << maxLaterEntry);
   }
 }
 

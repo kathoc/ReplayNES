@@ -56,20 +56,20 @@ const int16_t* Session::audio(size_t* count) const {
   return a;
 }
 
-void Session::maybeCheckpoint() {
+void Session::maybeCheckpoint(uint64_t frame) {
   const CheckpointPolicy& p = cps_.policy();
-  bool sparse = frame_ % p.sparseInterval == 0;
-  bool dense = frame_ % p.denseInterval == 0;
+  bool sparse = frame % p.sparseInterval == 0;
+  bool dense = frame % p.denseInterval == 0;
   if (!sparse && !dense) return;
-  uint64_t owner = tl_.stateOwner(frame_);
+  uint64_t owner = tl_.stateOwner(frame);
   if (sparse) {
-    if (cps_.find(frame_, owner, int(CpKind::Sparse))) return;
-  } else if (cps_.find(frame_, owner)) {
+    if (cps_.find(frame, owner, int(CpKind::Sparse))) return;
+  } else if (cps_.find(frame, owner)) {
     return;
   }
   std::vector<uint8_t> st;
   if (!captureState(st).ok()) return;  // a missing cache entry only costs seek time
-  cps_.add(frame_, owner, sparse ? CpKind::Sparse : CpKind::Dense, core_->compatId(), core_->stateFormatVersion(),
+  cps_.add(frame, owner, sparse ? CpKind::Sparse : CpKind::Dense, core_->compatId(), core_->stateFormatVersion(),
            std::move(st));
 }
 
@@ -151,7 +151,7 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
   ++frame_;
   ++emuCount_;
   audioValid_ = true;
-  maybeCheckpoint();
+  maybeCheckpoint(frame_);
   si.frame = frame_;
   si.applied = r;
   si.take = tl_.head();
@@ -168,8 +168,8 @@ void Session::clearRewindCache() {
 void Session::advanceRewindPrefetch(uint64_t budget) {
   auto& work = rewindPrefetch_;
   if (!work.end) return;
-  // This walk must not use resync/step: it changes neither cursor, continuity,
-  // checkpoints nor the practice input ring. The caller always restores the
+  // This walk must not use resync/step: it changes neither cursor, continuity
+  // nor the practice input ring. The caller always restores the
   // requested pre-frame state and renders the result afterwards, even on error.
   Status st = work.fresh ? core_->loadContent(romPath_, rom_.data(), rom_.size())
                          : core_->loadState(work.resume.data(), work.resume.size());
@@ -185,7 +185,13 @@ void Session::advanceRewindPrefetch(uint64_t budget) {
         ? &pInputs_[size_t(work.next - pSnaps_.front().count)] : tl_.recordAt(work.next);
     if (!input) { st = Error(Err::Internal, "missing prefetch input"); break; }
     st = core_->stepRecord(*input, false);
-    if (st.ok()) ++work.next;
+    if (st.ok()) {
+      ++work.next;
+      // A cold sparse gap can span many dense blocks. Keep the checkpoints
+      // traversed here just as resync does, so the next block does not replay
+      // that same gap again. Use the walk's position, never the visible cursor.
+      if (mode_ != Mode::Practice) maybeCheckpoint(work.next);
+    }
     --budget;
   }
   if (st.ok() && work.next == work.end) {
@@ -303,7 +309,7 @@ Status Session::resync(uint64_t target, bool forceReload, RewindBlock* block) {
     if (block && frame_ > 0) cacheRewindState(*block, frame_);
     RN_TRY(core_->stepRecord(*r, frame_ + 1 == target));
     ++frame_;
-    maybeCheckpoint();
+    maybeCheckpoint(frame_);
   }
   audioValid_ = false;  // seeking is silent
   return Status::Ok();
@@ -337,7 +343,7 @@ Status Session::rewind(uint64_t n) {
         if (!r) return Error(Err::Internal, "missing record during rewind");
         RN_TRY(core_->stepRecord(*r, true));
         ++frame_;
-        maybeCheckpoint();
+        maybeCheckpoint(frame_);
         audioValid_ = false;
       } else {
         if (rewindBlocks_.size() == 2) rewindBlocks_.pop_front();
@@ -712,7 +718,7 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
     if (!r) return Error(Err::Internal, "missing record while locating A");
     RN_TRY(core_->stepRecord(*r, false));
     ++frame_;
-    maybeCheckpoint();
+    maybeCheckpoint(frame_);
   }
   return captureState(out);
 }

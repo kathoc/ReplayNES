@@ -209,7 +209,7 @@ class Session {
   void retainRewindBlock(RewindBlock block);
   Status resync(uint64_t target, bool forceReload, RewindBlock* block = nullptr);
   Status powerOnFresh();
-  void maybeCheckpoint();
+  void maybeCheckpoint(uint64_t frame);
   Status captureState(std::vector<uint8_t>& out) { return core_->saveState(out); }
   // Take state at the cursor (the saved return state while practicing).
   Status cursorState(std::vector<uint8_t>& out);
