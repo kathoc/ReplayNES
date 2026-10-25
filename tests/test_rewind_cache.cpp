@@ -15,15 +15,23 @@ using namespace rn;
 using namespace rntest;
 
 namespace {
-struct Counts { uint64_t steps = 0; std::vector<uint64_t> loads; };
+struct Counts {
+  uint64_t steps = 0;
+  std::vector<uint64_t> loads;
+  std::vector<uint64_t> instanceSteps;
+};
 class CountingCore final : public ICore {
  public:
-  explicit CountingCore(std::shared_ptr<Counts> c) : counts_(std::move(c)) {}
+  explicit CountingCore(std::shared_ptr<Counts> c) : counts_(std::move(c)), id_(counts_->instanceSteps.size()) {
+    counts_->instanceSteps.push_back(0);
+  }
+  size_t counterId() const { return id_; }
   Status loadROM(const uint8_t* p, size_t n) override { return core_.loadROM(p, n); }
   Status powerCycle() override { return core_.powerCycle(); }
   Status softReset() override { return core_.softReset(); }
   Status stepFrame(uint8_t a, uint8_t b, bool render) override {
     ++counts_->steps;
+    ++counts_->instanceSteps[id_];
     return core_.stepFrame(a, b, render);
   }
   uint64_t frameIndex() const override { return core_.frameIndex(); }
@@ -42,6 +50,7 @@ class CountingCore final : public ICore {
  private:
   MockCore core_;
   std::shared_ptr<Counts> counts_;
+  size_t id_;
 };
 struct RegisteredCounter {
   std::shared_ptr<Counts> counts = std::make_shared<Counts>();
@@ -53,6 +62,17 @@ struct RegisteredCounter {
   }
   ~RegisteredCounter() { unregisterExternalCore(); }
 };
+void reportWork(const char* region, uint64_t stride, const char* source, std::vector<uint64_t> values) {
+  REQUIRE(!values.empty());
+  uint64_t total = 0;
+  for (auto n : values) total += n;
+  std::sort(values.begin(), values.end());
+  MESSAGE("work region=" << region << ", stride=" << stride << ", source=" << source
+          << ", ticks=" << values.size() << ", min=" << values.front()
+          << ", median=" << values[values.size() / 2] << ", p90=" << values[values.size() * 9 / 10]
+          << ", max=" << values.back() << ", mean=" << double(total) / values.size());
+}
+
 void pictureEvidence(const VideoFrame& a, const VideoFrame& b, const char* label) {
   REQUIRE_EQ(a.width, b.width); REQUIRE_EQ(a.height, b.height);
   uint64_t changed = 0;
@@ -303,6 +323,7 @@ TEST_CASE("rewind prefetch: several block crossings have bounded work and match 
       // time in each 30-frame block to prefetch its predecessor, even at 4/tick.
       if (target <= 840) {
         maxWork = std::max(maxWork, work);
+        if (work > 6) MESSAGE("warm over budget stride=" << stride << ", target=" << target << ", work=" << work);
         CHECK(work <= 6u);  // five speculative frames plus the displayed frame
         if (work > 1) ++prefetchTicks;
       }
@@ -613,6 +634,63 @@ TEST_CASE("rewind lookahead: idle head start keeps several cold sparse gaps with
       ++tick;
     }
     MESSAGE("lookahead stride=" << stride << ", max tick=" << maxTick << ", max entry=" << maxEntry);
+  }
+}
+
+TEST_CASE("rewind proportional work: warm and cold per-tick foreground and scratch counts") {
+  RegisteredCounter registration(CapAudio | CapState | CapSoftReset | CapRecording | CapSharesMachine);
+  for (bool cold : {false, true}) for (uint64_t stride : {2u, 3u, 4u, 0u}) {
+    const uint64_t start = cold ? 4316 : 1800;
+    const auto script = DeterminismHarness::randomScript(start, 1717);
+    std::unique_ptr<Session> actual;
+    if (cold) {
+      const std::string root = tempDir("proportional-cold");
+      const std::string rom = writeTestRom(root), project = fs::join(root, "run.nesrec");
+      SessionOptions options; options.core = CoreKind::External;
+      REQUIRE(Session::create(buildTestRom(), rom, options, actual).ok());
+      REQUIRE(actual->saveAs(project).ok()); REQUIRE(recordScript(*actual, script).ok());
+      REQUIRE(actual->autosave().ok()); actual.reset();
+      REQUIRE(ProjectStore::open(project, "", options, actual).ok());
+    } else {
+      actual = newSession(CoreKind::External);
+      REQUIRE(actual); REQUIRE(recordScript(*actual, script).ok());
+    }
+    auto reference = newSession(CoreKind::Mock);
+    REQUIRE(reference); REQUIRE(recordScript(*reference, script).ok());
+    if (cold) { REQUIRE(reference->seek(start - 1).ok()); REQUIRE(reference->seek(start).ok()); }
+    ICore& ac = actual->core(); ICore& rc = reference->core();
+    const size_t foregroundId = static_cast<CountingCore&>(ac).counterId();
+    if (cold) for (unsigned call = 0; call < 200; ++call) REQUIRE(actual->idleWork(4).ok());
+    std::vector<uint64_t> allWork, foregroundWork, scratchWork;
+    uint64_t tick = 0;
+    while (actual->frame() > start - 1500) {
+      const uint64_t back = stride ? stride : 2 + tick % 3;
+      const uint64_t target = actual->frame() - back;
+      const uint64_t before = registration.counts->steps;
+      const uint64_t beforeForeground = registration.counts->instanceSteps[foregroundId];
+      REQUIRE(actual->rewind(back).ok());
+      const uint64_t total = registration.counts->steps - before;
+      const uint64_t foreground = registration.counts->instanceSteps[foregroundId] - beforeForeground;
+      const uint64_t scratch = total - foreground;
+      if (tick) {
+        allWork.push_back(total); foregroundWork.push_back(foreground); scratchWork.push_back(scratch);
+        if (total > (cold ? 2 * back + 1 : 6u))
+          MESSAGE("proportional over budget region=" << (cold ? "cold" : "warm") << ", stride=" << stride
+                  << ", back=" << back << ", target=" << target << ", total=" << total
+                  << ", foreground=" << foreground << ", scratch=" << scratch);
+        CHECK(total <= (cold ? 2 * back + 1 : 6u));
+      } else {
+        MESSAGE("first work region=" << (cold ? "cold" : "warm") << ", stride=" << stride << ", frames=" << total);
+      }
+      if (!cold) CHECK_EQ(scratch, 0u);
+      else CHECK(scratch <= back);  // no unused near-block budget spent walking farther ahead
+      REQUIRE(reference->seek(target).ok()); equalSessions(*actual, *reference, ac, rc);
+      ++tick;
+    }
+    const char* region = cold ? "cold" : "warm";
+    reportWork(region, stride, "all", allWork);
+    reportWork(region, stride, "foreground", foregroundWork);
+    reportWork(region, stride, "scratch", scratchWork);
   }
 }
 

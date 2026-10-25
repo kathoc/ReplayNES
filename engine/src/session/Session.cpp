@@ -167,6 +167,7 @@ void Session::clearRewindCache() {
   warmCore_.reset();
   warmNext_ = warmEnd_ = 0;
   idleWarmComplete_ = false;
+  warmChecked_ = false;
 }
 
 uint64_t Session::advanceRewindPrefetch(uint64_t budget) {
@@ -219,7 +220,7 @@ uint64_t Session::finishRewindPrefetch(uint64_t target) {
   return 0;
 }
 
-uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget) {
+uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget, uint64_t rewound) {
   if (!budget) return 0;
   const uint64_t interval = cps_.policy().denseInterval;
   uint64_t first, end, seed;
@@ -254,23 +255,57 @@ uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget) {
     work.fresh = !initial;
     if (initial) work.resume = *initial;
   }
-  // Five speculative frames plus the visible frame. A 30-frame block is
-  // ready within six ticks, including at the frontend's maximum stride of 4.
+  if (rewound) {
+    // Include this tick, then only ticks strictly before entering the older
+    // block. Spread the remaining work over those opportunities instead of
+    // front-loading five frames regardless of the transport's actual speed.
+    const uint64_t ticks = 1 + (target - end - 1) / rewound;
+    const uint64_t left = end - work.next;
+    budget = std::min(budget, left / ticks + (left % ticks != 0));
+  }
   return advanceRewindPrefetch(budget);
 }
 
 Status Session::warmRewindGap(uint64_t target, uint32_t budgetFrames, bool idle) {
   if (!budgetFrames || !target) return Status::Ok();
   const uint64_t dense = cps_.policy().denseInterval;
-  const uint64_t span = uint64_t(cps_.policy().sparseInterval) * (idle ? 1 : 2);
-  const uint64_t floor = target > span ? target - span : 0;
+  const uint64_t sparse = cps_.policy().sparseInterval;
+  // The dense seed is needed when building the adjacent block, one block
+  // BEFORE rewind enters the gap. Allow a second block for uneven 2/3/4 ticks
+  // and their near-cache priority, without warming a whole extra sparse gap.
+  const uint64_t lead = 2 * dense;
+  const uint64_t planningFrame = target - 1 > lead ? target - 1 - lead : 0;
+  const uint64_t region = planningFrame / sparse * sparse;
+  // Rewind needs the immediately older sparse region, not a rolling two-gap
+  // horizon. The stable boundary also avoids rescanning a warm window each tick.
+  const uint64_t floor = idle ? (target > sparse ? target - sparse : 0)
+                              : (region >= sparse ? region - sparse : 0);
   // A jump or another reconstruction may have made the pending walk obsolete.
   if (warmEnd_ && (warmEnd_ >= target || warmEnd_ <= floor ||
       cps_.find(warmEnd_, tl_.stateOwner(warmEnd_)))) warmEnd_ = 0;
   if (!warmEnd_) {
+    if (warmChecked_ && warmCheckedId_ == cps_.nextId() &&
+        floor >= warmCheckedFloor_ && target - 1 <= warmCheckedTop_) {
+      if (idle) idleWarmComplete_ = true;
+      return Status::Ok();
+    }
     uint64_t end = (target - 1) / dense * dense;
-    while (end > floor && cps_.find(end, tl_.stateOwner(end))) end -= dense;
+    bool usedBlockCache = false;
+    while (end > floor) {
+      if (!cps_.find(end, tl_.stateOwner(end))) {
+        if (!rewindState(end)) break;
+        usedBlockCache = true;
+      }
+      end -= dense;
+    }
     if (end <= floor) {
+      // A block cache is transient; only checkpoint-backed coverage is memoized.
+      if (!usedBlockCache) {
+        warmChecked_ = true;
+        warmCheckedFloor_ = floor;
+        warmCheckedTop_ = target - 1;
+        warmCheckedId_ = cps_.nextId();
+      }
       if (idle) idleWarmComplete_ = true;
       return Status::Ok();
     }
@@ -395,12 +430,16 @@ Status Session::rewind(uint64_t n) {
         // Prefetch may evict a block. Own the state that restores this tick,
         // then render its final frame AFTER all speculative core work.
         const auto saved = *state;
-        const uint64_t remaining = finished < 8 ? 8 - finished : 0;
-        const uint64_t used = prefetchOlderRewindBlock(target, std::min<uint64_t>(5, remaining));
-        // Near-block snapshots and the farther cold-gap walk share eight
-        // speculative frames. At stride four each consumes ~four frames/tick;
-        // warming only the adjacent block discovers a sparse gap too late.
-        (void)warmRewindGap(target, uint32_t(remaining - used), false);
+        const uint64_t consumed = frame_ - target;
+        const uint64_t pace = std::min<uint64_t>(4, consumed);
+        const uint64_t budget = 2 * pace;
+        const uint64_t remaining = finished < budget ? budget - finished : 0;
+        const uint64_t nearRemaining = finished < 5 ? 5 - finished : 0;
+        const uint64_t used = prefetchOlderRewindBlock(
+            target, std::min({pace + 1, remaining, nearRemaining}), consumed);
+        // Never spend unused near-block budget on extra distant work. A cold
+        // region is walked at the rate rewind consumes it, and only in reach.
+        (void)warmRewindGap(target, uint32_t(std::min(pace, remaining - used)), false);
         ++emuEpoch_;  // exactly the discontinuity that resync would report
         RN_TRY(core_->loadState(saved.data(), saved.size()));
         frame_ = target - 1;

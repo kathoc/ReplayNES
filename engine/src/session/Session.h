@@ -205,7 +205,7 @@ class Session {
   } rewindPrefetch_;
   void clearRewindCache();
   uint64_t advanceRewindPrefetch(uint64_t budget);
-  uint64_t prefetchOlderRewindBlock(uint64_t target, uint64_t budget = 5);
+  uint64_t prefetchOlderRewindBlock(uint64_t target, uint64_t budget = 5, uint64_t rewound = 0);
   uint64_t finishRewindPrefetch(uint64_t target);
   const std::vector<uint8_t>* rewindState(uint64_t frame) const;
   void cacheRewindState(RewindBlock& block, uint64_t frame);
@@ -218,6 +218,10 @@ class Session {
   std::unique_ptr<ICore> warmCore_;
   uint64_t warmNext_ = 0, warmEnd_ = 0;
   bool idleWarmComplete_ = false;
+  // A fully checkpointed search window can be reused until checkpoint insertion
+  // (which can evict dense entries) or any ordinary cache-invalidating operation.
+  bool warmChecked_ = false;
+  uint64_t warmCheckedFloor_ = 0, warmCheckedTop_ = 0, warmCheckedId_ = 0;
   Status warmRewindGap(uint64_t target, uint32_t budgetFrames, bool idle);
   Status captureState(std::vector<uint8_t>& out) { return core_->saveState(out); }
   // Take state at the cursor (the saved return state while practicing).
