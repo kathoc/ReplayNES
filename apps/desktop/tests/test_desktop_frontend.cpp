@@ -2709,6 +2709,59 @@ TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture fr
   CHECK_FALSE(thumbs.forRom(bad));
 }
 
+TEST_CASE("library thumbs: ROMs not on screen get their pictures later, never while a game is open") {
+  RN_REQUIRE_NESTOPIA();
+  std::string d = tmpDir("rom-picture-later");
+  std::string rom = testRom(d + "/roms");
+  std::string rom2 = d + "/roms/second.nes";
+  fs::copy_file(rom, rom2);
+  LibraryThumbs thumbs(d + "/thumbs");
+  auto waitArrival = [&](int ms) {
+    for (int i = 0; i < ms / 10; ++i) {
+      if (thumbs.pollRomPictures()) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+  };
+  // A game is open: nothing is made, however long it stays open.
+  thumbs.setPicturesPaused(true);
+  thumbs.requestRomPictureLater(rom);
+  CHECK_FALSE(waitArrival(300));
+  CHECK_FALSE(fs::exists(thumbs.fileFor("r:" + rom)));
+  // Closed: made, written, and not kept in memory until a card asks (then read from the file).
+  thumbs.setPicturesPaused(false);
+  REQUIRE(waitArrival(20000));
+  CHECK(fs::exists(thumbs.fileFor("r:" + rom)));
+  ThumbRef img = thumbs.forRom(rom);
+  REQUIRE(img);
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), nullptr, nullptr, &s) == RN_OK);
+  for (int f = 0; f < LibraryThumbs::kRomPictureFrame; ++f) REQUIRE(rn_step(s, 0, 0, 0, nullptr) == RN_OK);
+  ThumbRef want(ThumbImage::make(rn_video(s)));
+  rn_session_close(s);
+  CHECK(img.get()->px == want.get()->px);
+  // A ROM whose picture file exists already: skipped (a new LibraryThumbs, as in the next run).
+  {
+    LibraryThumbs next(d + "/thumbs");
+    next.requestRomPictureLater(rom);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK_FALSE(next.pollRomPictures());
+  }
+  // Paused in the middle of a run: put back, and made once the game closes.
+  thumbs.requestRomPictureLater(rom2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  thumbs.setPicturesPaused(true);
+  CHECK_FALSE(waitArrival(300));
+  // A card shows it meanwhile: asked first, and kept in memory.
+  CHECK_FALSE(thumbs.forRom(rom2));
+  thumbs.requestRomPicture(rom2);
+  thumbs.setPicturesPaused(false);
+  REQUIRE(waitArrival(20000));
+  ThumbRef img2 = thumbs.forRom(rom2);
+  REQUIRE(img2);
+  CHECK(img2.get()->px == want.get()->px);
+}
+
 TEST_CASE("product core choices contain only available product cores") {
   size_t expected = RN_PRODUCT_NES ? size_t(rn_core_available(RN_CORE_NESTOPIA) != 0) + size_t(rn_core_available(RN_CORE_REPLAYNESCORE) != 0) : 0;
   expected += size_t(rn_core_available(RN_CORE_EXTERNAL) != 0);

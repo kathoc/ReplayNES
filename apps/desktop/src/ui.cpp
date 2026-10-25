@@ -454,6 +454,7 @@ void UI::build(double now) {
 
   updateMarkers(now);
   tickCoach(now);
+  if (d_.libraryThumbs) d_.libraryThumbs->setPicturesPaused(hasSession());  // a game has the machine to itself
   if (!hasSession()) buildLibrary(now);
   else if (!menuOpen_ && seekBarShown()) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);

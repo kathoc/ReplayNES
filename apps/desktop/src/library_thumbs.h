@@ -11,7 +11,6 @@
 #include <deque>
 #include <map>
 #include <mutex>
-#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -43,7 +42,15 @@ class LibraryThumbs {
   /// time, each ROM at most once per run (a ROM the engine cannot run stays a name tile).
   static constexpr int kRomPictureFrame = RN_PRODUCT_LIBRARY_PICTURE_FRAME;  // 300 for ReplayNES
   void requestRomPicture(const std::string& romPath);
-  /// Frame thread: stores the finished pictures (as save(): file + cache). True if any arrived.
+  /// The same for a ROM not on screen, after every shown card's picture: skipped when its file
+  /// already exists, run at a low thread priority and at most half of one core's time, and kept
+  /// on disk only (the card reads it when it is shown). A later requestRomPicture moves it ahead.
+  void requestRomPictureLater(const std::string& romPath);
+  /// While a game is open: no picture is made (a run in progress is put back in its queue), so the
+  /// game has the machine to itself - the core may share one emulated machine between sessions.
+  void setPicturesPaused(bool paused);
+  /// Frame thread: takes the finished pictures (their files are written by then) into the cache of
+  /// the cards that asked. True if any arrived.
   bool pollRomPictures();
 
   /// File of a key (tests).
@@ -58,14 +65,17 @@ class LibraryThumbs {
   std::map<std::string, ThumbImage*> cache_;  // nullptr: no file (looked up once)
   std::mutex writeMutex_;
   std::thread writer_;
-  // ROM pictures (requestRomPicture): queue, results and the worker.
+  // ROM pictures (requestRomPicture / requestRomPictureLater): queues, results and the worker.
   void pictureWorker();
-  std::set<std::string> asked_;  // frame thread only
+  void startPictureWorker();
+  std::map<std::string, bool> asked_;  // frame thread only: ROM -> asked for a shown card
   std::mutex picMutex_;
   std::condition_variable picCv_;
-  std::deque<std::string> picQueue_;
+  std::deque<std::string> picQueue_;  // shown cards first
+  std::deque<std::string> picLater_;  // then the rest
   std::vector<std::pair<std::string, ThumbImage*>> picDone_;
   bool picStop_ = false;
+  bool picPaused_ = false;
   std::thread picThread_;
 };
 

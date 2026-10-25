@@ -2,6 +2,8 @@
 #include "replaynes/product.h"
 #include "library_thumbs.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -9,6 +11,17 @@
 #include <vector>
 
 #include "replaynes/replaynes.h"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__linux__)
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 
 namespace rnl {
 
@@ -45,6 +58,15 @@ bool writeFile(const std::string& path, const std::vector<uint32_t>& px, uint32_
   std::filesystem::rename(std::filesystem::path(tmp), std::filesystem::path(path), ec);
   return !ec;
 }
+
+// The calling thread below the UI and the game (the picture worker).
+void lowerThreadPriority() {
+#ifdef _WIN32
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+#elif defined(__linux__)
+  setpriority(PRIO_PROCESS, id_t(syscall(SYS_gettid)), 19);  // per thread on Linux
+#endif
+}
 }  // namespace
 
 LibraryThumbs::LibraryThumbs(std::string dir) : dir_(std::move(dir)) {}
@@ -54,6 +76,7 @@ LibraryThumbs::~LibraryThumbs() {
     std::lock_guard<std::mutex> lk(picMutex_);
     picStop_ = true;
     picQueue_.clear();
+    picLater_.clear();
   }
   picCv_.notify_all();
   if (picThread_.joinable()) picThread_.join();
@@ -140,14 +163,44 @@ void LibraryThumbs::saveImage(const std::string& projectPath, const std::string&
   });
 }
 
-void LibraryThumbs::requestRomPicture(const std::string& romPath) {
-  if (romPath.empty() || !asked_.insert(romPath).second) return;
-  {
-    std::lock_guard<std::mutex> lk(picMutex_);
-    picQueue_.push_back(romPath);
-  }
+void LibraryThumbs::startPictureWorker() {
   if (!picThread_.joinable()) picThread_ = std::thread([this] { pictureWorker(); });
   picCv_.notify_one();
+}
+
+void LibraryThumbs::requestRomPicture(const std::string& romPath) {
+  if (romPath.empty()) return;
+  auto [it, added] = asked_.emplace(romPath, true);
+  if (!added && it->second) return;
+  it->second = true;
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    if (!added) {  // queued for later: now, unless the worker has it already
+      auto later = std::find(picLater_.begin(), picLater_.end(), romPath);
+      if (later == picLater_.end()) return;
+      picLater_.erase(later);
+    }
+    picQueue_.push_back(romPath);
+  }
+  startPictureWorker();
+}
+
+void LibraryThumbs::requestRomPictureLater(const std::string& romPath) {
+  if (romPath.empty() || !asked_.emplace(romPath, false).second) return;
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    picLater_.push_back(romPath);
+  }
+  startPictureWorker();
+}
+
+void LibraryThumbs::setPicturesPaused(bool paused) {
+  {
+    std::lock_guard<std::mutex> lk(picMutex_);
+    if (picPaused_ == paused) return;
+    picPaused_ = paused;
+  }
+  picCv_.notify_all();
 }
 
 bool LibraryThumbs::pollRomPictures() {
@@ -156,20 +209,31 @@ bool LibraryThumbs::pollRomPictures() {
     std::lock_guard<std::mutex> lk(picMutex_);
     done.swap(picDone_);
   }
-  for (const auto& [rom, img] : done) saveImage("", rom, img);
+  // On disk already (the worker wrote it): a card that looked for the picture gets it now, any
+  // other ROM's is read when its card shows.
+  for (const auto& [rom, img] : done) {
+    if (cache_.count("r:" + rom)) put("r:" + rom, img);
+    else img->release();
+  }
   return !done.empty();
 }
 
 void LibraryThumbs::pictureWorker() {
+  lowerThreadPriority();
   for (;;) {
     std::string rom;
+    bool later = false;
     {
       std::unique_lock<std::mutex> lk(picMutex_);
-      picCv_.wait(lk, [this] { return picStop_ || !picQueue_.empty(); });
+      picCv_.wait(lk, [this] { return picStop_ || (!picPaused_ && (!picQueue_.empty() || !picLater_.empty())); });
       if (picStop_) return;
-      rom = std::move(picQueue_.front());
-      picQueue_.pop_front();
+      std::deque<std::string>& q = picQueue_.empty() ? picLater_ : picQueue_;
+      later = &q == &picLater_;
+      rom = std::move(q.front());
+      q.pop_front();
     }
+    std::error_code ec;
+    if (later && std::filesystem::exists(std::filesystem::path(fileFor("r:" + rom)), ec)) continue;
     // Power-on, no input, kRomPictureFrame frames: in memory only (no project directory).
     rn_session* s = nullptr;
     // The product's default core (an external core reads files the NES cores cannot).
@@ -180,14 +244,27 @@ void LibraryThumbs::pictureWorker() {
     if (rn_session_new(rom.c_str(), nullptr, external ? &opt : nullptr, &s) != RN_OK || !s) continue;
     bool ok = true;
     for (int f = 0; ok && f < kRomPictureFrame; ++f) {
+      const auto t0 = std::chrono::steady_clock::now();
       ok = rn_step(s, 0, 0, 0, nullptr) == RN_OK;
-      std::lock_guard<std::mutex> lk(picMutex_);
-      if (picStop_) ok = false;
+      std::unique_lock<std::mutex> lk(picMutex_);
+      if (picStop_) {
+        ok = false;
+      } else if (picPaused_) {  // a game opened: again from power-on once it closes
+        ok = false;
+        (later ? picLater_ : picQueue_).push_front(rom);
+      } else if (later && ok) {
+        // As long a rest as the frame took: half of one core at most. Woken by a pause or stop.
+        picCv_.wait_for(lk, std::chrono::steady_clock::now() - t0, [this] { return picStop_ || picPaused_; });
+      }
     }
     rn_video_frame_info frame{};
     rn_media_info media{};
     if (ok && rn_session_video_frame(s, &frame) == RN_OK && rn_session_media_info(s, &media) == RN_OK) {
       if (ThumbImage* img = ThumbImage::make(frame, media, rn_session_core_kind(s) != RN_CORE_EXTERNAL)) {
+        // Written before it is announced, so a card never looks for a file still to come.
+        std::filesystem::create_directories(std::filesystem::path(dir_), ec);
+        const std::string path = fileFor("r:" + rom);
+        if (!writeFile(path, img->px, img->width, img->height)) std::fprintf(stderr, "cannot write %s\n", path.c_str());
         std::lock_guard<std::mutex> lk(picMutex_);
         picDone_.emplace_back(rom, img);
       }

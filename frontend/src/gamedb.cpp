@@ -259,9 +259,12 @@ const Db& db() {
       const std::string& pja = pub == d->publishers.end() ? kEmpty : (pub->second.second.empty() ? pub->second.first : pub->second.second);
       d->infos[i] = rnf_game_info{g.id.c_str(), g.en.c_str(), g.ja.c_str(), g.reading.c_str(), pen.c_str(), pja.c_str(),
                                   g.year,       g.genre,      g.region.c_str()};
+      for (const std::string& a : g.aliases) addName(d->byName, a, i);
+      // An arcade ROM's file is named by its set (the aliases): titles would match other sets of
+      // the same game ("1942" is also the title of 1942a, 1942b, ...).
+      if (!RN_PRODUCT_NES) continue;
       addName(d->byName, g.en, i);
       addName(d->byName, g.ja, i);
-      for (const std::string& a : g.aliases) addName(d->byName, a, i);
       for (const std::string* t : {&g.en, &g.ja}) {
         std::string m = mainTitle(*t);
         if (!m.empty()) addName(d->byMainName, m, i);

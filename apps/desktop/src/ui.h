@@ -359,6 +359,8 @@ class UI : public DialogHost {
   int libBar_ = 0;     // focused item of that row
   int libPage_ = 0;
   bool libMoved_ = false;  // the user moved the focus since the library showed
+  float libWheel_ = 0;     // mouse wheel turned since the last page turn (notches)
+  uint64_t libPicturesFor_ = ~uint64_t(0);  // library version whose ROM pictures are queued
   std::string libFocusPath_;     // focus this ROM once a scan lists it (Add Test Cartridge)
   double libFocusPathUntil_ = 0;
   std::string projectsRomPath_;  // the projects page's ROM

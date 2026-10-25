@@ -165,6 +165,19 @@ void Script::step(double now) {
         SDL_PushEvent(&e);
       }
       return;
+    } else if (op == "wheel") {  // mouse wheel notches (SDL event): <y> (+ = up / away), [<x>]
+      SDL_Event e;
+      SDL_zero(e);
+      e.common.timestamp = SDL_GetTicksNS();
+      e.type = SDL_EVENT_MOUSE_WHEEL;
+      e.wheel.windowID = windowId ? windowId() : 0;
+      e.wheel.y = float(std::atof(arg(1, "0").c_str()));
+      e.wheel.x = float(std::atof(arg(2, "0").c_str()));
+      e.wheel.integer_y = int(e.wheel.y);
+      e.wheel.integer_x = int(e.wheel.x);
+      e.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+      SDL_PushEvent(&e);
+      return;
     } else if (op == "layoutcheck") {
       std::vector<std::pair<int, int>> sizes;
       for (size_t i = 1; i < c.size(); ++i) {

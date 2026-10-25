@@ -13,6 +13,7 @@
 //   clickpill               a mouse click on the Menu pill (SDL mouse events at its center)
 //   clickcrumb <i>          a mouse click on breadcrumb segment <i> (an ancestor; 0 = leftmost)
 //   key <scancode name>     a key press (SDL_GetScancodeFromName: "Escape", "Return", "Space", ...)
+//   wheel <y> [<x>]         mouse wheel notches (+y = up / away from the user, +x = right)
 //   osktype <text>          types <text> on the built-in on-screen keyboard
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | shot <file.png> (shotdir <dir>: relative to it) | quit

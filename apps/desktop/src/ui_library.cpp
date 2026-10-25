@@ -188,6 +188,14 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   if (pressed(ImGuiKey_GamepadDpadDown, true) || pressed(ImGuiKey_DownArrow, true)) dy = 1;
   if (pressed(ImGuiKey_PageUp, false)) shoulder(-1);
   if (pressed(ImGuiKey_PageDown, false)) shoulder(1);
+  // The mouse wheel turns the pages too (down / right = next), a page a notch, one per frame.
+  libWheel_ -= ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH;
+  if (ImGui::GetIO().MouseWheel == 0 && ImGui::GetIO().MouseWheelH == 0 && std::fabs(libWheel_) < 1) libWheel_ = 0;
+  libWheel_ = std::clamp(libWheel_, -float(pages), float(pages));
+  if (std::fabs(libWheel_) >= 1) {  // the rest of a fast turn on the next frames
+    shoulder(libWheel_ > 0 ? 1 : -1);
+    libWheel_ -= libWheel_ > 0 ? 1 : -1;
+  }
   int n = int(cardCount);
   if (dx || dy) libMoved_ = true;
   // Top to bottom: the filter / sort / search row (top bar), the Continue card, the game cards.
@@ -376,6 +384,14 @@ void UI::buildLibrary(double now) {
     if (now > libFocusPathUntil_) libFocusPath_.clear();
   }
   if (libFocus_ >= 0 && n > 0) libPage_ = libFocus_ / perPage;
+  // Every ROM without a picture gets one in the background, in the order shown (the shown cards
+  // ask first). One with a project shows that project's picture instead, so it is left alone.
+  if (d_.libraryThumbs && lib->version() != libPicturesFor_) {
+    libPicturesFor_ = lib->version();
+    for (const std::vector<const LibraryROM*>& list : {roms, lib->arranged("")})
+      for (const LibraryROM* rom : list)
+        if (lib->projectsFor(*rom).empty()) d_.libraryThumbs->requestRomPictureLater(rom->path);
+  }
   handleLibraryInput(now, size_t(n), size_t(pages), hero);
   if (!hasSession() && menuOpen_) return;  // Settings over the library draw everything
 
