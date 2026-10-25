@@ -243,6 +243,62 @@ Pairs defaults(rnf_keyboard_scheme scheme = RNF_KEYBOARD_MACOS, bool stick = fal
         fire[slot].push_back({std::atoi(name.c_str() + 1), b.id, activeLayout.turboOf(b)});
       }
     }
+    // The keyboard, as MAME has it: the arrows, buttons 1-6 on Z X C / A S D, coin 5 / 6, start
+    // 1 / 2 (and Return) for players 1 / 2. None of them is a hotkey.
+    const bool sdl = scheme == RNF_KEYBOARD_SDL;
+    const char* const kKeyFire[] = {sdl ? "kb:29" : "kb:6", sdl ? "kb:27" : "kb:7", sdl ? "kb:6" : "kb:8",
+                                    sdl ? "kb:4" : "kb:0",  sdl ? "kb:22" : "kb:1", sdl ? "kb:7" : "kb:2"};
+    for (auto& b : activeLayout.buttons) {
+      const std::string name = b.id.substr(3);
+      const char* key = nullptr;
+      if (b.id[1] == '1') {
+        if (name == "up") key = sdl ? "kb:82" : "kb:126";
+        else if (name == "down") key = sdl ? "kb:81" : "kb:125";
+        else if (name == "left") key = sdl ? "kb:80" : "kb:123";
+        else if (name == "right") key = sdl ? "kb:79" : "kb:124";
+        else if (name == "coin") key = sdl ? "kb:34" : "kb:23";
+        else if (name == "start") {
+          out.emplace_back(sdl ? "kb:40" : "kb:36", b.id);
+          key = sdl ? "kb:30" : "kb:18";
+        }
+      } else if (b.id[1] == '2') {
+        if (name == "coin") key = sdl ? "kb:35" : "kb:22";
+        else if (name == "start") key = sdl ? "kb:31" : "kb:19";
+      }
+      if (key) out.emplace_back(key, b.id);
+    }
+    if (fire.count(0)) {
+      std::vector<Fire> list = fire[0];
+      std::stable_sort(list.begin(), list.end());
+      for (size_t i = 0; i < list.size() && i < 6; ++i) out.emplace_back(kKeyFire[i], list[i].id);
+    }
+    // The mouse, for a game with analog controls (player 1): a dial or trackball follows its
+    // motion, a stick or a lever its position (moved like a stick), a further lever (After Burner
+    // II's throttle) the wheel; buttons 1-3 are the left, right and middle buttons. Without a lever
+    // for the wheel, it presses the accelerator / brake (Galaxy Force II).
+    bool mouseLever = false, mouseAxes = false;
+    for (auto& a : activeLayout.axes) {
+      if (a.id[1] != '1') continue;
+      const std::string name = a.id.substr(3);
+      const char* source = nullptr;
+      if (name == "axis.x") source = a.relative ? "ms:dx" : "ms:x";
+      else if (name == "axis.y") source = a.relative ? "ms:dy" : "ms:y";
+      else if (!mouseLever && !a.relative) { source = "ms:wheel"; mouseLever = true; }
+      if (source) { out.emplace_back(source, a.id); mouseAxes = true; }
+    }
+    if (mouseAxes) {
+      if (fire.count(0)) {
+        std::vector<Fire> list = fire[0];
+        std::stable_sort(list.begin(), list.end());
+        const char* const kMouseFire[] = {"ms:left", "ms:right", "ms:middle"};
+        for (size_t i = 0; i < list.size() && i < 3; ++i) out.emplace_back(kMouseFire[i], list[i].id);
+      }
+      for (auto& b : activeLayout.buttons) {
+        if (mouseLever || b.id[1] != '1') continue;
+        if (b.label == "Accelerate" || b.label == "Accelerator" || b.label == "Accel") out.emplace_back("ms:wheel.up", b.id);
+        else if (b.label == "Brake") out.emplace_back("ms:wheel.down", b.id);
+      }
+    }
     for (auto& [slot, list] : fire) {
       std::stable_sort(list.begin(), list.end());
       const std::string pre = "gc" + std::to_string(slot) + ":";
@@ -455,6 +511,17 @@ std::string displayName(rnf_keyboard_scheme scheme, const std::string& id) {
     const KeyName* k = findKey(scheme, code);
     std::string name = k ? (k->localized ? tr(k->name) : k->name) : "#" + std::to_string(code);
     return trf(RNF_L("Key %@"), {argS(name)});
+  }
+  if (hasPrefix(id, "ms:")) {
+    static const struct { const char* id; const char* text; } kMouse[] = {
+        {"ms:left", RNF_L("Mouse Left Button")},   {"ms:right", RNF_L("Mouse Right Button")},
+        {"ms:middle", RNF_L("Mouse Middle Button")}, {"ms:x", RNF_L("Mouse Left / Right")},
+        {"ms:y", RNF_L("Mouse Up / Down")},        {"ms:dx", RNF_L("Mouse Motion Left / Right")},
+        {"ms:dy", RNF_L("Mouse Motion Up / Down")}, {"ms:wheel", RNF_L("Mouse Wheel")},
+        {"ms:wheel.up", RNF_L("Mouse Wheel Up")},  {"ms:wheel.down", RNF_L("Mouse Wheel Down")},
+    };
+    for (auto& m : kMouse)
+      if (id == m.id) return tr(m.text);
   }
   size_t colon = id.find(':');
   if (hasPrefix(id, "gc") && colon != std::string::npos) {
@@ -767,6 +834,34 @@ char* rnf_input_default_config_json_for_kind(rnf_keyboard_scheme scheme, int sti
   t.set("period", 4);
   root.set("turbo", t);
   root.set("version", 1);
+  return dup(root.dump(0));
+  RNF_GUARD_END(nullptr)
+}
+
+char* rnf_input_add_device_defaults(const char* config_json, rnf_keyboard_scheme scheme, int stick) {
+  if (!config_json || activeLayout.isNes()) return nullptr;
+  RNF_GUARD_BEGIN
+  rn::Json root;
+  if (!rn::Json::parse(config_json, root, nullptr) || !root.isObject()) return nullptr;
+  rn::Json bindings = root["bindings"];
+  auto game = [](const std::string& action) { return action.compare(0, 3, "hk.") != 0; };
+  bool added = false;
+  for (const char* prefix : {"kb:", "ms:"}) {
+    bool any = false;
+    for (const rn::Json& e : bindings.items())
+      any = any || (hasPrefix(e["input"].asString(), prefix) && game(e["action"].asString()));
+    if (any) continue;
+    for (auto& p : defaults(scheme, stick != 0)) {
+      if (!hasPrefix(p.first, prefix) || !game(p.second)) continue;
+      rn::Json e = rn::Json::object();
+      e.set("action", p.second);
+      e.set("input", p.first);
+      bindings.push(e);
+      added = true;
+    }
+  }
+  if (!added) return nullptr;
+  root.set("bindings", bindings);
   return dup(root.dump(0));
   RNF_GUARD_END(nullptr)
 }

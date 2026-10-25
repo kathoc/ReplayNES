@@ -685,6 +685,7 @@ bool EmulationController::stepOnce(bool audible, bool frameStep) {
   if (live) {
     // Practice: rn_frame is frozen, so a separate monotonic clock drives tap latching / turbo.
     uint64_t clock = mode == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
+    if (beforeSample) beforeSample();
     if (nesLayout_) {
       rn_input_sample_game(input_, clock, &p1, &p2);
       // Apply buttons typed ahead during the countdown only on the first live frame.
@@ -940,6 +941,7 @@ bool EmulationController::tickResumeCountdown() {
   // it (stepOnce: rnf_resume_countdown_apply).
   uint8_t p1 = 0, p2 = 0;
   const uint64_t clock = rn_get_mode(s) == RN_MODE_PRACTICE ? practiceSeq_++ : rn_frame(s);
+  if (beforeSample) beforeSample();
   if (nesLayout_) {
     rn_input_sample_game(input_, clock, &p1, &p2);
     rnf_resume_countdown_input(resumeCountdown_, p1, p2);

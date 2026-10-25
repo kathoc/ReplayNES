@@ -211,8 +211,10 @@ rn_status rn_step(rn_session* s, uint8_t p1, uint8_t p2, uint8_t events, rn_step
 /* rn_step for any core's input layout (RN_ERR_INVALID_ARG for bytes beyond the layout). */
 rn_status rn_step_record(rn_session* s, const rn_input_record* in, rn_step_info* info);
 /* The core's input layout as JSON (free with rn_string_free): {"name", "recordBytes", "buttons":
- * [{"id", "label"?, "byte", "bit", "turbo"?}], "axes": [{"id", "label"?, "byte"}], "opposite":
- * [[id, id]]}. Action names are the button ids, their turbo actions ("turbo", else id + ".turbo")
+ * [{"id", "label"?, "byte", "bit", "turbo"?}], "axes": [{"id", "label"?, "byte", "relative"?,
+ * "deadzone"?}], "opposite": [[id, id]]}. "relative": the axis is a speed (a dial, a trackball), not
+ * a position; "deadzone": the core ignores smaller magnitudes (0..1). Both are hints for the
+ * frontend, not part of the layout a project stores. Action names are the button ids, their turbo actions ("turbo", else id + ".turbo")
  * and the axis ids. The NES layout is named "nes". */
 char* rn_session_input_layout_json(const rn_session* s);
 

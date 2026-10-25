@@ -318,3 +318,27 @@ TEST_CASE("input layout: NES projects keep inputFormatVersion 1 and the NTSC reg
   CHECK_EQ(man["region"].asString(), std::string("NTSC"));
   CHECK_FALSE(man.has("inputLayout"));
 }
+
+TEST_CASE("axis hints (relative, deadzone) reach the frontend but are not part of the stored layout") {
+  rn::InputLayout l;
+  l.name = "hints";
+  l.recordBytes = 7;
+  l.axes.push_back({"p1.axis.x", "Dial", 3});
+  l.axes.push_back({"p1.axis.y", "Stick", 5});
+  rn::InputLayout hinted = l;
+  hinted.axes[0].relative = true;
+  hinted.axes[0].deadzone = 0.25f;
+  hinted.axes[1].deadzone = 0.25f;
+  // A project stores toJson(): the same with or without hints, so old projects still open.
+  CHECK(hinted == l);
+  CHECK_EQ(hinted.toJson(), l.toJson());
+  CHECK(hinted.toJson().find("relative") == std::string::npos);
+  // rn_session_input_layout_json: with hints, read back by fromJson.
+  rn::InputLayout back;
+  REQUIRE(rn::InputLayout::fromJson(hinted.toJson(true), back).ok());
+  CHECK(back.axes[0].relative);
+  CHECK_FALSE(back.axes[1].relative);
+  CHECK_EQ(back.axes[0].deadzone, 0.25f);
+  CHECK_EQ(back.axes[1].deadzone, 0.25f);
+  CHECK(back == l);
+}

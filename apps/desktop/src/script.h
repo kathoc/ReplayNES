@@ -12,8 +12,11 @@
 //   chord [<ms>]            L1, then R1 <ms> later (default 30), both held 0.2 s: the Quick Menu chord
 //   clickpill               a mouse click on the Menu pill (SDL mouse events at its center)
 //   clickcrumb <i>          a mouse click on breadcrumb segment <i> (an ancestor; 0 = leftmost)
-//   key <scancode name>     a key press (SDL_GetScancodeFromName: "Escape", "Return", "Space", ...)
+//   key <scancode name> [<s>]  a key press (SDL_GetScancodeFromName: "Escape", "Return", "Space", ...),
+//                           held <s> seconds (default: released at once)
 //   wheel <y> [<x>]         mouse wheel notches (+y = up / away from the user, +x = right)
+//   mousemove <dx> <dy> [<frames>]   relative mouse motion (a captured mouse), spread over frames
+//   mousebutton left|right|middle [<s>]  a mouse button press held <s> seconds (default 0.05)
 //   osktype <text>          types <text> on the built-in on-screen keyboard
 //   pause | play | record | bookmark | seta <slot> | setb <slot> | practice <slot> | stoppractice
 //   seek <frame> | advance <n> | dialog <button> | shot <file.png> (shotdir <dir>: relative to it) | quit
@@ -53,6 +56,7 @@ class Script {
   std::function<SDL_JoystickID()> padId;
   /// The window injected mouse events go to.
   std::function<SDL_WindowID()> windowId;
+  std::function<bool()> mouseCaptured;  // "status": mouse= (the game has the mouse)
   /// Layout check failures so far (the exit code of a scripted run).
   int failures = 0;
 

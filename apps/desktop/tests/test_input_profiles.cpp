@@ -2,6 +2,8 @@
 #include "input_router.h"
 #include "settings.h"
 #include "support/rn_test.h"
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -292,4 +294,168 @@ TEST_CASE("P SDL stick triggers hold transport and LB LT chord leaves RB as a ga
   CHECK(router.stepRepeatHeld());
   connect(router, id, false);
   CHECK_FALSE(router.stepRepeatHeld());
+}
+
+namespace {
+// After Burner II: a stick and a throttle lever (positions, with FBNeo's dead zone).
+const char* kFlightLayout = R"({"name":"fbneo:flight","recordBytes":11,"buttons":[{"id":"p1.b1","label":"Vulcan","byte":3,"bit":0},{"id":"p1.b2","label":"Missile","byte":3,"bit":1},{"id":"p1.coin","byte":3,"bit":2},{"id":"p1.start","byte":3,"bit":3},{"id":"p1.up","byte":4,"bit":0},{"id":"p1.down","byte":4,"bit":1},{"id":"p1.left","byte":4,"bit":2},{"id":"p1.right","byte":4,"bit":3},{"id":"p2.coin","byte":4,"bit":4},{"id":"p2.start","byte":4,"bit":5}],"axes":[{"id":"p1.axis.x","byte":5,"deadzone":0.2},{"id":"p1.axis.y","byte":7,"deadzone":0.2},{"id":"p1.axis.ry","label":"Throttle","byte":9,"deadzone":0.2}]})";
+// Arkanoid: a dial (a speed).
+const char* kDialLayout = R"({"name":"fbneo:dial","recordBytes":7,"buttons":[{"id":"p1.b1","byte":3,"bit":0},{"id":"p1.coin","byte":3,"bit":1},{"id":"p1.start","byte":3,"bit":2}],"axes":[{"id":"p1.axis.x","byte":5,"relative":true,"deadzone":0.2}]})";
+// Galaxy Force II: a stick, the throttle as accelerator / brake buttons.
+const char* kPedalLayout = R"({"name":"fbneo:pedal","recordBytes":9,"buttons":[{"id":"p1.b1","byte":3,"bit":0},{"id":"p1.b7","label":"Brake","byte":3,"bit":1},{"id":"p1.b8","label":"Accelerate","byte":3,"bit":2}],"axes":[{"id":"p1.axis.x","byte":5},{"id":"p1.axis.y","byte":7}]})";
+
+int16_t axisAt(const rn_input_record& r, int byte) { return int16_t(r.bytes[byte] | r.bytes[byte + 1] << 8); }
+rn_input_record sample(rnl::InputRouter& router, uint64_t frame) {
+  router.beginMouseFrame();
+  rn_input_record r{};
+  rn_input_sample_record(router.input(), frame, &r);
+  return r;
+}
+void mouseMotion(rnl::InputRouter& router, float dx, float dy) {
+  SDL_Event e{};
+  e.type = SDL_EVENT_MOUSE_MOTION;
+  e.motion.xrel = dx;
+  e.motion.yrel = dy;
+  router.handleEvent(e, 1.0, false);
+}
+void mouseButton(rnl::InputRouter& router, uint8_t button, bool down) {
+  SDL_Event e{};
+  e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+  e.button.button = button;
+  e.button.down = down;
+  router.handleEvent(e, 1.0, false);
+}
+void mouseWheel(rnl::InputRouter& router, float notches) {
+  SDL_Event e{};
+  e.type = SDL_EVENT_MOUSE_WHEEL;
+  e.wheel.y = notches;
+  e.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+  router.handleEvent(e, 1.0, false);
+}
+}  // namespace
+
+TEST_CASE("P arcade defaults: MAME's keys play every game, the mouse a game with analog controls") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  auto p = pairs(router.input());
+  for (const char* want : {"kb:34=p1.coin", "kb:30=p1.start", "kb:40=p1.start", "kb:35=p2.coin", "kb:31=p2.start",
+                           "kb:29=p1.b1", "kb:27=p1.b2", "kb:82=p1.up", "kb:81=p1.down", "kb:80=p1.left", "kb:79=p1.right",
+                           "ms:left=p1.b1", "ms:right=p1.b2", "ms:x=p1.axis.x", "ms:y=p1.axis.y", "ms:wheel=p1.axis.ry"}) {
+    if (!p.count(want)) std::printf("    missing: %s\n", want);
+    CHECK(p.count(want));
+  }
+  CHECK(router.mouseGame());
+  // Hotkeys keep their keys: Space pauses, no game button on it.
+  CHECK(p.count("kb:44=hk.pause"));
+  for (auto& b : p) CHECK(b.rfind("kb:44=p", 0) != 0);
+
+  router.setLayout(kDialLayout);
+  p = pairs(router.input());
+  CHECK(p.count("ms:dx=p1.axis.x"));
+  CHECK_FALSE(p.count("ms:x=p1.axis.x"));
+  CHECK(p.count("ms:left=p1.b1"));
+
+  router.setLayout(kPedalLayout);
+  p = pairs(router.input());
+  CHECK(p.count("ms:wheel.up=p1.b8"));
+  CHECK(p.count("ms:wheel.down=p1.b7"));
+
+  // No analog controls: no mouse.
+  router.setLayout(layout);
+  p = pairs(router.input());
+  CHECK_FALSE(router.mouseGame());
+  for (auto& b : p) CHECK(b.rfind("ms:", 0) != 0);
+  CHECK(p.count("kb:29=p1.b1"));
+}
+
+TEST_CASE("P a profile saved before the keyboard and mouse defaults gets them, unless it binds that device") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  const auto padPath = files.root / "bindings-fbneo%3Aflight.json";
+  const std::string old = R"({"version":1,"bindings":[{"input":"gc0:face.south","action":"p1.b2"},{"input":"kb:44","action":"hk.pause"}],"turbo":{"period":4,"duty":2}})";
+  { std::ofstream out(padPath); out << old; }
+  {
+    rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+    router.setLayout(kFlightLayout);
+    auto p = pairs(router.input());
+    CHECK(p.count("gc0:face.south=p1.b2"));  // the user's own binding stays
+    CHECK(p.count("kb:34=p1.coin"));
+    CHECK(p.count("ms:x=p1.axis.x"));
+    CHECK_EQ(read(padPath), old);  // nothing written until the user changes something
+  }
+  // A keyboard binding of the user's: the keyboard is left as it is (the mouse still added).
+  const std::string own = R"({"version":1,"bindings":[{"input":"kb:4","action":"p1.b1"}],"turbo":{"period":4,"duty":2}})";
+  { std::ofstream out(padPath); out << own; }
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  auto p = pairs(router.input());
+  CHECK(p.count("kb:4=p1.b1"));
+  CHECK_FALSE(p.count("kb:34=p1.coin"));
+  CHECK(p.count("ms:left=p1.b1"));
+}
+
+TEST_CASE("P the captured mouse: stick position, dial motion per frame, wheel lever and presses") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  // Not captured (the UI has the pointer): nothing reaches the game.
+  mouseMotion(router, 200, 0);
+  mouseButton(router, SDL_BUTTON_LEFT, true);
+  rn_input_record r = sample(router, 0);
+  CHECK_EQ(axisAt(r, 5), 0);
+  CHECK_EQ(r.bytes[3] & 1, 0);
+  mouseButton(router, SDL_BUTTON_LEFT, false);
+  router.setMouseCaptured(true);
+  // 200 of the 400 pixels of a full deflection: half way, past the core's dead zone (0.2 + 0.8 * 0.5).
+  mouseMotion(router, 200, -100);
+  r = sample(router, 1);
+  CHECK_EQ(axisAt(r, 5), int16_t(std::lround(0.6f * 32767)));
+  CHECK_EQ(axisAt(r, 7), int16_t(std::lround(-(0.2f + 0.8f * 0.25f) * 32767)));
+  r = sample(router, 2);  // a position: it stays
+  CHECK_EQ(axisAt(r, 5), int16_t(std::lround(0.6f * 32767)));
+  mouseMotion(router, 10000, 0);  // clamped at full deflection
+  CHECK_EQ(axisAt(sample(router, 3), 5), 32767);
+  // Buttons.
+  mouseButton(router, SDL_BUTTON_LEFT, true);
+  mouseButton(router, SDL_BUTTON_RIGHT, true);
+  r = sample(router, 4);
+  CHECK_EQ(r.bytes[3] & 3, 3);
+  mouseButton(router, SDL_BUTTON_LEFT, false);
+  CHECK_EQ(sample(router, 5).bytes[3] & 3, 2);
+  // The wheel moves the throttle lever 0.1 a notch.
+  mouseWheel(router, 2);
+  CHECK_EQ(axisAt(sample(router, 6), 9), int16_t(std::lround((0.2f + 0.8f * 0.2f) * 32767)));
+  // Released (the menu opened): buttons let go, the stick stays where it was once captured again.
+  router.setMouseCaptured(false);
+  CHECK_EQ(sample(router, 7).bytes[3] & 3, 0);
+  router.setMouseCaptured(true);
+  CHECK_EQ(axisAt(sample(router, 8), 5), 32767);
+
+  // A dial: the motion of each frame (40 pixels = full speed), nothing once the mouse stops.
+  router.setLayout(kDialLayout);
+  router.setMouseCaptured(false);
+  router.setMouseCaptured(true);
+  mouseMotion(router, 4, 0);
+  CHECK_EQ(axisAt(sample(router, 9), 5), int16_t(std::lround((0.2f + 0.8f * 0.1f) * 32767)));
+  CHECK_EQ(axisAt(sample(router, 10), 5), 0);
+  mouseMotion(router, -20, 0);
+  mouseMotion(router, -20, 0);  // two events in one frame add up
+  CHECK_EQ(axisAt(sample(router, 11), 5), -32767);
+
+  // Wheel presses: a notch holds the accelerator for 8 frames, a notch the other way the brake.
+  router.setLayout(kPedalLayout);
+  router.setMouseCaptured(false);
+  router.setMouseCaptured(true);
+  mouseWheel(router, 1);
+  int held = 0;
+  for (int f = 0; f < 20; ++f) held += (sample(router, 20 + f).bytes[3] >> 2) & 1;
+  CHECK_EQ(held, 8);
+  mouseWheel(router, -1);
+  CHECK_EQ((sample(router, 40).bytes[3] >> 1) & 1, 1);
 }

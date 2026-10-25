@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "input_router.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cctype>
 #include <cstring>
@@ -140,8 +142,18 @@ void InputRouter::rebuildRuntime() {
     } else if (k == primary) bindings.push(b);
   }
   runtime.set("bindings", bindings);
+  mouseGame_ = false;
+  for (const auto& b : bindings.items())
+    mouseGame_ = mouseGame_ || (b["input"].asString().compare(0, 3, "ms:") == 0 && b["action"].asString().compare(0, 3, "hk.") != 0);
+  rn::Json layout;
+  stickDeadzone_ = dialDeadzone_ = 0;
+  if (rn::Json::parse(layoutJson_, layout))
+    for (const auto& a : layout["axes"].items())
+      (a["relative"].asBool(false) ? dialDeadzone_ : stickDeadzone_) =
+          std::max(a["relative"].asBool(false) ? dialDeadzone_ : stickDeadzone_, float(a["deadzone"].asDouble(0)));
   rn_input_release_all(in_);
   rn_input_load_json(in_, runtime.dump().c_str());
+  setMouseAxes();
   pressed_.clear();
   stickState_.clear();
   for (auto& p : pads_) { p.lt = p.rt = false; p.lx = p.ly = p.rx = p.ry = 0; }
@@ -198,6 +210,9 @@ void InputRouter::load() {
         char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, k);
         rn_input_load_json(profiles_[k], def);
         rnf_string_free(def);
+      } else if (char* more = rnf_input_add_device_defaults(text.c_str(), RNF_KEYBOARD_SDL, k)) {
+        rn_input_load_json(profiles_[k], more);  // saved before the keyboard / mouse had defaults
+        rnf_string_free(more);
       }
     }
     rebuildRuntime();
@@ -944,11 +959,99 @@ void InputRouter::handleEvent(const SDL_Event& e, double evTime, bool keyboardFo
       setPressed(id, true, evTime, game);
       break;
     }
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_MOUSE_WHEEL: mouseEvent(e, evTime); break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
       rn_input_release_prefix(in_, "kb:");  // the keyboard is foreground-only
       for (auto it = pressed_.begin(); it != pressed_.end();)
         it = it->compare(0, 3, "kb:") == 0 ? pressed_.erase(it) : std::next(it);
       break;
+    default: break;
+  }
+}
+
+namespace {
+// A full stick deflection per this much motion (pixels; relative mode reports raw counts), the
+// dial's full speed at this much motion in one frame, a lever's travel per wheel notch, and how
+// long a wheel notch presses its button.
+constexpr float kStickPixels = 400, kDialPixels = 40, kLeverNotch = 0.1f;
+constexpr int kWheelPressFrames = 8;
+
+// v (-1..1) past the core's dead zone dz, so the smallest motion already moves the game.
+float pastDeadzone(float v, float dz) {
+  if (v == 0) return 0;
+  const float a = std::min(1.f, std::fabs(v));
+  return std::copysign(dz + (1 - dz) * a, v);
+}
+}  // namespace
+
+void InputRouter::setMouseAxes() {
+  rn_input_set_axis_value(in_, "ms:x", pastDeadzone(mouseX_, stickDeadzone_));
+  rn_input_set_axis_value(in_, "ms:y", pastDeadzone(mouseY_, stickDeadzone_));
+  rn_input_set_axis_value(in_, "ms:wheel", pastDeadzone(mouseLever_, stickDeadzone_));
+}
+
+void InputRouter::setMouseCaptured(bool on) {
+  if (on == mouseCaptured_) return;
+  mouseCaptured_ = on;
+  mouseDx_ = mouseDy_ = 0;
+  wheelPress_ = 0;
+  for (const char* id : {"ms:left", "ms:right", "ms:middle", "ms:wheel.up", "ms:wheel.down"}) {
+    pressed_.erase(id);
+    rn_input_set_pressed(in_, id, 0);
+  }
+  rn_input_set_axis_value(in_, "ms:dx", 0);
+  rn_input_set_axis_value(in_, "ms:dy", 0);
+  setMouseAxes();  // the stick and the lever stay where they were (a menu released them)
+}
+
+void InputRouter::beginMouseFrame() {
+  if (!mouseGame_) return;
+  rn_input_set_axis_value(in_, "ms:dx", pastDeadzone(mouseDx_ / kDialPixels, dialDeadzone_));
+  rn_input_set_axis_value(in_, "ms:dy", pastDeadzone(mouseDy_ / kDialPixels, dialDeadzone_));
+  mouseDx_ = mouseDy_ = 0;
+  rn_input_set_pressed(in_, "ms:wheel.up", wheelPress_ > 0);
+  rn_input_set_pressed(in_, "ms:wheel.down", wheelPress_ < 0);
+  wheelPress_ += wheelPress_ > 0 ? -1 : wheelPress_ < 0 ? 1 : 0;
+}
+
+void InputRouter::mouseEvent(const SDL_Event& e, double t) {
+  const bool game = mouseCaptured_ && !ui_;
+  switch (e.type) {
+    case SDL_EVENT_MOUSE_MOTION:
+      if (!game || e.motion.which == SDL_TOUCH_MOUSEID) break;
+      mouseDx_ += e.motion.xrel;
+      mouseDy_ += e.motion.yrel;
+      mouseX_ = std::clamp(mouseX_ + e.motion.xrel / kStickPixels, -1.f, 1.f);
+      mouseY_ = std::clamp(mouseY_ + e.motion.yrel / kStickPixels, -1.f, 1.f);
+      setMouseAxes();
+      break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+      if (e.button.which == SDL_TOUCH_MOUSEID) break;
+      const char* id = e.button.button == SDL_BUTTON_LEFT ? "ms:left" : e.button.button == SDL_BUTTON_RIGHT ? "ms:right"
+                       : e.button.button == SDL_BUTTON_MIDDLE ? "ms:middle" : nullptr;
+      if (!id) break;
+      if (!e.button.down) {  // a release always reaches the engine
+        pressed_.erase(id);
+        rn_input_set_pressed(in_, id, 0);
+      } else if (game) {
+        setPressed(id, true, t, true);
+      }
+      break;
+    }
+    case SDL_EVENT_MOUSE_WHEEL: {
+      if (!game) break;
+      const float notches = e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -e.wheel.y : e.wheel.y;
+      mouseLever_ = std::clamp(mouseLever_ + notches * kLeverNotch, -1.f, 1.f);
+      setMouseAxes();
+      const int presses = int(std::lround(notches)) * kWheelPressFrames;
+      if (presses != 0 && (wheelPress_ == 0 || (wheelPress_ > 0) == (presses > 0))) wheelPress_ += presses;
+      else if (presses != 0) wheelPress_ = presses;  // the other way: that direction from now
+      break;
+    }
     default: break;
   }
 }

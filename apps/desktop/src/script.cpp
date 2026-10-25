@@ -93,6 +93,33 @@ void Script::step(double now) {
         float x = 0, y = 0;
         std::sscanf(it->button.c_str() + 6, "%f,%f", &x, &y);
         pushMouse(x, y, it->down);
+      } else if (it->button.rfind("key:", 0) == 0) {
+        const SDL_Scancode sc = SDL_Scancode(std::atoi(it->button.c_str() + 4));
+        SDL_Event e;
+        SDL_zero(e);
+        e.common.timestamp = SDL_GetTicksNS();
+        e.type = it->down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+        e.key.windowID = windowId ? windowId() : 0;
+        e.key.scancode = sc;
+        e.key.key = SDL_GetKeyFromScancode(sc, SDL_KMOD_NONE, false);
+        e.key.down = it->down;
+        SDL_PushEvent(&e);
+      } else if (it->button.rfind("rel:", 0) == 0 || it->button.rfind("mbutton:", 0) == 0) {
+        SDL_Event e;
+        SDL_zero(e);
+        e.common.timestamp = SDL_GetTicksNS();
+        if (it->button[0] == 'r') {  // relative motion (a captured mouse)
+          e.type = SDL_EVENT_MOUSE_MOTION;
+          e.motion.windowID = windowId ? windowId() : 0;
+          std::sscanf(it->button.c_str() + 4, "%f,%f", &e.motion.xrel, &e.motion.yrel);
+        } else {
+          e.type = it->down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+          e.button.windowID = windowId ? windowId() : 0;
+          e.button.button = Uint8(std::atoi(it->button.c_str() + 8));
+          e.button.down = it->down;
+          e.button.clicks = 1;
+        }
+        SDL_PushEvent(&e);
       } else {
         pushPad(it->button, it->down);
       }
@@ -153,17 +180,23 @@ void Script::step(double now) {
         std::fprintf(stderr, "script: unknown key %s\n", arg(1).c_str());
         continue;
       }
-      for (bool down : {true, false}) {
-        SDL_Event e;
-        SDL_zero(e);
-        e.common.timestamp = SDL_GetTicksNS();
-        e.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
-        e.key.windowID = windowId ? windowId() : 0;
-        e.key.scancode = sc;
-        e.key.key = SDL_GetKeyFromScancode(sc, SDL_KMOD_NONE, false);
-        e.key.down = down;
-        SDL_PushEvent(&e);
-      }
+      const double held = std::atof(arg(2, "0").c_str());  // [<seconds>]: held, released later
+      pending_.push_back({now, "key:" + std::to_string(int(sc)), true});
+      pending_.push_back({now + held, "key:" + std::to_string(int(sc)), false});
+      return;
+    } else if (op == "mousemove") {  // <dx> <dy> [<frames>]: relative motion, spread over frames (60 Hz)
+      const int n = std::max(1, std::atoi(arg(3, "1").c_str()));
+      const double dx = std::atof(arg(1, "0").c_str()) / n, dy = std::atof(arg(2, "0").c_str()) / n;
+      char b[64];
+      std::snprintf(b, sizeof b, "rel:%f,%f", dx, dy);
+      for (int i = 0; i < n; ++i) pending_.push_back({now + i / 60.0, b, true});
+      return;
+    } else if (op == "mousebutton") {  // left|right|middle [<seconds held>]
+      const std::string which = arg(1, "left");
+      const int button = which == "right" ? SDL_BUTTON_RIGHT : which == "middle" ? SDL_BUTTON_MIDDLE : SDL_BUTTON_LEFT;
+      const std::string b = "mbutton:" + std::to_string(button);
+      pending_.push_back({now, b, true});
+      pending_.push_back({now + std::max(0.05, std::atof(arg(2, "0.05").c_str())), b, false});
       return;
     } else if (op == "wheel") {  // mouse wheel notches (SDL event): <y> (+ = up / away), [<x>]
       SDL_Event e;
@@ -228,9 +261,10 @@ void Script::step(double now) {
       emu_->frameAdvance(std::atoi(arg(1, "1").c_str()));
     } else if (op == "status") {
       const EmuStatus st = emu_->status();
-      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s\n",
+      std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s mouse=%d\n",
                    (unsigned long long)st.frame, (unsigned long long)st.takeLength, (unsigned long long)st.activeTake,
-                   st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0, ui_->shownMenuPage().c_str());
+                   st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0, ui_->shownMenuPage().c_str(),
+                   mouseCaptured && mouseCaptured() ? 1 : 0);
     } else if (op == "dialog") {
       ui_->answerDialog(std::atoi(arg(1, "0").c_str()));
     } else if (op == "resetprompt") {

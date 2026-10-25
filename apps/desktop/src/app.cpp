@@ -156,6 +156,14 @@ void App::applyPostProcess() {
 void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
+  // The mouse plays a game that binds it while it runs (not paused, no menu, the window focused):
+  // relative mode keeps the pointer in the window and hides it. Esc (the menu) gives it back.
+  const bool capture = input_->mouseGame() && !inter && emu_->session() && !emu_->paused() &&
+                       (SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) != 0;
+  if (capture != input_->mouseCaptured()) {
+    input_->setMouseCaptured(capture);
+    SDL_SetWindowRelativeMouseMode(window_, capture);
+  }
   input_->setSeekFocus(inter ? 0 : ui_->seekFocus());
   // Y stops practice; both countdowns take the NES buttons as game input typed ahead
   // (docs/design/VTR_UX.md, "Countdown type-ahead").
@@ -169,6 +177,14 @@ void App::handleEvent(const SDL_Event& e, double now) {
   // A text field with an on-screen keyboard takes the controller and taps on the keyboard
   // (ui_osk.cpp); PadNavFeed still follows the pads (it feeds ImGui nothing meanwhile).
   bool textEntry = ui_->textEntryEvent(e, now);
+  // A captured mouse is the game's (no pointer for the UI then: SDL relative mode).
+  const bool mouseToGame = input_->mouseCaptured() &&
+                           (e.type == SDL_EVENT_MOUSE_MOTION || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                            e.type == SDL_EVENT_MOUSE_BUTTON_UP || e.type == SDL_EVENT_MOUSE_WHEEL);
+  if (mouseToGame) {
+    input_->handleEvent(e, now - double(SDL_GetTicksNS() - e.common.timestamp) * 1e-9, ui_->wantsKeyboard());
+    return;
+  }
   if (!textEntry) ImGui_ImplSDL3_ProcessEvent(&e);
   padNav_.setSuppressed(ui_->textEntryOwnsPad());
   padNav_.handle(e);
@@ -329,6 +345,7 @@ int App::run(const AppOptions& opt) {
   };
   emu_->onPausedChanged = [this](bool p) { input_->setPausedStepMode(p); };
   emu_->pressSequence = [this] { return input_->pressSequence(); };
+  emu_->beforeSample = [this] { input_->beginMouseFrame(); };
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
   input_->onPausedResume = [this] { ui_->resumeFromSeekBar(); };
@@ -403,6 +420,7 @@ int App::run(const AppOptions& opt) {
       running_ = false;
     };
     script->windowId = [this] { return SDL_GetWindowID(window_); };
+    script->mouseCaptured = [this] { return input_->mouseCaptured(); };
     script->padId = [this]() -> SDL_JoystickID { return input_->pad(0).pad ? input_->pad(0).id : SDL_JoystickID(0x7fff0000); };
     script->onCrt = [this](bool on) {
       settings_.crt = on;

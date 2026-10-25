@@ -68,7 +68,7 @@ Status InputLayout::validate() const {
   return Status::Ok();
 }
 
-std::string InputLayout::toJson() const {
+std::string InputLayout::toJson(bool hints) const {
   Json j = Json::object();
   j.set("name", name);
   j.set("recordBytes", recordBytes);
@@ -89,6 +89,8 @@ std::string InputLayout::toJson() const {
     e.set("id", a.id);
     if (!a.label.empty()) e.set("label", a.label);
     e.set("byte", uint32_t(a.byte));
+    if (hints && a.relative) e.set("relative", true);
+    if (hints && a.deadzone > 0) e.set("deadzone", double(a.deadzone));
     as.push(e);
   }
   j.set("axes", as);
@@ -128,6 +130,8 @@ Status InputLayout::fromJson(const std::string& text, InputLayout& out) {
     int64_t byte = e["byte"].asInt(-1);
     if (byte < 0 || byte > 0xFFFF) return Error(Err::InvalidArg, "input layout: bad axis");
     a.byte = uint16_t(byte);
+    a.relative = e["relative"].asBool(false);
+    a.deadzone = float(e["deadzone"].asDouble(0));
     l.axes.push_back(a);
   }
   for (const Json& e : j["opposite"].items()) l.opposite.push_back({e.at(0).asString(), e.at(1).asString()});

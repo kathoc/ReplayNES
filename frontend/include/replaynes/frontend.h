@@ -390,6 +390,10 @@ int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_
 /* Engine config JSON (rn_input_load_json) of the defaults. */
 char* rnf_input_default_config_json(rnf_keyboard_scheme scheme);
 char* rnf_input_default_config_json_for_kind(rnf_keyboard_scheme scheme, int stick);
+/* A saved configuration (not the NES layout) with the defaults of an input device it binds no game
+ * action to ("kb:", "ms:"): the keyboard and the mouse came after the first arcade releases. NULL
+ * when nothing is added. Free with rnf_string_free. */
+char* rnf_input_add_device_defaults(const char* config_json, rnf_keyboard_scheme scheme, int stick);
 /* Controller hotkeys of layout 1 (<= 0.1.x) and layouts 2-7 (pairs in a = input, b = action). */
 rnf_list* rnf_input_legacy_controller_hotkeys(void);
 rnf_list* rnf_input_controller_hotkeys(void);

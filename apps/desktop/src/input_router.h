@@ -119,6 +119,17 @@ class InputRouter {
   /// Every frame after the events (the chord detector's 100 ms window). now: CLOCK_MONOTONIC s.
   void tick(double now);
 
+  /// The mouse as game input ("ms:" ids, frontend input.cpp): the game binds it (a game with analog
+  /// controls). While captured (the app: playing, not paused, window focused; SDL relative mode)
+  /// its buttons, motion and wheel reach the game: "ms:x" / "ms:y" a stick position the motion
+  /// moves, "ms:dx" / "ms:dy" the motion of each frame (dials, trackballs), "ms:wheel" a lever the
+  /// wheel moves, "ms:wheel.up" / ".down" a press of a few frames per notch.
+  bool mouseGame() const { return mouseGame_; }
+  void setMouseCaptured(bool on);
+  bool mouseCaptured() const { return mouseCaptured_; }
+  /// Before each sample of a frame's game input: that frame's motion and wheel presses.
+  void beginMouseFrame();
+
   uint64_t pressSequence() const { return pressSeq_.load(); }
   /// Time of the latest physical change that reached the game (latency measurement).
   double lastEventTime() const { return lastEvent_.load(); }
@@ -187,8 +198,17 @@ class InputRouter {
   void attach(SDL_JoystickID id);
   void detach(SDL_JoystickID id);
 
+  void mouseEvent(const SDL_Event& e, double t);
+  void setMouseAxes();
+
   rn_input* in_ = nullptr;
   rn_input* profiles_[2] = {nullptr, nullptr};
+  // The mouse (setMouseCaptured): stick position and lever -1..1, motion since the frame began
+  // (pixels), wheel presses still to give (frames; + = up), the core's dead zones of its axes.
+  bool mouseGame_ = false, mouseCaptured_ = false;
+  float mouseX_ = 0, mouseY_ = 0, mouseLever_ = 0, mouseDx_ = 0, mouseDy_ = 0;
+  int wheelPress_ = 0;
+  float stickDeadzone_ = 0, dialDeadzone_ = 0;
   int editingSlot_ = -1;
   std::map<std::string, KindOverride> kindOverrides_;
   std::string file_;

@@ -50,6 +50,11 @@ struct InputLayout {
     std::string id;       // action name, "p<port>.axis.<name>": "p1.axis.x"
     std::string label;
     uint16_t byte = 0;    // int16 little-endian at [byte, byte + 1]
+    // Hints for the frontend, not part of the stored layout (toJson(false), ==): the value is a
+    // speed (a dial, a trackball: moved by a mouse's motion) rather than a position (a stick, a
+    // lever), and the core ignores values below `deadzone` (0..1) in magnitude.
+    bool relative = false;
+    float deadzone = 0;
   };
   std::string name;       // "nes" for the NES layout; otherwise the core's name for it
   uint32_t recordBytes = 3;
@@ -62,7 +67,8 @@ struct InputLayout {
   bool isNes() const { return name == "nes"; }
   std::string turboOf(const Button& b) const { return b.turboId.empty() ? b.id + ".turbo" : b.turboId; }
   Status validate() const;
-  std::string toJson() const;
+  /// hints: also the axes' frontend hints (rn_session_input_layout_json); a stored layout has none.
+  std::string toJson(bool hints = false) const;
   static Status fromJson(const std::string& json, InputLayout& out);
   bool operator==(const InputLayout& o) const { return toJson() == o.toJson(); }
   bool operator!=(const InputLayout& o) const { return !(*this == o); }

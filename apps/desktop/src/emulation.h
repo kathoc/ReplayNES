@@ -121,6 +121,8 @@ class EmulationController {
   std::function<void(const char* json)> onInputLayout;
   /// Count of physical presses so far (the "paused, press R to resume" hint).
   std::function<uint64_t()> pressSequence;
+  /// Just before a frame's game input is sampled in play (the mouse's motion of that frame).
+  std::function<void()> beforeSample;
   FrameObserver* observer = nullptr;
 
   // Preferences.

@@ -299,7 +299,7 @@ rn_status rn_step_record(rn_session* s, const rn_input_record* in, rn_step_info*
 char* rn_session_input_layout_json(const rn_session* s) {
   if (!s) return nullptr;
   try {
-    return dupString(s->s->inputLayout().toJson());
+    return dupString(s->s->inputLayout().toJson(true));
   } catch (...) {
     return nullptr;
   }
