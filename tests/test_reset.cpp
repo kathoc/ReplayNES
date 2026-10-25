@@ -61,6 +61,7 @@ size_t files(const std::string& dir) {
 }  // namespace
 
 TEST_CASE("reset: empty timeline, no takes/bookmarks/undo, state == fresh power-on (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   auto fresh = newSession(CoreKind::Nestopia);
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(fresh);
@@ -90,6 +91,7 @@ TEST_CASE("reset: empty timeline, no takes/bookmarks/undo, state == fresh power-
 }
 
 TEST_CASE("reset: A/B slots kept on request (A still loads), take position cleared") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(s);
   REQUIRE(fillProject(*s).ok());

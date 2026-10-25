@@ -30,7 +30,7 @@ struct Divergence {
 using Perturb = std::function<void(uint64_t frame, InputRecord& rec)>;
 
 struct HarnessConfig {
-  CoreKind core = CoreKind::Nestopia;
+  CoreKind core = defaultCoreKind();
   uint32_t stateEvery = 60;   // machine-state hash interval (also hashed at the last frame)
   int runs = 2;               // independent runs from power-on
   uint64_t midFrame = 0;      // 0 = no mid-savestate run

@@ -30,7 +30,8 @@ static std::vector<uint8_t> idleRom() {
 TEST_CASE("core selection: names capabilities and invalid values never fall back") {
   CHECK_EQ(std::string(rn_core_name(RN_CORE_NESTOPIA)), std::string("nestopia"));
   CHECK_EQ(std::string(rn_core_name(RN_CORE_REPLAYNESCORE)), std::string("replaynescore"));
-  CHECK_EQ(rn_core_capabilities(RN_CORE_NESTOPIA), 15u);
+  CHECK_EQ(rn_core_capabilities(RN_CORE_NESTOPIA), RN_PRODUCT_NES ? 15u : 0u);
+  CHECK_EQ(rn_core_available(RN_CORE_NESTOPIA), RN_PRODUCT_NES);
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
   CHECK_EQ(rn_core_available(RN_CORE_REPLAYNESCORE), 1);
   CHECK_EQ(rn_core_capabilities(RN_CORE_REPLAYNESCORE), unsigned(RN_CORE_CAP_AUDIO|RN_CORE_CAP_STATE));
@@ -120,3 +121,60 @@ TEST_CASE("core selection: C API live mode and project prohibition") {
   size_t n=99; CHECK(rn_audio(s,&n)!=nullptr); CHECK_EQ(n,size_t(rn_audio_samples_for_frame(0)));
   rn_session_close(s);
 }
+
+#if !RN_PRODUCT_NES
+TEST_CASE("core selection: disabled NES core is unavailable with an explicit error") {
+  CHECK(createCore(CoreKind::Nestopia) == nullptr);
+  CHECK(coreCompatId(CoreKind::Nestopia).empty());
+  SessionOptions options;
+  options.core = CoreKind::Nestopia;
+  std::unique_ptr<Session> session;
+  auto status = Session::create(idleRom(), "idle", options, session);
+  CHECK_EQ(int(status.code), int(Err::UnsupportedFormat));
+  CHECK(status.message.find("core not available in this product") != std::string::npos);
+  CHECK(!session);
+  auto dir = tempDir("disabled-nes");
+  auto path = writeTestRom(dir);
+  rn_session_options opt;
+  rn_session_options_init(&opt);
+  opt.core = RN_CORE_NESTOPIA;
+  rn_session* cs = nullptr;
+  CHECK_EQ(rn_session_new(path.c_str(), nullptr, &opt, &cs), RN_ERR_UNSUPPORTED_FORMAT);
+  CHECK(cs == nullptr);
+  CHECK(std::string(rn_last_error()).find("core not available in this product") != std::string::npos);
+}
+#endif
+
+TEST_CASE("core selection: C and C++ defaults follow the product profile") {
+  // An external core's display name depends on registration, not the product's selector.
+  const std::string configured = RN_PRODUCT_DEFAULT_CORE;
+  const CoreKind expected = configured == "nestopia" ? CoreKind::Nestopia
+                          : configured == "mock" ? CoreKind::Mock
+                          : configured == "replaynescore" ? CoreKind::ReplayNEScore
+                          : configured == "external" ? CoreKind::External
+                          : static_cast<CoreKind>(-1);
+  CHECK(defaultCoreKind() == expected);
+  CHECK(SessionOptions{}.core == defaultCoreKind());
+  CHECK(HarnessConfig{}.core == defaultCoreKind());
+  rn_session_options options;
+  rn_session_options_init(&options);
+  CHECK_EQ(int(options.core), int(defaultCoreKind()));
+#if !RN_PRODUCT_NES
+  CHECK_EQ(std::string(rn_core_compat_id()), std::string());
+  CHECK_EQ(std::string(rn_core_build_id()), std::string());
+#endif
+}
+
+#if !RN_PRODUCT_NES
+TEST_CASE("harness: unavailable NES core reports a clear error before running") {
+  Trace trace;
+  const auto rom = idleRom();
+  const std::vector<InputRecord> script(2);
+  auto check = [](const Status& status) {
+    CHECK_EQ(int(status.code), int(Err::UnsupportedFormat));
+    CHECK(status.message.find("core not available in this product") != std::string::npos);
+  };
+  check(DeterminismHarness::runFromStart(CoreKind::Nestopia, rom, script, 1, trace));
+  check(DeterminismHarness::runFromState(CoreKind::Nestopia, rom, script, {}, 1, trace));
+}
+#endif

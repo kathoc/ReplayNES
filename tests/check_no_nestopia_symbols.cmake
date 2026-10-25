@@ -1,0 +1,11 @@
+if(NOT EXISTS "${ARTIFACT}")
+  message(FATAL_ERROR "Missing artifact: ${ARTIFACT}")
+endif()
+execute_process(COMMAND "${NM}" -C "${ARTIFACT}"
+  RESULT_VARIABLE status OUTPUT_VARIABLE symbols ERROR_VARIABLE error)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "nm failed for ${ARTIFACT}: ${error}")
+endif()
+if(symbols MATCHES "Nes::|NestopiaCore")
+  message(FATAL_ERROR "Nestopia symbol in NES-OFF product ${ARTIFACT}: ${CMAKE_MATCH_0}")
+endif()

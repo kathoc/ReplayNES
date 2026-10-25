@@ -1,4 +1,5 @@
 #include "harness/DeterminismHarness.h"
+#include "replaynes/product.h"
 
 #include <chrono>
 
@@ -32,7 +33,8 @@ Status DeterminismHarness::runFromStart(CoreKind kind, const std::vector<uint8_t
                                         const std::vector<InputRecord>& script, uint32_t stateEvery, Trace& out,
                                         uint64_t captureAt, std::vector<uint8_t>* captured, const Perturb& perturb) {
   if (!coreName(kind)) return Error(Err::InvalidArg, "unknown core kind");
-  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat, "selected core is not built");
+  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat,
+      RN_PRODUCT_NES ? "selected core is not built" : "core not available in this product");
   if (!(coreCapabilities(kind) & CapState)) return Error(Err::UnsupportedFormat, "harness requires core state support");
   auto core = createCore(kind);
   RN_TRY(core->loadROM(rom.data(), rom.size()));
@@ -43,7 +45,8 @@ Status DeterminismHarness::runFromState(CoreKind kind, const std::vector<uint8_t
                                         const std::vector<InputRecord>& script, const std::vector<uint8_t>& state,
                                         uint32_t stateEvery, Trace& out) {
   if (!coreName(kind)) return Error(Err::InvalidArg, "unknown core kind");
-  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat, "selected core is not built");
+  if (!coreAvailable(kind)) return Error(Err::UnsupportedFormat,
+      RN_PRODUCT_NES ? "selected core is not built" : "core not available in this product");
   if (!(coreCapabilities(kind) & CapState)) return Error(Err::UnsupportedFormat, "harness requires core state support");
   auto core = createCore(kind);
   RN_TRY(core->loadROM(rom.data(), rom.size()));

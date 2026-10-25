@@ -10,6 +10,7 @@ using namespace rn;
 using namespace rntest;
 
 TEST_CASE("render: hashes equal a normal replay; session/timeline unchanged by rendering") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   auto script = DeterminismHarness::randomScript(1500, 41, 600, 4);
   REQUIRE(recordScript(*s, script).ok());
@@ -77,6 +78,7 @@ TEST_CASE("render: hashes equal a normal replay; session/timeline unchanged by r
 }
 
 TEST_CASE("render: runs on another thread while the session keeps recording") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1200, 7, 500)).ok());
   auto snapshot = s->timeline().flattenActive();
@@ -109,7 +111,12 @@ TEST_CASE("C API: end-to-end flow (new, record, bookmark, branch, undo, render, 
   CHECK_EQ(std::string(sha).size(), size_t(64));
   std::string proj = root + "/play.nesrec";
   rn_session* s = nullptr;
-  REQUIRE_EQ(rn_session_new(rom.c_str(), proj.c_str(), nullptr, &s), RN_OK);
+  rn_session_options options;
+  rn_session_options_init(&options);
+#if !RN_PRODUCT_NES
+  options.core = RN_CORE_MOCK;
+#endif
+  REQUIRE_EQ(rn_session_new(rom.c_str(), proj.c_str(), &options, &s), RN_OK);
   CHECK_EQ(std::string(rn_session_rom_sha256(s)), std::string(sha));
   CHECK_EQ(std::string(rn_session_project_dir(s)), proj);
   rn_input* in = rn_input_new();
@@ -179,6 +186,7 @@ TEST_CASE("C API: end-to-end flow (new, record, bookmark, branch, undo, render, 
 }
 
 TEST_CASE("video indices: raw PPU codes describe the same picture as rn_video; display-only") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   auto script = DeterminismHarness::randomScript(240, 77, 0, 0);
   REQUIRE(recordScript(*s, script).ok());
@@ -245,6 +253,7 @@ TEST_CASE("video indices: raw PPU codes describe the same picture as rn_video; d
 }
 
 TEST_CASE("video indices: burst phase of a frame is the same by straight play, seek, rewind and state load") {
+  RN_REQUIRE_NESTOPIA();
   // Regression: Nestopia's Ppu::GetBurstPhase() is not in states and LoadState resets it to 0, so
   // a frame reached by a seek / rewind / take switch / load reported another phase than in
   // straight play (the CRT then modulated the same picture with another subcarrier phase).
@@ -321,6 +330,7 @@ TEST_CASE("video indices: burst phase of a frame is the same by straight play, s
 }
 
 TEST_CASE("render: single frames seeded from checkpoints equal a straight replay (thumbnails)") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1300, 71, 600, 4)).ok());
   REQUIRE(s->rewind(500).ok());

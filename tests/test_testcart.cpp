@@ -114,6 +114,7 @@ static std::vector<InputRecord> tourScript() {
 }
 
 TEST_CASE("test cartridge: scripted tour is deterministic (2 runs + mid-way state load)") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestCartridge();
   auto script = tourScript();
   HarnessConfig cfg;
@@ -130,6 +131,7 @@ TEST_CASE("test cartridge: scripted tour is deterministic (2 runs + mid-way stat
 }
 
 TEST_CASE("test cartridge: random input with resets is deterministic") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestCartridge();
   auto script = DeterminismHarness::randomScript(6000, 77, 1200, 5);
   HarnessConfig cfg;
@@ -144,6 +146,7 @@ TEST_CASE("test cartridge: random input with resets is deterministic") {
 }
 
 TEST_CASE("test cartridge: palette chart shows all 64 colours, stable from frame to frame") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_PALETTE);
   uint64_t first = 0;
@@ -181,6 +184,7 @@ TEST_CASE("test cartridge: palette chart shows all 64 colours, stable from frame
 }
 
 TEST_CASE("test cartridge: split scroll is stable and matches the unsplit playfield") {
+  RN_REQUIRE_NESTOPIA();
   // Same position in D-pad mode (3) and split mode (4): the split's playfield (from line 32) must
   // equal the unsplit picture's top rows.
   auto shoot = [](bool split) {
@@ -209,6 +213,7 @@ TEST_CASE("test cartridge: split scroll is stable and matches the unsplit playfi
 
 // ---------------------------------------------------------------------------- rapid-fire meter
 TEST_CASE("rapid-fire meter: alternating every frame for 60 frames = 59 edges, 30 presses per 60 samples") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_METER);
   play(c, 60, [](int i) { return uint8_t(i % 2 == 0 ? A : 0); });
@@ -219,6 +224,7 @@ TEST_CASE("rapid-fire meter: alternating every frame for 60 frames = 59 edges, 3
 }
 
 TEST_CASE("rapid-fire meter: press every 2 frames for 10 s = 30.0/s, 599 edges (fencepost)") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_METER);
   play(c, 600, [](int i) { return uint8_t(i % 2 == 0 ? A : 0); });
@@ -240,6 +246,7 @@ TEST_CASE("rapid-fire meter: press every 2 frames for 10 s = 30.0/s, 599 edges (
 }
 
 TEST_CASE("rapid-fire meter: A every 4 frames (2/2), B every 3 frames (1/2) at the same time") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_METER);
   play(c, 600, [](int i) { return uint8_t((i % 4 < 2 ? A : 0) | (i % 3 == 0 ? B : 0)); });
@@ -258,6 +265,7 @@ TEST_CASE("rapid-fire meter: A every 4 frames (2/2), B every 3 frames (1/2) at t
 }
 
 TEST_CASE("rapid-fire meter: intervals 3, 5, 3, 5 ... = mean 4.00, deviation 1.00") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_METER);
   // presses at 0, 3, 8, 11, 16, ... 592 (each held 1 frame): 149 presses, 74 + 74 intervals
@@ -270,6 +278,7 @@ TEST_CASE("rapid-fire meter: intervals 3, 5, 3, 5 ... = mean 4.00, deviation 1.0
 }
 
 TEST_CASE("rapid-fire meter: turbo check measures the input pipeline's turbo period and duty") {
+  RN_REQUIRE_NESTOPIA();
   struct Case { uint32_t period, duty; };
   for (Case k : {Case{2, 1}, Case{3, 1}, Case{4, 2}, Case{6, 4}, Case{8, 1}}) {
     Cart c;
@@ -297,6 +306,7 @@ TEST_CASE("rapid-fire meter: turbo check measures the input pipeline's turbo per
 }
 
 TEST_CASE("rapid-fire meter: best record survives a soft reset, not a power cycle") {
+  RN_REQUIRE_NESTOPIA();
   Cart c;
   c.open(tc::SCR_METER);
   play(c, 600, [](int i) { return uint8_t(i % 4 == 0 ? A : 0); });

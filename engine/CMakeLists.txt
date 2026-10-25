@@ -1,17 +1,22 @@
 # Portable ReplayNES engine (C++17, no platform UI APIs). Exposes the C API in include/replaynes.
 file(GLOB_RECURSE RN_ENGINE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 list(FILTER RN_ENGINE_SOURCES EXCLUDE REGEX "/ReplayNEScoreAdapter\\.cpp$")
+if(NOT RN_PRODUCT_NES)
+  list(FILTER RN_ENGINE_SOURCES EXCLUDE REGEX "/NestopiaCore\\.cpp$")
+endif()
 add_library(replaynes_engine STATIC ${RN_ENGINE_SOURCES})
 target_include_directories(replaynes_engine
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
   PUBLIC ${CMAKE_BINARY_DIR}/generated
   # Internal headers are visible to tests and the CLI; frontends must only use include/.
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(replaynes_engine PUBLIC nestopia_core)
-target_compile_definitions(replaynes_engine PRIVATE
-  RN_NESTOPIA_COMMIT="${REPLAYNES_NESTOPIA_COMMIT}"
-  RN_NESTOPIA_PATCHLEVEL=${REPLAYNES_NESTOPIA_PATCHLEVEL}
-  RN_ENGINE_VERSION="${PROJECT_VERSION}")
+if(RN_PRODUCT_NES)
+  target_link_libraries(replaynes_engine PUBLIC nestopia_core)
+  target_compile_definitions(replaynes_engine PRIVATE
+    RN_NESTOPIA_COMMIT="${REPLAYNES_NESTOPIA_COMMIT}"
+    RN_NESTOPIA_PATCHLEVEL=${REPLAYNES_NESTOPIA_PATCHLEVEL})
+endif()
+target_compile_definitions(replaynes_engine PRIVATE RN_ENGINE_VERSION="${PROJECT_VERSION}")
 set_target_properties(replaynes_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 find_package(Threads REQUIRED)
 target_link_libraries(replaynes_engine PUBLIC Threads::Threads)

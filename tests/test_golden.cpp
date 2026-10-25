@@ -88,6 +88,7 @@ std::string goldenPath() { return std::string(RN_GOLDEN_DIR) + "/nestopia_testca
 }  // namespace
 
 TEST_CASE("golden: Nestopia + Test Cartridge record, branch, replay, save and reopen") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tempDir("golden");
   std::string rom = dir + "/testcart.nes";
   REQUIRE(rn_write_test_cartridge(rom.c_str()) == RN_OK);

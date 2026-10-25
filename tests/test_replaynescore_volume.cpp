@@ -92,6 +92,7 @@ Measurement measure(const rntest::VolumeCase& test, rn::CoreKind kind) {
 } // namespace
 
 TEST_CASE("known APU waveforms retain Nestopia volume across cores") {
+  RN_REQUIRE_NESTOPIA();
   std::cout << "volume: frames=120 warmup=60 sample_rate=48000 ratio_limit=[0.90,1.10]\n";
   std::cout << "case,nestopia_rms,nestopia_peak,nestopia_mean,replaynescore_rms,"
                "replaynescore_peak,replaynescore_mean,ratio\n";

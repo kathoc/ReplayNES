@@ -24,6 +24,7 @@ TEST_CASE("RLE: round trip and rejection of malformed data") {
 }
 
 TEST_CASE("record -> fresh instance replay gives identical hashes (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(s);
   auto script = DeterminismHarness::randomScript(3000, 11, 900, 4);
@@ -60,6 +61,7 @@ TEST_CASE("record -> fresh instance replay gives identical hashes (nestopia)") {
 }
 
 TEST_CASE("branching: rewind + re-record creates a branch, old take preserved, undo returns") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(s);
   auto a = DeterminismHarness::randomScript(600, 1);
@@ -126,6 +128,7 @@ TEST_CASE("branch at frame 0 creates a second root take") {
 }
 
 TEST_CASE("seek correctness vs straight replay (nestopia, random targets)") {
+  RN_REQUIRE_NESTOPIA();
   CheckpointPolicy pol;
   pol.denseInterval = 30;
   pol.sparseInterval = 600;
@@ -202,4 +205,5 @@ static void stress(CoreKind kind, int iterations, uint64_t maxLen, size_t verify
 }
 
 TEST_CASE("stress: 600 rewinds/branches/take switches (mock)") { stress(CoreKind::Mock, 600, 5000, 100000); }
-TEST_CASE("stress: 300 rewinds/branches/take switches (nestopia)") { stress(CoreKind::Nestopia, 300, 2500, 10); }
+TEST_CASE("stress: 300 rewinds/branches/take switches (nestopia)") {
+  RN_REQUIRE_NESTOPIA(); stress(CoreKind::Nestopia, 300, 2500, 10); }

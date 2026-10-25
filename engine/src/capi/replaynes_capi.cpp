@@ -10,7 +10,10 @@
 #include <vector>
 
 #include "core/ICore.h"
+#include "replaynes/product.h"
+#if RN_PRODUCT_NES
 #include "core/NestopiaCore.h"
+#endif
 #include "input/InputPipeline.h"
 #include "persist/ProjectStore.h"
 #include "render/OfflineRenderer.h"
@@ -121,12 +124,20 @@ rn_core_kind rn_session_core_kind(const rn_session* s) {
 
 const char* rn_version(void) { return RN_ENGINE_VERSION; }
 const char* rn_core_compat_id(void) {
+#if RN_PRODUCT_NES
   static const std::string id = rn::NestopiaCore::staticCompatId();
   return id.c_str();
+#else
+  return "";
+#endif
 }
 const char* rn_core_build_id(void) {
+#if RN_PRODUCT_NES
   static const std::string id = rn::NestopiaCore().buildId();
   return id.c_str();
+#else
+  return "";
+#endif
 }
 const char* rn_last_error(void) { return tlError.c_str(); }
 const char* rn_status_name(rn_status s) { return rn::errName(rn::Err(int(s))); }
@@ -167,7 +178,7 @@ void rn_session_options_init(rn_session_options* o) {
   if (!o) return;
   std::memset(o, 0, sizeof *o);
   o->struct_size = sizeof *o;
-  o->core = RN_CORE_NESTOPIA;
+  o->core = static_cast<rn_core_kind>(rn::defaultCoreKind());
   o->dense_interval = 30;
   o->dense_capacity = 1200;
   o->sparse_interval = 600;

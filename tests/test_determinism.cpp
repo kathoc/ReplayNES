@@ -6,6 +6,7 @@ using namespace rn;
 using namespace rntest;
 
 TEST_CASE("harness: 10000 frames, 3 runs + mid-savestate run, no divergence (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto script = DeterminismHarness::randomScript(10000, 2024, 1500, 5);
   HarnessConfig cfg;
@@ -23,6 +24,7 @@ TEST_CASE("harness: 10000 frames, 3 runs + mid-savestate run, no divergence (nes
 }
 
 TEST_CASE("harness: injected divergence is reported at the right frame and component") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto script = DeterminismHarness::randomScript(6000, 9, 0, 5);
   HarnessConfig cfg;
@@ -56,6 +58,7 @@ TEST_CASE("harness: hidden state divergence (no visible change) is caught by the
 }
 
 TEST_CASE("harness: PCM after a state load is bit-identical (patched APU output stage)") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto script = DeterminismHarness::randomScript(3000, 5, 0, 5);
   for (uint64_t mid : {uint64_t(1), uint64_t(997), uint64_t(1000), uint64_t(2345)}) {

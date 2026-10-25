@@ -106,6 +106,9 @@ TEST_CASE("projects are matched by SHA-256, not by name") {
   {
     rn_session_options o;
     rn_session_options_init(&o);
+#if !RN_PRODUCT_NES
+  o.core = RN_CORE_MOCK;
+#endif
     rn_session* s = nullptr;
     REQUIRE_EQ(rn_session_new(rom.c_str(), dir.c_str(), &o, &s), RN_OK);
     rn_set_mode(s, RN_MODE_RECORD);

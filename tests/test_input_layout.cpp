@@ -298,6 +298,7 @@ TEST_CASE("input layout: record, replay, save and reopen with a core's own layou
 }
 
 TEST_CASE("input layout: NES projects keep inputFormatVersion 1 and the NTSC region") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tempDir("input-layout-nes");
   std::string rom = writeTestRom(dir);
   rn_session_options opt;

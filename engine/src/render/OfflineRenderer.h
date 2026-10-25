@@ -42,7 +42,7 @@ class OfflineRenderer {
   std::vector<uint8_t> rom_;
   std::string romPath_;
   std::vector<uint8_t> seed_;      // machine state after recBase_ frames (empty: power-on)
-  CoreKind kind_ = CoreKind::Nestopia;
+  CoreKind kind_ = defaultCoreKind();
   MediaInfo media_;
   std::unique_ptr<ICore> core_;
   uint64_t start_ = 0, end_ = 0, pos_ = 0;

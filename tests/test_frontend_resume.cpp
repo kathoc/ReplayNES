@@ -45,6 +45,9 @@ void writeText(const std::string& path, const std::string& text) {
 rn_session* newSession(const std::string& rom, const std::string& dir) {
   rn_session_options o;
   rn_session_options_init(&o);
+#if !RN_PRODUCT_NES
+  o.core = RN_CORE_MOCK;
+#endif
   rn_session* s = nullptr;
   rn_session_new(rom.c_str(), dir.empty() ? nullptr : dir.c_str(), &o, &s);
   return s;
@@ -53,6 +56,9 @@ rn_session* newSession(const std::string& rom, const std::string& dir) {
 rn_session* openSession(const std::string& dir) {
   rn_session_options o;
   rn_session_options_init(&o);
+#if !RN_PRODUCT_NES
+  o.core = RN_CORE_MOCK;
+#endif
   rn_session* s = nullptr;
   rn_session_open(dir.c_str(), nullptr, &o, &s);
   return s;

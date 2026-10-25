@@ -87,8 +87,8 @@ typedef enum rn_status {
 
 /* ------------------------------------------------------------------ library */
 const char* rn_version(void);          /* engine version string */
-const char* rn_core_compat_id(void);   /* compatibility ID of the bundled Nestopia core */
-const char* rn_core_build_id(void);    /* exact core revision + compiler (informational) */
+const char* rn_core_compat_id(void);   /* bundled Nestopia compatibility ID; empty if not bundled */
+const char* rn_core_build_id(void);    /* bundled Nestopia revision + compiler; empty if not bundled */
 const char* rn_last_error(void);       /* thread-local; never NULL */
 const char* rn_status_name(rn_status s);
 rn_status rn_sha256_file(const char* path, char out_hex[65]);

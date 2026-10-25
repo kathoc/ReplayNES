@@ -1,4 +1,5 @@
 #include "session/Session.h"
+#include "replaynes/product.h"
 
 #include <algorithm>
 #include <cstring>
@@ -18,7 +19,8 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
   s->opt_ = opt;
   s->cps_ = CheckpointStore(opt.checkpoints);
   if (!coreName(opt.core)) return Error(Err::InvalidArg, "unknown core kind");
-  if (!coreAvailable(opt.core)) return Error(Err::UnsupportedFormat, "selected core is not built");
+  if (!coreAvailable(opt.core)) return Error(Err::UnsupportedFormat,
+      RN_PRODUCT_NES ? "selected core is not built" : "core not available in this product");
   s->core_ = createCore(opt.core);
   if (!(coreCapabilities(opt.core) & CapRecording)) s->mode_ = Mode::Live;
   s->rom_ = std::move(rom);

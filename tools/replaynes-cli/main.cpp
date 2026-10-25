@@ -36,6 +36,7 @@
 #include "persist/ProjectStore.h"
 #include "render/OfflineRenderer.h"
 #include "replaynes/replaynes.h"
+#include "replaynes/product.h"
 #include "session/Session.h"
 #include "testrom/TestCartridge.h"
 #include "testrom/TestRom.h"
@@ -72,10 +73,12 @@ int fail(const Status& st) {
 Status selectedCore(const Args& a, CoreKind& kind) {
   if (a.has("--mock") && a.has("--core"))
     return Error(Err::InvalidArg, "--mock and --core cannot be combined");
-  const std::string name = a.has("--mock") ? "mock" : a.get("--core", "nestopia");
-  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore}) {
-    if (name == coreName(candidate)) {
-      if (!coreAvailable(candidate)) return Error(Err::UnsupportedFormat, "selected core is not built: " + name);
+  const std::string name = a.has("--mock") ? "mock" : a.get("--core", RN_PRODUCT_DEFAULT_CORE);
+  for (CoreKind candidate : {CoreKind::Nestopia, CoreKind::Mock, CoreKind::ReplayNEScore, CoreKind::External}) {
+    const char* candidateName = candidate == CoreKind::External ? "external" : coreName(candidate);
+    if (name == candidateName) {
+      if (!coreAvailable(candidate)) return Error(Err::UnsupportedFormat,
+          std::string(RN_PRODUCT_NES ? "selected core is not built: " : "core not available in this product: ") + name);
       kind = candidate;
       return Status::Ok();
     }
@@ -86,7 +89,7 @@ Status selectedCore(const Args& a, CoreKind& kind) {
 int usage() {
   std::fprintf(stderr,
                "usage: replaynes-cli <command> ...\n"
-               "  ROM commands accept --core nestopia|replaynescore|mock (--mock is a legacy alias)\n"
+               "  ROM commands accept --core nestopia|replaynescore|mock|external (--mock is a legacy alias)\n"
                "  make-test-rom [--cartridge] <out.nes>\n"
                "  sha256 <file>\n"
                "  info <project.nesrec> [--rom PATH]\n"

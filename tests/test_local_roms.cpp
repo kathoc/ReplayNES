@@ -25,6 +25,7 @@ std::vector<std::string> localRoms() {
 }  // namespace
 
 TEST_CASE("local roms: boot to a picture and survive mid-run savestates") {
+  RN_REQUIRE_NESTOPIA();
   auto roms = localRoms();
   if (roms.empty()) {
     MESSAGE(std::string("no ROMs in ") + RN_LOCAL_ROMS + " - skipped");

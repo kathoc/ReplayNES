@@ -989,6 +989,7 @@ TEST_CASE("png writer") {
 // ------------------------------------------------------------------ emulation controller
 
 TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("emu");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1055,6 +1056,7 @@ TEST_CASE("emulation: record, playback toggle, pause, step, rewind, fast-forward
 }
 
 TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, snow while paused, hiss") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("crt-reception");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1127,6 +1129,7 @@ TEST_CASE("emulation: CRT reception - no signal at frame 0, power-on and reset, 
 
 #if RN_PRODUCT_FLASH_FILTER
 TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which follow the reduced picture") {
+  RN_REQUIRE_NESTOPIA();
   // The legacy test ROM flashes large areas: at Standard most frames are reduced. The CRT signal
   // must stay on the codes (RF path) and the codes must show what the picture shows (block means
   // in linear light), not the unreduced flash.
@@ -1184,6 +1187,7 @@ TEST_CASE("emulation: flash reduction keeps the CRT on the PPU codes, which foll
 #endif
 
 TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing emulated, aborts back to paused") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("resume-countdown");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1291,6 +1295,7 @@ TEST_CASE("emulation: resume countdown - 3 2 1 on the paused picture, nothing em
 }
 
 TEST_CASE("emulation: resume countdown type-ahead - NES buttons during it reach the first frame, recorded") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("resume-countdown-type-ahead");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1361,6 +1366,7 @@ TEST_CASE("emulation: resume countdown type-ahead - NES buttons during it reach 
 }
 
 TEST_CASE("emulation: resume countdown in practice - only while the run plays, never on top of its own countdown") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("resume-countdown-practice");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1416,6 +1422,7 @@ TEST_CASE("emulation: resume countdown in practice - only while the run plays, n
 }
 
 TEST_CASE("emulation: practice A/B on the timeline, loop, stop restores the take") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("practice");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1465,6 +1472,7 @@ TEST_CASE("emulation: practice A/B on the timeline, loop, stop restores the take
 }
 
 TEST_CASE("emulation: practice return - countdown at A, L2 + R2 back to A with the VTR effect, cancel aborts") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("practice-return");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1525,6 +1533,7 @@ TEST_CASE("emulation: practice return - countdown at A, L2 + R2 back to A with t
 }
 
 TEST_CASE("emulation: bookmarks, a retry and its undo, reset with backup") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("takes");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1585,6 +1594,7 @@ bool contains(const std::vector<std::string>& v, const std::string& x) {
 }  // namespace
 
 TEST_CASE("emulation: VTR - rewind released in play: the countdown (with the overwrite notice), then play") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("vtr-rewind");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1681,6 +1691,7 @@ TEST_CASE("emulation: VTR - rewind released in play: the countdown (with the ove
 }
 
 TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to before it; rapid retries keep one attempt") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("vtr-undo");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1742,6 +1753,7 @@ TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to be
 }
 
 TEST_CASE("emulation: VTR - playback: a game button plays from there (countdown + notice); the end of the tape continues") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("vtr-playback");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -1841,6 +1853,7 @@ TEST_CASE("settings: coachShown round trip") {
 // ------------------------------------------------------------------ session lifecycle
 
 TEST_CASE("session: temporary session is resumed where it was") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("resume");
   std::string rom = testRom(dir + "/roms");
   uint64_t frame = 0;
@@ -1883,6 +1896,7 @@ TEST_CASE("session: temporary session is resumed where it was") {
 }
 
 TEST_CASE("session: switching ROM asks to save a temporary session; Don't Save discards it") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("discard");
   std::string rom = testRom(dir + "/roms");
   World w(dir + "/w", true);
@@ -1906,6 +1920,7 @@ TEST_CASE("session: switching ROM asks to save a temporary session; Don't Save d
 }
 
 TEST_CASE("session: Save As moves the temporary project into Projects and reopens it") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("saveas");
   std::string rom = testRom(dir + "/roms");
   World w(dir + "/w", true);
@@ -1931,6 +1946,7 @@ TEST_CASE("session: Save As moves the temporary project into Projects and reopen
 }
 
 TEST_CASE("session: library Play creates a project in Projects; Continue reopens it") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("library");
   World w(dir + "/w", true);
   std::string rom = testRom(w.library->romDir(), "Test Game" + testRomExtension());
@@ -1968,6 +1984,7 @@ TEST_CASE("session: library Play creates a project in Projects; Continue reopens
 }
 
 TEST_CASE("session: Reset Project backs a saved project up to the Trash") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("reset");
   World w(dir + "/w", true);
   std::string rom = testRom(w.library->romDir());
@@ -2006,6 +2023,7 @@ TEST_CASE("session: Reset Project backs a saved project up to the Trash") {
 }
 
 TEST_CASE("session: after a crash the Continue card recovers the session from the journal") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("crash");
   std::string rom = testRom(dir + "/roms");
   {
@@ -2030,6 +2048,7 @@ TEST_CASE("session: after a crash the Continue card recovers the session from th
 }
 
 TEST_CASE("session: another game while a temporary session waits on the Continue card asks first") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("pendingtemp");
   std::string rom = testRom(dir + "/roms");
   {
@@ -2074,6 +2093,7 @@ TEST_CASE("session: another game while a temporary session waits on the Continue
 }
 
 TEST_CASE("session: a second instance neither persists nor resumes") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("lock");
   World a(dir + "/w", true);
   CHECK(a.app->persistSessions());
@@ -2082,6 +2102,7 @@ TEST_CASE("session: a second instance neither persists nor resumes") {
 }
 
 TEST_CASE("session: a missing ROM offers Locate ROM; cancelling keeps the resume record") {
+  RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("missingrom");
   std::string rom = testRom(dir + "/roms");
   {
@@ -2107,6 +2128,7 @@ TEST_CASE("session: a missing ROM offers Locate ROM; cancelling keeps the resume
 // ------------------------------------------------------------------ thumbnails
 
 TEST_CASE("thumbnails: live capture and background batches") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("thumbs");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();
@@ -2544,13 +2566,17 @@ TEST_CASE("export: MP4 retime of a long take (27:53, 100577 frames): 64-bit medi
   CHECK(out.find(audio) != std::string::npos);
 }
 
-TEST_CASE("core preference preserves unknown ids and applies only to new sessions") {
+TEST_CASE("core preference preserves unknown ids") {
   CHECK_EQ(Settings::parse("").core, std::string(RN_PRODUCT_DEFAULT_CORE));
   CHECK_EQ(Settings::parse("core=external\n").core, std::string("external"));
   Settings preferences;
   preferences.core = "replaynescore";
   CHECK_EQ(Settings::parse(preferences.serialize()).core, preferences.core);
   CHECK_EQ(Settings::parse("core=future-core\n").core, std::string("future-core"));
+}
+
+TEST_CASE("core preference applies only to new sessions") {
+  RN_REQUIRE_NESTOPIA();
   World w(tmpDir("core-selection"));
   std::string rom = testRom(w.root + "/roms");
   w.app->tryRom(rom);
@@ -2600,11 +2626,16 @@ TEST_CASE("development core is a nonpersistent live session in the desktop contr
   w.app->closeProject();
   CHECK_FALSE(w.emu->session());
   w.app->tryRom(path);
+#if RN_PRODUCT_NES
   REQUIRE(w.emu->session());
   CHECK_EQ(rn_session_core_kind(w.emu->session()), RN_CORE_NESTOPIA);
+#else
+  CHECK_FALSE(w.emu->session());
+#endif
 }
 
 TEST_CASE("pad 1 follow gesture: in play L held + R pauses and R held + L toggles slow; paused they step") {
+  RN_REQUIRE_NESTOPIA();
   World w(tmpDir("follow-gesture"));
   w.app->tryRom(testRom(w.root + "/roms"));
   REQUIRE(w.emu->session());
@@ -2642,6 +2673,7 @@ TEST_CASE("pad 1 follow gesture: in play L held + R pauses and R held + L toggle
 }
 
 TEST_CASE("library thumbs: a ROM without a picture gets its frame-300 picture from a background run") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("rom-picture");
   std::string rom = testRom(d + "/roms");
   LibraryThumbs thumbs(d + "/thumbs");
@@ -2750,6 +2782,7 @@ TEST_CASE("product without flash: settings are ignored and original values survi
 }
 
 TEST_CASE("product without flash: live and paused pictures stay raw even after requesting every level") {
+  RN_REQUIRE_NESTOPIA();
   std::string d = tmpDir("noflash-pixels");
   std::string rom = testRom(d);
   rn_input* in = rn_input_new();

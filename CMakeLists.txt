@@ -19,7 +19,9 @@ include(cmake/Product.cmake)
 configure_file(engine/include/replaynes/product.h.in
   ${CMAKE_BINARY_DIR}/generated/replaynes/product.h @ONLY)
 
-include(cmake/NestopiaCore.cmake)
+if(RN_PRODUCT_NES)
+  include(cmake/NestopiaCore.cmake)
+endif()
 add_subdirectory(engine)
 if(REPLAYNES_BUILD_FRONTEND)
   add_subdirectory(frontend)
@@ -46,3 +48,6 @@ if(REPLAYNES_BUILD_FRONTEND AND REPLAYNES_BUILD_DESKTOP)
     add_subdirectory(apps/windows)
   endif()
 endif()
+
+include(cmake/CheckNoNestopia.cmake)
+rn_check_no_nestopia_targets("${CMAKE_CURRENT_SOURCE_DIR}")

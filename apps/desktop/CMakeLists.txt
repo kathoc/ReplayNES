@@ -105,6 +105,7 @@ if(RNL_DESKTOP_TESTS)
     set_target_properties(test_desktop_frontend PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
   endif()
   add_test(NAME test_desktop_frontend COMMAND test_desktop_frontend)
+  set_tests_properties(test_desktop_frontend PROPERTIES SKIP_RETURN_CODE 77)
   set_tests_properties(test_desktop_frontend PROPERTIES TIMEOUT 300)
 endif()
 

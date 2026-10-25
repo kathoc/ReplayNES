@@ -618,10 +618,15 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   const std::string compat = man["coreCompatId"].asString();
   SessionOptions opt = optIn;
   if (!coreForCompatId(compat, opt.core) || !(coreCapabilities(opt.core) & CapRecording))
+#if RN_PRODUCT_NES
     return Error(Err::CoreMismatch, "project was recorded with core '" + compat + "' (build '" +
                                         man["coreBuild"].asString() + "'); this build provides '" +
                                         coreCompatId(CoreKind::Nestopia) +
                                         "'. Open it with a matching " RN_PRODUCT_NAME " build (see COMPATIBILITY.md).");
+#else
+    return Error(Err::CoreMismatch, "project was recorded with core '" + compat +
+                                        "': core not available in this product or does not support recording");
+#endif
 
   // ROM: never stored; located by override or last path, verified by SHA-256.
   const Json& romJ = man["rom"];

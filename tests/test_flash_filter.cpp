@@ -385,6 +385,7 @@ TEST_CASE("flash filter: ordinary screen changes and fades are not held") {
 }
 
 TEST_CASE("flash filter: test cartridge palette chart, greyscale / emphasis toggled by hand, is not held") {
+  RN_REQUIRE_NESTOPIA();
   // Palette chart; B (greyscale) and A (emphasis) pressed in turn, one press every 20 frames (3 per
   // second, as a person tries them out): every press changes most of the screen, but successive
   // changes are further apart than the pairing window, so they are not flashes.
@@ -520,6 +521,7 @@ TEST_CASE("flash filter: C API and session hashes are unaffected") {
   std::string dir = tempDir("flash");
   std::string rom = writeTestRom(dir);
   rn_session_options opt;
+  RN_REQUIRE_NESTOPIA();
   rn_session_options_init(&opt);
   rn_session *s1 = nullptr, *s2 = nullptr;
   REQUIRE(rn_session_new(rom.c_str(), nullptr, &opt, &s1) == RN_OK);
@@ -563,6 +565,7 @@ struct RomCase {
 }  // namespace
 
 TEST_CASE("flash filter: local ROMs (skipped without <repo>/roms)") {
+  RN_REQUIRE_NESTOPIA();
   std::vector<std::string> names;
   if (!fs::listDir(RN_LOCAL_ROMS, names).ok() || names.empty()) {
     MESSAGE(std::string("no ROMs in ") + RN_LOCAL_ROMS + " - skipped");

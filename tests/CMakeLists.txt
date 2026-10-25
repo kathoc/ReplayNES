@@ -1,5 +1,5 @@
 add_library(rn_test_main STATIC support/rn_test_main.cpp)
-target_include_directories(rn_test_main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(rn_test_main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/generated)
 
 set(RN_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
 file(MAKE_DIRECTORY ${RN_TEST_TMP})
@@ -17,7 +17,7 @@ function(rn_add_test name)
   endif()
   add_test(NAME ${name} COMMAND ${name})
   # macOS malloc fills new allocations with garbage: uninitialised core state cannot hide.
-  set_tests_properties(${name} PROPERTIES TIMEOUT 300 ENVIRONMENT "MallocPreScribble=1;MallocScribble=1")
+  set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300 ENVIRONMENT "MallocPreScribble=1;MallocScribble=1")
 endfunction()
 
 rn_add_test(test_core)

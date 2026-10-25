@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
     }
     filters.push_back(argv[i]);
   }
-  int failedCases = 0, ran = 0;
+  int failedCases = 0, ran = 0, skipped = 0;
   for (auto& c : registry()) {
     if (!filters.empty()) {
       bool match = false;
@@ -49,6 +49,12 @@ int main(int argc, char** argv) {
     auto t0 = std::chrono::steady_clock::now();
     try {
       c.fn();
+    } catch (const Skip& skip) {
+      if (gFailures == before) {
+        ++skipped;
+        std::printf("[SKIP] %s: %s\n", c.name, skip.reason);
+        continue;
+      }
     } catch (const RequireFailure&) {
     } catch (const std::exception& e) {
       reportFailure(c.file, c.line, std::string("unexpected exception: ") + e.what());
@@ -61,5 +67,6 @@ int main(int argc, char** argv) {
     std::printf("[%s] %s (%.0f ms)\n", ok ? " OK " : "FAIL", c.name, ms);
   }
   std::printf("%d test case(s), %d failed, %d assertion failure(s)\n", ran, failedCases, gFailures);
-  return failedCases ? 1 : 0;
+  if (skipped) std::printf("%d test case(s) skipped\n", skipped);
+  return failedCases ? 1 : (ran && skipped == ran ? 77 : 0);
 }

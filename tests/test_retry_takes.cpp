@@ -29,6 +29,7 @@ Status reopen(const std::string& dir, std::unique_ptr<Session>& out, OpenReport*
 }  // namespace
 
 TEST_CASE("truncate: a retry inside the abandoned attempt continues it (no extra take)") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia, {30, 1200, 120});
   REQUIRE(s);
   auto a = script(600, 1), b = script(200, 2), c = script(150, 3);
@@ -104,6 +105,7 @@ TEST_CASE("truncate: refusals and no-ops") {
 }
 
 TEST_CASE("discard: an abandoned attempt before its branch frame is dropped") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(s);
   auto a = script(600, 7);
@@ -136,6 +138,7 @@ TEST_CASE("discard: an abandoned attempt before its branch frame is dropped") {
 }
 
 TEST_CASE("discard / truncate: saved, autosaved and crash-recovered projects stay valid") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("retrytakes");
   std::string dir = fs::join(root, "Run.nesrec");
   auto s = createProject(root, dir, CoreKind::Nestopia);

@@ -67,6 +67,7 @@ TEST_CASE("long run: 1 hour (216000 frames) recorded with autosave/save, reopene
 }
 
 TEST_CASE("long run: 30000 frames on nestopia with hundreds of rewinds, save/reopen, verified") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("longnst");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "long.nesrec");

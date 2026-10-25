@@ -51,6 +51,7 @@ struct RangeCase {
 
 TEST_CASE("practice: set_range defines A/B from take frames; cursor restored exactly") {
   for (CoreKind kind : {CoreKind::Nestopia, CoreKind::Mock}) {
+    if (!coreAvailable(kind)) { MESSAGE("skipping unavailable core: " << coreName(kind)); continue; }
     auto s = newSession(kind);
     REQUIRE(s);
     REQUIRE(recordScript(*s, DeterminismHarness::randomScript(700, 91, 200, 3)).ok());
@@ -138,6 +139,7 @@ TEST_CASE("practice: set_range defines A/B from take frames; cursor restored exa
 }
 
 TEST_CASE("practice: set_range slots persist (full save + journal) (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("prac-range");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "r.nesrec");

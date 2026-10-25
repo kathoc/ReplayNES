@@ -55,6 +55,7 @@ std::string practiceFile(const std::string& dir, int slot) {
 }  // namespace
 
 TEST_CASE("practice: steps record nothing; leaving restores the exact take state (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("prac-take");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "p.nesrec");
@@ -112,6 +113,7 @@ TEST_CASE("practice: steps record nothing; leaving restores the exact take state
 }
 
 TEST_CASE("practice: A/B length and goto A reproduces identical frames (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   auto s = newSession(CoreKind::Nestopia);
   REQUIRE(s);
   REQUIRE(recordScript(*s, DeterminismHarness::randomScript(300, 51)).ok());
@@ -221,6 +223,7 @@ TEST_CASE("practice: continuity rules, slot limit, practice rewind") {
 }
 
 TEST_CASE("practice: slots survive save/close/reopen; goto A works; save while practicing (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("prac-save");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "s.nesrec");
@@ -334,6 +337,7 @@ TEST_CASE("practice: crash recovery via the journal keeps slots") {
 }
 
 TEST_CASE("practice: corrupt slot is an explicit error; dropped only with its own flag") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("prac-corrupt");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "x.nesrec");

@@ -101,6 +101,7 @@ std::vector<JournalRecordRange> journalRanges(const std::vector<uint8_t>& bytes)
 }  // namespace
 
 TEST_CASE("persist: save, close, reopen next day, head restored, rewind further back (nestopia)") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("nextday");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "Run.nesrec");
@@ -250,6 +251,7 @@ TEST_CASE("persist: crash between index and manifest commit opens the newer inde
 }
 
 TEST_CASE("persist: corrupt segment / state are detected; states can be dropped explicitly") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("corrupt");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "x.nesrec");
@@ -287,6 +289,7 @@ TEST_CASE("persist: corrupt segment / state are detected; states can be dropped 
 }
 
 TEST_CASE("persist: core compat mismatch is refused with a distinct error") {
+  RN_REQUIRE_NESTOPIA();
   std::string root = tempDir("compat");
   std::string rom = writeTestRom(root);
   std::string dir = fs::join(root, "k.nesrec");

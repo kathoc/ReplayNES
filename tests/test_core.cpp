@@ -68,6 +68,7 @@ TEST_CASE("audio sample schedule is a pure function of the frame index") {
 }
 
 TEST_CASE("nestopia: test ROM runs, produces changing video and audible PCM") {
+  RN_REQUIRE_NESTOPIA();
   auto core = createCore(CoreKind::Nestopia);
   auto rom = buildTestRom();
   REQUIRE(core->loadROM(rom.data(), rom.size()).ok());
@@ -90,6 +91,7 @@ TEST_CASE("nestopia: test ROM runs, produces changing video and audible PCM") {
 }
 
 TEST_CASE("nestopia: rejects garbage ROM with explicit error") {
+  RN_REQUIRE_NESTOPIA();
   auto core = createCore(CoreKind::Nestopia);
   std::vector<uint8_t> junk(4096, 0x42);
   Status st = core->loadROM(junk.data(), junk.size());
@@ -136,12 +138,14 @@ static void saveRestoreScenario(CoreKind kind) {
 }
 
 TEST_CASE("nestopia: save -> 200f (soft reset + power cycle) -> restore -> same frames => identical hashes") {
+  RN_REQUIRE_NESTOPIA();
   saveRestoreScenario(CoreKind::Nestopia);
 }
 
 TEST_CASE("mock: save/restore round trip") { saveRestoreScenario(CoreKind::Mock); }
 
 TEST_CASE("nestopia: state from another core / truncated state is refused") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto n = createCore(CoreKind::Nestopia), m = createCore(CoreKind::Mock);
   REQUIRE(n->loadROM(rom.data(), rom.size()).ok());
@@ -154,6 +158,7 @@ TEST_CASE("nestopia: state from another core / truncated state is refused") {
 }
 
 TEST_CASE("nestopia: two instances run concurrently without interference") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto scriptA = DeterminismHarness::randomScript(3000, 1, 700);
   auto scriptB = DeterminismHarness::randomScript(3000, 2, 900);
@@ -191,6 +196,7 @@ TEST_CASE("nestopia: two instances run concurrently without interference") {
 }
 
 TEST_CASE("nestopia: power-on state does not depend on heap garbage (uninitialised members)") {
+  RN_REQUIRE_NESTOPIA();
   // A destroyed, fully used instance leaves its memory behind; the next instance usually reuses
   // it. Without patch 4 (Triangle::linearCtrl) this changes the power-on machine state.
   auto rom = buildTestRom();
@@ -218,6 +224,7 @@ TEST_CASE("nestopia: power-on state does not depend on heap garbage (uninitialis
 }
 
 TEST_CASE("nestopia: reloading the ROM in a used instance equals a fresh power-on") {
+  RN_REQUIRE_NESTOPIA();
   auto rom = buildTestRom();
   auto script = DeterminismHarness::randomScript(900, 3, 0, 5);
   auto fresh = createCore(CoreKind::Nestopia);

@@ -170,6 +170,9 @@ TEST_CASE("visible ranges on an engine session") {
   std::string rom = rntest::writeTestRom(dir);
   rn_session_options o;
   rn_session_options_init(&o);
+#if !RN_PRODUCT_NES
+  o.core = RN_CORE_MOCK;
+#endif
   rn_session* s = nullptr;
   REQUIRE_EQ(rn_session_new(rom.c_str(), nullptr, &o, &s), RN_OK);
   for (int i = 0; i < 300; ++i) rn_step(s, i % 7 == 0 ? RN_BTN_A : 0, 0, 0, nullptr);

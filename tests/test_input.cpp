@@ -150,6 +150,7 @@ TEST_CASE("input: JSON round trip; invalid config rejected without partial chang
 }
 
 TEST_CASE("input: recorded take replays identically with or without physical devices") {
+  RN_REQUIRE_NESTOPIA();
   // Record through the pipeline (turbo + held buttons + taps + SOCD) ...
   InputPipeline p;
   p.bind("kb:t", "p1.turbo_a");

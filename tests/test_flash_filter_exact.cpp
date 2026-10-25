@@ -212,6 +212,7 @@ TEST_CASE("flash filter exact: generated test ROM frames") {
   std::string dir = tempDir("flash-exact");
   std::string rom = writeTestRom(dir);
   rn_session_options opt;
+  RN_REQUIRE_NESTOPIA();
   rn_session_options_init(&opt);
   rn_session* s = nullptr;
   REQUIRE(rn_session_new(rom.c_str(), nullptr, &opt, &s) == RN_OK);

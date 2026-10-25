@@ -56,6 +56,7 @@ target_compile_definitions(replaynes-export PRIVATE RNL_EXPORT_FFMPEG=1)
 target_compile_options(replaynes-export PRIVATE ${RNL_WARNINGS})
 install(TARGETS replaynes-export RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(RNL_EXPORT_ONLY)
+  rn_check_no_nestopia_targets("${CMAKE_CURRENT_SOURCE_DIR}")
   return()
 endif()
 
@@ -137,3 +138,5 @@ install(FILES "${RN_PRODUCT_LINUX_DESKTOP_FILE}" DESTINATION ${CMAKE_INSTALL_DAT
 install(FILES "${RN_PRODUCT_LINUX_METAINFO_FILE}" DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 # App icons (hicolor 64-512 + scalable), Steam artwork, Add to Steam module + test.
 include(steam/steam.cmake)
+
+rn_check_no_nestopia_targets("${CMAKE_CURRENT_SOURCE_DIR}")

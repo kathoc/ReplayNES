@@ -200,7 +200,13 @@ TEST_CASE("the ReplayNES Test Cartridge is in the database by its hash") {
   const std::string path = (std::filesystem::temp_directory_path() / "rn-gamedb-testcart.nes").string();
   REQUIRE(rn_write_test_cartridge(path.c_str()) == RN_OK);
   rnf_game_info g{};
-  CHECK_EQ(int(rnf_gamedb_identify_file(path.c_str(), &g)), int(RNF_GAME_MATCH_HASH));  // not by its name: "x.nes" below
+  CHECK_EQ(int(rnf_gamedb_identify_file(path.c_str(), &g)),
+           int(RN_PRODUCT_NES ? RNF_GAME_MATCH_HASH : RNF_GAME_MATCH_NONE));
+#if !RN_PRODUCT_NES
+  // NES-free products only identify names; arbitrary file bytes are never decoded as iNES.
+  CHECK(g.id == nullptr);
+  REQUIRE(rnf_gamedb_find_name(RNF_TEST_CARTRIDGE_FILE, &g));
+#endif
   std::remove(path.c_str());
   std::ifstream probe(path);
   CHECK_FALSE(probe.good());
@@ -352,6 +358,7 @@ TEST_CASE("favourites, history, filters and search; persisted as JSON") {
 // The developer's own ROMs (gitignored <repo>/roms, or RN_LOCAL_ROMS_DIR): each one is recognised by
 // its hash with a Japanese title and reading. Skipped when there are none.
 TEST_CASE("local ROMs are identified by hash") {
+  if (!RN_PRODUCT_NES) throw rntest::Skip{"NES ROM hash identification is disabled in this product"};
   std::string dir = std::getenv("RN_LOCAL_ROMS_DIR") ? std::getenv("RN_LOCAL_ROMS_DIR") : RN_LOCAL_ROMS;
   std::error_code ec;
   int seen = 0;

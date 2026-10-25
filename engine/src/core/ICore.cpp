@@ -2,7 +2,9 @@
 #include "replaynes/product.h"
 
 #include "core/MockCore.h"
+#if RN_PRODUCT_NES
 #include "core/NestopiaCore.h"
+#endif
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
 #include "core/ReplayNEScoreAdapter.h"
 #endif
@@ -57,8 +59,20 @@ const char* coreName(CoreKind kind) {
   return nullptr;
 }
 
+CoreKind defaultCoreKind() {
+  const std::string name = RN_PRODUCT_DEFAULT_CORE;
+  if (name == "nestopia") return CoreKind::Nestopia;
+  if (name == "mock") return CoreKind::Mock;
+  if (name == "replaynescore") return CoreKind::ReplayNEScore;
+  if (name == "external") return CoreKind::External;
+  return static_cast<CoreKind>(-1);
+}
+
 bool coreAvailable(CoreKind kind) {
-  if (kind == CoreKind::Nestopia || kind == CoreKind::Mock) return true;
+  if (kind == CoreKind::Mock) return true;
+#if RN_PRODUCT_NES
+  if (kind == CoreKind::Nestopia) return true;
+#endif
   if (kind == CoreKind::External) return bool(externalCore().create);
 #ifdef REPLAYNES_HAS_REPLAYNESCORE
   if (kind == CoreKind::ReplayNEScore) return true;
@@ -67,6 +81,7 @@ bool coreAvailable(CoreKind kind) {
 }
 
 uint32_t coreCapabilities(CoreKind kind) {
+  if (!coreAvailable(kind)) return 0;
   if (kind == CoreKind::Nestopia || kind == CoreKind::Mock)
     return uint32_t(CapAudio | CapState | CapSoftReset | CapRecording);
   if (kind == CoreKind::ReplayNEScore && coreAvailable(kind)) return uint32_t(CapAudio | CapState);
@@ -76,7 +91,12 @@ uint32_t coreCapabilities(CoreKind kind) {
 
 std::unique_ptr<ICore> createCore(CoreKind kind) {
   switch (kind) {
-    case CoreKind::Nestopia: return std::unique_ptr<ICore>(new NestopiaCore());
+    case CoreKind::Nestopia:
+#if RN_PRODUCT_NES
+      return std::unique_ptr<ICore>(new NestopiaCore());
+#else
+      return nullptr;
+#endif
     case CoreKind::Mock: return std::unique_ptr<ICore>(new MockCore());
     case CoreKind::External: return externalCore().create ? externalCore().create() : nullptr;
     case CoreKind::ReplayNEScore:
@@ -91,7 +111,12 @@ std::unique_ptr<ICore> createCore(CoreKind kind) {
 
 std::string coreCompatId(CoreKind kind) {
   switch (kind) {
-    case CoreKind::Nestopia: return NestopiaCore::staticCompatId();
+    case CoreKind::Nestopia:
+#if RN_PRODUCT_NES
+      return NestopiaCore::staticCompatId();
+#else
+      return {};
+#endif
     case CoreKind::Mock: return MockCore::kCompatId;
     case CoreKind::External: return externalCore().create ? externalCore().compatId : std::string();
     case CoreKind::ReplayNEScore:

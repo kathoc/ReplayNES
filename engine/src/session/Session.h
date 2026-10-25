@@ -24,7 +24,7 @@ enum class Mode : int { Record = 0, Replay = 1, Practice = 2, Live = 3 };
 constexpr int kPracticeSlots = 8;
 
 struct SessionOptions {
-  CoreKind core = CoreKind::Nestopia;
+  CoreKind core = defaultCoreKind();
   CheckpointPolicy checkpoints;
   bool dropCorruptStates = false;  // open(): discard corrupt state files instead of failing
   bool dropCorruptPractice = false;  // open(): discard corrupt practice slots instead of failing

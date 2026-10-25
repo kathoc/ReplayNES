@@ -142,6 +142,8 @@ enum CoreCapability : uint32_t {
   // Instances share one machine: background rendering must yield to foreground emulation.
   CapSharesMachine = 16
 };
+// Configured product default; independent of external-core registration.
+CoreKind defaultCoreKind();
 const char* coreName(CoreKind kind);
 bool coreAvailable(CoreKind kind);
 uint32_t coreCapabilities(CoreKind kind);

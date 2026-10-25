@@ -3,6 +3,7 @@
 // header; tests can be moved to real doctest by swapping this include.
 #pragma once
 #include <cstdint>
+#include "replaynes/product.h"
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -13,6 +14,10 @@ struct Registrar {
   Registrar(const char* name, Fn fn, const char* file, int line);
 };
 struct RequireFailure {};
+struct Skip { const char* reason; };
+inline void requireNestopia() {
+  if (!RN_PRODUCT_NES) throw Skip{"Nestopia core not available in this product"};
+}
 void reportFailure(const char* file, int line, const std::string& what);
 void message(const char* file, int line, const std::string& what);
 
@@ -72,3 +77,6 @@ std::string show(const T& v) {
     ::rntest::reportFailure(__FILE__, __LINE__, rnt_os.str()); \
     throw ::rntest::RequireFailure();                      \
   } while (0)
+
+// Declare the real-core dependency at the start of an individual test case.
+#define RN_REQUIRE_NESTOPIA() ::rntest::requireNestopia()
