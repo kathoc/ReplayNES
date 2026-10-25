@@ -38,6 +38,8 @@ namespace {
 
 std::mutex contentIdLock;
 rnf_content_id_fn contentIdProvider = nullptr;
+rnf_rom_filter_fn romFilter = nullptr;
+void* romFilterContext = nullptr;
 void* contentIdContext = nullptr;
 uint64_t contentIdGeneration = 0;
 
@@ -304,6 +306,12 @@ void rnf_set_content_id_provider(rnf_content_id_fn fn, void* ctx) {
   ++contentIdGeneration;
 }
 
+void rnf_set_rom_filter(rnf_rom_filter_fn fn, void* ctx) {
+  std::lock_guard<std::mutex> guard(contentIdLock);
+  romFilter = fn;
+  romFilterContext = ctx;
+}
+
 rn_status rnf_library_ensure(const char* root, char** failed_path) {
   if (failed_path) *failed_path = nullptr;
   if (!root) return fail(RN_ERR_INVALID_ARG, "null root");
@@ -342,6 +350,10 @@ rn_status rnf_library_scan_roms(const char* dir_c, rnf_name_compare compare, voi
     if (!isRomExtension(extensionOf(name))) return;
     Entry e = inspect(path);
     if (!e.ok || !e.isRegular) return;
+    {
+      std::lock_guard<std::mutex> guard(contentIdLock);
+      if (romFilter && !romFilter(path.c_str(), romFilterContext)) return;
+    }
     list->items.push_back({path, stem(name), relative, e.size, e.modified});
   };
   for (auto& n : names) {

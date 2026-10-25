@@ -451,7 +451,8 @@ void UI::buildLibrary(double now) {
     textCentered(dl, m.title(), inset(r, S(24)), r.y + r.h * 0.40f, kText, loading ? TR("Loading…") : TR("Put your games here"));
     textCentered(dl, m.label(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f, kTextDim, Paths::display(lib->romDir()));
     textCentered(dl, m.hint(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f + m.label() * 1.6f, kTextFaint,
-                 TR(".nes files; they appear here by themselves"));
+                 RN_PRODUCT_NES ? TR(".nes files; they appear here by themselves")
+                                : TR("ROM zips (FinalBurn Neo set names); they appear here by themselves"));
     // Buttons: Open Folder (A), Reload (X), Add Test Cartridge (Y).
     constexpr int buttons = RN_PRODUCT_NES ? 3 : 2;
     float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * (buttons - 1)) / buttons), bh = m.label() * 2.2f;

@@ -219,7 +219,7 @@ const std::vector<ItemDef>& items() {
       {"system.about", "about.folders", RNF_L("Folders and License"), RNF_L("ROM and project folders, settings file"),
        "folder", PAGE, "about.folders", 0, {}},
       // System > ReplayNES Version > Folders and License.
-      {"about.folders", "about.roms", RNF_L("ROM Folder"), RNF_L("Put .nes files here"), "folder", ACTION, "", 0, {}},
+      {"about.folders", "about.roms", RNF_L("ROM Folder"), RN_PRODUCT_NES ? RNF_L("Put .nes files here") : RNF_L("Put ROM zips here (FinalBurn Neo set names)"), "folder", ACTION, "", 0, {}},
       {"about.folders", "about.projects", RNF_L("Projects Folder"), RNF_L("Your recordings are saved here"), "folder", ACTION,
        "", 0, {}},
       {"about.folders", "about.settings", RNF_L("Settings File"), "", "file-text", INFO, "", 0, {}},

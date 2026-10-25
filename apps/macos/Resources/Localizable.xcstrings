@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Put ROM zips here (FinalBurn Neo set names)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM の zip ファイル（FinalBurn Neo のセット名）をここに入れます"
+          }
+        }
+      }
+    },
+    "ROM zips (FinalBurn Neo set names); they appear here by themselves": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM の zip ファイル（FinalBurn Neo のセット名）を入れると自動で並びます"
+          }
+        }
+      }
+    },
     "Before play resumes after a pause, and before each practice run (1: the ring alone)": {
       "localizations": {
         "ja": {

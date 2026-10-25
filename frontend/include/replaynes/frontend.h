@@ -1098,6 +1098,11 @@ char* rnf_library_new_project_path(const char* projects_dir, const char* rom_nam
  * Calls are serialized; callbacks must not call the provider setter or identity-cache APIs. */
 typedef int (*rnf_content_id_fn)(const char* path, char* out, size_t cap, void* ctx);
 void rnf_set_content_id_provider(rnf_content_id_fn fn, void* ctx);
+/* Which ROM files the product lists at all (rnf_library_scan_roms): fn(path) == 0 leaves the file out
+ * (ReplayArcade: FinalBurn Neo's home-system sets; it plays arcade games only). NULL: every file of a ROM
+ * extension. */
+typedef int (*rnf_rom_filter_fn)(const char* path, void* ctx);
+void rnf_set_rom_filter(rnf_rom_filter_fn fn, void* ctx);
 
 /* Content IDs (file SHA-256 by default), cached by path + size + modification date. Thread-safe. */
 typedef struct rnf_rom_hash_cache rnf_rom_hash_cache;
