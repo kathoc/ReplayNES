@@ -119,6 +119,10 @@ typedef enum rn_core_kind {
 #define RN_CORE_CAP_STATE 2u
 #define RN_CORE_CAP_SOFT_RESET 4u
 #define RN_CORE_CAP_RECORDING 8u
+/* Instances share one machine. Use a single background thumbnail worker and start renders
+ * only while foreground emulation is paused and idle (an in-flight render may finish).
+ * Query a session with rn_core_capabilities(rn_session_core_kind(session)). */
+#define RN_CORE_CAP_SHARES_MACHINE 16u
 const char* rn_core_name(rn_core_kind kind); /* stable name; NULL for unknown */
 int rn_core_available(rn_core_kind kind);
 uint32_t rn_core_capabilities(rn_core_kind kind);

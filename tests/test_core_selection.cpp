@@ -2,8 +2,23 @@
 #include "support/rn_test.h"
 #include "replaynes/replaynes.h"
 #include "render/OfflineRenderer.h"
+#include "core/MockCore.h"
 using namespace rn;
 using namespace rntest;
+
+TEST_CASE("core selection: shared machine capability is opt in and queryable through C") {
+  static_assert(unsigned(CapSharesMachine) == RN_CORE_CAP_SHARES_MACHINE, "C capability ABI");
+  for (auto kind : {RN_CORE_NESTOPIA, RN_CORE_MOCK, RN_CORE_REPLAYNESCORE})
+    CHECK_EQ(rn_core_capabilities(kind) & RN_CORE_CAP_SHARES_MACHINE, 0u);
+  struct Registration {
+    ~Registration() { unregisterExternalCore(); }
+  } registration;
+  registerExternalCore({"shared-test", MockCore::kCompatId,
+                        uint32_t(CapAudio | CapState | CapRecording | CapSharesMachine),
+                        [] { return std::make_unique<MockCore>(); }});
+  CHECK_EQ(rn_core_capabilities(RN_CORE_EXTERNAL) & RN_CORE_CAP_SHARES_MACHINE,
+           RN_CORE_CAP_SHARES_MACHINE);
+}
 
 static std::vector<uint8_t> idleRom() {
   std::vector<uint8_t> r(16 + 16384 + 8192, 0);

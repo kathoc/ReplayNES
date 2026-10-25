@@ -100,6 +100,8 @@ class InputRouter {
 
   /// ui = a menu / the library has the input: nothing reaches the game (all game input released).
   void setUIMode(bool ui);
+  /// Includes the delay between shoulder-step repeats, before another frame is requested.
+  bool stepRepeatHeld() const;
   bool uiMode() const { return ui_; }
   /// Emulation paused state (paused D-pad stepping). Entering pause releases D-pad left/right held
   /// for the game, so a following frame advance does not record them.

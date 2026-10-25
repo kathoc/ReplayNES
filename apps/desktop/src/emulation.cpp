@@ -125,6 +125,7 @@ void EmulationController::install(rn_session* s) {
   pendingEvents_ = 0;
   endOfTake_ = false;
   uiRewindHeld_ = uiFastForwardHeld_ = false;
+  stepRepeatHeld_ = false;
   rewinding_ = fastForward_ = false;
   rewindTicks_ = 0;
   lastPressSeq_ = pressSequence ? pressSequence() : 0;
@@ -387,6 +388,12 @@ void EmulationController::stepBack(uint64_t n) {
   }
   uint64_t f = rn_frame(session_);
   seekCommand(f >= n ? f - n : 0);
+}
+
+bool EmulationController::coreBusy() const {
+  return session_ && (!paused_ || rewinding_ || fastForward_ || uiRewindHeld_ || uiFastForwardHeld_ ||
+                      advanceRemaining_ > 0 || stepRepeatHeld_ ||
+                      rnf_step_repeater_direction(stepRepeater_) != 0);
 }
 
 void EmulationController::pausedStep(int dir, bool down) {

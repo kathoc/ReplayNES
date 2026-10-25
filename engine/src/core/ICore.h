@@ -137,7 +137,11 @@ void unregisterExternalCore();
 uint64_t videoFrameHash(const VideoFrame& v);
 uint64_t audioFramesHash(const int16_t* a, size_t frames, uint32_t channels);
 
-enum CoreCapability : uint32_t { CapAudio = 1, CapState = 2, CapSoftReset = 4, CapRecording = 8 };
+enum CoreCapability : uint32_t {
+  CapAudio = 1, CapState = 2, CapSoftReset = 4, CapRecording = 8,
+  // Instances share one machine: background rendering must yield to foreground emulation.
+  CapSharesMachine = 16
+};
 const char* coreName(CoreKind kind);
 bool coreAvailable(CoreKind kind);
 uint32_t coreCapabilities(CoreKind kind);

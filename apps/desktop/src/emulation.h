@@ -191,6 +191,9 @@ class EmulationController {
   void resume();
   void setPaused(bool p);
   bool paused() const { return paused_; }
+  /// Foreground transport owns the core until it is paused with no held/pending navigation.
+  bool coreBusy() const;
+  void setStepRepeatHeld(bool held) { stepRepeatHeld_ = held; }
   void frameAdvance(int n = 1);
   void stepBack(uint64_t n = 1);
   /// Paused D-pad stepping (InputRouter): step now, repeat while held.
@@ -341,6 +344,7 @@ class EmulationController {
   std::vector<int16_t> hissPcm_;
 
   bool paused_ = true;
+  bool stepRepeatHeld_ = false;
   int slow_ = 1;
   bool followFromPlay_ = false;  // the current follow hold began in play (followGesture)
   int advanceRemaining_ = 0;

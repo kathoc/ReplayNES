@@ -529,7 +529,8 @@ int App::run(const AppOptions& opt) {
       emu_->afterFrame(slack);
       app_->update(now);
       ui_->slack(now);
-      thumbs_->pump(emu_->session(), now);
+      emu_->setStepRepeatHeld(input_->stepRepeatHeld());
+      thumbs_->pump(emu_->session(), now, emu_->coreBusy());
       library_->poll();
     }
     sleepUntil(sampleAt);

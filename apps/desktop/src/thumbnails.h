@@ -68,6 +68,7 @@ class ThumbRef {
 };
 
 class ThumbnailManager : public FrameObserver {
+  friend struct ThumbnailSchedulingProbe;
  public:
   ThumbnailManager();
   ~ThumbnailManager() override;
@@ -89,7 +90,7 @@ class ThumbnailManager : public FrameObserver {
 
   /// Frame thread, every loop iteration: keeps the cache on the active take, creates the
   /// renderers of a running batch (a few per call) and commits finished batches.
-  void pump(rn_session* s, double now);
+  void pump(rn_session* s, double now, bool coreBusy = false);
 
   ThumbRef imageAt(uint64_t frame);
   ThumbRef imageBefore(uint64_t frame, uint64_t window);
@@ -104,6 +105,10 @@ class ThumbnailManager : public FrameObserver {
     std::atomic<bool> cancelled{false}, failed{false};
     std::mutex m;
     std::vector<std::pair<uint64_t, ThumbImage*>> results;
+    ~Job() {
+      // A cancelled, partly admitted batch never reaches pending == 0.
+      for (auto& result : results) result.second->release();
+    }
   };
   struct Task {
     std::shared_ptr<Job> job;
@@ -115,6 +120,7 @@ class ThumbnailManager : public FrameObserver {
   void reconcile(double now);
   void finishOne(const std::shared_ptr<Job>& j, uint64_t frame, ThumbImage* img, bool failed);
   void workerLoop();
+  void resizeWorkers(unsigned count);
 
   rnf_thumb_cache* cache_ = nullptr;
   double step_ = 0;
@@ -129,6 +135,9 @@ class ThumbnailManager : public FrameObserver {
   std::condition_variable qCv_;
   std::deque<Task> queue_;
   bool stop_ = false;
+  bool sharesMachine_ = false;
+  bool coreBusy_ = false;
+  std::atomic<unsigned> inFlight_{0};
 };
 
 }  // namespace rnl

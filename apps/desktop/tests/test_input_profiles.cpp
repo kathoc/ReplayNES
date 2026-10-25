@@ -269,4 +269,27 @@ TEST_CASE("P SDL stick triggers hold transport and LB LT chord leaves RB as a ga
     button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, false, time + 0.31);
   }
   CHECK_EQ(menus, 2);
+  router.setPausedStepMode(true);
+  CHECK_FALSE(router.stepRepeatHeld());
+  button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true, 6.0);
+  CHECK(router.stepRepeatHeld()); // includes the initial chord/repeat delay
+  router.tick(6.2);
+  CHECK(router.stepRepeatHeld());
+  router.setUIMode(true);
+  CHECK_FALSE(router.stepRepeatHeld());
+  router.setUIMode(false);
+  button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, false, 6.3);
+  CHECK_FALSE(router.stepRepeatHeld());
+  button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true, 7.0);
+  router.tick(7.2);
+  trigger(true, 7.3); // sequential follower: repeat between ticks remains busy
+  router.tick(7.35);
+  CHECK(router.stepRepeatHeld());
+  trigger(false, 7.5);
+  button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, false, 7.6);
+  CHECK_FALSE(router.stepRepeatHeld());
+  button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true, 8.0);
+  CHECK(router.stepRepeatHeld());
+  connect(router, id, false);
+  CHECK_FALSE(router.stepRepeatHeld());
 }

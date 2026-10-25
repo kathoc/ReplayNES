@@ -465,6 +465,13 @@ void InputRouter::setSeekFocus(int focus) {
 }
 
 // Paused frame steps repeat while L / R is held (not while a marker is edited: it moves instead).
+bool InputRouter::stepRepeatHeld() const {
+  if (!pausedStepMode_ || ui_ || seekFocus_ >= 2) return false;
+  for (const auto& id : pressed_)
+    if (rnf_chord_is_member(chord_, id.c_str())) return true;
+  return false;
+}
+
 void InputRouter::updateRepeat() { rnf_chord_set_repeat(chord_, pausedStepMode_ && !ui_ && seekFocus_ < 2); }
 
 bool InputRouter::isGameMember(const std::string& id) const { return gameMembers_.count(id) > 0; }

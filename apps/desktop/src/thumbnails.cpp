@@ -77,7 +77,26 @@ ThumbImage* ThumbImage::fromThumb(const uint32_t* px, uint32_t width, uint32_t h
 ThumbnailManager::ThumbnailManager() : cache_(rnf_thumb_cache_new(&retainFn, &releaseFn)) {
   unsigned hw = std::thread::hardware_concurrency();
   int n = int(std::max(1u, std::min(3u, hw > 2 ? hw - 2 : 1u)));
-  for (int i = 0; i < n; ++i) workers_.emplace_back([this] { workerLoop(); });
+  resizeWorkers(unsigned(n));
+}
+
+void ThumbnailManager::resizeWorkers(unsigned count) {
+  if (workers_.size() == count) return;
+  {
+    std::lock_guard<std::mutex> lk(qMutex_);
+    stop_ = true;
+  }
+  qCv_.notify_all();
+  for (auto& worker : workers_) worker.join();
+  workers_.clear();
+  for (Task& task : queue_) {
+    rn_renderer_free(task.renderer);
+    finishOne(task.job, task.frame, nullptr, false);
+    --inFlight_;
+  }
+  queue_.clear();
+  stop_ = false;
+  for (unsigned i = 0; i < count; ++i) workers_.emplace_back([this] { workerLoop(); });
 }
 
 ThumbnailManager::~ThumbnailManager() {
@@ -89,8 +108,7 @@ ThumbnailManager::~ThumbnailManager() {
   qCv_.notify_all();
   for (auto& t : workers_) t.join();
   for (Task& t : queue_) rn_renderer_free(t.renderer);
-  for (auto& j : finished_)
-    for (auto& r : j->results) r.second->release();
+  finished_.clear();
   rnf_thumb_cache_free(cache_);
 }
 
@@ -106,7 +124,7 @@ void ThumbnailManager::workerLoop() {
     Task t;
     {
       std::unique_lock<std::mutex> lk(qMutex_);
-      qCv_.wait(lk, [&] { return stop_ || !queue_.empty(); });
+      qCv_.wait(lk, [&] { return stop_ || (!queue_.empty() && (!sharesMachine_ || !coreBusy_)); });
       if (stop_) return;
       t = queue_.front();
       queue_.pop_front();
@@ -126,6 +144,7 @@ void ThumbnailManager::workerLoop() {
     }
     rn_renderer_free(t.renderer);
     finishOne(t.job, t.frame, img, img == nullptr && !t.job->cancelled.load());
+    --inFlight_;
   }
 }
 
@@ -144,6 +163,13 @@ void ThumbnailManager::finishOne(const std::shared_ptr<Job>& j, uint64_t frame, 
 void ThumbnailManager::sessionInstalled(rn_session* s) {
   if (job_) job_->cancelled = true;
   job_.reset();
+  {
+    std::lock_guard<std::mutex> lk(qMutex_);
+    sharesMachine_ = s && (rn_core_capabilities(rn_session_core_kind(s)) & RN_CORE_CAP_SHARES_MACHINE);
+    coreBusy_ = false;
+  }
+  unsigned hw = std::thread::hardware_concurrency();
+  resizeWorkers(sharesMachine_ ? 1u : std::max(1u, std::min(3u, hw > 2 ? hw - 2 : 1u)));
   rnf_thumb_cache_reset(cache_, s ? rn_active_take(s) : 0);
   if (step_ > 0) rnf_thumb_cache_set_step(cache_, step_);
   hasTarget_ = false;
@@ -238,7 +264,12 @@ void ThumbnailManager::reconcile(double now) {
   job_ = j;
 }
 
-void ThumbnailManager::pump(rn_session* s, double now) {
+void ThumbnailManager::pump(rn_session* s, double now, bool coreBusy) {
+  {
+    std::lock_guard<std::mutex> lk(qMutex_);
+    coreBusy_ = coreBusy;
+  }
+  qCv_.notify_all();
   if (!enabled) return;
   // Finished batches: committed in one update (rejected by the cache if stale).
   std::vector<std::shared_ptr<Job>> done;
@@ -269,7 +300,10 @@ void ThumbnailManager::pump(rn_session* s, double now) {
   }
   std::shared_ptr<Job> j = job_;
   if (!j || j->next >= j->targets.size()) return;
-  size_t end = std::min(j->next + kRenderersPerPump, j->targets.size());
+  // Admit at most one shared-machine renderer (including its queued and running phases).
+  // Core creation/seeking is lazy in the worker; an admitted picture may finish once started.
+  if (sharesMachine_ && (coreBusy || inFlight_.load() != 0)) return;
+  size_t end = std::min(j->next + (sharesMachine_ ? 1 : kRenderersPerPump), j->targets.size());
   std::vector<Task> tasks;
   for (; j->next < end; ++j->next) {
     uint64_t f = j->targets[j->next];
@@ -279,6 +313,7 @@ void ThumbnailManager::pump(rn_session* s, double now) {
       finishOne(j, f, nullptr, !j->cancelled.load());
       continue;
     }
+    ++inFlight_;
     tasks.push_back(Task{j, r, f, rn_session_core_kind(s) != RN_CORE_EXTERNAL});
   }
   if (!tasks.empty()) {
