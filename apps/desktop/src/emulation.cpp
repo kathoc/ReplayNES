@@ -95,6 +95,7 @@ void EmulationController::setPaused(bool p) {
 void EmulationController::install(rn_session* s) {
   if (s != session_) closeSession();
   session_ = s;
+  sharesMachine_ = s && (rn_core_capabilities(rn_session_core_kind(s)) & RN_CORE_CAP_SHARES_MACHINE) != 0;
   char* layout = s ? rn_session_input_layout_json(s) : nullptr;
   rnf_input_set_layout_json(layout);
   const bool wasNes = nesLayout_;
@@ -570,6 +571,14 @@ EmulationController::Tick EmulationController::tick() {
     setMuted(true);
     rewindTicks_ += 1;
     uint64_t n = uint64_t(rnf_hold_speed(rewindTicks_));  // the same curve as fast-forward
+    // A core that shares one machine (an arcade core: a frame costs ~1-3 ms) rewinds on every
+    // other display tick by two ticks' worth: the same speed, twice the time per step. The first
+    // tick of a hold acts at once.
+    bool stepThisTick = true;
+    if (sharesMachine_) {
+      stepThisTick = rewindTicks_ % 2 == 1;
+      n += uint64_t(rnf_hold_speed(rewindTicks_ + 1));
+    }
     // Practice: rewinds the practice run only (the engine stops at A); take: clamps at 0.
     bool can = false;
     if (practicing) {
@@ -579,7 +588,7 @@ EmulationController::Tick EmulationController::tick() {
     } else {
       can = rn_frame(s) > 0;
     }
-    if (can) {
+    if (can && stepThisTick) {
       if (rn_rewind(s, n) == RN_OK) {
         endOfTake_ = false;
         if (practicing) rnf_reel_truncate(reel_, rn_practice_frame(s));

@@ -355,6 +355,7 @@ class EmulationController {
   uint8_t pendingEvents_ = 0;
   bool rewinding_ = false, fastForward_ = false;
   int rewindTicks_ = 0, ffTicks_ = 0;  // ticks of the hold (rnf_hold_speed)
+  bool sharesMachine_ = false;  // the session's core shares one machine (CapSharesMachine): rewind every other tick
   uint64_t tickCount_ = 0;
   bool endOfTake_ = false;
   uint64_t lastPressSeq_ = 0;
