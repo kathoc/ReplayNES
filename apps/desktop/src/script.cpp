@@ -41,7 +41,7 @@ bool Script::pushPad(const std::string& logical, bool down) {
       {"l3", SDL_GAMEPAD_BUTTON_LEFT_STICK},    {"r3", SDL_GAMEPAD_BUTTON_RIGHT_STICK},
       {"home", SDL_GAMEPAD_BUTTON_GUIDE},
   };
-  SDL_JoystickID id = padId ? padId() : 0;
+  SDL_JoystickID id = pressPad_ ? pressPad_ : padId ? padId() : 0;
   SDL_Event e;
   SDL_zero(e);
   e.common.timestamp = SDL_GetTicksNS();
@@ -267,12 +267,40 @@ void Script::step(double now) {
       emu_->seek(std::strtoull(arg(1, "0").c_str(), nullptr, 10));
     } else if (op == "advance") {
       emu_->frameAdvance(std::atoi(arg(1, "1").c_str()));
+    } else if (op == "padplug") {  // padplug <name> <vendor hex> <product hex>: a controller connected
+      SDL_VirtualJoystickDesc desc;
+      SDL_INIT_INTERFACE(&desc);
+      desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+      desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+      desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+      desc.vendor_id = Uint16(std::strtoul(arg(2, "0").c_str(), nullptr, 16));
+      desc.product_id = Uint16(std::strtoul(arg(3, "0").c_str(), nullptr, 16));
+      const std::string name = arg(1);
+      desc.name = name.c_str();
+      SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+      if (id) plugged_[name] = id;
+      else std::fprintf(stderr, "script: padplug %s: %s\n", name.c_str(), SDL_GetError());
+    } else if (op == "padunplug") {  // padunplug <name>: disconnected
+      auto it = plugged_.find(arg(1));
+      if (it != plugged_.end()) {
+        SDL_DetachVirtualJoystick(it->second);
+        plugged_.erase(it);
+      }
+    } else if (op == "padpress") {  // padpress <name> <button>: a press (down and up) on that controller
+      auto it = plugged_.find(arg(1));
+      if (it != plugged_.end()) {
+        pressPad_ = it->second;
+        pushPad(arg(2), true);
+        pushPad(arg(2), false);
+        pressPad_ = 0;
+      }
     } else if (op == "status") {
       const EmuStatus st = emu_->status();
       std::fprintf(stderr, "script: status frame=%llu length=%llu take=%llu takes=%zu undo=%zu recording=%d paused=%d page=%s mouse=%d section=%d practicing=%d\n",
                    (unsigned long long)st.frame, (unsigned long long)st.takeLength, (unsigned long long)st.activeTake,
                    st.takeCount, st.undoDepth, st.recording ? 1 : 0, st.paused ? 1 : 0, ui_->shownMenuPage().c_str(),
                    mouseCaptured && mouseCaptured() ? 1 : 0, ui_->selectedSection(), st.practicing ? 1 : 0);
+      if (players) std::fprintf(stderr, "script: players=%s\n", players().c_str());
     } else if (op == "dialog") {
       ui_->answerDialog(std::atoi(arg(1, "0").c_str()));
     } else if (op == "resetprompt") {

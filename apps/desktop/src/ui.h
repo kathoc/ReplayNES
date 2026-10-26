@@ -306,6 +306,10 @@ class UI : public DialogHost {
   void buildCountdown();
   void toggleCountdown();
   void buildBadges();
+  /// "■■□□" top left: which players have a controller (filled), the one pressed lights up; while paused
+  /// and for a few seconds after a controller joins, leaves or changes player.
+  void buildPlayers(double now);
+  float playersW_ = 0;  // its width this frame (the flash badge goes after it)
   bool thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1);
 
   // ---- ui_osk.cpp

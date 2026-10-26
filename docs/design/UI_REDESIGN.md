@@ -132,6 +132,18 @@ Games with analog controls (FBNeo sticks, dials, levers) get mouse bindings by d
 
 Considered: a per-game setting (rejected for now: one switch is easier to find, and the default bindings already limit the mouse to analog games); taking the mouse away for a while after pad input (rejected: the last device used wins, nothing to time).
 
+## Controllers and players (2026-10-26, desktop)
+
+Under Steam (the Deck's Gaming Mode) a controller connected or disconnected while playing lost the players: a new controller simply took the first free slot (so it became player 2 next to the Deck's own controls), and Steam re-creating its virtual gamepads reshuffled the rest.
+
+- **Player 1**: a controller connected while player 1 is the machine's own controls (Steam Deck 28de:1205, Steam Controller; not Steam's virtual gamepad 28de:11ff) or nobody becomes player 1; the built-in controls wait aside (they play nobody; the menus still follow every controller). When that controller is disconnected, player 1 goes back to the built-in controls.
+- **Players 2-4** keep their controllers: nobody moves up when one leaves; a controller connected again gets its former player when that is free (by serial, else GUID + name), else the first free one.
+- Telling the built-in controls apart needs the real device under Steam: Steam names it in `SteamVirtualGamepadInfo` (`~/.local/share/Steam/config/virtualgamepadinfo.txt`), which SDL reads; the Flatpak gets read access to that file.
+- **Indicator** top left (`UI::buildPlayers`): one square per player (2 on NES, 4 on arcade), filled when a controller is connected, brand red for a moment when it presses a button; shown while paused and for 5 s after a controller joins, leaves or changes player (not during play: it would cover the picture at every press). The flash badge moves right of it.
+- Scripted checks: `padplug <name> <vid> <pid>`, `padunplug <name>`, `padpress <name> <button>`, and `status` prints `players=`.
+
+Considered: both the built-in controls and the new controller playing player 1 (rejected: the request says player 1 moves to the new controller); always showing the indicator (rejected: over the picture during play).
+
 ## Practice: return to A (2026-10-09)
 
 One sequence for every arrival at A - reaching B, **L2 + R2** pressed together while practicing (from anywhere in the section), starting practice (menu, seek bar Y): brief hold (at B only, 0.5 s) → **1 s VTR rewind** → A's picture → **3, 2, 1** → play. State machine `rnf_practice_loop` (shared core, tested on a fake clock); the frontends only apply its actions.

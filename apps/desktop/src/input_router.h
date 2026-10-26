@@ -48,6 +48,11 @@ struct PadInfo {
   std::map<std::string, std::string> labels;  // printed face labels by element ("face.east" -> "B")
   bool lt = false, rt = false;
   float lx = 0, ly = 0, rx = 0, ry = 0;
+  // The machine's own controls (a Steam Deck's, a Steam Controller): player 1 while no other controller
+  // is; waiting aside (standby) while one is (InputRouter::attach).
+  bool builtIn = false;
+  std::string key;          // this controller's identity across a disconnect (serial, or guid + name)
+  double lastPress = -1e9;  // CLOCK_MONOTONIC s of its last button (the player indicator)
 };
 
 class InputRouter {
@@ -145,6 +150,14 @@ class InputRouter {
 
   // Settings diagram / bindings UI.
   const PadInfo& pad(int slot) const { return pads_[slot]; }
+  /// Which player each controller is (docs/design/UI_REDESIGN.md, "Controllers and players"): a controller
+  /// connected while player 1 is the machine's own controls (or nobody) becomes player 1, the built-in ones
+  /// wait aside; it gives player 1 back to them when disconnected. Players 2 to 4 keep their controllers
+  /// (no moving up when one leaves); a controller connected again gets its former player when free.
+  bool standbyConnected() const { return standby_.pad != nullptr; }
+  /// Bumped whenever a controller joins, leaves or changes player (the indicator shows for a while).
+  int playersVersion() const { return playersVersion_; }
+  double playersChanged() const { return playersChanged_; }
   int connectedCount() const;
   /// Slot of the controller used last (-1: none yet); its family picks the UI's button prompts.
   int lastSlot() const { return lastSlot_; }
@@ -228,6 +241,12 @@ class InputRouter {
   std::map<std::string, std::pair<int, int>> buttonTurbo_;
   Settings* settings_;
   PadInfo pads_[kSlots];
+  PadInfo standby_;                         // the built-in controls while another controller is player 1
+  std::map<std::string, int> formerSlot_;   // PadInfo::key -> the player (slot 1..3) it last was
+  int playersVersion_ = 0;
+  double playersChanged_ = -1e9;
+  void releaseSlot(int s);                  // a slot's held inputs and per-slot state let go
+  void playersMoved();
   bool ui_ = false;
   int lastSlot_ = -1;
   bool pausedStepMode_ = false;

@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "../../../engine/src/util/Json.h"
+#include "host_clock.h"
 #include "settings.h"
 
 namespace rnl {
@@ -46,6 +47,8 @@ void InputRouter::closeAll() {
     if (p.pad) SDL_CloseGamepad(p.pad);
     p = PadInfo();
   }
+  if (standby_.pad) SDL_CloseGamepad(standby_.pad);
+  standby_ = PadInfo();
 }
 
 bool InputRouter::applyPlan(rnf_list* unbind, rnf_list* bind) {
@@ -749,40 +752,86 @@ int InputRouter::slotOf(SDL_JoystickID id) const {
   return -1;
 }
 
-void InputRouter::attach(SDL_JoystickID id) {
-  if (slotOf(id) >= 0) return;
-  for (int s = 0; s < kSlots; ++s) {
-    PadInfo& p = pads_[s];
-    if (p.pad) continue;
-    p.pad = SDL_OpenGamepad(id);
-    if (!p.pad) return;
-    p.id = id;
-    const char* n = SDL_GetGamepadName(p.pad);
-    p.name = n ? n : "";
-    char guid[33]{};
-    SDL_GUIDToString(SDL_GetJoystickGUID(SDL_GetGamepadJoystick(p.pad)), guid, sizeof(guid));
-    p.guid = guid;
-    p.detectedKind = detectDeviceKind(SDL_GetJoystickType(SDL_GetGamepadJoystick(p.pad)), p.name);
-    p.family = rnf_sdl_controller_family(int(SDL_GetGamepadType(p.pad)), p.name.c_str());
-    p.labels.clear();
-    for (int b : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH}) {
-      const char* l = rnf_sdl_button_label_text(int(SDL_GetGamepadButtonLabel(p.pad, SDL_GamepadButton(b))));
-      if (l) p.labels[rnf_sdl_button_element(b)] = l;
-    }
-    std::fprintf(stderr, "gamepad: %s (slot %d, type %d)\n", p.name.c_str(), s, int(SDL_GetGamepadType(p.pad)));
-    if (!nesLayout_) { rebuildRuntime(); refreshBindings(); }
-    if (onPadsChanged) onPadsChanged();
-    return;
-  }
+namespace {
+// Valve's own controls (not Steam's virtual gamepad, 0x11ff, which wraps every controller under Steam Input):
+// the Steam Deck's, the Steam Controller's. Under Steam the real device is known from Steam's virtual gamepad
+// info (SteamVirtualGamepadInfo; the Flatpak may read that file), else from its name.
+bool isBuiltInControls(SDL_Gamepad* pad, const std::string& name) {
+  const Uint16 vendor = SDL_GetGamepadVendor(pad), product = SDL_GetGamepadProduct(pad);
+  if (vendor == 0x28de && product != 0x11ff &&
+      (product == 0x1205 || product == 0x1102 || product == 0x1142 || product == 0x1106 || product == 0x1101))
+    return true;
+  std::string lower = name;
+  for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+  return lower.find("steam deck") != std::string::npos || lower.find("steam controller") != std::string::npos;
+}
+}  // namespace
+
+void InputRouter::playersMoved() {
+  ++playersVersion_;
+  playersChanged_ = rnl::nowSeconds();
+  if (!nesLayout_) { rebuildRuntime(); refreshBindings(); }
+  if (onPadsChanged) onPadsChanged();
 }
 
-void InputRouter::detach(SDL_JoystickID id) {
-  int s = slotOf(id);
-  if (s < 0) return;
-  std::string name = pads_[s].name;
+void InputRouter::attach(SDL_JoystickID id) {
+  if (slotOf(id) >= 0 || (standby_.pad && standby_.id == id)) return;
+  PadInfo p;
+  p.pad = SDL_OpenGamepad(id);
+  if (!p.pad) return;
+  p.id = id;
+  const char* n = SDL_GetGamepadName(p.pad);
+  p.name = n ? n : "";
+  char guid[33]{};
+  SDL_GUIDToString(SDL_GetJoystickGUID(SDL_GetGamepadJoystick(p.pad)), guid, sizeof(guid));
+  p.guid = guid;
+  const char* serial = SDL_GetGamepadSerial(p.pad);
+  p.key = serial && *serial ? std::string("serial:") + serial : p.guid + "/" + p.name;
+  p.builtIn = isBuiltInControls(p.pad, p.name);
+  p.detectedKind = detectDeviceKind(SDL_GetJoystickType(SDL_GetGamepadJoystick(p.pad)), p.name);
+  p.family = rnf_sdl_controller_family(int(SDL_GetGamepadType(p.pad)), p.name.c_str());
+  for (int b : {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH}) {
+    const char* l = rnf_sdl_button_label_text(int(SDL_GetGamepadButtonLabel(p.pad, SDL_GamepadButton(b))));
+    if (l) p.labels[rnf_sdl_button_element(b)] = l;
+  }
+  // Player 1: another controller takes over from the built-in controls (they wait aside); the built-in
+  // controls take it only when it is free. Players 2-4: the controller's former player when free, else the
+  // first free one.
+  int slot = -1;
+  if (p.builtIn) {
+    if (!pads_[0].pad) slot = 0;
+    else if (!standby_.pad) {
+      standby_ = std::move(p);
+      std::fprintf(stderr, "gamepad: %s (built-in, waiting: player 1 is %s)\n", standby_.name.c_str(), pads_[0].name.c_str());
+      playersMoved();
+      return;
+    }
+  } else if (!pads_[0].pad || pads_[0].builtIn) {
+    if (pads_[0].pad) {
+      releaseSlot(0);
+      standby_ = std::move(pads_[0]);
+      pads_[0] = PadInfo();
+    }
+    slot = 0;
+  }
+  if (slot < 0) {
+    auto f = formerSlot_.find(p.key);
+    if (f != formerSlot_.end() && f->second > 0 && f->second < kSlots && !pads_[f->second].pad) slot = f->second;
+    for (int s = 1; slot < 0 && s < kSlots; ++s)
+      if (!pads_[s].pad) slot = s;
+  }
+  if (slot < 0) {  // four players already
+    SDL_CloseGamepad(p.pad);
+    return;
+  }
+  pads_[slot] = std::move(p);
+  std::fprintf(stderr, "gamepad: %s (slot %d, type %d%s)\n", pads_[slot].name.c_str(), slot,
+               int(SDL_GetGamepadType(pads_[slot].pad)), pads_[slot].builtIn ? ", built-in" : "");
+  playersMoved();
+}
+
+void InputRouter::releaseSlot(int s) {
   if (lastSlot_ == s) lastSlot_ = -1;
-  SDL_CloseGamepad(pads_[s].pad);
-  pads_[s] = PadInfo();
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
@@ -805,8 +854,28 @@ void InputRouter::detach(SDL_JoystickID id) {
   }
   for (auto it = pressed_.begin(); it != pressed_.end();)
     it = it->compare(0, prefix.size(), prefix) == 0 ? pressed_.erase(it) : std::next(it);
-  if (!nesLayout_) { rebuildRuntime(); refreshBindings(); }
-  if (onPadsChanged) onPadsChanged();
+}
+
+void InputRouter::detach(SDL_JoystickID id) {
+  if (standby_.pad && standby_.id == id) {
+    SDL_CloseGamepad(standby_.pad);
+    standby_ = PadInfo();
+    playersMoved();
+    return;
+  }
+  int s = slotOf(id);
+  if (s < 0) return;
+  std::string name = pads_[s].name;
+  if (s > 0 && !pads_[s].key.empty()) formerSlot_[pads_[s].key] = s;
+  releaseSlot(s);
+  SDL_CloseGamepad(pads_[s].pad);
+  pads_[s] = PadInfo();
+  if (s == 0 && standby_.pad) {  // player 1 back to the built-in controls
+    pads_[0] = std::move(standby_);
+    standby_ = PadInfo();
+    std::fprintf(stderr, "gamepad: %s (slot 0 again)\n", pads_[0].name.c_str());
+  }
+  playersMoved();
   if (onDisconnect) onDisconnect(name);
 }
 
@@ -814,7 +883,10 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
   const char* el = rnf_sdl_button_element(button);
   if (!el || rnf_input_element_ignored(el)) return;  // HOME / guide: the system's (Steam, Game Bar)
   std::string id = slotPrefix(slot) + el;
-  if (down) noteLastSlot(slot);
+  if (down) {
+    noteLastSlot(slot);
+    pads_[slot].lastPress = t;
+  }
   if (isReserved(el)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -900,7 +972,10 @@ void InputRouter::padAxis(int slot, int axis, float v, double t) {
     bool now = state ? v > 0.35f : v > 0.5f;  // hysteresis
     if (now == state) return;
     state = now;
-    if (now) noteLastSlot(slot);
+    if (now) {
+      noteLastSlot(slot);
+      pads_[slot].lastPress = t;
+    }
     std::string id = g + (right ? "rightTrigger" : "leftTrigger");
     if (now && capture_) {
       pressed_.insert(id);

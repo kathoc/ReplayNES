@@ -475,7 +475,9 @@ void UI::build(double now) {
 
 void UI::buildOverlays(double now) {
   bool session = hasSession();
+  playersW_ = 0;
   if (session && !menuOpen_) {
+    buildPlayers(now);
     buildBadges();
     if (d_.emu->status().practicing && !d_.emu->status().paused) buildPracticePill();
     if (!seekBarShown()) buildPlayOverlay(now);

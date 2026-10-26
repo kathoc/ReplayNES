@@ -614,9 +614,40 @@ void UI::buildBadges() {
   const UiMetrics& m = metrics_;
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   float fs = m.hint();
-  ImVec2 p(m.margin(), pill_.y + (pill_.h - fs - S(8)) / 2);
+  ImVec2 p(m.margin() + playersW_, pill_.y + (pill_.h - fs - S(8)) / 2);
   ui::Pill(dl, p, TR("Flash Reduction Active"), IM_COL32(30, 150, 150, 220), fs);
 #endif
+}
+
+void UI::buildPlayers(double now) {
+  const int n = RN_PRODUCT_NES ? 2 : rnl::InputRouter::kSlots;
+  bool any = false;
+  for (int s = 0; s < n; ++s) any = any || d_.input->pad(s).pad != nullptr;
+  if (!any) return;  // keyboard / touch only
+  const double since = now - d_.input->playersChanged();
+  const bool paused = d_.emu->status().paused;
+  const float a = paused || since < 4.6 ? 1.0f : since < 5.0 ? float((5.0 - since) / 0.4) : 0.0f;
+  if (a <= 0) return;
+  const UiMetrics& m = metrics_;
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  const float h = pill_.h > 0 ? pill_.h : m.label() + 14 * m.s;
+  const float box = h * 0.42f, gap = box * 0.4f, padX = S(12);
+  const float w = padX * 2 + n * box + (n - 1) * gap;
+  const ImVec2 p0(m.margin(), pill_.y);
+  dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), alpha(IM_COL32(22, 22, 25, 225), a), h / 2);
+  dl->AddRect(p0, ImVec2(p0.x + w, p0.y + h), alpha(IM_COL32(255, 255, 255, 40), a), h / 2, 0, 1.0f);
+  for (int s = 0; s < n; ++s) {
+    const PadInfo& pad = d_.input->pad(s);
+    const ImVec2 b0(p0.x + padX + s * (box + gap), p0.y + (h - box) / 2), b1(b0.x + box, b0.y + box);
+    const float r = box * 0.18f;
+    if (!pad.pad) {
+      dl->AddRect(b0, b1, alpha(IM_COL32(255, 255, 255, 120), a), r, 0, S(1.5f));
+    } else {
+      const bool lit = now - pad.lastPress < 0.25;
+      dl->AddRectFilled(b0, b1, alpha(lit ? kBrand : kText, a), r);
+    }
+  }
+  playersW_ = w + S(8);
 }
 
 std::string UI::statusLabelText(bool practicePart) const {

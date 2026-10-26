@@ -443,6 +443,11 @@ int App::run(const AppOptions& opt) {
     script->windowId = [this] { return SDL_GetWindowID(window_); };
     script->mouseCaptured = [this] { return input_->mouseCaptured(); };
     script->padId = [this]() -> SDL_JoystickID { return input_->pad(0).pad ? input_->pad(0).id : SDL_JoystickID(0x7fff0000); };
+    script->players = [this] {
+      std::string out;
+      for (int s = 0; s < InputRouter::kSlots; ++s) out += (s ? "|" : "") + (input_->pad(s).pad ? input_->pad(s).name : std::string("-"));
+      return out + (input_->standbyConnected() ? " (built-in waiting)" : "");
+    };
     script->onCrt = [this](bool on) {
       settings_.crt = on;
       opt_.crt = -1;  // the script's choice wins over --crt / --no-crt

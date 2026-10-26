@@ -29,11 +29,11 @@ struct Devices {
     SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
     rnf_input_set_layout_json(nullptr);
   }
-  SDL_JoystickID add(const char* name, unsigned product) {
+  SDL_JoystickID add(const char* name, unsigned product, unsigned vendor = 0x1234) {
     SDL_VirtualJoystickDesc desc{};
     SDL_INIT_INTERFACE(&desc);
     desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
-    desc.vendor_id = 0x1234;
+    desc.vendor_id = Uint16(vendor);
     desc.product_id = product;
     desc.name = name;
     desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
@@ -45,6 +45,10 @@ struct Devices {
     REQUIRE(SDL_IsGamepad(id));
     ids.push_back(id);
     return id;
+  }
+  void remove(SDL_JoystickID id) {
+    SDL_DetachVirtualJoystick(id);
+    ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
   }
 };
 void connect(rnl::InputRouter& router, SDL_JoystickID id, bool added = true) {
@@ -524,6 +528,76 @@ TEST_CASE("P the mouse is off by default; a pad or a game key puts its stick bac
   r = sample(router, 7);
   CHECK_EQ(axisAt(r, 5), 0);
   CHECK_EQ(axisAt(r, 9), 0);
+}
+
+TEST_CASE("P players: a controller connected takes player 1 from the Steam Deck's own controls, which get it back") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  auto name = [&](int s) { return router.pad(s).pad ? router.pad(s).name : std::string("-"); };
+  auto players = [&] { return name(0) + "|" + name(1) + "|" + name(2) + "|" + name(3) + (router.standbyConnected() ? " (deck waiting)" : ""); };
+  auto plug = [&](const char* n, unsigned product, unsigned vendor) {
+    auto id = devices.add(n, product, vendor);
+    connect(router, id);
+    return id;
+  };
+  auto unplug = [&](SDL_JoystickID id) {
+    connect(router, id, false);
+    devices.remove(id);
+  };
+  const auto deck = plug("Steam Deck", 0x1205, 0x28de);
+  CHECK_EQ(players(), std::string("Steam Deck|-|-|-"));
+  const int v0 = router.playersVersion();
+  const auto a = plug("8BitDo Pro 3", 0x6009, 0x2dc8);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|-|-|- (deck waiting)"));
+  CHECK(router.playersVersion() > v0);
+  const auto b = plug("Pad B", 0x0b00, 0x045e);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad B|-|- (deck waiting)"));
+  // Player 1 disconnected: back to the deck; player 2 stays player 2.
+  unplug(a);
+  CHECK_EQ(players(), std::string("Steam Deck|Pad B|-|-"));
+  const auto a2 = plug("8BitDo Pro 3", 0x6009, 0x2dc8);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad B|-|- (deck waiting)"));
+  // Steam re-creating its virtual pads: the deck leaves and comes back while another is player 1.
+  unplug(deck);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad B|-|-"));
+  const auto deck2 = plug("Steam Deck", 0x1205, 0x28de);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad B|-|- (deck waiting)"));
+  // The waiting deck plays nobody: its buttons reach no player.
+  SDL_Event e{};
+  e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+  e.gbutton.which = deck2;
+  e.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+  e.gbutton.down = true;
+  router.handleEvent(e, 2, false);
+  for (int s = 0; s < 4; ++s) CHECK(router.pad(s).lastPress < 0);
+  // Player 2 leaves, another takes the free player 2; the first one back gets player 3.
+  unplug(b);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|-|-|- (deck waiting)"));
+  const auto c = plug("Pad C", 0x0c00, 0x046d);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad C|-|- (deck waiting)"));
+  const auto b2 = plug("Pad B", 0x0b00, 0x045e);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad C|Pad B|- (deck waiting)"));
+  // Player 2 leaves and comes back: player 2 again (it was free), not the first free one after a reshuffle.
+  unplug(c);
+  const auto c2 = plug("Pad C", 0x0c00, 0x046d);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad C|Pad B|- (deck waiting)"));
+  // A button of player 3 is seen as player 3's (the indicator).
+  e.gbutton.which = b2;
+  router.handleEvent(e, 3, false);
+  CHECK_EQ(router.pad(2).lastPress, 3.0);
+  // Players 2 and 3 both leave; player 3's controller comes back first: player 3 again, not the first free.
+  unplug(c2);
+  unplug(b2);
+  const auto b3 = plug("Pad B", 0x0b00, 0x045e);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|-|Pad B|- (deck waiting)"));
+  const auto c3 = plug("Pad C", 0x0c00, 0x046d);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad C|Pad B|- (deck waiting)"));
+  (void)a2;
+  (void)b3;
+  (void)c3;
 }
 
 TEST_CASE("P the paused seek bar: L / R switch the practice section on a pad and on a stick, no repeats") {
