@@ -702,7 +702,8 @@ void UI::stopPracticeFromPad() {
   d_.emu->stopPractice();
 }
 
-LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked) {
+LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked,
+               float fill) {
   const UiMetrics& m = metrics_;
   float fs = m.hint(), padX = S(12), gh = h * 0.78f;
   rnf_controller_family f = promptFamily();
@@ -715,6 +716,11 @@ LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string&
   if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   if (clicked) *clicked = hovered && ImGui::IsMouseReleased(0) && inside(io.MouseClickedPos[0]);
   dl->AddRectFilled(tl(r), br(r), hovered ? IM_COL32(64, 64, 72, 245) : IM_COL32(40, 40, 46, 235), h / 2);
+  if (fill > 0) {  // a hold in progress, filled from the left
+    dl->PushClipRect(tl(r), ImVec2(r.x + r.w * std::min(fill, 1.f), r.bottom()), true);
+    dl->AddRectFilled(tl(r), br(r), IM_COL32(90, 120, 190, 245), h / 2);
+    dl->PopClipRect();
+  }
   dl->AddRect(tl(r), br(r), IM_COL32(255, 255, 255, 50), h / 2, 0, 1.0f);
   float x = r.x + padX;
   if (!element.empty()) x += glyph(dl, ImVec2(x, y + (h - gh) / 2), element, f, gh) + S(6);
@@ -725,11 +731,12 @@ LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string&
 
 float UI::buildChips(ImDrawList* dl, float right, float y, float h) {
   const EmuStatus& st = d_.emu->status();
-  // "↶ Undo" for 10 s after a retry (its button: pad 1's binding of hk.undo_take, default L3).
+  // "↶ Undo" for 10 s after a retry (its button: pad 1's binding of hk.undo_take, default L3, held:
+  // EmulationController::holdToUndo). A click or tap undoes at once.
   if (st.canUndo) {
     bool clicked = false;
     std::string el = controllerConnected() ? boundPadElement("hk.undo_take") : std::string();
-    LRect r = chip(dl, right, y, h, el, TR("↶ Undo"), &clicked);
+    LRect r = chip(dl, right, y, h, el, el.empty() ? TR("↶ Undo") : TR("↶ Hold to Undo"), &clicked, st.undoHold);
     right = r.x - S(10);
     if (clicked) undoRetry();
   }

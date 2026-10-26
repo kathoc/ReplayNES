@@ -291,7 +291,8 @@ class UI : public DialogHost {
   /// Status label (bottom left) and the chips (bottom right: Undo, Make Video) while playing.
   void buildPlayOverlay(double now);
   /// A chip (rounded, clickable: true when clicked) right-aligned at `right`; returns its rectangle.
-  LRect chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked);
+  LRect chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked,
+             float fill = 0);
   /// The bottom-right chips of the seek bar's hints row / the play overlay; returns their left edge.
   float buildChips(ImDrawList* dl, float right, float y, float h);
   /// The input bound to `action`: pad 1's element ("leftThumb") or a keyboard key's name; "" if none.

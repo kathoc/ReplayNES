@@ -28,6 +28,7 @@
 #include "dialogs.h"
 #include "display_health.h"
 #include "emulation.h"
+#include "host_clock.h"
 #include "export/export_frame.h"
 #include "ui_layout.h"
 #include "export/mp4_check.h"
@@ -1732,10 +1733,24 @@ TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to be
   tickN(emu, 10);
   CHECK_EQ(emu.structure().takes.size(), size_t(2));
   CHECK_EQ(emu.status().takeLength, uint64_t(60));
-  // L3 (hk.undo_take, the default pad binding) during play: the same Undo.
+  // L3 (hk.undo_take, the default pad binding) during play: a tap is a misfire of a soft stick and
+  // does nothing; held for kUndoHoldSeconds, the same Undo.
   REQUIRE(emu.status().canUndo);
   rn_input_set_pressed(in, "gc0:leftThumb", 1);
   emu.tick();
+  rn_input_set_pressed(in, "gc0:leftThumb", 0);
+  emu.tick();
+  CHECK_FALSE(emu.paused());
+  CHECK_EQ(emu.structure().takes.size(), size_t(2));
+  rn_input_set_pressed(in, "gc0:leftThumb", 1);
+  const double held = rnl::nowSeconds();
+  emu.tick();
+  CHECK_EQ(emu.structure().takes.size(), size_t(2));
+  while (rnl::nowSeconds() - held < EmulationController::kUndoHoldSeconds + 0.05 && !emu.paused()) {
+    CHECK(emu.status().undoHold < 1.f);
+    rnl::sleepUntil(rnl::nowSeconds() + 0.02);
+    emu.tick();
+  }
   rn_input_set_pressed(in, "gc0:leftThumb", 0);
   emu.tick();
   CHECK(emu.paused());
