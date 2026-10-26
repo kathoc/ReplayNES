@@ -127,8 +127,6 @@ void EmulationController::install(rn_session* s) {
   endOfTake_ = false;
   uiRewindHeld_ = uiFastForwardHeld_ = false;
   stepRepeatHeld_ = false;
-  undoHeldSince_ = 0;
-  undoHoldDone_ = false;
   rewinding_ = fastForward_ = false;
   rewindTicks_ = 0;
   lastPressSeq_ = pressSequence ? pressSequence() : 0;
@@ -508,7 +506,6 @@ EmulationController::Tick EmulationController::tick() {
   rn_input_poll_hotkeys(input_, &edges, &held);
   bool wasPaused = paused_;
   if (edges) handleHotkeys(edges);
-  holdToUndo((held & RN_HK_UNDO_TAKE) != 0);
   if (pressSeq != lastPressSeq_) {
     lastPressSeq_ = pressSeq;
     // Game input is not emulated while paused; say so once instead of silently ignoring it.
@@ -767,21 +764,7 @@ void EmulationController::handleHotkeys(uint32_t e) {
   if (on(RN_HK_POWER_CYCLE)) requestEvent(RN_EV_POWER_CYCLE);
   if (on(RN_HK_TOGGLE_MODE)) toggleRecord();
   if (on(RN_HK_SAVE)) save();
-}
-
-// hk.undo_take: Undo once it has been held kUndoHoldSeconds (a press and release does nothing).
-void EmulationController::holdToUndo(bool held) {
-  if (!held) {
-    undoHeldSince_ = 0;
-    undoHoldDone_ = false;
-    return;
-  }
-  const double now = nowSeconds();
-  if (undoHeldSince_ == 0) undoHeldSince_ = now;
-  if (!undoHoldDone_ && now - undoHeldSince_ >= kUndoHoldSeconds) {
-    undoHoldDone_ = true;
-    undoRetry();
-  }
+  if (on(RN_HK_UNDO_TAKE)) undoRetry();
 }
 
 // ------------------------------------------------------------------ fast-forward
@@ -1579,7 +1562,6 @@ void EmulationController::updateStatus() {
   st.retryNotice = retryNotice_ && countdown_ > 0 && rnf_resume_countdown_active(resumeCountdown_);
   st.resumeCountdown = rnf_resume_countdown_active(resumeCountdown_) != 0;
   st.canUndo = rnf_retry_can_undo(retry_, nowSeconds(), st.activeTake, rn_get_mode(s)) != 0;
-  st.undoHold = undoHeldSince_ == 0 || undoHoldDone_ ? 0.f : float(std::min(1.0, (nowSeconds() - undoHeldSince_) / kUndoHoldSeconds));
   st.rewindStops = rewindStops_;
   if (st.practicing) {
     st.practiceSlot = practiceSlot_;

@@ -291,12 +291,11 @@ class UI : public DialogHost {
   /// Status label (bottom left) and the chips (bottom right: Undo, Make Video) while playing.
   void buildPlayOverlay(double now);
   /// A chip (rounded, clickable: true when clicked) right-aligned at `right`; returns its rectangle.
-  LRect chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked,
-             float fill = 0);
+  LRect chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked);
   /// The bottom-right chips of the seek bar's hints row / the play overlay; returns their left edge.
   float buildChips(ImDrawList* dl, float right, float y, float h);
   /// The input bound to `action`: pad 1's element ("leftThumb") or a keyboard key's name; "" if none.
-  std::string boundPadElement(const char* action) const;
+  std::string boundPadElement(const char* action, bool combos = false) const;  // combos: "<a>+<b>" too
   std::string boundKeyName(const char* action) const;
   /// The first-run coach toasts (rnf_coach; persisted in Settings::coachShown).
   void tickCoach(double now);
@@ -383,6 +382,7 @@ class UI : public DialogHost {
   bool controlsEditingSelected_ = false;
   std::vector<std::string> diagramIds_;  // this frame's diagram elements (physical ids) ...
   std::vector<ImVec2> diagramCenters_;   // ... and where they are (D-pad navigation)
+  std::vector<int> diagramHubs_;         // ... and their stick's click (diagramFocusNext), -1: none
   std::string assignElement_;  // physical id whose action is picked on "controls.assign"
   std::string capturingAction_;
 #if RNL_HAVE_STEAM

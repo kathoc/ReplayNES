@@ -58,7 +58,6 @@ struct EmuStatus {
   /// ahead, never UI (no countdown cancel tap: that is the practice countdown's).
   bool resumeCountdown = false;
   bool canUndo = false;      // the Undo chip (rnf_retry_can_undo): a retry started < 10 s ago
-  float undoHold = 0;        // how far hk.undo_take has been held, 0..1 (it acts at kUndoHoldSeconds)
   bool atTapeEnd = false;    // the cursor is at the end of the tape (length > 0, not practicing)
   uint64_t rewindStops = 0;  // count of rewinds of the tape ended (L2 released; the coach's RETRY tip)
 };
@@ -110,8 +109,6 @@ class FrameObserver {
 
 class EmulationController {
  public:
-  // hk.undo_take acts when held this long: a tap of L3 (the default) is a misfire of a soft stick.
-  static constexpr double kUndoHoldSeconds = 0.6;
   EmulationController(rn_input* input, AudioSink* audio);
   ~EmulationController();
   EmulationController(const EmulationController&) = delete;
@@ -298,7 +295,6 @@ class EmulationController {
   bool replayButtonPressed();
   void stepFrame(int dir);
   void handleHotkeys(uint32_t edges);
-  void holdToUndo(bool held);
   void beginFastForward();
   /// released: the user let go of fast-forward (a hold that started during play resumes with the
   /// countdown unless it reached the end of the tape); otherwise (seek, mode switch ...) as before.
@@ -353,8 +349,6 @@ class EmulationController {
 
   bool paused_ = true;
   bool stepRepeatHeld_ = false;
-  double undoHeldSince_ = 0;  // 0: hk.undo_take is up
-  bool undoHoldDone_ = false;  // this hold has acted (or found nothing to undo)
   int slow_ = 1;
   bool followFromPlay_ = false;  // the current follow hold began in play (followGesture)
   int advanceRemaining_ = 0;

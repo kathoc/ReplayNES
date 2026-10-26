@@ -513,6 +513,8 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
       size_t(diagramFocus_) < diagramIds_.size() && diagramIds_[size_t(diagramFocus_)] == "__kind__";
   diagramIds_.clear();
   diagramCenters_.clear();
+  diagramHubs_.clear();
+  std::vector<std::string> diagramGroups;  // each focusable element's group ("lstick" ...), for the hubs
   size_t focusable = n;
   for (size_t i = 0; i < n; ++i) {
     rnf_diagram_element e{};
@@ -542,6 +544,8 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     if (bindable) {
       diagramIds_.push_back(id);
       diagramCenters_.push_back(c);
+      diagramGroups.push_back(e.kind == RNF_DIAGRAM_STICK_CLICK ? (el == "leftThumb" ? "lstick" : "rstick")
+                              : e.kind == RNF_DIAGRAM_STICK_DIRECTION && e.group ? e.group : "");
     }
     if (hovered && (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0)) diagramFocus_ = index;
     bool focused = bindable && index == diagramFocus_;
@@ -627,6 +631,14 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     dl->AddRectFilled(bp, ImVec2(bp.x + ts.x + S(10), bp.y + ts.y + S(3)), IM_COL32(40, 110, 230, 230), (ts.y + S(3)) / 2);
     dl->AddText(ImGui::GetFont(), fs, ImVec2(bp.x + S(5), bp.y + S(1.5f)), IM_COL32(255, 255, 255, 255), v.second.c_str());
   }
+  // A stick's arrows and its click: the click is their hub (diagramFocusNext).
+  diagramHubs_.assign(diagramIds_.size(), -1);
+  for (size_t i = 0; i < diagramIds_.size(); ++i) {
+    const std::string click = diagramGroups[i] == "lstick" ? "leftThumb" : diagramGroups[i] == "rstick" ? "rightThumb" : "";
+    if (click.empty()) continue;
+    for (size_t j = 0; j < diagramIds_.size(); ++j)
+      if (diagramIds_[j] == prefix + click) diagramHubs_[i] = int(j);
+  }
   if (focusRect.w > 0) drawFocus(focusRect, focusRect.h / 2, now);
   // Legend: game / hotkeys, and the Quick Menu chord (not a single button on the picture).
   float y = area.bottom() - legendH + m.hint() * 0.6f, x = area.x + S(6);
@@ -641,6 +653,18 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   const std::string chord = in.usesDeviceKinds() && in.deviceKind(slot) == DeviceKind::stick
       ? padGlyph(family, "leftShoulder") + "+" + padGlyph(family, "leftTrigger") : menuChordGlyph(family, true);
   std::string menuHint = chord + ": " + TR("Quick Menu");
+  // The Undo of a retry's chord (L3+R3 by default): not on the picture either.
+  for (const rnf_binding& bd : b) {
+    char *ca = nullptr, *cb = nullptr;
+    if (std::strcmp(bd.action, "hk.undo_take") != 0 || !rnf_input_combo_split(bd.input, &ca, &cb)) continue;
+    const std::string sa = ca, sb = cb;
+    rnf_string_free(ca);
+    rnf_string_free(cb);
+    if (sa.rfind(prefix, 0) != 0 || sb.rfind(prefix, 0) != 0) continue;
+    menuHint += "    " + padGlyph(family, sa.substr(prefix.size()).c_str()) + "+" + padGlyph(family, sb.substr(prefix.size()).c_str()) +
+                ": " + TR("Undo");
+    break;
+  }
   dl->AddText(ImGui::GetFont(), m.hint(), ImVec2(x, y), kTextDim, menuHint.c_str());
   description_ = diagramFocus_ < int(diagramIds_.size())
                      ? str(rnf_input_element_title(diagramIds_[size_t(diagramFocus_)].substr(prefix.size()).c_str(), family, nullptr))

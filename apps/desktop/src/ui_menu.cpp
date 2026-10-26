@@ -217,7 +217,7 @@ void UI::handleMenuInput(double now) {
   if (pi.kind == RNF_MENU_PAGE_CUSTOM) {
     // The controller diagram: the D-pad moves between the buttons on the picture.
     if (dx || dy) {
-      diagramFocus_ = diagramFocusNext(diagramCenters_, diagramFocus_, dx, dy);
+      diagramFocus_ = diagramFocusNext(diagramCenters_, diagramFocus_, dx, dy, &diagramHubs_);
     }
     if (confirm) menuEvent(RNF_MENU_EVENT_ACTIVATE, 0);
     else if (back) menuEvent(rnf_menu_back(menu_), 0);
@@ -882,6 +882,7 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
     const int index = int(diagramIds_.size());
     diagramIds_.push_back("__kind__");
     diagramCenters_.push_back(ImVec2(kindRow.x + kindRow.w / 2, kindRow.y + kindRow.h / 2));
+    diagramHubs_.push_back(-1);
     const KindOverride choice = d_.input->kindOverride(slot);
     std::string value = choice == KindOverride::stick ? TR("Arcade Stick") : TR("Pad");
     if (choice == KindOverride::automatic)

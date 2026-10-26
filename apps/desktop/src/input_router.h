@@ -192,6 +192,7 @@ class InputRouter {
   void closeAll();
 
  private:
+  void migrateUndoChord(rn_input* profile, const std::string& path);  // layout 8 -> 9 of a saved arcade profile
   void persist();
   rn_input* editingInput() const;
   std::string kindFile(DeviceKind kind) const;
@@ -212,6 +213,10 @@ class InputRouter {
   void updateRepeat();
   bool isGameMember(const std::string& id) const;
   void pumpChord();
+  void pumpUndoChord();
+  void resetUndoChord();
+  /// padButton after the Undo chord: R3 (the menu), capture, the Quick Menu chord, the game.
+  void padButtonRoute(const std::string& id, bool down, double t);
   void routeButton(const std::string& id, bool down, double t);
   bool captureFrom(const std::string& id, bool keyboard);
   bool applyPlan(rnf_list* unbind, rnf_list* bind);
@@ -259,6 +264,9 @@ class InputRouter {
   std::function<void(const std::string&)> capture_;
   bool captureKeysOnly_ = false;
   rnf_chord* chord_ = nullptr;
+  rnf_chord* undoChord_ = nullptr;      // hk.undo_take's combo (L3+R3)
+  std::string undoCombo_;               // the combo id pressed (COMBO_DOWN), released at COMBO_UP
+  std::set<std::string> undoAlone_;     // members passed on alone, released at their release
   std::set<std::string> menuIds_;         // single inputs bound to hk.menu (Esc)
   ConfirmTap confirmTap_;                 // confirm / cancel / up / Y pressed while paused: taps
   int seekFocus_ = 0;

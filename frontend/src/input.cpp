@@ -167,7 +167,8 @@ const Pair kController[] = {
     {"gc0:menu", "p1.start"}, {"gc0:options", "p1.select"},
     {"gc0:leftTrigger", "hk.rewind"}, {"gc0:rightTrigger", "hk.fast_forward"},
     {"gc0:leftShoulder+gc0:rightShoulder", "hk.menu"},
-    {"gc0:leftThumb", "hk.undo_take"},  // L3: Undo of a retry (docs/design/VTR_UX.md)
+    // L3+R3 together: Undo of a retry (docs/design/VTR_UX.md; layout 9: a soft stick clicked L3 alone by accident).
+    {"gc0:leftThumb+gc0:rightThumb", "hk.undo_take"},
     {"gc1:dpad.up", "p2.up"}, {"gc1:dpad.down", "p2.down"}, {"gc1:dpad.left", "p2.left"}, {"gc1:dpad.right", "p2.right"},
     {"gc1:lstick.up", "p2.up"}, {"gc1:lstick.down", "p2.down"}, {"gc1:lstick.left", "p2.left"}, {"gc1:lstick.right", "p2.right"},
     {"gc1:face.east", "p2.a"}, {"gc1:face.south", "p2.b"}, {"gc1:face.north", "p2.turbo_a"}, {"gc1:face.west", "p2.turbo_b"},
@@ -1061,6 +1062,23 @@ void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_lis
     if (p.second == "hk.undo_take" && hasPrefix(p.first, "gc0:")) undoOnPad = true;
   }
   if (!l3Bound && !undoOnPad) nb.emplace_back("gc0:leftThumb", "hk.undo_take");
+  emit(u, nb, unbind, bind);
+}
+
+void rnf_input_undo_chord_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind) {
+  Pairs b = rnf::toPairs(bindings, count);
+  Pairs u, nb;
+  const Pair old{"gc0:leftThumb", "hk.undo_take"};
+  bool had = false, r3Combo = false;
+  for (auto& p : b) {
+    std::string x, y;
+    if (p.first == old.input && p.second == old.action) had = true;
+    if (splitCombo(p.first, x, y) && (x == "gc0:rightThumb" || y == "gc0:rightThumb")) r3Combo = true;
+  }
+  if (had) {
+    u.emplace_back(old.input, old.action);
+    if (!r3Combo) nb.emplace_back("gc0:leftThumb+gc0:rightThumb", "hk.undo_take");
+  }
   emit(u, nb, unbind, bind);
 }
 

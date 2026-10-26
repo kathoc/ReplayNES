@@ -383,7 +383,7 @@ typedef enum rnf_keyboard_scheme {
 } rnf_keyboard_scheme;
 
 /* Current layout version of saved controller bindings (see migrations below). */
-#define RNF_CONTROLLER_LAYOUT_VERSION 8
+#define RNF_CONTROLLER_LAYOUT_VERSION 9
 /* Default keyboard + controller layout for a scheme (static strings). */
 size_t rnf_input_default_binding_count(rnf_keyboard_scheme scheme);
 int rnf_input_default_binding_get(rnf_keyboard_scheme scheme, size_t index, rnf_binding* out);
@@ -454,6 +454,10 @@ void rnf_input_undo_migration(const rnf_binding* bindings, size_t count, rnf_lis
  * on L / R stay). Pause / frame steps are the combo members' gestures (L held + R, R held + L, L / R
  * held + START: docs/design/UI_REDESIGN.md); slow motion stays in the Quick Menu and on the keyboard. */
 void rnf_input_shoulder_step_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
+/* Layout 8 -> 9: the Undo of a retry moves from pad 1's L3 alone to L3+R3 together (a soft stick clicked L3 in
+ * play): the default "gc0:leftThumb" -> "hk.undo_take" still present is unbound and
+ * "gc0:leftThumb+gc0:rightThumb" bound instead (unless R3 is already in a combo). Other bindings stay. */
+void rnf_input_undo_chord_migration(const rnf_binding* bindings, size_t count, rnf_list** unbind, rnf_list** bind);
 /* Two-input combo ids "<a>+<b>" (both held: e.g. the Quick Menu's L+R). rnf_input_combo_id: NULL for an empty
  * part. rnf_input_combo_split: 1 and the parts (free with rnf_string_free) when id is a combo. */
 char* rnf_input_combo_id(const char* a, const char* b);

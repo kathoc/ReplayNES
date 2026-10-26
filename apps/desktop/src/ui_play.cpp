@@ -260,7 +260,7 @@ void UI::buildSeekBar(double now) {
       const std::vector<uint64_t> mk = sectionMarkers(slot);
       if (markerUnderCursor(mk, st.frame) >= 0) hint({"face.north"}, TR("Delete Marker"));
       else if (mk.size() < 2) hint({"face.north"}, TR("Marker"));
-      if (mk.size() >= 2) hint({"face.west"}, TR("Practice"));
+      hint({"face.west"}, TR("Practice"));  // always: with fewer than two markers it says to place them
       hint({"leftShoulder", "rightShoulder"}, section);
     }
     if (markers && now < markerHintUntil_ && !markerHint_.empty()) {
@@ -668,11 +668,15 @@ std::string UI::statusLabelText(bool practicePart) const {
   return out;
 }
 
-std::string UI::boundPadElement(const char* action) const {
+std::string UI::boundPadElement(const char* action, bool combos) const {
   for (const rnf_binding& b : d_.input->bindings()) {
     if (std::strcmp(b.action, action) != 0) continue;
     std::string in = b.input;
-    if (in.rfind("gc0:", 0) == 0 && in.find('+') == std::string::npos) return in.substr(4);
+    if (in.rfind("gc0:", 0) != 0) continue;
+    const size_t plus = in.find('+');
+    if (plus == std::string::npos) return in.substr(4);
+    // A pad 1 combo "gc0:<a>+gc0:<b>": "<a>+<b>" (chip() draws both).
+    if (combos && in.compare(plus + 1, 4, "gc0:") == 0) return in.substr(4, plus - 4) + "+" + in.substr(plus + 5);
   }
   return {};
 }
@@ -702,12 +706,15 @@ void UI::stopPracticeFromPad() {
   d_.emu->stopPractice();
 }
 
-LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked,
-               float fill) {
+LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string& element, const std::string& text, bool* clicked) {
   const UiMetrics& m = metrics_;
   float fs = m.hint(), padX = S(12), gh = h * 0.78f;
   rnf_controller_family f = promptFamily();
-  float glyphW = element.empty() ? 0 : glyph(dl, ImVec2(), element, f, gh, false) + S(6);
+  // "<a>+<b>": both glyphs with a "+" between (a combo such as the Undo's L3+R3).
+  const size_t plus = element.find('+');
+  const std::string ea = element.substr(0, plus), eb = plus == std::string::npos ? std::string() : element.substr(plus + 1);
+  const float plusW = eb.empty() ? 0 : measure(fs, "+").x + S(6);
+  float glyphW = element.empty() ? 0 : glyph(dl, ImVec2(), ea, f, gh, false) + S(6) + (eb.empty() ? 0 : plusW + glyph(dl, ImVec2(), eb, f, gh, false));
   float w = padX + glyphW + measure(fs, text.c_str()).x + padX;
   LRect r{right - w, y, w, h};
   ImGuiIO& io = ImGui::GetIO();
@@ -716,14 +723,17 @@ LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string&
   if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   if (clicked) *clicked = hovered && ImGui::IsMouseReleased(0) && inside(io.MouseClickedPos[0]);
   dl->AddRectFilled(tl(r), br(r), hovered ? IM_COL32(64, 64, 72, 245) : IM_COL32(40, 40, 46, 235), h / 2);
-  if (fill > 0) {  // a hold in progress, filled from the left
-    dl->PushClipRect(tl(r), ImVec2(r.x + r.w * std::min(fill, 1.f), r.bottom()), true);
-    dl->AddRectFilled(tl(r), br(r), IM_COL32(90, 120, 190, 245), h / 2);
-    dl->PopClipRect();
-  }
   dl->AddRect(tl(r), br(r), IM_COL32(255, 255, 255, 50), h / 2, 0, 1.0f);
   float x = r.x + padX;
-  if (!element.empty()) x += glyph(dl, ImVec2(x, y + (h - gh) / 2), element, f, gh) + S(6);
+  if (!element.empty()) {
+    x += glyph(dl, ImVec2(x, y + (h - gh) / 2), ea, f, gh) + S(3);
+    if (!eb.empty()) {
+      dl->AddText(ImGui::GetFont(), fs, ImVec2(x, y + (h - fs) / 2), kText, "+");
+      x += plusW - S(3);
+      x += glyph(dl, ImVec2(x, y + (h - gh) / 2), eb, f, gh) + S(3);
+    }
+    x += S(3);
+  }
   dl->AddText(ImGui::GetFont(), fs, ImVec2(x, y + (h - fs) / 2), kText, text.c_str());
   layoutRecord(r);
   return r;
@@ -731,12 +741,11 @@ LRect UI::chip(ImDrawList* dl, float right, float y, float h, const std::string&
 
 float UI::buildChips(ImDrawList* dl, float right, float y, float h) {
   const EmuStatus& st = d_.emu->status();
-  // "↶ Undo" for 10 s after a retry (its button: pad 1's binding of hk.undo_take, default L3, held:
-  // EmulationController::holdToUndo). A click or tap undoes at once.
+  // "↶ Undo" for 10 s after a retry (its buttons: pad 1's binding of hk.undo_take, default L3+R3).
   if (st.canUndo) {
     bool clicked = false;
-    std::string el = controllerConnected() ? boundPadElement("hk.undo_take") : std::string();
-    LRect r = chip(dl, right, y, h, el, el.empty() ? TR("↶ Undo") : TR("↶ Hold to Undo"), &clicked, st.undoHold);
+    std::string el = controllerConnected() ? boundPadElement("hk.undo_take", true) : std::string();
+    LRect r = chip(dl, right, y, h, el, TR("↶ Undo"), &clicked);
     right = r.x - S(10);
     if (clicked) undoRetry();
   }

@@ -132,6 +132,17 @@ Games with analog controls (FBNeo sticks, dials, levers) get mouse bindings by d
 
 Considered: a per-game setting (rejected for now: one switch is easier to find, and the default bindings already limit the mouse to analog games); taking the mouse away for a while after pad input (rejected: the last device used wins, nothing to time).
 
+### Paused hint row and the controller picture (2026-10-26, desktop)
+
+- The paused seek bar always lists **West = Practice** next to the marker hint (it used to appear only once the
+  section had two markers, so nobody learnt the button). With fewer than two markers it says "Place two markers to
+  practice", as before.
+- The controller picture's D-pad navigation (`diagramFocusNext`): moving into a stick from outside lands on its
+  click (L3 / R3), drawn in the middle of the arrows; its arrows are one step from there. Before, the click was
+  reachable only from its own arrows, which in practice meant "the cursor never goes to L3". The test walks every
+  family and both layouts.
+- The legend lists the Undo chord ("L3+R3: Undo") next to the Quick Menu's.
+
 ## Controllers and players (2026-10-26, desktop)
 
 Under Steam (the Deck's Gaming Mode) a controller connected or disconnected while playing lost the players: a new controller simply took the first free slot (so it became player 2 next to the Deck's own controls), and Steam re-creating its virtual gamepads reshuffled the rest.

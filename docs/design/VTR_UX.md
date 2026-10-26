@@ -24,12 +24,14 @@ they conflict, this one wins. Applies to macOS, desktop (Linux/Steam Deck, Windo
 3. **Undo (10 s)**: for 10 s after such an overwrite starts, a small chip
    ja「↶ 取り消す」 / en "↶ Undo" is shown at the right end of the bottom area (clickable /
    tappable; pad: shown in the hint row with its button, use the menu-confirm-free button
-   chosen by the implementer and document it). On a pad the button (`hk.undo_take`, default L3)
-   must be **held 0.6 s** (`kUndoHoldSeconds`); the chip then reads ja「↶ 長押しで取り消す」 /
-   en "↶ Hold to Undo" and fills from the left while it is held. A tap does nothing: a soft stick
-   clicks L3 by accident in play, and right after a retry that threw the new attempt away (reported
-   2026-10-26 in Ninja Spirit as "rewind goes wrong"). A click or tap on the chip still undoes at
-   once. Undo restores the previous continuation (switch
+   chosen by the implementer and document it). On a pad it is **L3+R3 together** (layout 9,
+   2026-10-26; `hk.undo_take` = `gc0:leftThumb+gc0:rightThumb`, a second `rnf_chord` in the desktop
+   InputRouter; the chip shows both buttons). It was L3 alone, and a soft stick clicks L3 by
+   accident in play: right after a retry that threw the new attempt away (reported in Ninja Spirit
+   as "rewind goes wrong"). R3 alone still opens the menu, after the chord window (100 ms) or at its
+   tap. Saved bindings with the old L3 default move to L3+R3 once (`rnf_input_undo_chord_migration`;
+   the arcade profiles too). Not done in the macOS app yet (its own input path: no Undo chord there).
+   Undo restores the previous continuation (switch
    back to the parent take at its previous end/position) and discards the new attempt.
    **If the user rewinds again within those 10 s, only the most recent attempt is kept**: the
    short attempt that was just abandoned is not kept as a separate take (drop it), so rapid
@@ -55,7 +57,7 @@ input only, typed ahead for the first frame:
   game when play resumes), no seek bar tap, no countdown cancel (neither countdown has a cancel tap; Y stops practice), no hint action.
 - Hotkeys that are not NES buttons keep their meaning: L2 / R2 (rewind / fast-forward; holding
   one cancels the countdown back to paused, as before), L+R (menu: pauses, so it cancels too), L / R held + START (a pause) and L held + R (a pause; R held + L only toggles slow ½ and does not cancel),
-  L3 (Undo, when held), the pause hotkey (cancels).
+  L3+R3 (Undo), the pause hotkey (cancels).
 - **Held through**: a button held when the countdown ends is pressed from the very first frame
   (the normal sample of that frame).
 - **Pressed and let go inside the countdown** (decision): it counts. It is latched and applied as

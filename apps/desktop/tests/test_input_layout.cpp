@@ -573,3 +573,60 @@ TEST_CASE("D stick diagram navigation reaches every assignable element and the k
     }
   }
 }
+
+TEST_CASE("D pad diagram navigation reaches every assignable element (every family, NES and arcade)") {
+  struct Point { float x, y; };
+  for (auto fam : {RNF_FAMILY_NINTENDO, RNF_FAMILY_XBOX, RNF_FAMILY_PLAYSTATION, RNF_FAMILY_GENERIC, RNF_FAMILY_STEAM_DECK}) {
+    for (int kinds : {0, 1}) {
+      const auto family = rnf_diagram_family_for_layout(fam, kinds, 0);
+      std::vector<Point> centers;
+      std::vector<std::string> names, groups;
+      for (size_t i = 0; i < rnf_diagram_element_count(family); ++i) {
+        rnf_diagram_element e{};
+        REQUIRE(rnf_diagram_element_get(family, i, &e));
+        if (rnf_input_element_ignored(e.element)) continue;
+        centers.push_back({float(e.cx), float(e.cy)});
+        names.push_back(e.element);
+        // As ui_settings.cpp: a stick's arrows and its click share the click as their hub.
+        const std::string el = e.element;
+        groups.push_back(e.kind == RNF_DIAGRAM_STICK_CLICK ? (el == "leftThumb" ? "lstick" : "rstick")
+                         : e.kind == RNF_DIAGRAM_STICK_DIRECTION && e.group ? e.group : "");
+      }
+      if (kinds) centers.push_back({float(RNF_DIAGRAM_CANVAS_WIDTH / 2), -30}), names.push_back("__kind__"), groups.push_back("");
+      std::vector<int> hubs(centers.size(), -1);
+      for (size_t i = 0; i < centers.size(); ++i)
+        for (size_t j = 0; j < centers.size(); ++j)
+          if ((groups[i] == "lstick" && names[j] == "leftThumb") || (groups[i] == "rstick" && names[j] == "rightThumb")) hubs[i] = int(j);
+      // L3 / R3: entered straight from outside their stick (not only from its own arrows).
+      for (const char* click : {"leftThumb", "rightThumb"}) {
+        const auto at = std::find(names.begin(), names.end(), click);
+        REQUIRE(at != names.end());
+        const int target = int(at - names.begin());
+        bool fromOutside = false;
+        for (size_t i = 0; i < centers.size(); ++i)
+          for (auto dir : {Point{-1, 0}, Point{1, 0}, Point{0, -1}, Point{0, 1}})
+            if (hubs[i] != target && rnl::diagramFocusNext(centers, int(i), int(dir.x), int(dir.y), &hubs) == target) fromOutside = true;
+        if (!fromOutside) MESSAGE("family " << int(fam) << " kinds " << kinds << ": " << click << " only from its own arrows");
+        CHECK(fromOutside);
+      }
+      for (size_t start = 0; start < centers.size(); ++start) {
+        std::set<int> visited{int(start)};
+        std::vector<int> pending{int(start)};
+        while (!pending.empty()) {
+          const int current = pending.back();
+          pending.pop_back();
+          for (auto dir : {Point{-1, 0}, Point{1, 0}, Point{0, -1}, Point{0, 1}}) {
+            int next = rnl::diagramFocusNext(centers, current, int(dir.x), int(dir.y), &hubs);
+            if (visited.insert(next).second) pending.push_back(next);
+          }
+        }
+        std::string missing;
+        for (size_t i = 0; i < centers.size(); ++i)
+          if (!visited.count(int(i))) missing += " " + names[i];
+        if (!missing.empty())
+          MESSAGE("family " << int(fam) << " kinds " << kinds << " from " << names[start] << ": unreachable" << missing);
+        CHECK(missing.empty());
+      }
+    }
+  }
+}

@@ -640,3 +640,80 @@ TEST_CASE("P the paused seek bar: L / R switch the practice section on a pad and
     CHECK(std::count(dirs.begin(), dirs.end(), -1) == 0);
   }
 }
+
+TEST_CASE("P L3+R3 is the Undo of a retry; R3 alone still opens the menu, L3 alone does nothing") {
+  Files files;
+  Devices devices;
+  const auto id = devices.add("Xbox Wireless Controller", 4);
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(layout);
+  connect(router, id);
+  int menus = 0;
+  router.onMenuButton = [&] { ++menus; };
+  auto button = [&](int b, bool down, double time) {
+    SDL_Event e{};
+    e.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+    e.gbutton.which = id;
+    e.gbutton.button = b;
+    e.gbutton.down = down;
+    router.handleEvent(e, time, false);
+  };
+  CHECK(pairs(router.input()).count("gc0:leftThumb+gc0:rightThumb=hk.undo_take"));
+  CHECK_FALSE(pairs(router.input()).count("gc0:leftThumb=hk.undo_take"));
+  uint32_t edges = 0, held = 0;
+  rn_input_poll_hotkeys(router.input(), &edges, &held);
+  // Both together (either order, within the chord window): the Undo, no menu.
+  button(SDL_GAMEPAD_BUTTON_LEFT_STICK, true, 1.0);
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true, 1.04);
+  router.tick(1.2);
+  rn_input_poll_hotkeys(router.input(), &edges, &held);
+  CHECK((edges & RN_HK_UNDO_TAKE) != 0);
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false, 1.3);
+  button(SDL_GAMEPAD_BUTTON_LEFT_STICK, false, 1.31);
+  router.tick(1.4);
+  rn_input_poll_hotkeys(router.input(), &edges, &held);
+  CHECK_EQ(held & RN_HK_UNDO_TAKE, uint32_t(0));
+  CHECK_EQ(menus, 0);
+  // L3 alone (a soft stick clicked in play): nothing.
+  button(SDL_GAMEPAD_BUTTON_LEFT_STICK, true, 2.0);
+  router.tick(2.2);
+  button(SDL_GAMEPAD_BUTTON_LEFT_STICK, false, 2.3);
+  router.tick(2.4);
+  rn_input_poll_hotkeys(router.input(), &edges, &held);
+  CHECK_EQ(edges & RN_HK_UNDO_TAKE, uint32_t(0));
+  CHECK_EQ(menus, 0);
+  // R3 alone: the menu, held past the window or tapped.
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true, 3.0);
+  router.tick(3.05);
+  CHECK_EQ(menus, 0);  // still inside the window: it may become the chord
+  router.tick(3.2);
+  CHECK_EQ(menus, 1);
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false, 3.3);
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true, 4.0);
+  button(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false, 4.03);
+  router.tick(4.2);
+  CHECK_EQ(menus, 2);
+  rn_input_poll_hotkeys(router.input(), &edges, &held);
+  CHECK_EQ(edges & RN_HK_UNDO_TAKE, uint32_t(0));
+}
+
+TEST_CASE("P a saved arcade profile with Undo on L3 moves it to L3+R3 once (layout 9)") {
+  Files files;
+  rnl::Settings settings;
+  settings.controllerLayoutVersion = 8;
+  const auto padPath = files.root / "bindings-fbneo%3Aprofiles.json";
+  { std::ofstream out(padPath); out << R"({"version":1,"bindings":[{"input":"gc0:leftThumb","action":"hk.undo_take"},{"input":"gc0:face.west","action":"p1.b3"}]})"; }
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(layout);
+  CHECK(pairs(router.input()).count("gc0:leftThumb+gc0:rightThumb=hk.undo_take"));
+  CHECK_FALSE(pairs(router.input()).count("gc0:leftThumb=hk.undo_take"));
+  CHECK(pairs(router.input()).count("gc0:face.west=p1.b3"));
+  CHECK_EQ(settings.controllerLayoutVersion, RNF_CONTROLLER_LAYOUT_VERSION);
+  CHECK(read(padPath).find("gc0:leftThumb+gc0:rightThumb") != std::string::npos);
+  // A user's own L3 binding made after the upgrade stays.
+  { std::ofstream out(padPath); out << R"({"version":1,"bindings":[{"input":"gc0:leftThumb","action":"hk.undo_take"}]})"; }
+  rnl::InputRouter again((files.root / "bindings.json").string(), &settings);
+  again.setLayout(layout);
+  CHECK(pairs(again.input()).count("gc0:leftThumb=hk.undo_take"));
+}

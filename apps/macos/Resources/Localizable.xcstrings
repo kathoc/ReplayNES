@@ -8230,17 +8230,6 @@
         }
       }
     },
-    "↶ Hold to Undo": {
-      "comment": "Chip shown 10 s after a retry when a controller is connected: hold its button to go back to the continuation before it",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "↶ 長押しで取り消す"
-          }
-        }
-      }
-    },
     "↶ Undo": {
       "comment": "Chip shown 10 s after a retry: back to the continuation before it",
       "localizations": {

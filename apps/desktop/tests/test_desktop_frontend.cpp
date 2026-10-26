@@ -28,7 +28,6 @@
 #include "dialogs.h"
 #include "display_health.h"
 #include "emulation.h"
-#include "host_clock.h"
 #include "export/export_frame.h"
 #include "ui_layout.h"
 #include "export/mp4_check.h"
@@ -1733,8 +1732,8 @@ TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to be
   tickN(emu, 10);
   CHECK_EQ(emu.structure().takes.size(), size_t(2));
   CHECK_EQ(emu.status().takeLength, uint64_t(60));
-  // L3 (hk.undo_take, the default pad binding) during play: a tap is a misfire of a soft stick and
-  // does nothing; held for kUndoHoldSeconds, the same Undo.
+  // L3+R3 (hk.undo_take, the default pad binding: the router presses the combo id) during play: the
+  // same Undo. L3 alone is nothing (a soft stick clicks it in play).
   REQUIRE(emu.status().canUndo);
   rn_input_set_pressed(in, "gc0:leftThumb", 1);
   emu.tick();
@@ -1742,16 +1741,9 @@ TEST_CASE("emulation: VTR - a retry overwrites, Undo (chip / L3) goes back to be
   emu.tick();
   CHECK_FALSE(emu.paused());
   CHECK_EQ(emu.structure().takes.size(), size_t(2));
-  rn_input_set_pressed(in, "gc0:leftThumb", 1);
-  const double held = rnl::nowSeconds();
+  rn_input_set_pressed(in, "gc0:leftThumb+gc0:rightThumb", 1);
   emu.tick();
-  CHECK_EQ(emu.structure().takes.size(), size_t(2));
-  while (rnl::nowSeconds() - held < EmulationController::kUndoHoldSeconds + 0.05 && !emu.paused()) {
-    CHECK(emu.status().undoHold < 1.f);
-    rnl::sleepUntil(rnl::nowSeconds() + 0.02);
-    emu.tick();
-  }
-  rn_input_set_pressed(in, "gc0:leftThumb", 0);
+  rn_input_set_pressed(in, "gc0:leftThumb+gc0:rightThumb", 0);
   emu.tick();
   CHECK(emu.paused());
   CHECK_EQ(emu.status().takeLength, uint64_t(120));
@@ -1842,7 +1834,7 @@ TEST_CASE("menu model: Retry = Play from Here, Bookmarks, Playback, Start Over (
       if (id == "retry.rerecord") CHECK_EQ(std::string(it.label), std::string("Play from Here"));
     }
   rnf_menu_free(menu);
-  // hk.undo_take on pad 1's L3 by default; saved layouts before 7 get it unless L3 is taken.
+  // hk.undo_take: L3 for saved layouts before 7 unless L3 is taken (layout 9 then moves it to L3+R3).
   rnf_binding taken[] = {{"gc0:leftThumb", "hk.bookmark"}};
   rnf_list *u = nullptr, *b = nullptr;
   rnf_input_undo_migration(taken, 1, &u, &b);
@@ -1853,6 +1845,19 @@ TEST_CASE("menu model: Retry = Play from Here, Bookmarks, Playback, Start Over (
   rnf_input_undo_migration(none, 1, &u, &b);
   REQUIRE_EQ(rnf_list_count(b), size_t(1));
   CHECK_EQ(std::string(rnf_list_a(b, 0)), std::string("gc0:leftThumb"));
+  rnf_list_free(u);
+  rnf_list_free(b);
+  rnf_binding old[] = {{"gc0:leftThumb", "hk.undo_take"}, {"gc0:face.east", "p1.a"}};
+  rnf_input_undo_chord_migration(old, 2, &u, &b);
+  REQUIRE_EQ(rnf_list_count(u), size_t(1));
+  CHECK_EQ(std::string(rnf_list_a(u, 0)), std::string("gc0:leftThumb"));
+  REQUIRE_EQ(rnf_list_count(b), size_t(1));
+  CHECK_EQ(std::string(rnf_list_a(b, 0)), std::string("gc0:leftThumb+gc0:rightThumb"));
+  CHECK_EQ(std::string(rnf_list_b(b, 0)), std::string("hk.undo_take"));
+  rnf_list_free(u);
+  rnf_list_free(b);
+  rnf_input_undo_chord_migration(taken, 1, &u, &b);  // L3 for something else: untouched
+  CHECK_EQ(rnf_list_count(u) + rnf_list_count(b), size_t(0));
   rnf_list_free(u);
   rnf_list_free(b);
 }

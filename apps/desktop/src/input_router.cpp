@@ -29,7 +29,8 @@ std::string slotPrefix(int slot) { return "gc" + std::to_string(slot) + ":"; }
 }  // namespace
 
 InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
-    : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)) {
+    : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)),
+      undoChord_(rnf_chord_new(0)) {
   profiles_[0] = rn_input_new();
   profiles_[1] = rn_input_new();
   loadKindOverrides();
@@ -38,6 +39,7 @@ InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
 InputRouter::~InputRouter() {
   closeAll();
   rnf_chord_free(chord_);
+  rnf_chord_free(undoChord_);
   rn_input_free(in_);
   for (auto* profile : profiles_) rn_input_free(profile);
 }
@@ -162,6 +164,7 @@ void InputRouter::rebuildRuntime() {
   stickState_.clear();
   for (auto& p : pads_) { p.lt = p.rt = false; p.lx = p.ly = p.rx = p.ry = 0; }
   rnf_chord_reset(chord_);
+  resetUndoChord();
   confirmTap_.clear();
   swallowedStarts_.clear();
   practiceStops_.clear();
@@ -214,11 +217,16 @@ void InputRouter::load() {
         char* def = rnf_input_default_config_json_for_kind(RNF_KEYBOARD_SDL, k);
         rn_input_load_json(profiles_[k], def);
         rnf_string_free(def);
-      } else if (char* more = rnf_input_add_device_defaults(text.c_str(), RNF_KEYBOARD_SDL, k)) {
-        rn_input_load_json(profiles_[k], more);  // saved before the keyboard / mouse had defaults
-        rnf_string_free(more);
+      } else {
+        if (char* more = rnf_input_add_device_defaults(text.c_str(), RNF_KEYBOARD_SDL, k)) {
+          rn_input_load_json(profiles_[k], more);  // saved before the keyboard / mouse had defaults
+          rnf_string_free(more);
+        }
+        // The one layout upgrade of the arcade profiles: Undo of a retry on L3+R3 instead of L3 (layout 9).
+        if (settings_ && settings_->controllerLayoutVersion < 9) migrateUndoChord(profiles_[k], kindFile(k ? DeviceKind::stick : DeviceKind::pad));
       }
     }
+    if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     rebuildRuntime();
     refreshBindings();
     return;
@@ -274,6 +282,11 @@ void InputRouter::load() {
       changed = applyPlan(u, b) || changed;
       refreshBindings();
     }
+    if (from < 9) {  // Undo of a retry: L3+R3 instead of L3 alone
+      rnf_input_undo_chord_migration(bindingView_.data(), bindingView_.size(), &u, &b);
+      changed = applyPlan(u, b) || changed;
+      refreshBindings();
+    }
     if (settings_) settings_->controllerLayoutVersion = RNF_CONTROLLER_LAYOUT_VERSION;
     if (changed) persist();
   }
@@ -326,6 +339,8 @@ void InputRouter::configureRuntimeBindings() {
   rnf_list_free(dirs);
   // The Quick Menu: combos go through the chord detector, single inputs open it directly.
   rnf_chord_configure(chord_, view.data(), view.size(), "hk.menu");
+  resetUndoChord();
+  rnf_chord_configure(undoChord_, view.data(), view.size(), "hk.undo_take");  // L3+R3
   menuIds_.clear();
   gameMembers_.clear();
   for (const rnf_binding& b : view) {
@@ -339,6 +354,34 @@ void InputRouter::configureRuntimeBindings() {
   forwardedMembers_.clear();
   holdMembers_.clear();
   updateRepeat();
+}
+
+void InputRouter::migrateUndoChord(rn_input* profile, const std::string& path) {
+  char* json = rn_input_save_json(profile);
+  rnf_input_config* c = nullptr;
+  std::vector<rnf_binding> view;
+  if (json && rnf_input_config_parse(json, &c) == RN_OK) {
+    for (size_t i = 0, n = rnf_input_config_binding_count(c); i < n; ++i) {
+      rnf_binding b{};
+      if (rnf_input_config_binding_get(c, i, &b)) view.push_back(b);
+    }
+  }
+  rn_string_free(json);
+  rnf_list *u = nullptr, *b = nullptr;
+  rnf_input_undo_chord_migration(view.data(), view.size(), &u, &b);
+  const bool changed = rnf_input_apply_plan(profile, u, b) != 0;
+  rnf_list_free(u);
+  rnf_list_free(b);
+  rnf_input_config_free(c);
+  if (!changed) return;
+  if (char* out = rn_input_save_json(profile)) {
+    const std::string tmp = path + ".tmp";
+    { std::ofstream f(tmp, std::ios::trunc); f << out; }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) std::fprintf(stderr, "cannot save %s\n", path.c_str());
+    rn_string_free(out);
+  }
 }
 
 void InputRouter::persist() {
@@ -417,6 +460,7 @@ void InputRouter::setAnalogThreshold(double t) {
 }
 
 void InputRouter::beginCapture(std::function<void(const std::string&)> fn, bool keysOnly) {
+  resetUndoChord();  // L3 / R3 held into the capture are not a chord any more
   capture_ = std::move(fn);
   captureKeysOnly_ = keysOnly;
 }
@@ -687,6 +731,45 @@ void InputRouter::pumpChord() {
 void InputRouter::tick(double now) {
   rnf_chord_tick(chord_, now);
   pumpChord();
+  rnf_chord_tick(undoChord_, now);
+  pumpUndoChord();
+}
+
+// The Undo chord (L3+R3 by default, hk.undo_take): both pressed together press the combo id (the hotkey);
+// a member alone goes on as its own press (R3: the menu) once the chord window has passed, or at its tap.
+void InputRouter::pumpUndoChord() {
+  rnf_chord_event ev;
+  while (rnf_chord_poll(undoChord_, &ev)) {
+    const std::string id = ev.input;
+    switch (ev.kind) {
+      case RNF_CHORD_COMBO_DOWN:
+        if (!ui_ && !capture_) {
+          undoCombo_ = id;
+          rn_input_set_pressed(in_, id.c_str(), 1);
+        }
+        break;
+      case RNF_CHORD_COMBO_UP:
+        if (!undoCombo_.empty()) rn_input_set_pressed(in_, undoCombo_.c_str(), 0);
+        undoCombo_.clear();
+        break;
+      case RNF_CHORD_ALONE_DOWN:
+      case RNF_CHORD_FOLLOW_DOWN:
+        if (undoAlone_.insert(id).second) padButtonRoute(id, true, ev.time);
+        break;
+      case RNF_CHORD_ALONE_UP:
+      case RNF_CHORD_FOLLOW_UP:
+        if (undoAlone_.erase(id)) padButtonRoute(id, false, ev.time);
+        break;
+      default: break;
+    }
+  }
+}
+
+void InputRouter::resetUndoChord() {
+  rnf_chord_reset(undoChord_);
+  if (!undoCombo_.empty()) rn_input_set_pressed(in_, undoCombo_.c_str(), 0);
+  undoCombo_.clear();
+  undoAlone_.clear();
 }
 
 // A button after the menu / chord / capture checks: the UI's shoulders, paused stepping and
@@ -835,6 +918,7 @@ void InputRouter::releaseSlot(int s) {
   std::string prefix = slotPrefix(s);
   rn_input_release_prefix(in_, prefix.c_str());
   rnf_chord_reset(chord_);
+  resetUndoChord();
   for (auto* set : {&swallowedStarts_, &practiceStops_})
     for (auto it = set->begin(); it != set->end();) it = it->compare(0, prefix.size(), prefix) == 0 ? set->erase(it) : std::next(it);
   confirmTap_.clear();
@@ -887,6 +971,19 @@ void InputRouter::padButton(int slot, int button, bool down, double t) {
     noteLastSlot(slot);
     pads_[slot].lastPress = t;
   }
+  // The Undo chord's members (L3+R3) first: they reach the rest only alone (pumpUndoChord).
+  if (!capture_ && rnf_chord_feed(undoChord_, id.c_str(), down ? 1 : 0, t)) {
+    pumpUndoChord();
+    return;
+  }
+  pumpUndoChord();
+  padButtonRoute(id, down, t);
+}
+
+void InputRouter::padButtonRoute(const std::string& id, bool down, double t) {
+  int slot = 0;
+  rnf_input_controller_slot(id.c_str(), &slot);
+  const char* el = id.c_str() + id.find(':') + 1;
   if (isReserved(el)) {
     if (down) pressed_.insert(id);
     else pressed_.erase(id);
@@ -1171,6 +1268,7 @@ void InputRouter::releaseControllers() {
   for (auto& p : pads_) { p.lt = p.rt = false; p.lx = p.ly = p.rx = p.ry = 0; }
   stickState_.clear();
   rnf_chord_reset(chord_);
+  resetUndoChord();
   confirmTap_.clear();
 }
 
