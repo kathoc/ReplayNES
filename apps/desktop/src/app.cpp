@@ -580,6 +580,7 @@ int App::run(const AppOptions& opt) {
     // it): the no-signal snow animates and the power-on hiss plays (display / audio output only).
     emu_->setCrtDisplay(renderer_->postProcess().crt && renderer_->postProcessStatus().crtAvailable);
     for (int i = 1; i < frames; ++i) {
+      input_->syncPads();
       SDL_Event e;
       while (SDL_PollEvent(&e)) handleEvent(e, nowSeconds());
       input_->tick(nowSeconds());
@@ -611,6 +612,7 @@ int App::run(const AppOptions& opt) {
     // The controllers read once more here (the pad thread's last read is up to 1 ms old): what the
     // kernel has at the sample point reaches this frame.
     SDL_UpdateJoysticks();
+    input_->syncPads();  // which controller is which player: what is connected now, every frame
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
     input_->tick(nowSeconds());  // L or R held alone past the chord window fires now

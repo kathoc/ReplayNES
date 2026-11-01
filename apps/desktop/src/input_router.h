@@ -52,9 +52,11 @@ struct PadInfo {
   // The machine's own controls (a Steam Deck's, a Steam Controller): player 1 while no other controller
   // is; waiting aside (standby) while one is (InputRouter::attach).
   bool builtIn = false;
-  // Steam Input's player (0 = player 1) of a Steam virtual gamepad ("Microsoft X-Box 360 pad N" on
-  // Linux): Steam decides who is which player there, the user reorders them in Steam; -1 otherwise.
+  // Steam's number N of a Steam virtual gamepad ("Microsoft X-Box 360 pad N" on Linux, SDL's player
+  // index), -1 otherwise. Steam decides who is which player there (the user reorders them in Steam):
+  // its pads by number, without gaps (InputRouter::arrangeSteamPads).
   int steamSlot = -1;
+  Uint64 steamHandle = 0;  // Steam's controller behind it now (SteamVirtualGamepadInfo), 0 when none
   std::string key;         // this controller's identity across a disconnect (serial, or guid + name)
   double lastPress = -1e9;  // CLOCK_MONOTONIC s of its last button (the player indicator)
 };
@@ -129,6 +131,10 @@ class InputRouter {
   void handleEvent(const SDL_Event& e, double evTime, bool keyboardForUI);
   /// Every frame after the events (the chord detector's 100 ms window). now: CLOCK_MONOTONIC s.
   void tick(double now);
+  /// Every frame, before its events: the controllers connected now (SDL_GetGamepads), and for Steam's
+  /// virtual pads their numbers and the controllers behind them - the players follow what is, not the
+  /// connect / disconnect events (InputRouter::arrangeSteamPads).
+  void syncPads();
 
   /// The mouse as game input ("ms:" ids, frontend input.cpp): the game binds it (a game with analog
   /// controls). While captured (the app: playing, not paused, window focused; SDL relative mode)
@@ -238,6 +244,7 @@ class InputRouter {
   void detach(SDL_JoystickID id);
   void describe(PadInfo& p);              // name, identity, kind and labels, as SDL tells them now
   void steamInfoChanged(SDL_JoystickID id);  // Steam moved another controller behind this virtual pad
+  void arrangeSteamPads();                   // Steam's virtual pads -> players 1...n by their numbers
 
   void mouseEvent(const SDL_Event& e, double t);
   void setMouseAxes();
@@ -273,6 +280,7 @@ class InputRouter {
   Settings* settings_;
   PadInfo pads_[kSlots];
   PadInfo standby_;                         // the built-in controls while another controller is player 1
+  std::vector<PadInfo> overflow_;           // connected, no player (more than four; arrangeSteamPads)
   std::map<std::string, int> formerSlot_;   // PadInfo::key -> the player (slot 1..3) it last was
   int playersVersion_ = 0;
   double playersChanged_ = -1e9;

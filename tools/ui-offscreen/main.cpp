@@ -186,7 +186,7 @@ int main(int argc,char** argv) {
           SDL_VirtualJoystickDesc desc; SDL_INIT_INTERFACE(&desc); desc.type=SDL_JOYSTICK_TYPE_GAMEPAD;
           desc.naxes=SDL_GAMEPAD_AXIS_COUNT; desc.nbuttons=SDL_GAMEPAD_BUTTON_COUNT; desc.vendor_id=vendor; desc.product_id=product; desc.name=name;
           SDL_JoystickID id=SDL_AttachVirtualJoystick(&desc); check(id!=0,SDL_GetError());
-          SDL_Event e{}; e.type=SDL_EVENT_GAMEPAD_ADDED; e.gdevice.which=id; input.handleEvent(e,0,false); return id;
+          input.syncPads(); return id;
         };
         plug("8BitDo Pro 3",0x2dc8,0x6009); const SDL_JoystickID b=plug("Pad B",0x045e,0x0b00);
         check(ui.openPage("controls.controller"),"controller page missing"); draw(); draw();

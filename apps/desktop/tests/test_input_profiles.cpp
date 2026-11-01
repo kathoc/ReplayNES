@@ -51,12 +51,9 @@ struct Devices {
     ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
   }
 };
-void connect(rnl::InputRouter& router, SDL_JoystickID id, bool added = true) {
-  SDL_Event e{};
-  e.type = added ? SDL_EVENT_GAMEPAD_ADDED : SDL_EVENT_GAMEPAD_REMOVED;
-  e.gdevice.which = id;
-  router.handleEvent(e, 1.0, false);
-}
+// A controller connected / disconnected: the router sees it at its next syncPads (every frame in the
+// app), not from the event. Disconnecting: call after the device is gone (Devices::remove).
+void connect(rnl::InputRouter& router, SDL_JoystickID, bool = true) { router.syncPads(); }
 std::set<std::string> pairs(rn_input* input) {
   const auto json = take(rn_input_save_json(input));
   rnf_input_config* config = nullptr;
@@ -151,6 +148,7 @@ TEST_CASE("P mixed slots edit only their kind and use P1 keyboard and turbo sett
   CHECK(pairs(router.input()).count("gc0:face.south=p1.b1"));
   router.setKindOverride(0, rnl::KindOverride::automatic);
   CHECK(router.deviceKind(0) == rnl::DeviceKind::stick);
+  devices.remove(stick);
   connect(router, stick, false);
   CHECK(router.deviceKind(0) == rnl::DeviceKind::pad);
 }
@@ -297,6 +295,7 @@ TEST_CASE("P SDL stick triggers hold transport and LB LT chord leaves RB as a ga
   CHECK_FALSE(router.stepRepeatHeld());
   button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true, 8.0);
   CHECK(router.stepRepeatHeld());
+  devices.remove(id);
   connect(router, id, false);
   CHECK_FALSE(router.stepRepeatHeld());
 }
@@ -614,8 +613,8 @@ TEST_CASE("P players: a controller connected takes player 1 from the Steam Deck'
     return id;
   };
   auto unplug = [&](SDL_JoystickID id) {
-    connect(router, id, false);
     devices.remove(id);
+    connect(router, id, false);
   };
   const auto deck = plug("Steam Deck", 0x1205, 0x28de);
   CHECK_EQ(players(), std::string("Steam Deck|-|-|-"));
@@ -668,6 +667,88 @@ TEST_CASE("P players: a controller connected takes player 1 from the Steam Deck'
   (void)a2;
   (void)b3;
   (void)c3;
+}
+
+TEST_CASE("P Steam Input: players are Steam's virtual pads by number, without gaps, whatever came and went before") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  // Steam's pads by their number (SDL names every pad of one GUID alike), the others by name.
+  auto name = [&](int s) {
+    const rnl::PadInfo& p = router.pad(s);
+    return !p.pad ? std::string("-") : p.steamSlot >= 0 ? "pad " + std::to_string(p.steamSlot) : p.name;
+  };
+  auto players = [&] { return name(0) + "|" + name(1) + "|" + name(2) + "|" + name(3) + (router.standbyConnected() ? " (waiting)" : ""); };
+  // A Steam virtual gamepad: 28de:11ff, SDL's player index = Steam's number ("Microsoft X-Box 360 pad N").
+  auto steamPad = [&](int n) {
+    const std::string label = "pad " + std::to_string(n);
+    const auto id = devices.add(label.c_str(), 0x11ff, 0x28de);
+    SDL_Joystick* j = SDL_OpenJoystick(id);
+    REQUIRE(j);
+    REQUIRE(SDL_SetJoystickPlayerIndex(j, n));
+    SDL_CloseJoystick(j);
+    connect(router, id);
+    return id;
+  };
+  auto unplug = [&](SDL_JoystickID id) {
+    devices.remove(id);
+    connect(router, id, false);
+  };
+  auto press = [&](SDL_JoystickID id, double t) {
+    SDL_Event e{};
+    e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    e.gbutton.which = id;
+    e.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+    e.gbutton.down = true;
+    router.handleEvent(e, t, false);
+    e.type = SDL_EVENT_GAMEPAD_BUTTON_UP;
+    e.gbutton.down = false;
+    router.handleEvent(e, t, false);
+  };
+  // Started with two (the order SDL reports them in does not matter).
+  const auto p1 = steamPad(1);
+  const auto p0 = steamPad(0);
+  CHECK_EQ(players(), std::string("pad 0|pad 1|-|-"));
+  // The Steam Deck, 2026-11-01: pad 0 (an 8BitDo over Bluetooth) left when it was plugged in by USB;
+  // Steam made pad 2 for it. Steam's players: pad 1 and pad 2 - nobody is missing player 1.
+  unplug(p0);
+  CHECK_EQ(players(), std::string("pad 1|-|-|-"));
+  const auto p2 = steamPad(2);
+  CHECK_EQ(players(), std::string("pad 1|pad 2|-|-"));
+  // A press is its player's: pad 1 is player 1, pad 2 player 2.
+  press(p1, 3);
+  press(p2, 4);
+  CHECK_EQ(router.pad(0).lastPress, 3.0);
+  CHECK_EQ(router.pad(1).lastPress, 4.0);
+  // Numbers beyond the four players count by their order too.
+  const auto p7 = steamPad(7);
+  const auto p5 = steamPad(5);
+  CHECK_EQ(players(), std::string("pad 1|pad 2|pad 5|pad 7"));
+  // One leaves from the middle: the later ones move up.
+  unplug(p2);
+  CHECK_EQ(players(), std::string("pad 1|pad 5|pad 7|-"));
+  // A lower number comes back: it is player 1, the others move down.
+  const auto p0b = steamPad(0);
+  CHECK_EQ(players(), std::string("pad 0|pad 1|pad 5|pad 7"));
+  unplug(p7);
+  unplug(p5);
+  // A controller outside Steam Input (one Steam does not hide) never takes a Steam player's place.
+  const auto other = devices.add("Pad X", 0x0b00, 0x045e);
+  connect(router, other);
+  CHECK_EQ(players(), std::string("pad 0|pad 1|Pad X|-"));
+  unplug(p0b);
+  CHECK_EQ(players(), std::string("pad 1|-|Pad X|-"));
+  const auto p3 = steamPad(3);
+  CHECK_EQ(players(), std::string("pad 1|pad 3|Pad X|-"));
+  const auto p4 = steamPad(4);  // Steam's third player: player 3; the other one moves after Steam's
+  CHECK_EQ(players(), std::string("pad 1|pad 3|pad 4|Pad X"));
+  const auto p2b = steamPad(2);  // four already: Steam's pads first, by number; the other one moves out
+  CHECK_EQ(players(), std::string("pad 1|pad 2|pad 3|pad 4"));
+  (void)p2b;
+  (void)p3;
+  (void)p4;
 }
 
 TEST_CASE("P Player Order: each controller's press names the next player, the press reaches nothing else") {
