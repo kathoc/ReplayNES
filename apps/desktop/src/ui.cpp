@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -102,6 +103,8 @@ UI::UI(Deps d) : d_(d) {
   if (RNL_HAVE_MP4_EXPORT) menuFeatures_ |= RNF_MENU_FEATURE_EXPORT;
   if (RNL_HAVE_CRT) menuFeatures_ |= RNF_MENU_FEATURE_CRT;
   if (RNL_HAVE_STEAM) menuFeatures_ |= RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK;
+  // Under Steam Input (a Steam Deck, Big Picture) Steam orders the players: no Player Order of its own.
+  playerOrderOffered_ = std::getenv("SteamVirtualGamepadInfo") == nullptr;
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
   // Offer a choice only when multiple product cores are available.
   if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
@@ -459,6 +462,7 @@ void UI::build(double now) {
   else if (!menuOpen_ && seekBarShown()) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);
   buildOverlays(now);
+  if (d_.input->playerOrderActive()) buildPlayerOrder();
   pollAddToSteam();
   buildDialogs();
   buildChooser();

@@ -670,6 +670,68 @@ TEST_CASE("P players: a controller connected takes player 1 from the Steam Deck'
   (void)c3;
 }
 
+TEST_CASE("P Player Order: each controller's press names the next player, the press reaches nothing else") {
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(kFlightLayout);
+  auto name = [&](int s) { return router.pad(s).pad ? router.pad(s).name : std::string("-"); };
+  auto players = [&] { return name(0) + "|" + name(1) + "|" + name(2) + "|" + name(3) + (router.standbyConnected() ? " (deck waiting)" : ""); };
+  auto plug = [&](const char* n, unsigned product, unsigned vendor) {
+    auto id = devices.add(n, product, vendor);
+    connect(router, id);
+    return id;
+  };
+  auto button = [&](SDL_JoystickID id, bool down) {
+    SDL_Event e{};
+    e.type = down ? SDL_EVENT_GAMEPAD_BUTTON_DOWN : SDL_EVENT_GAMEPAD_BUTTON_UP;
+    e.gbutton.which = id;
+    e.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+    e.gbutton.down = down;
+    CHECK(router.playerOrderOwns(e));
+    router.handleEvent(e, 5, false);
+  };
+  const auto deck = plug("Steam Deck", 0x1205, 0x28de);
+  const auto a = plug("8BitDo Pro 3", 0x6009, 0x2dc8);
+  const auto b = plug("Pad B", 0x0b00, 0x045e);
+  CHECK_EQ(players(), std::string("8BitDo Pro 3|Pad B|-|- (deck waiting)"));
+  router.beginPlayerOrder();
+  CHECK(router.playerOrderActive());
+  CHECK_EQ(router.playerOrderNext(), 0);
+  // Player 2's controller pressed first: player 1, the former player 1 takes its place.
+  button(b, true);
+  CHECK_EQ(players(), std::string("Pad B|8BitDo Pro 3|-|- (deck waiting)"));
+  button(b, false);
+  button(b, true);  // pressed again: still player 1, nothing moves
+  button(b, false);
+  CHECK_EQ(router.playerOrderNext(), 1);
+  // The waiting built-in controls: player 2; the controller there moves to the first free player.
+  button(deck, true);
+  CHECK_EQ(players(), std::string("Pad B|Steam Deck|8BitDo Pro 3|-"));
+  // The last one: already where it goes; every controller has a player, the order ends.
+  button(a, true);
+  CHECK_FALSE(router.playerOrderActive());
+  CHECK_EQ(players(), std::string("Pad B|Steam Deck|8BitDo Pro 3|-"));
+  // The releases of its presses are still the order's (after it ended), not the game's.
+  button(deck, false);
+  button(a, false);
+  for (int s = 0; s < 4; ++s) CHECK(router.pad(s).lastPress < 0);
+  CHECK(router.pressed().empty());
+  // Ended early (Esc): the players stay as they are; presses are the game's again.
+  router.beginPlayerOrder();
+  router.endPlayerOrder();
+  CHECK_FALSE(router.playerOrderActive());
+  SDL_Event e{};
+  e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+  e.gbutton.which = a;
+  e.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+  e.gbutton.down = true;
+  CHECK_FALSE(router.playerOrderOwns(e));
+  router.handleEvent(e, 6, false);
+  CHECK_EQ(router.pad(2).lastPress, 6.0);
+}
+
 TEST_CASE("P the paused seek bar: L / R switch the practice section on a pad and on a stick, no repeats") {
   for (const bool stick : {false, true}) {
     Files files;

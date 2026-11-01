@@ -1037,6 +1037,63 @@ void InputRouter::detach(SDL_JoystickID id) {
   if (onDisconnect) onDisconnect(name);
 }
 
+void InputRouter::beginPlayerOrder() {
+  for (int s = 0; s < kSlots; ++s)
+    if (pads_[s].pad) releaseSlot(s);  // nothing stays held for the game across the reorder
+  orderNamed_.clear();
+  orderNext_ = connectedCount() + (standby_.pad ? 1 : 0) > 0 ? 0 : -1;
+  if (orderNext_ >= 0) std::fprintf(stderr, "input: player order: waiting for player 1\n");
+}
+
+void InputRouter::endPlayerOrder() {
+  if (orderNext_ < 0) return;
+  orderNext_ = -1;
+  std::fprintf(stderr, "input: player order: done\n");
+  playersMoved();
+}
+
+bool InputRouter::playerOrderOwns(const SDL_Event& e) const {
+  if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) return orderNext_ >= 0;
+  if (e.type == SDL_EVENT_GAMEPAD_BUTTON_UP) return orderHeld_.count({e.gbutton.which, int(e.gbutton.button)}) > 0;
+  return false;
+}
+
+// The pressed controller takes player orderNext_; the one there takes the pressed one's former place
+// (its slot, or waiting aside when that was the built-in controls' standby).
+void InputRouter::playerOrderPress(SDL_JoystickID id) {
+  if (orderNext_ < 0 || orderNamed_.count(id)) return;
+  const int to = orderNext_;
+  const int from = slotOf(id);
+  const bool fromStandby = from < 0 && standby_.pad && standby_.id == id;
+  if (from < 0 && !fromStandby) return;
+  if (from != to) {
+    PadInfo moving = fromStandby ? std::move(standby_) : std::move(pads_[from]);
+    if (fromStandby) standby_ = PadInfo();
+    else pads_[from] = PadInfo();
+    if (pads_[to].pad) {
+      PadInfo other = std::move(pads_[to]);
+      pads_[to] = PadInfo();
+      if (!fromStandby) {
+        pads_[from] = std::move(other);
+      } else {
+        int free = -1;
+        for (int s = to + 1; free < 0 && s < kSlots; ++s)
+          if (!pads_[s].pad) free = s;
+        if (free >= 0) pads_[free] = std::move(other);
+        else if (other.builtIn) standby_ = std::move(other);
+        else SDL_CloseGamepad(other.pad);
+      }
+    }
+    pads_[to] = std::move(moving);
+  }
+  if (to > 0 && !pads_[to].key.empty()) formerSlot_[pads_[to].key] = to;
+  std::fprintf(stderr, "input: player order: %s is player %d\n", pads_[to].name.c_str(), to + 1);
+  orderNamed_.insert(id);
+  ++orderNext_;
+  playersMoved();
+  if (orderNext_ >= kSlots || orderNext_ >= connectedCount() + (standby_.pad ? 1 : 0)) endPlayerOrder();
+}
+
 void InputRouter::padButton(int slot, int button, bool down, double t) {
   const char* el = rnf_sdl_button_element(button);
   if (debugInput_)
@@ -1203,6 +1260,16 @@ void InputRouter::handleEvent(const SDL_Event& e, double evTime, bool keyboardFo
     case SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED: steamInfoChanged(e.gdevice.which); break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+      if (playerOrderOwns(e)) {
+        const std::pair<SDL_JoystickID, int> b{e.gbutton.which, int(e.gbutton.button)};
+        if (e.gbutton.down) {
+          orderHeld_.insert(b);
+          playerOrderPress(e.gbutton.which);
+        } else {
+          orderHeld_.erase(b);
+        }
+        break;
+      }
       int s = slotOf(e.gbutton.which);
       if (debugInput_ && s < 0)
         std::fprintf(stderr, "input: SDL gamepad %u is in no slot (standby %u, slots %u %u %u %u)\n", unsigned(e.gbutton.which),

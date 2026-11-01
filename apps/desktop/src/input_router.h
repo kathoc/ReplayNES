@@ -163,6 +163,15 @@ class InputRouter {
   int playersVersion() const { return playersVersion_; }
   double playersChanged() const { return playersChanged_; }
   int connectedCount() const;
+  /// Player Order (Settings > Controls; not under Steam Input, where Steam orders the players): the
+  /// controller whose button is pressed next becomes the next player, 1 first, and its press does
+  /// nothing else. Ends when every connected controller has a player, or by endPlayerOrder (Esc).
+  void beginPlayerOrder();
+  void endPlayerOrder();
+  bool playerOrderActive() const { return orderNext_ >= 0; }
+  int playerOrderNext() const { return orderNext_; }
+  /// A gamepad button the Player Order takes (from beginPlayerOrder to that button's release).
+  bool playerOrderOwns(const SDL_Event& e) const;
   /// Slot of the controller used last (-1: none yet); its family picks the UI's button prompts.
   int lastSlot() const { return lastSlot_; }
   const std::set<std::string>& pressed() const { return pressed_; }
@@ -269,6 +278,10 @@ class InputRouter {
   double playersChanged_ = -1e9;
   void releaseSlot(int s);                  // a slot's held inputs and per-slot state let go
   void playersMoved();
+  void playerOrderPress(SDL_JoystickID id);
+  int orderNext_ = -1;                      // Player Order: the player the next press names (-1: off)
+  std::set<SDL_JoystickID> orderNamed_;     // controllers given a player in this Player Order
+  std::set<std::pair<SDL_JoystickID, int>> orderHeld_;  // buttons pressed in it: their releases are its too
   bool ui_ = false;
   int lastSlot_ = -1;
   bool pausedStepMode_ = false;

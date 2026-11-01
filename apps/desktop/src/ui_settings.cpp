@@ -511,6 +511,8 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
   float fs = std::max(m.hint() * 0.85f, 12 * k);
   const bool kindFocused = in.usesDeviceKinds() && diagramFocus_ >= 0 &&
       size_t(diagramFocus_) < diagramIds_.size() && diagramIds_[size_t(diagramFocus_)] == "__kind__";
+  const bool orderFocused = playerOrderOffered_ && diagramFocus_ >= 0 &&
+      size_t(diagramFocus_) < diagramIds_.size() && diagramIds_[size_t(diagramFocus_)] == "__order__";
   diagramIds_.clear();
   diagramCenters_.clear();
   diagramHubs_.clear();
@@ -520,8 +522,11 @@ void UI::buildDiagram(rnf_controller_family family, int slot, const LRect& area,
     rnf_diagram_element e{};
     if (rnf_diagram_element_get(geometry, i, &e) && rnf_input_element_ignored(e.element)) --focusable;
   }
+  // The rows after the diagram's elements (buildControllerPage): the kind, then Player Order.
+  const int rows = (in.usesDeviceKinds() ? 1 : 0) + (playerOrderOffered_ ? 1 : 0);
   if (kindFocused) diagramFocus_ = int(focusable);
-  if (diagramFocus_ >= int(focusable) + (in.usesDeviceKinds() ? 1 : 0)) diagramFocus_ = 0;
+  if (orderFocused) diagramFocus_ = int(focusable) + (in.usesDeviceKinds() ? 1 : 0);
+  if (diagramFocus_ >= int(focusable) + rows) diagramFocus_ = 0;
   LRect focusRect;
   for (size_t i = 0; i < n; ++i) {
     rnf_diagram_element e{};

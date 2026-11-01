@@ -871,10 +871,14 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
                       (pad.pad ? pad.name : std::string(TR("Not Connected")) + "  ·  " + str(rnf_controller_family_title(fam)));
   textFit(dl, m.label(), ImVec2(g.panel.x + S(20), g.panel.y + S(16)), g.panel.w - S(40), kText, title);
   LRect area{g.panel.x + S(20), g.panel.y + S(16) + m.label() * 1.8f, g.panel.w - S(40), 0};
-  LRect kindRow{};
+  LRect kindRow{}, orderRow{};
   if (d_.input->usesDeviceKinds()) {
     kindRow = {area.x, area.y, area.w, m.label() + S(18)};
     area.y += kindRow.h + S(8);
+  }
+  if (playerOrderOffered_) {
+    orderRow = {area.x, area.y, area.w, m.label() + S(18)};
+    area.y += orderRow.h + S(8);
   }
   area.h = g.panel.bottom() - area.y - S(16);
   buildDiagram(fam, slot, area, now);
@@ -897,6 +901,24 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
     if (diagramFocus_ == index) {
       drawFocus(kindRow, S(8), now);
       description_ = label;
+    }
+  }
+  // Player Order (not under Steam Input): each controller's press, player 1 first (InputRouter).
+  if (playerOrderOffered_) {
+    const int index = int(diagramIds_.size());
+    diagramIds_.push_back("__order__");
+    diagramCenters_.push_back(ImVec2(orderRow.x + orderRow.w / 2, orderRow.y + orderRow.h / 2));
+    diagramHubs_.push_back(-1);
+    const std::string label = TR("Player Order");
+    dl->AddRectFilled(tl(orderRow), br(orderRow), kTile, S(8));
+    textFit(dl, m.label(), ImVec2(orderRow.x + S(12), orderRow.y + S(9)), orderRow.w - S(24), kText, label);
+    ImGui::SetCursorScreenPos(tl(orderRow));
+    const bool clicked = ImGui::InvisibleButton("##playerorder", ImVec2(orderRow.w, orderRow.h));
+    if (ImGui::IsItemHovered() && (clicked || ImGui::GetIO().MouseDelta.x || ImGui::GetIO().MouseDelta.y)) diagramFocus_ = index;
+    if (clicked) activateRow("controls.controller", size_t(index));
+    if (diagramFocus_ == index) {
+      drawFocus(orderRow, S(8), now);
+      description_ = TR("Press a button on each controller, player 1 first");
     }
   }
   prompt({"ui.confirm"}, TR("Change"));
@@ -968,7 +990,10 @@ void UI::activateRow(const std::string& page, size_t row) {
     else if (row - 2 < projects.size()) d_.app->continueProject(projects[row - 2].path);
   } else if (page == "controls.controller") {
     if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) {
-      if (diagramIds_[size_t(diagramFocus_)] == "__kind__") {
+      if (diagramIds_[size_t(diagramFocus_)] == "__order__") {
+        d_.input->beginPlayerOrder();
+        if (!d_.input->playerOrderActive()) notice(TR("No controller is connected"));
+      } else if (diagramIds_[size_t(diagramFocus_)] == "__kind__") {
         const int slot = d_.settings->diagramSlot;
         const KindOverride current = d_.input->kindOverride(slot);
         const KindOverride next = current == KindOverride::automatic ? KindOverride::pad :

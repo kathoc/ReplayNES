@@ -19,10 +19,13 @@
 #include <stdexcept>
 #include <vector>
 using namespace rnl;
+#include <cstdlib>
 namespace fs = std::filesystem;
 namespace rnl {
-FontFile findLatinFont() { return {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",0}; }
-FontFile findJapaneseFont() { return {"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",0}; }
+// UI_FONT_LATIN / UI_FONT_JA: other font files (a Freedesktop SDK has DejaVu elsewhere and no CJK font).
+static const char* envOr(const char* name,const char* path) { const char* v=std::getenv(name); return v&&*v?v:path; }
+FontFile findLatinFont() { return {envOr("UI_FONT_LATIN","/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),0}; }
+FontFile findJapaneseFont() { return {envOr("UI_FONT_JA","/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),0}; }
 FontFile findSymbolFont() { return {}; }
 const std::vector<ExportEncoderChoice>& exportEncoderChoices() { static std::vector<ExportEncoderChoice> v; return v; }
 std::string availableEncodersDescription() { return "Unavailable in UI test"; }
@@ -176,6 +179,25 @@ int main(int argc,char** argv) {
       check(settings.core=="nestopia","UI key did not switch back");
       rnf_l10n_set_language("ja"); ui.loadFonts(true); ui.updateScale(1280,800); draw(); draw();
       renderer.requestScreenshot((out/"core-japanese.png").string());
+      // Settings > Controls > Player Order with two controllers (virtual): the page, the prompt for player 1,
+      // then player 2's controller pressed first.
+      {
+        auto plug=[&](const char* name,Uint16 vendor,Uint16 product) {
+          SDL_VirtualJoystickDesc desc; SDL_INIT_INTERFACE(&desc); desc.type=SDL_JOYSTICK_TYPE_GAMEPAD;
+          desc.naxes=SDL_GAMEPAD_AXIS_COUNT; desc.nbuttons=SDL_GAMEPAD_BUTTON_COUNT; desc.vendor_id=vendor; desc.product_id=product; desc.name=name;
+          SDL_JoystickID id=SDL_AttachVirtualJoystick(&desc); check(id!=0,SDL_GetError());
+          SDL_Event e{}; e.type=SDL_EVENT_GAMEPAD_ADDED; e.gdevice.which=id; input.handleEvent(e,0,false); return id;
+        };
+        plug("8BitDo Pro 3",0x2dc8,0x6009); const SDL_JoystickID b=plug("Pad B",0x045e,0x0b00);
+        check(ui.openPage("controls.controller"),"controller page missing"); draw(); draw();
+        renderer.requestScreenshot((out/"player-order-page.png").string());
+        input.beginPlayerOrder(); check(input.playerOrderActive(),"player order did not start"); draw(); draw();
+        renderer.requestScreenshot((out/"player-order-1.png").string());
+        SDL_Event e{}; e.type=SDL_EVENT_GAMEPAD_BUTTON_DOWN; e.gbutton.which=b; e.gbutton.button=SDL_GAMEPAD_BUTTON_SOUTH; e.gbutton.down=true;
+        input.handleEvent(e,1,false); check(input.pad(0).name=="Pad B","Pad B is not player 1"); draw(); draw();
+        renderer.requestScreenshot((out/"player-order-2.png").string());
+        input.endPlayerOrder(); draw();
+      }
       // The library with two pages of cartridges: the next page peeks in at the right edge, and the
       // cards without a picture get their frame-300 picture from a background run.
       ui.setMenu(false);

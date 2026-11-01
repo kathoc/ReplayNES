@@ -201,6 +201,18 @@ void App::handleEvent(const SDL_Event& e, double now) {
        e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN ||
        e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP))
     return;
+  // Player Order (Settings > Controls): a controller's press names its player and reaches neither the
+  // menus nor the game; Esc ends it.
+  if (input_->playerOrderOwns(e)) {
+    const bool was = input_->playerOrderActive();
+    input_->handleEvent(e, now, false);
+    if (was && !input_->playerOrderActive()) ui_->notice(TR("Players are set"));
+    return;
+  }
+  if (input_->playerOrderActive() && e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_ESCAPE) {
+    input_->endPlayerOrder();
+    return;
+  }
   // A text field with an on-screen keyboard takes the controller and taps on the keyboard
   // (ui_osk.cpp); PadNavFeed still follows the pads (it feeds ImGui nothing meanwhile).
   bool textEntry = ui_->textEntryEvent(e, now);

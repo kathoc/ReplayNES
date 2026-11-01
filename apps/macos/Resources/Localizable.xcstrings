@@ -8454,6 +8454,66 @@
           }
         }
       }
+    },
+    "Player Order": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイヤーの順番"
+          }
+        }
+      }
+    },
+    "Press a button on each controller, player 1 first": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1P にするコントローラーから順にボタンを押します"
+          }
+        }
+      }
+    },
+    "Press a button on player %lld's controller": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldP にするコントローラーのボタンを押してください"
+          }
+        }
+      }
+    },
+    "Esc: done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc：終わる"
+          }
+        }
+      }
+    },
+    "Players are set": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイヤーの順番を決めました"
+          }
+        }
+      }
+    },
+    "No controller is connected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コントローラーがつながっていません"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
