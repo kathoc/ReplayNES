@@ -20,6 +20,9 @@ finish-args:
   # Steam's screen dimming / sleep held off while the app runs (game mode has no portal Inhibit;
   # Steam serves this name itself): apps/linux/src/steam_inhibit.h.
   - --talk-name=org.freedesktop.ScreenSaver
+  # The Steam menu over the game (apps/linux/src/gamescope_overlay.h): gamescope says which app has the
+  # input on its first Xwayland (:0, Steam's); a game launched by Steam runs on another one.
+  - --filesystem=/tmp/.X11-unix:ro
   - --filesystem=xdg-run/pipewire-0
   # ROM library and projects: ~/Documents/ReplayNES/{ROM,Projects}
   - --filesystem=xdg-documents/ReplayNES:create

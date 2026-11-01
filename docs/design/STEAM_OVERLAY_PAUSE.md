@@ -40,3 +40,12 @@ front, 769 for Steam's own UI (read on a Deck: the library shown, `GAMESCOPE_FOC
 - A scripted run: a game playing, `overlay on`, `overlay off`: paused, the pause menu open
   (a screenshot), the controllers did not reach the game meanwhile.
 - On a Steam Deck: the Steam button pauses the game, closing the Steam menu shows the pause menu.
+
+## Fix (2026-11-01: "the pause menu does not open")
+
+Launched by Steam a game runs on gamescope's second Xwayland (DISPLAY=:1); GAMESCOPE_FOCUSED_APP is
+on the first one's root (:0, Steam's) only. The checks had run the app over ssh with DISPLAY=:0, so
+the property was there; under Steam the watcher read :1, never saw it and never reported the menu
+(the Steam log of the user's sessions: no "system overlay" line at all, and a screensaver started
+while Steam had the input). The watcher now falls back to :0 when its own display lacks the property;
+the Flatpak may reach that socket (--filesystem=/tmp/.X11-unix:ro).
