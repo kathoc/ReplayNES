@@ -62,7 +62,7 @@ void watch() {
   X11 x;
   if (!x.load()) return (void)std::fprintf(stderr, "gamescope: libX11 not loaded, the Steam menu does not pause\n");
   // Our display first; when its root has no GAMESCOPE_FOCUSED_APP, gamescope's first Xwayland (:0;
-  // the Flatpak may reach its socket: --filesystem=/tmp/.X11-unix:ro).
+  // the Flatpak reaches it through the abstract socket: --share=network).
   X11::Display* d = nullptr;
   X11::Atom focusedApp = 0;
   for (const char* name : {static_cast<const char*>(nullptr), ":0"}) {

@@ -48,4 +48,6 @@ on the first one's root (:0, Steam's) only. The checks had run the app over ssh 
 the property was there; under Steam the watcher read :1, never saw it and never reported the menu
 (the Steam log of the user's sessions: no "system overlay" line at all, and a screensaver started
 while Steam had the input). The watcher now falls back to :0 when its own display lacks the property;
-the Flatpak may reach that socket (--filesystem=/tmp/.X11-unix:ro).
+the Flatpak reaches it through the X server's abstract socket (--share=network: Flatpak's
+/tmp/.X11-unix holds only the app's own display socket, so --filesystem=/tmp/.X11-unix was shadowed;
+checked on the Deck: without it "no display with GAMESCOPE_FOCUSED_APP", with it "read on :0").
