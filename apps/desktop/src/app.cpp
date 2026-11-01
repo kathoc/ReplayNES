@@ -608,6 +608,9 @@ int App::run(const AppOptions& opt) {
     rec.frames = frames;
     rec.refresh = sched_.refresh();
     rec.sample = nowSeconds();
+    // The controllers read once more here (the pad thread's last read is up to 1 ms old): what the
+    // kernel has at the sample point reaches this frame.
+    SDL_UpdateJoysticks();
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
     input_->tick(nowSeconds());  // L or R held alone past the chord window fires now
