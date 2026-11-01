@@ -9,6 +9,9 @@ def productFile = project.findProperty('rnProductFile') ?: ''
 def appId = project.findProperty('rnApplicationId') ?: 'io.github.replaynes.android'
 def appName = project.findProperty('rnAppName') ?: 'ReplayNES'
 def sdlJava = "${rootDir}/../../third_party/SDL/android-project/app/src/main/java"
+// The launcher icon: -PrnIcon=<a square PNG> (the product's; default ReplayNES's), as a mipmap.
+def iconPng = file(project.findProperty('rnIcon') ?: "${rootDir}/../../apps/linux/steam/artwork/png/hicolor/512.png")
+def iconRes = layout.buildDirectory.dir('generated/rn-icon/res')
 
 android {
     namespace = 'io.github.replaynes.android'
@@ -40,6 +43,7 @@ android {
     }
     buildFeatures { resValues = true }  // app_name from the product
     sourceSets.main.java.srcDirs += [sdlJava]
+    sourceSets.main.res.srcDirs += [iconRes]
     externalNativeBuild {
         cmake {
             path '../CMakeLists.txt'
@@ -52,3 +56,11 @@ android {
     }
     lint { abortOnError = false }
 }
+
+// The icon into a generated resource folder before the resources are merged.
+def rnIcon = tasks.register('rnIcon', Copy) {
+    from(iconPng) { rename { 'ic_launcher.png' } }
+    into(iconRes.map { it.dir('mipmap-xxxhdpi') })
+    inputs.property('icon', iconPng.absolutePath)
+}
+tasks.named('preBuild') { dependsOn rnIcon }
