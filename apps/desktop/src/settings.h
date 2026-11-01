@@ -44,6 +44,7 @@ struct Settings {
   // value that was surely chosen, and it stays off).
   bool pauseAfterRewind = false;
   double autosaveInterval = 2.0;  // seconds
+  int screensaverMinutes = 5;     // demos after this long without input (docs/design/SCREENSAVER.md); 0 = off
   bool dpadStepWhenPaused = true;
   // The mouse plays games with analog controls (sticks, dials, levers; Controls > More). Off by default: a
   // mouse moved by accident would leave the lever pushed.

@@ -28,6 +28,7 @@ struct SessionOptions {
   CheckpointPolicy checkpoints;
   bool dropCorruptStates = false;  // open(): discard corrupt state files instead of failing
   bool dropCorruptPractice = false;  // open(): discard corrupt practice slots instead of failing
+  bool live = false;  // create(): Mode::Live from the start (nothing recorded), any core
 };
 
 struct StepInfo {

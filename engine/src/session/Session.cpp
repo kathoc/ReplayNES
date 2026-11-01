@@ -22,7 +22,7 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
   if (!coreAvailable(opt.core)) return Error(Err::UnsupportedFormat,
       RN_PRODUCT_NES ? "selected core is not built" : "core not available in this product");
   s->core_ = createCore(opt.core);
-  if (!(coreCapabilities(opt.core) & CapRecording)) s->mode_ = Mode::Live;
+  if (!(coreCapabilities(opt.core) & CapRecording) || opt.live) s->mode_ = Mode::Live;
   s->rom_ = std::move(rom);
   s->romPath_ = romPath;
   s->romSha_ = Sha256::hex(s->rom_.data(), s->rom_.size());

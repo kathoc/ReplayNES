@@ -113,6 +113,9 @@ class App {
   bool running_ = true;
   bool fullscreen_ = false;
   bool focused_ = true;  // the window has the input focus (another window in front: false)
+  // Screensaver (docs/design/SCREENSAVER.md): the last input, the current demo's start.
+  double lastInput_ = 0, screensaverDemoAt_ = 0;
+  void updateScreensaver(double now);
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
   int lastWidth_ = 0;
@@ -176,7 +179,55 @@ void App::updateNavigation() {
   else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
 }
 
+namespace {
+// A person did something (a resting stick's drift, a pointer the compositor nudges or a key repeat
+// is not one).
+bool isUserInput(const SDL_Event& e) {
+  switch (e.type) {
+    case SDL_EVENT_KEY_DOWN: return !e.key.repeat;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_WHEEL:
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: return true;
+    case SDL_EVENT_MOUSE_MOTION: return std::fabs(e.motion.xrel) + std::fabs(e.motion.yrel) > 3;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION: return std::abs(int(e.gaxis.value)) > 16000;
+    default: return false;
+  }
+}
+}  // namespace
+
+// The screensaver starts after the setting's minutes without input on the library or with a game paused
+// (not practising, no countdown, nothing a dialog or an export waits for), and switches demos every 2 min.
+void App::updateScreensaver(double now) {
+  if (lastInput_ == 0) lastInput_ = now;
+  if (app_->screensaverActive()) {
+    if (now - screensaverDemoAt_ >= 120) {
+      app_->nextScreensaverDemo();
+      screensaverDemoAt_ = now;
+    }
+    return;
+  }
+  const int minutes = settings_.screensaverMinutes;
+  if (minutes <= 0 || now - lastInput_ < minutes * 60.0 || !focused_ || ui_->screensaverBlocked()) return;
+  const EmuStatus& st = emu_->status();
+  if (emu_->session() && (!st.paused || st.practicing || st.countdown > 0 || emu_->live())) return;
+  if (app_->startScreensaver()) {
+    std::fprintf(stderr, "screensaver: on (%s)\n", app_->screensaverRom().c_str());
+    screensaverDemoAt_ = now;
+  } else {
+    lastInput_ = now;  // could not leave the session (its work not saved): another full wait
+  }
+}
+
 void App::handleEvent(const SDL_Event& e, double now) {
+  if (isUserInput(e)) {
+    lastInput_ = now;
+    if (app_->screensaverActive()) {  // the input that ends it does nothing else
+      app_->stopScreensaver();
+      std::fprintf(stderr, "screensaver: off\n");
+      return;
+    }
+  }
   // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
   // game pauses and the controllers reach neither the game nor the menus until the window is back.
   // The game stays paused then (play resumes when the player says so).
@@ -617,6 +668,7 @@ int App::run(const AppOptions& opt) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
     input_->tick(nowSeconds());  // L or R held alone past the chord window fires now
+    updateScreensaver(nowSeconds());
     if (!running_) break;
     rec.polled = nowSeconds();
     double ev = input_->lastEventTime();

@@ -87,6 +87,17 @@ class AppModel {
   /// "Continue": resumes the recorded session where it was, else opens the latest project.
   void continueLast();
 
+  /// Screensaver (docs/design/SCREENSAVER.md): leaves a paused session as quitting does (false, and no
+  /// screensaver, when its work cannot be saved), then shows a random library game's demo.
+  bool startScreensaver();
+  /// The next demo: another random game, powered on and left alone (live, in memory: nothing recorded).
+  void nextScreensaverDemo();
+  /// Ends the demo; a session left by startScreensaver reopens at its point (as "Continue" does).
+  void stopScreensaver();
+  bool screensaverActive() const { return screensaver_; }
+  /// The ROM of the demo shown now ("" when none).
+  const std::string& screensaverRom() const { return screensaverRom_; }
+
   // Library / projects.
   void playFromLibrary(const LibraryROM& rom);
   void tryRom(const std::string& romPath);  // temporary session
@@ -153,6 +164,9 @@ class AppModel {
   rnf_session_lock* lock_ = nullptr;
   std::optional<Identity> current_;
   std::optional<ResumeRec> lastResume_;
+  bool screensaver_ = false, screensaverLeftSession_ = false;
+  std::string screensaverRom_;
+  uint64_t screensaverSeed_ = 0;
   std::optional<ResumeRec> pendingResume_;  // the launch's resume record, offered by "Continue"
   // Play history (library.json): the session's ROM, its start and the time not yet recorded.
   std::string playSHA_;

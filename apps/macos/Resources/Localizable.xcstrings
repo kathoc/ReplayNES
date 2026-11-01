@@ -8514,6 +8514,86 @@
           }
         }
       }
+    },
+    "Screensaver": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンセーバー"
+          }
+        }
+      }
+    },
+    "Game demos after a time without input (nothing is recorded)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作がないとき、ゲームのデモを流します（記録しません）"
+          }
+        }
+      }
+    },
+    "1 min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 分"
+          }
+        }
+      }
+    },
+    "3 min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3 分"
+          }
+        }
+      }
+    },
+    "5 min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 分"
+          }
+        }
+      }
+    },
+    "10 min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 分"
+          }
+        }
+      }
+    },
+    "30 min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 分"
+          }
+        }
+      }
+    },
+    "Screensaver · press any button to return": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンセーバー · 何か押すと戻ります"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -80,6 +80,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "crtAntenna" && num && d >= 20 && d <= 90) s.crtAntenna = d;
     else if (k == "pauseAfterRewind2") s.pauseAfterRewind = parseBool(v, s.pauseAfterRewind);  // "pauseAfterRewind" (<= 0.5.0): ignored, settings.h
     else if (k == "autosaveInterval" && num && d >= 1 && d <= 600) s.autosaveInterval = d;
+    else if (k == "screensaverMinutes" && num && d >= 0 && d <= 600) s.screensaverMinutes = int(d);
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
     else if (k == "mouseControls") s.mouseControls = parseBool(v, s.mouseControls);
     else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
@@ -134,6 +135,7 @@ std::string Settings::serialize() const {
   o << "pauseAfterRewind2=" << int(pauseAfterRewind) << "\n";
   std::snprintf(buf, sizeof buf, "%g", autosaveInterval);
   o << "autosaveInterval=" << buf << "\n";
+  o << "screensaverMinutes=" << screensaverMinutes << "\n";
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";
   o << "mouseControls=" << int(mouseControls) << "\n";
   o << "southConfirm=" << int(southConfirm) << "\n";

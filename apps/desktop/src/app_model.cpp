@@ -224,6 +224,70 @@ void AppModel::continueLast() {
   if (std::optional<ContinueTarget> t = continueTarget()) continueProject(t->projectPath);
 }
 
+bool AppModel::startScreensaver() {
+  if (screensaver_) return true;
+  if (current_) {
+    // As quitting leaves it (requestQuit): saved, its resume record written, closed.
+    if (!persist_ || current_->projectPath.empty()) return false;
+    flushPlay();
+    if (!emu_->flushForResume(current_->isTemp).empty()) return false;
+    updateResumeRecord();
+    flushWrites();
+    playSHA_.clear();
+    emu_->closeSession();
+    current_.reset();
+    pendingResume_ = lastResume_;  // what "Continue" (continueLast) reopens
+    screensaverLeftSession_ = true;
+  }
+  screensaver_ = true;
+  emu_->silent = true;
+  screensaverRom_.clear();
+  nextScreensaverDemo();
+  if (screensaverRom_.empty()) {  // no game to show (an empty library)
+    stopScreensaver();
+    return false;
+  }
+  return true;
+}
+
+void AppModel::nextScreensaverDemo() {
+  if (!screensaver_) return;
+  std::vector<std::string> roms;
+  for (const LibraryROM& r : library_->roms())
+    if (r.path != screensaverRom_) roms.push_back(r.path);
+  if (roms.empty() && !screensaverRom_.empty()) roms.push_back(screensaverRom_);  // the only game: again
+  rn_session_options opt;
+  rn_session_options_init(&opt);
+  opt.open_flags = RN_OPEN_LIVE;  // nothing recorded: no take, checkpoints or rewind (memory stays flat)
+  if (selectedCore == "nestopia") opt.core = RN_CORE_NESTOPIA;
+  else if (selectedCore == "replaynescore") opt.core = RN_CORE_REPLAYNESCORE;
+  else opt.core = RN_CORE_EXTERNAL;
+  // A random order (an LCG seeded by the clock), trying the next game when one does not open.
+  if (!screensaverSeed_) screensaverSeed_ = uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) | 1;
+  for (size_t tries = 0; tries < roms.size() && tries < 8; ++tries) {
+    screensaverSeed_ = screensaverSeed_ * 6364136223846793005ull + 1442695040888963407ull;
+    const std::string& rom = roms[size_t(screensaverSeed_ >> 33) % roms.size()];
+    rn_session* s = nullptr;
+    if (rn_session_new(rom.c_str(), nullptr, &opt, &s) != RN_OK) continue;
+    emu_->install(s);  // not install(): no resume record, play history or project
+    emu_->setPaused(false);
+    screensaverRom_ = rom;
+    return;
+  }
+}
+
+void AppModel::stopScreensaver() {
+  if (!screensaver_) return;
+  screensaver_ = false;
+  emu_->closeSession();
+  emu_->silent = false;
+  screensaverRom_.clear();
+  if (screensaverLeftSession_) {
+    screensaverLeftSession_ = false;
+    continueLast();
+  }
+}
+
 void AppModel::settlePendingTemp(std::function<void()> then) {
   // Idle on the library with a temporary session left (resumable by "Continue"): starting
   // something else asks first whether to save it (prepareTempSlot).

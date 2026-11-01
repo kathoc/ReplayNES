@@ -518,7 +518,7 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "updates.status", "updates.check",
                                                                 "updates.apply", "updates.auto", "about.folders"}));
   CHECK((itemIds(m, "about.folders") ==
-         std::vector<std::string>{"about.roms", "about.projects", "about.settings", "about.license"}));
+         std::vector<std::string>{"about.roms", "about.projects", "about.settings", "about.license", "system.stats"}));
   {
     int sys = rnf_menu_page_find(m, "settings.system"), about = rnf_menu_page_find(m, "system.about");
     REQUIRE(sys >= 0);

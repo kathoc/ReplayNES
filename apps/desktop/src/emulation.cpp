@@ -73,7 +73,7 @@ void EmulationController::reportError(const std::string& title) {
 }
 
 void EmulationController::setMuted(bool m) {
-  if (audio_) audio_->setMuted(m);
+  if (audio_) audio_->setMuted(m || silent);
 }
 
 void EmulationController::setPaused(bool p) {

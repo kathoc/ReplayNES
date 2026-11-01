@@ -157,6 +157,8 @@ class EmulationController {
   double framePeriod() const { return rnf_frame_period_for_media(&media_); }
   bool crtAvailable() const;
   bool live() const { return session_ && rn_get_mode(session_) == RN_MODE_LIVE; }
+  /// No sound whatever the session does (the screensaver's demos).
+  bool silent = false;
 
   struct Tick {
     bool newPicture = false;  // picture() changed

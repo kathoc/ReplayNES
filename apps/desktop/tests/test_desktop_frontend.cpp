@@ -2003,6 +2003,52 @@ TEST_CASE("session: library Play creates a project in Projects; Continue reopens
   CHECK(w.emu->paused());
 }
 
+TEST_CASE("screensaver: live demos of library games, nothing recorded; a paused game is back where it was") {
+  RN_REQUIRE_NESTOPIA();
+  std::string dir = tmpDir("screensaver");
+  World w(dir + "/w", true);
+  testRom(w.library->romDir(), "Game A" + testRomExtension());
+  testRom(w.library->romDir(), "Game B" + testRomExtension());
+  w.library->refresh();
+  for (int i = 0; i < 200 && !w.library->poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  REQUIRE_EQ(w.library->roms().size(), size_t(2));
+  // From the library: a live session of a library game, running, silent; no project, nothing to resume.
+  REQUIRE(w.app->startScreensaver());
+  CHECK(w.app->screensaverActive());
+  REQUIRE(w.emu->session() != nullptr);
+  CHECK(w.emu->live());
+  CHECK_FALSE(w.emu->paused());
+  CHECK(w.emu->silent);
+  CHECK_EQ(std::string(rn_session_project_dir(w.emu->session())), std::string());
+  const std::string first = w.app->screensaverRom();
+  tickN(*w.emu, 20);
+  CHECK_EQ(w.emu->status().takeLength, uint64_t(0));  // not recorded
+  // The next demo: the other game (two in the library).
+  w.app->nextScreensaverDemo();
+  CHECK(w.emu->live());
+  CHECK(w.app->screensaverRom() != first);
+  w.app->stopScreensaver();
+  CHECK_FALSE(w.app->screensaverActive());
+  CHECK(w.emu->session() == nullptr);
+  CHECK_FALSE(w.emu->silent);
+  CHECK_FALSE(w.app->continueTarget().has_value());  // no demo became something to continue
+  // From a paused game: left as quitting leaves it, reopened at the same frame afterwards.
+  w.app->playFromLibrary(w.library->roms()[0]);
+  REQUIRE(w.emu->session() != nullptr);
+  const std::string project = rn_session_project_dir(w.emu->session());
+  tickN(*w.emu, 45);
+  w.emu->setPaused(true);
+  const uint64_t frame = w.emu->status().frame;
+  REQUIRE(w.app->startScreensaver());
+  CHECK(w.emu->live());
+  w.app->stopScreensaver();
+  REQUIRE(w.emu->session() != nullptr);
+  CHECK_EQ(std::string(rn_session_project_dir(w.emu->session())), project);
+  CHECK_EQ(w.emu->status().frame, frame);
+  CHECK_EQ(w.emu->status().takeLength, uint64_t(45));
+  CHECK(w.emu->paused());
+}
+
 TEST_CASE("session: Reset Project backs a saved project up to the Trash") {
   RN_REQUIRE_NESTOPIA();
   std::string dir = tmpDir("reset");

@@ -202,6 +202,8 @@ class UI : public DialogHost {
   void showResetChoices();
   void closeMenuAndResume();
   bool popupOpen() const;
+  /// Something the screensaver must not interrupt: a dialog, a chooser, an export running.
+  bool screensaverBlocked() const { return popupOpen() || exportJob_.running(); }
   void askRename(const std::string& title, const std::string& initial, std::function<void(const std::string&)> apply);
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
@@ -309,7 +311,8 @@ class UI : public DialogHost {
   /// "■■□□" top left: which players have a controller (filled), the one pressed lights up; while paused
   /// and for a few seconds after a controller joins, leaves or changes player.
   void buildPlayers(double now);
-  void buildPlayerOrder();  // Settings > Controls > Controller > Player Order: whose press is which player
+  void buildPlayerOrder();
+  void buildScreensaver();  // the demo dimmed, one faint line (docs/design/SCREENSAVER.md)  // Settings > Controls > Controller > Player Order: whose press is which player
   bool playerOrderOffered_ = true;
   float playersW_ = 0;  // its width this frame (the flash badge goes after it)
   bool thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1);

@@ -134,6 +134,9 @@ typedef enum rn_mode { RN_MODE_RECORD = 0, RN_MODE_REPLAY = 1, RN_MODE_PRACTICE 
 #define RN_OPEN_DROP_CORRUPT_STATES 0x1u   /* discard corrupt checkpoint files (they are a cache) */
 #define RN_OPEN_DROP_CORRUPT_PRACTICE 0x2u /* discard A/B practice slots whose A state is corrupt
                                               (NOT a cache: the slot is lost; see rn_practice_dropped_slots) */
+#define RN_OPEN_LIVE 0x4u                  /* rn_session_new, project_dir NULL: RN_MODE_LIVE from the start - the
+                                              core just runs, nothing is recorded (no take, checkpoints or
+                                              rewind); a demo. A session cannot change to live later. */
 
 typedef struct rn_session_options {
   uint32_t struct_size;     /* set by rn_session_options_init */

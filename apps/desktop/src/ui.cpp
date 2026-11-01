@@ -373,6 +373,7 @@ GameRect UI::gameRect(int w, int h) const {
 void UI::slack(double now) {
   // Off the input -> screen path: the frame loop calls this in the slack before the next sample.
   if (!hasSession()) return;
+  if (d_.app && d_.app->screensaverActive()) return;  // a demo is no game of the library: its card keeps its picture
   bool playing = !d_.emu->status().paused;
   // Periodic pictures only once the game shows something (not the blank first frames).
   if (thumbSaveWanted_ || (playing && now - lastThumbSave_ >= 30 && d_.emu->status().frame >= 180)) saveLibraryThumb(now);
@@ -458,6 +459,11 @@ void UI::build(double now) {
   updateMarkers(now);
   tickCoach(now);
   if (d_.libraryThumbs) d_.libraryThumbs->setPicturesPaused(hasSession());  // a game has the machine to itself
+  if (d_.app && d_.app->screensaverActive()) {  // the demo alone: no menus, bars or pills
+    buildScreensaver();
+    layoutCheckEndFrame();
+    return;
+  }
   if (!hasSession()) buildLibrary(now);
   else if (!menuOpen_ && seekBarShown()) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);
@@ -476,6 +482,16 @@ void UI::build(double now) {
 }
 
 // ------------------------------------------------------------------ overlays
+
+void UI::buildScreensaver() {
+  const ImVec2 size = ImGui::GetIO().DisplaySize;
+  ImDrawList* dl = ImGui::GetBackgroundDrawList();  // over the game picture, under nothing
+  dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(0, 0, 0, 110));
+  const std::string hint = TR("Screensaver · press any button to return");
+  const float fs = metrics_.hint();
+  const ImVec2 ts = measure(fs, hint.c_str());
+  dl->AddText(ImGui::GetFont(), fs, ImVec2((size.x - ts.x) / 2, size.y - ts.y - S(18)), IM_COL32(242, 242, 246, 90), hint.c_str());
+}
 
 void UI::buildOverlays(double now) {
   bool session = hasSession();

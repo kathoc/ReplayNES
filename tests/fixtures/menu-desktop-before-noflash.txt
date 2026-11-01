@@ -14,7 +14,7 @@ controls.assign:
 controls.keyboard:
 controls.detail:controls.rewind_pause,controls.turbo,controls.turbo_duty,controls.socd,controls.stick,controls.reset
 system.about:about.version,updates.status,updates.check,updates.apply,updates.auto,about.folders
-about.folders:about.roms,about.projects,about.settings,about.license
-system.detail:system.fullscreen,system.ui_scale,system.autosave,system.resume_countdown,system.flash_badge,system.stats
+about.folders:about.roms,about.projects,about.settings,about.license,system.stats
+system.detail:system.fullscreen,system.ui_scale,system.autosave,system.resume_countdown,system.flash_badge,system.screensaver
 game:game.library,game.save,game.save_as,game.open,game.reset
 library.projects:

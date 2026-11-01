@@ -81,6 +81,7 @@ rn::SessionOptions toOptions(const rn_session_options* o) {
   if (o->sparse_interval) so.checkpoints.sparseInterval = o->sparse_interval;
   so.dropCorruptStates = (o->open_flags & RN_OPEN_DROP_CORRUPT_STATES) != 0;
   so.dropCorruptPractice = (o->open_flags & RN_OPEN_DROP_CORRUPT_PRACTICE) != 0;
+  so.live = (o->open_flags & RN_OPEN_LIVE) != 0;
   return so;
 }
 
