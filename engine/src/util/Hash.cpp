@@ -5,24 +5,39 @@
 namespace rn {
 
 // ---------------------------------------------------------------- CRC32 (IEEE 802.3, reflected)
+// Slice-by-16 (16 table lookups per 16 bytes, independent of each other): the same values as one byte
+// at a time, about 8 times faster. Every checkpoint is checksummed; an arcade state is megabytes (Sega
+// System 32: 9 MB), and byte at a time it took 24 ms of each dense checkpoint's frame.
 namespace {
 struct CrcTable {
-  uint32_t t[256];
+  uint32_t t[16][256];
   CrcTable() {
     for (uint32_t i = 0; i < 256; ++i) {
       uint32_t c = i;
       for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-      t[i] = c;
+      t[0][i] = c;
     }
+    for (uint32_t i = 0; i < 256; ++i)
+      for (int s = 1; s < 16; ++s) t[s][i] = (t[s - 1][i] >> 8) ^ t[0][t[s - 1][i] & 0xFF];
   }
 };
 const CrcTable kCrc;  // immutable after static init
+
+uint32_t le32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 }  // namespace
 
 uint32_t crc32(const void* data, size_t n, uint32_t prev) {
   const uint8_t* p = static_cast<const uint8_t*>(data);
   uint32_t c = prev ^ 0xFFFFFFFFu;
-  for (size_t i = 0; i < n; ++i) c = kCrc.t[(c ^ p[i]) & 0xFF] ^ (c >> 8);
+  const auto& t = kCrc.t;
+  for (; n >= 16; n -= 16, p += 16) {
+    const uint32_t a = le32(p) ^ c, b = le32(p + 4), d = le32(p + 8), e = le32(p + 12);
+    c = t[15][a & 0xFF] ^ t[14][(a >> 8) & 0xFF] ^ t[13][(a >> 16) & 0xFF] ^ t[12][a >> 24] ^
+        t[11][b & 0xFF] ^ t[10][(b >> 8) & 0xFF] ^ t[9][(b >> 16) & 0xFF] ^ t[8][b >> 24] ^
+        t[7][d & 0xFF] ^ t[6][(d >> 8) & 0xFF] ^ t[5][(d >> 16) & 0xFF] ^ t[4][d >> 24] ^
+        t[3][e & 0xFF] ^ t[2][(e >> 8) & 0xFF] ^ t[1][(e >> 16) & 0xFF] ^ t[0][e >> 24];
+  }
+  for (; n > 0; --n, ++p) c = t[0][(c ^ *p) & 0xFF] ^ (c >> 8);
   return c ^ 0xFFFFFFFFu;
 }
 

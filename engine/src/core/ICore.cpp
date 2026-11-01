@@ -154,6 +154,19 @@ void write(std::vector<uint8_t>& out, const std::string& compat, uint64_t frame,
   out.swap(w.buf);
 }
 
+uint8_t* begin(std::vector<uint8_t>& out, const std::string& compat, uint64_t frame, size_t n) {
+  ByteWriter w;
+  w.u32(kMagic);
+  w.u32(kVersion);
+  w.str(compat);
+  w.u64(frame);
+  w.u64(n);
+  const size_t header = w.buf.size();
+  out.swap(w.buf);
+  out.resize(header + n);
+  return out.data() + header;
+}
+
 Status read(const uint8_t* data, size_t n, const std::string& expectCompat, uint64_t& frame, const uint8_t*& payload,
             size_t& payloadLen) {
   ByteReader r(data, n);

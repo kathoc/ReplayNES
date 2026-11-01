@@ -155,6 +155,9 @@ std::string coreCompatId(CoreKind kind);
 // Wrapper state envelope shared by implementations.
 namespace stateenv {
 void write(std::vector<uint8_t>& out, const std::string& compat, uint64_t frame, const uint8_t* payload, size_t n);
+/// The same envelope with room for an `n`-byte payload the caller writes at the returned pointer (a large
+/// state serialized in place instead of into a buffer copied over).
+uint8_t* begin(std::vector<uint8_t>& out, const std::string& compat, uint64_t frame, size_t n);
 Status read(const uint8_t* data, size_t n, const std::string& expectCompat, uint64_t& frame, const uint8_t*& payload,
             size_t& payloadLen);
 }  // namespace stateenv

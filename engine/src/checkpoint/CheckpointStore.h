@@ -24,7 +24,7 @@ struct Checkpoint {
   CpKind kind = CpKind::Dense;
   std::string compat;
   uint32_t stateFormatVersion = 0;
-  uint32_t crc = 0;
+  uint32_t crc = 0;  // of data, for what is persisted (not Dense: 0)
   uint64_t insertSeq = 0;
   bool persisted = false;
   std::vector<uint8_t> data;

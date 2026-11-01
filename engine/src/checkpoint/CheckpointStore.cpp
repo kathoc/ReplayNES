@@ -13,7 +13,10 @@ uint64_t CheckpointStore::add(uint64_t frame, uint64_t owner, CpKind kind, const
   c.kind = kind;
   c.compat = compat;
   c.stateFormatVersion = sfv;
-  c.crc = crc32(data.data(), data.size());
+  // Only what is written to the project is checksummed (ProjectStore: the file and its journal record).
+  // A dense checkpoint never is; checksumming it took most of a recorded frame when the state is large
+  // (Sega System 32: 22 MB, 60 ms every 30 frames on a Mac).
+  c.crc = kind == CpKind::Dense ? 0 : crc32(data.data(), data.size());
   c.insertSeq = ++seq_;
   c.data = std::move(data);
   uint64_t id = c.id;
