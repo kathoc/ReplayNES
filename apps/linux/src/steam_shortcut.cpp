@@ -15,6 +15,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -312,14 +313,36 @@ const Art kArt[] = {{"capsule.png", "p.png"}, {"wide.png", ".png"}, {"hero.png",
 const char* kLogoJson =
     "{\"nVersion\":1,\"logoPosition\":{\"pinnedPosition\":\"BottomLeft\",\"nWidthPct\":50,\"nHeightPct\":50}}";
 
+uint64_t fnv64(const std::string& data) {
+  uint64_t h = 1469598103934665603ull;
+  for (unsigned char c : data) h = (h ^ c) * 1099511628211ull;
+  return h;
+}
+
+/// What we wrote into each grid slot last time: <app id>.<prefix>-artwork, "<suffix> <hash>" lines.
+/// A slot whose file still has that content is ours (the user did not put their own art there).
+std::map<std::string, uint64_t> readArtworkRecord(const std::string& path) {
+  std::map<std::string, uint64_t> r;
+  std::string text;
+  if (!readFile(path, &text)) return r;
+  std::istringstream in(text);
+  std::string suffix, hash;
+  while (in >> suffix >> hash) r[suffix] = std::strtoull(hash.c_str(), nullptr, 16);
+  return r;
+}
+
 /// Installs the grid artwork for `appId`. Files with identical content are left alone; a
 /// different file (the user's own art) is kept once as <name>.replaynes-backup; a JPEG the user
-/// put in the same slot wins (ours is not written).
+/// put in the same slot wins (ours is not written). `onlyOurs` (refreshArtwork): only slots that
+/// still hold what we wrote last time get the new art; nothing else is touched, no backups.
 void installArtwork(const std::string& gridDir, uint32_t appId, const AddOptions& o, const std::string& artDir,
-                    UserResult& u, bool* failed) {
+                    UserResult& u, bool* failed, bool onlyOurs = false) {
   std::error_code ec;
-  if (!o.dryRun) fs::create_directories(gridDir, ec);
+  if (!o.dryRun && !onlyOurs) fs::create_directories(gridDir, ec);
   std::string id = std::to_string(appId);
+  const std::string recordPath = gridDir + "/" + id + "." RN_PRODUCT_TEMP_PREFIX "-artwork";
+  std::map<std::string, uint64_t> record = readArtworkRecord(recordPath);
+  const std::map<std::string, uint64_t> recordBefore = record;
   for (const Art& a : kArt) {
     std::string src = artDir + "/" + a.src;
     std::string dst = gridDir + "/" + id + a.suffix;
@@ -335,8 +358,16 @@ void installArtwork(const std::string& gridDir, uint32_t appId, const AddOptions
       continue;
     }
     std::string cur;
-    if (readFile(dst, &cur)) {
-      if (cur == data) continue;
+    const bool present = readFile(dst, &cur);
+    if (onlyOurs) {
+      auto rec = record.find(a.suffix);
+      if (!present || rec == record.end() || rec->second != fnv64(cur)) continue;  // not ours (or none)
+    }
+    if (present) {
+      if (cur == data) {
+        record[a.suffix] = fnv64(data);
+        continue;
+      }
       std::string bak = dst + "." RN_PRODUCT_TEMP_PREFIX "-backup";
       if (!fs::exists(bak, ec) && !o.dryRun) {
         fs::copy_file(dst, bak, fs::copy_options::overwrite_existing, ec);
@@ -350,8 +381,21 @@ void installArtwork(const std::string& gridDir, uint32_t appId, const AddOptions
     if (!writeFileAtomic(dst, data, 0644, &err)) {
       u.notes.push_back("could not write " + err);
       *failed = true;
+    } else {
+      record[a.suffix] = fnv64(data);
     }
   }
+  if (!o.dryRun && record != recordBefore) {
+    std::string text;
+    for (const auto& [suffix, hash] : record) {
+      char line[64];
+      std::snprintf(line, sizeof line, "%s %016llx\n", suffix.c_str(), static_cast<unsigned long long>(hash));
+      text += line;
+    }
+    std::string err;
+    if (!writeFileAtomic(recordPath, text, 0644, &err)) u.notes.push_back("could not write " + err);
+  }
+  if (onlyOurs) return;
   std::string json = gridDir + "/" + id + ".json";
   if (!fs::exists(json, ec)) {
     u.artworkWritten.push_back(json);
@@ -611,6 +655,48 @@ bool addToSteam(const AddOptions& optIn, Report& r) {
   else if (r.steam == SteamState::Running) r.summary = pre + did + " - restart Steam to see the changes.";
   else r.summary = pre + did + " - start (or restart) Steam to see it.";
   return ok;
+}
+
+// ------------------------------------------------------------------ refresh
+size_t refreshArtwork(const AddOptions& optIn) {
+  AddOptions o = optIn;
+  if (o.home.empty()) {
+    const char* h = std::getenv("HOME");
+    o.home = h ? h : "";
+  }
+  const std::string artDir = o.artworkDir.empty() ? defaultArtworkDir() : o.artworkDir;
+  if (o.userdataRoots.empty()) {
+    if (const char* e = std::getenv(productEnvName("STEAM_USERDATA").c_str()); e && *e) o.userdataRoots.push_back(e);
+    else o.userdataRoots = findUserdataRoots(o.home);
+  }
+  size_t written = 0;
+  for (const std::string& root : o.userdataRoots) {
+    std::error_code ec;
+    for (const auto& de : fs::directory_iterator(root, ec)) {
+      const std::string id = de.path().filename().string();
+      if (!isDigits(id) || id == "0" || !de.is_directory(ec)) continue;
+      const std::string configDir = de.path().string() + "/config";
+      std::string bytes;
+      ShortcutsFile file;
+      std::string err;
+      if (!readFile(configDir + "/shortcuts.vdf", &bytes) || !ShortcutsFile::parse(bytes, &file, &err)) continue;
+      int best = 0;
+      size_t idx = 0;
+      for (size_t i = 0; i < file.entries.size(); ++i) {
+        const int s = matchScore(file.entries[i].node, o);
+        if (s > best) best = s, idx = i;
+      }
+      if (best == 0) continue;  // not in this account's Steam: nothing of ours to refresh
+      const vdf::Node& e = file.entries[idx].node;
+      const vdf::Node* aid = e.find("appid");
+      UserResult u;
+      u.appId = aid && aid->type == vdf::Type::Int32 ? aid->u32() : shortcutAppId(getStr(e, "Exe"), getStr(e, "AppName"));
+      bool failed = false;
+      installArtwork(configDir + "/grid", u.appId, o, artDir, u, &failed, true);
+      written += u.artworkWritten.size();
+    }
+  }
+  return written;
 }
 
 std::string formatReport(const Report& r) {

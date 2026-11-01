@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
 #ifdef RN_PRODUCT_HAS_STARTUP
   rn_product_startup();
 #endif
+  if (size_t n = steam::refreshArtwork()) std::fprintf(stderr, "steam: %zu artwork files brought up to date\n", n);
   PlatformHooks platform;
   platform.version = RNL_APP_VERSION;
   platform.executable = RN_PRODUCT_EXECUTABLE;

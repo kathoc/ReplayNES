@@ -367,3 +367,36 @@ TEST_CASE("steam: unreadable shortcuts.vdf is never overwritten; no Steam found"
   REQUIRE_EQ(roots.size(), size_t(1));
   CHECK_EQ(roots[0], home + "/.local/share/Steam/userdata");
 }
+
+TEST_CASE("steam: at start-up, an update's artwork replaces ours, never the user's own") {
+  Env env("refresh");
+  writeFile(env.vdf, fileOf(otherEntries()));
+  steam::Report r;
+  REQUIRE(steam::addToSteam(env.opts(), r));
+  const std::string id = std::to_string(r.users[0].appId);
+  const std::string record = env.grid + "/" + id + ".replaynes-artwork";
+  REQUIRE(fs::exists(record));
+  // Nothing changed: nothing written.
+  CHECK_EQ(steam::refreshArtwork(env.opts()), size_t(0));
+  // A new version's artwork; the user put their own hero in Steam meanwhile.
+  for (const char* n : {"capsule", "wide", "hero", "logo", "icon"}) writeFile(env.art + "/" + n + ".png", fakePng(std::string("v2 ") + n));
+  writeFile(env.grid + "/" + id + "_hero.png", "the user's own hero");
+  const std::string vdfBefore = readFile(env.vdf);
+  CHECK_EQ(steam::refreshArtwork(env.opts()), size_t(4));
+  CHECK(readFile(env.grid + "/" + id + "p.png") == fakePng("v2 capsule"));
+  CHECK(readFile(env.grid + "/" + id + "_icon.png") == fakePng("v2 icon"));
+  CHECK(readFile(env.grid + "/" + id + "_hero.png") == std::string("the user's own hero"));
+  CHECK_FALSE(fs::exists(env.grid + "/" + id + "_hero.png.replaynes-backup"));
+  CHECK(readFile(env.vdf) == vdfBefore);  // shortcuts.vdf untouched
+  CHECK_EQ(steam::refreshArtwork(env.opts()), size_t(0));  // up to date now
+  // An entry from before the record existed (or one we never wrote): left alone.
+  fs::remove(record);
+  writeFile(env.art + "/icon.png", fakePng("v3 icon"));
+  CHECK_EQ(steam::refreshArtwork(env.opts()), size_t(0));
+  CHECK(readFile(env.grid + "/" + id + "_icon.png") == fakePng("v2 icon"));
+  // No entry of ours in Steam: nothing.
+  Env none("refresh-none");
+  writeFile(none.vdf, fileOf(otherEntries()));
+  CHECK_EQ(steam::refreshArtwork(none.opts()), size_t(0));
+  CHECK_FALSE(fs::exists(none.grid));
+}

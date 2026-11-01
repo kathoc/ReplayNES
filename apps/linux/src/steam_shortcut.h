@@ -149,6 +149,12 @@ struct Report {
 /// Adds / updates the shortcut + artwork for every Steam account found. True when every
 /// account succeeded (SteamRunning counts as not done). Never throws.
 bool addToSteam(const AddOptions& opt, Report& report);
+/// At start-up: the grid artwork of an existing entry brought up to date with this version's, in the
+/// slots that still hold what we wrote last time (<app id>.<prefix>-artwork records it); the user's
+/// own art and entries we never wrote stay as they are, shortcuts.vdf is not touched. Without it an
+/// update kept the old artwork (Steam's grid holds copies) until "Add to Steam" was pressed again.
+/// Returns the number of files written (Steam shows them after a restart).
+size_t refreshArtwork(const AddOptions& opt = AddOptions());
 /// Multi-line, human-readable report (CLI, logs).
 std::string formatReport(const Report& r);
 
