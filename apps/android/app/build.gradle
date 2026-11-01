@@ -1,0 +1,54 @@
+// The app: SDL's Java glue (third_party/SDL/android-project, the same SDL as the native library) and
+// the native part (../CMakeLists.txt: SDL3, the engine, the desktop frontend, the Vulkan renderer).
+// Product: -PrnProductFile=<product.cmake> -PrnApplicationId=<id> -PrnAppName=<name> (default ReplayNES).
+plugins {
+    id 'com.android.application'
+}
+
+def productFile = project.findProperty('rnProductFile') ?: ''
+def appId = project.findProperty('rnApplicationId') ?: 'io.github.replaynes.android'
+def appName = project.findProperty('rnAppName') ?: 'ReplayNES'
+def sdlJava = "${rootDir}/../../third_party/SDL/android-project/app/src/main/java"
+
+android {
+    namespace = 'io.github.replaynes.android'
+    compileSdk = 36
+    ndkVersion = '30.0.16248370'
+    defaultConfig {
+        applicationId = appId
+        minSdk = 29          // Vulkan 1.1 on every 64-bit device that has Vulkan
+        targetSdk = 36
+        versionCode = 1
+        versionName = '0.1'
+        resValue 'string', 'app_name', appName
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared', "-DRN_PRODUCT_FILE=${productFile}"
+                abiFilters 'arm64-v8a'
+            }
+        }
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    buildTypes {
+        debug {
+            // The emulation is far too slow unoptimized (as on iOS): native code is always Release.
+            externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=Release' } }
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+    buildFeatures { resValues = true }  // app_name from the product
+    sourceSets.main.java.srcDirs += [sdlJava]
+    externalNativeBuild {
+        cmake {
+            path '../CMakeLists.txt'
+            version '4.1.2'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError = false }
+}
