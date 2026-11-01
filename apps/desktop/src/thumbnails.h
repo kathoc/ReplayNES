@@ -1,11 +1,13 @@
 // Filmstrip thumbnails of the active take (Filmstrip.swift + TimelineActions.swift on macOS):
 //  * the cache and its policy are the shared core's rnf_thumb_cache (fixed grid of 5 s * 2^k,
 //    shared-prefix rebase on take switches); payloads are ThumbImage (128 pixels wide, display aspect, refcounted);
-//  * live capture: a picture the emulation shows anyway is kept when the grid wants it;
+//  * live capture: a picture the emulation shows anyway is kept when it is on the finest grid (also
+//    before the seek bar was laid out: rnf_thumb_cache_wants_live), so what was played is never
+//    rendered again;
 //  * background batches: the missing pictures are rendered from the take's checkpoints with one
 //    rn_renderer per picture (created on the frame thread, a few per frame), run on low-priority
-//    worker threads, and committed to the cache in one go (a reopened project shows its whole
-//    filmstrip at once).
+//    worker threads; each picture is shown as soon as it is done (the first version committed a
+//    batch in one go: nothing showed until its last picture).
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
@@ -101,14 +103,9 @@ class ThumbnailManager : public FrameObserver {
     std::vector<uint64_t> targets;
     uint64_t take = 0, generation = 0;
     size_t next = 0;
+    double started = 0;  // when it was planned (the log line at its end)
     std::atomic<int> pending{0};
     std::atomic<bool> cancelled{false}, failed{false};
-    std::mutex m;
-    std::vector<std::pair<uint64_t, ThumbImage*>> results;
-    ~Job() {
-      // A cancelled, partly admitted batch never reaches pending == 0.
-      for (auto& result : results) result.second->release();
-    }
   };
   struct Task {
     std::shared_ptr<Job> job;
@@ -130,6 +127,11 @@ class ThumbnailManager : public FrameObserver {
   double nextReconcile_ = 0, retryAfter_ = 0;
   std::shared_ptr<Job> job_;
   std::vector<std::shared_ptr<Job>> finished_;  // guarded by qMutex_
+  struct Ready {
+    uint64_t take, generation, frame;
+    ThumbImage* image;  // retained
+  };
+  std::vector<Ready> ready_;  // rendered, not in the cache yet; guarded by qMutex_
   std::vector<std::thread> workers_;
   std::mutex qMutex_;
   std::condition_variable qCv_;

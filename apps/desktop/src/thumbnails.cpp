@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "thumbnails.h"
 
+#include <cstdio>
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -109,6 +111,7 @@ ThumbnailManager::~ThumbnailManager() {
   for (auto& t : workers_) t.join();
   for (Task& t : queue_) rn_renderer_free(t.renderer);
   finished_.clear();
+  for (Ready& r : ready_) r.image->release();
   rnf_thumb_cache_free(cache_);
 }
 
@@ -149,9 +152,9 @@ void ThumbnailManager::workerLoop() {
 }
 
 void ThumbnailManager::finishOne(const std::shared_ptr<Job>& j, uint64_t frame, ThumbImage* img, bool failed) {
-  {
-    std::lock_guard<std::mutex> lk(j->m);
-    if (img) j->results.push_back({frame, img});
+  if (img) {  // shown at the next pump, not when the whole batch is done
+    std::lock_guard<std::mutex> lk(qMutex_);
+    ready_.push_back(Ready{j->take, j->generation, frame, img});
   }
   if (failed) j->failed = true;
   if (j->pending.fetch_sub(1) == 1) {
@@ -199,7 +202,9 @@ void ThumbnailManager::frameShown(rn_session* s, uint64_t frame) {
   if (!enabled || !s) return;
   syncTake(s);
   uint64_t take = rn_active_take(s);
-  if (!rnf_thumb_cache_wants(cache_, frame, take)) return;
+  // Before the seek bar was ever laid out too, at the finest grid: what was played never has to be
+  // rendered again (the first seek bar of a session showed nothing until a whole batch was done).
+  if (!rnf_thumb_cache_wants_live(cache_, frame, take)) return;
   rn_video_frame_info f{};
   rn_media_info m{};
   if (rn_session_video_frame(s, &f) != RN_OK || rn_session_media_info(s, &m) != RN_OK) return;
@@ -260,6 +265,7 @@ void ThumbnailManager::reconcile(double now) {
   j->targets = std::move(missing);
   j->take = rnf_thumb_cache_take(cache_);
   j->generation = gen;
+  j->started = now;
   j->pending = int(j->targets.size());
   job_ = j;
 }
@@ -271,23 +277,21 @@ void ThumbnailManager::pump(rn_session* s, double now, bool coreBusy) {
   }
   qCv_.notify_all();
   if (!enabled) return;
-  // Finished batches: committed in one update (rejected by the cache if stale).
+  // Pictures rendered since the last pump: each one shown now (rejected by the cache if stale).
   std::vector<std::shared_ptr<Job>> done;
+  std::vector<Ready> ready;
   {
     std::lock_guard<std::mutex> lk(qMutex_);
     done.swap(finished_);
+    ready.swap(ready_);
+  }
+  for (const Ready& r : ready) {
+    rnf_thumb_cache_insert(cache_, r.frame, r.take, 1, r.generation, r.image);
+    r.image->release();
   }
   for (auto& j : done) {
-    std::vector<uint64_t> frames;
-    std::vector<void*> payloads;
-    for (auto& r : j->results) {
-      frames.push_back(r.first);
-      payloads.push_back(r.second);
-    }
-    if (!frames.empty())
-      rnf_thumb_cache_insert_batch(cache_, frames.data(), payloads.data(), frames.size(), j->take, j->generation);
-    for (auto& r : j->results) r.second->release();
-    j->results.clear();
+    std::fprintf(stderr, "thumbnails: %zu pictures rendered in %.2f s%s\n", j->targets.size(), now - j->started,
+                 j->cancelled.load() ? " (cancelled)" : j->failed.load() ? " (some failed)" : "");
     if (j->failed.load() && !j->cancelled.load()) retryAfter_ = now + 2;
     if (job_ == j) job_.reset();
     nextReconcile_ = now + 0.3;

@@ -305,6 +305,35 @@ TEST_CASE("playhead snaps to whole pixels") {
 
 // ------------------------------------------------------------------ cache
 
+TEST_CASE("thumbnail cache: live capture on the finest grid, also before the timeline was laid out") {
+  std::vector<Img> imgs(8);
+  rnf_thumb_cache* c = rnf_thumb_cache_new(retainImg, releaseImg);
+  rnf_thumb_cache_reset(c, 1);
+  const double finest = rnf_thumb_tile_step(0, 0, 0);
+  CHECK_EQ(finest, RNF_THUMB_BASE_STEP);
+  // No step yet (the seek bar was never shown): the timeline's own test wants nothing...
+  CHECK_FALSE(rnf_thumb_cache_wants(c, uint64_t(finest), 1));
+  // ...live capture still keeps the finest grid and the start picture, nothing else.
+  CHECK(rnf_thumb_cache_wants_live(c, uint64_t(finest), 1));
+  CHECK(rnf_thumb_cache_wants_live(c, uint64_t(3 * finest), 1));
+  CHECK(rnf_thumb_cache_wants_live(c, rnf_thumb_start_picture(finest), 1));
+  CHECK_FALSE(rnf_thumb_cache_wants_live(c, uint64_t(finest) + 1, 1));
+  CHECK_FALSE(rnf_thumb_cache_wants_live(c, 0, 1));
+  CHECK_FALSE(rnf_thumb_cache_wants_live(c, uint64_t(finest), 2));  // another take
+  // Laid out at a coarser step: the finest grid is still kept (zooming in renders nothing played).
+  rnf_thumb_cache_set_step(c, 4 * finest);
+  CHECK(rnf_thumb_cache_wants_live(c, uint64_t(finest), 1));
+  CHECK(rnf_thumb_cache_insert(c, uint64_t(finest), 1, 0, 0, &imgs[0]));
+  CHECK_FALSE(rnf_thumb_cache_wants_live(c, uint64_t(finest), 1));  // already there
+  // Every coarser grid frame is a finest grid frame.
+  for (double f = finest; f <= 64 * finest; f *= 2) {
+    std::vector<uint64_t> t(rnf_thumb_targets(uint64_t(200 * finest), f, nullptr, 0));
+    rnf_thumb_targets(uint64_t(200 * finest), f, t.data(), t.size());
+    for (uint64_t x : t) CHECK((x == rnf_thumb_start_picture(f) || uint64_t(x) % uint64_t(finest) == 0));
+  }
+  rnf_thumb_cache_free(c);
+}
+
 TEST_CASE("thumbnail cache invalidation") {
   std::vector<Img> imgs(64);
   size_t next = 0;

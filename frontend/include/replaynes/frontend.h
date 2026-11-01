@@ -1039,6 +1039,10 @@ void rnf_thumb_cache_reset(rnf_thumb_cache* c, uint64_t take);
 void rnf_thumb_cache_rebase(rnf_thumb_cache* c, uint64_t take, uint64_t keep_through);
 void rnf_thumb_cache_set_step(rnf_thumb_cache* c, double step);
 int rnf_thumb_cache_wants(rnf_thumb_cache* c, uint64_t frame, uint64_t take);
+/* Live capture (a picture the emulation shows anyway): the finest grid (RNF_THUMB_MIN_EXPONENT) and
+ * the start picture, whatever step the timeline shows now or whether it was laid out yet - every
+ * coarser grid is part of the finest, so no zoom level has to render what was played. */
+int rnf_thumb_cache_wants_live(rnf_thumb_cache* c, uint64_t frame, uint64_t take);
 int rnf_thumb_cache_insert(rnf_thumb_cache* c, uint64_t frame, uint64_t take, int has_generation, uint64_t generation,
                            void* payload);
 int rnf_thumb_cache_insert_batch(rnf_thumb_cache* c, const uint64_t* frames, void* const* payloads, size_t count,

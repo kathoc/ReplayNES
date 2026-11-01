@@ -166,6 +166,14 @@ int rnf_thumb_cache_wants(rnf_thumb_cache* c, uint64_t f, uint64_t take) {
   return rnf::isGridFrame(f, c->step) || f == rnf::thumbStartPicture(c->step);
 }
 
+int rnf_thumb_cache_wants_live(rnf_thumb_cache* c, uint64_t f, uint64_t take) {
+  if (!c) return 0;
+  std::lock_guard<std::mutex> g(c->lock);
+  if (f == 0 || take != c->take || c->images.count(f)) return 0;
+  const double finest = rnf_thumb_tile_step(0, 0, 0);
+  return rnf::isGridFrame(f, finest) || f == rnf::thumbStartPicture(finest) || (c->step > 0 && f == rnf::thumbStartPicture(c->step));
+}
+
 int rnf_thumb_cache_insert(rnf_thumb_cache* c, uint64_t f, uint64_t take, int has_generation, uint64_t generation,
                            void* payload) {
   if (!c) return 0;
