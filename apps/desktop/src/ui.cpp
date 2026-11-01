@@ -242,6 +242,8 @@ bool UI::interactive() const {
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
 
+bool UI::screensaverBlocked() const { return popupOpen() || exportJob_.running(); }
+
 bool UI::popupOpen() const {
   return !dialogs_.empty() || chooser_ || rename_ || exportDialog_ ||
          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);

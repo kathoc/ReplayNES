@@ -106,6 +106,8 @@ class UI : public DialogHost {
   void slack(double now);
   /// Where the game picture goes in a w x h drawable (menus draw over the dimmed game).
   GameRect gameRect(int w, int h) const;
+  /// Something the screensaver must not interrupt: a dialog, a chooser, an export running.
+  bool screensaverBlocked() const;
 
   /// Whether ImGui / the UI have the controller and keyboard (menus, library, seek bar, dialogs).
   bool interactive() const;
@@ -202,8 +204,6 @@ class UI : public DialogHost {
   void showResetChoices();
   void closeMenuAndResume();
   bool popupOpen() const;
-  /// Something the screensaver must not interrupt: a dialog, a chooser, an export running.
-  bool screensaverBlocked() const { return popupOpen() || exportJob_.running(); }
   void askRename(const std::string& title, const std::string& initial, std::function<void(const std::string&)> apply);
   float S(float v) const { return v * scale_; }
   bool hasSession() const;
