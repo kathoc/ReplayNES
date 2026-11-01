@@ -48,3 +48,17 @@ sources as the other platforms: the engine, the frontend core and the desktop fr
 
 - `gradle assembleDebug` (apps/android) gives an APK; ReplayArcade's script gives its APK.
 - Installed in the emulator: it starts, the library page shows (a screenshot).
+
+## Devices: orientation and size (2026-11-02, Retroid Pocket 5)
+
+Android devices differ in their panel's orientation (a portrait panel used in landscape), how they are
+turned, the window's size against the display (bars, cutouts) and in how a driver reports a turned
+surface (the Retroid Pocket 5's Adreno 650: extent 1920 x 1080 with a 90 degree transform; others the
+panel's 1080 x 1920). The renderer took the surface's transform as the swapchain's preTransform: the
+compositor took the frames as pre-rotated and the UI showed sideways. render/surface_plan.h decides
+for every device: an identity swapchain the size of the window (the compositor rotates), the reported
+extent only orienting the limits; unit tested with both reporting styles, 90 / 180 / 270, a smaller
+window, a surface without identity. The renderer logs what it found and chose whenever it changes
+("video: surface ... turned ..., window ... -> swapchain ..."); stdout / stderr go to logcat (tag = the
+product). Checked on a Retroid Pocket 5 (Android 13): landscape and upright; a ROM pushed into
+Android/data/<id>/files/ReplayArcade/ROM shows in the library.

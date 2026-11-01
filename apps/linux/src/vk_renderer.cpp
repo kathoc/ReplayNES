@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "replaynes/product.h"
 #include "vk_renderer.h"
+#include "render/surface_plan.h"
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -285,12 +286,27 @@ bool VkRenderer::createSwapchain() {
   SDL_GetWindowSizeInPixels(window_, &w, &h);
   VkSurfaceCapabilitiesKHR caps;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_, surface_, &caps);
-  VkExtent2D ext = caps.currentExtent;
-  if (ext.width == 0xFFFFFFFFu) {
-    ext.width = uint32_t(std::clamp(w, int(caps.minImageExtent.width), int(caps.maxImageExtent.width)));
-    ext.height = uint32_t(std::clamp(h, int(caps.minImageExtent.height), int(caps.maxImageExtent.height)));
+  // The device's orientation and size (render/surface_plan.h): Android panels come in either
+  // orientation, turned any way, with windows smaller than the display.
+  SurfaceCaps surf;
+  surf.width = caps.currentExtent.width;
+  surf.height = caps.currentExtent.height;
+  surf.minWidth = caps.minImageExtent.width;
+  surf.minHeight = caps.minImageExtent.height;
+  surf.maxWidth = caps.maxImageExtent.width;
+  surf.maxHeight = caps.maxImageExtent.height;
+  surf.currentTransform = caps.currentTransform;
+  surf.supportedTransforms = caps.supportedTransforms;
+  const SurfacePlan plan = planSurface(surf, w, h);
+  if (plan.width != surfaceLogged_.width || plan.height != surfaceLogged_.height || plan.rotation != surfaceLogged_.rotation) {
+    std::fprintf(stderr, "video: surface %ux%u turned %d, window %dx%d -> swapchain %ux%u%s\n", surf.width, surf.height,
+                 plan.rotation, w, h, plan.width, plan.height,
+                 plan.transform == kSurfaceIdentity && plan.rotation ? " (the compositor rotates)" : "");
+    surfaceLogged_ = plan;
   }
+  VkExtent2D ext{plan.width, plan.height};
   if (ext.width == 0 || ext.height == 0) { extent_ = {0, 0}; return true; }  // minimised
+  const auto transform = VkSurfaceTransformFlagBitsKHR(plan.transform);
 
   if (renderPass_ == VK_NULL_HANDLE) {
     uint32_t fn = 0;
@@ -350,7 +366,7 @@ bool VkRenderer::createSwapchain() {
   swapchainCopyable_ = (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
   if (swapchainCopyable_) sci.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  sci.preTransform = caps.currentTransform;
+  sci.preTransform = transform;
   sci.compositeAlpha = alpha;
   sci.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // display-locked: one picture per vblank, never torn
   sci.clipped = VK_TRUE;

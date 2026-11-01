@@ -1,5 +1,6 @@
 // Media geometry and thumbnail regressions, independent of SDL and Vulkan.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "png_writer.h"
 #include "qoi.h"
 #include "render/backdrop.h"
+#include "render/surface_plan.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
 
@@ -230,4 +232,56 @@ TEST_CASE("backdrop: only where the picture leaves the screen empty, covering it
   CHECK(std::fabs(uv[3] - 0.9f) < 1e-5f);
   CHECK(std::fabs(uv[0]) < 1e-6f);
   CHECK(std::fabs(uv[2] - 1) < 1e-6f);
+}
+
+TEST_CASE("surface plan: every device's orientation and size give an identity swapchain the size of the window") {
+  auto caps = [](uint32_t w, uint32_t h, uint32_t current, uint32_t supported = kSurfaceIdentity | kSurfaceRotate90 |
+                                                                                kSurfaceRotate180 | kSurfaceRotate270) {
+    SurfaceCaps c;
+    c.width = w, c.height = h, c.currentTransform = current, c.supportedTransforms = supported;
+    c.maxWidth = std::max(w, h) == kSurfaceUndefinedExtent ? 16384 : (w == kSurfaceUndefinedExtent ? 16384 : w);
+    c.maxHeight = w == kSurfaceUndefinedExtent ? 16384 : h;
+    return c;
+  };
+  // The desktop (X11): the extent undefined, the window's size.
+  SurfacePlan p = planSurface(caps(kSurfaceUndefinedExtent, kSurfaceUndefinedExtent, kSurfaceIdentity), 1280, 800);
+  CHECK_EQ(p.width, 1280u);
+  CHECK_EQ(p.height, 800u);
+  CHECK_EQ(p.transform, kSurfaceIdentity);
+  CHECK_EQ(p.rotation, 0);
+  // Retroid Pocket 5 (Adreno): a portrait panel turned 90 degrees for landscape, the extent reported in
+  // the window's orientation (1920 x 1080) with the 90 degree transform (seen on the device).
+  p = planSurface(caps(1920, 1080, kSurfaceRotate90), 1920, 1080);
+  CHECK_EQ(p.width, 1920u);
+  CHECK_EQ(p.height, 1080u);
+  CHECK_EQ(p.transform, kSurfaceIdentity);
+  // Another driver reports the panel's 1080 x 1920 for the same window: the same plan.
+  p = planSurface(caps(1080, 1920, kSurfaceRotate90), 1920, 1080);
+  CHECK_EQ(p.width, 1920u);
+  CHECK_EQ(p.height, 1080u);
+  CHECK_EQ(p.transform, kSurfaceIdentity);  // the compositor rotates, not the frames
+  CHECK_EQ(p.rotation, 90);
+  // Turned the other way (270), and a landscape panel as it is (identity).
+  p = planSurface(caps(1080, 1920, kSurfaceRotate270), 1920, 1080);
+  CHECK_EQ(p.width, 1920u);
+  CHECK_EQ(p.height, 1080u);
+  p = planSurface(caps(2400, 1080, kSurfaceIdentity), 2400, 1080);
+  CHECK_EQ(p.width, 2400u);
+  CHECK_EQ(p.height, 1080u);
+  // Upside down (180): no swap.
+  p = planSurface(caps(1080, 2400, kSurfaceRotate180), 1080, 2400);
+  CHECK_EQ(p.width, 1080u);
+  CHECK_EQ(p.height, 2400u);
+  CHECK_EQ(p.transform, kSurfaceIdentity);
+  // A window smaller than the display (bars, a cutout): the window's size.
+  p = planSurface(caps(1920, 1080, kSurfaceRotate90), 1920, 972);
+  CHECK_EQ(p.height, 972u);
+  // A surface without identity: its own transform and extent (pre-rotated frames are its business).
+  p = planSurface(caps(1080, 1920, kSurfaceRotate90, kSurfaceRotate90), 1920, 1080);
+  CHECK_EQ(p.transform, kSurfaceRotate90);
+  CHECK_EQ(p.width, 1080u);
+  CHECK_EQ(p.height, 1920u);
+  // Minimised.
+  CHECK_EQ(planSurface(caps(0, 0, kSurfaceIdentity), 0, 0).width, 0u);
+  CHECK_EQ(planSurface(caps(kSurfaceUndefinedExtent, kSurfaceUndefinedExtent, kSurfaceIdentity), 0, 0).width, 0u);
 }
