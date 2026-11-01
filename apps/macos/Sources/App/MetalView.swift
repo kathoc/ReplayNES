@@ -651,7 +651,7 @@ final class GameRenderer {
         var rect = SIMD4<Float>(Float(-fx * cw / sw), Float(-fy * ch / sh), Float(2 * fx * cw / sw), Float(2 * fy * ch / sh))
         var uvr = SIMD4<Float>(Float((Double(crop) + srcW * (1 - fx) / 2) / tw), Float((Double(crop) + srcH * (1 - fy) / 2) / th),
                                Float(srcW * fx / tw), Float(srcH * fy / th))
-        let texels: Double = level >= 3 ? 3 : level == 2 ? 6 : 10
+        let texels: Double = level >= 3 ? 6 : level == 2 ? 12 : 24
         let lod = max(0, log2(max(tw, th) / texels)), texel = exp2(lod)
         var p = SIMD4<Float>(Float(lod), 0.6, Float(texel / tw), Float(texel / th))
         enc.setRenderPipelineState(backdropPipeline)

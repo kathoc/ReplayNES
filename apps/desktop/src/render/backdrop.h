@@ -18,7 +18,7 @@ struct BackdropPlan {
 
 // The blur, by level (Settings: 0 off, 1 low - the default -, 2 standard, 3 high): the picture seen
 // through about this many texels across (user decisions 2026-11-01: more clearly blurred, adjustable).
-inline float backdropTexels(int level) { return level >= 3 ? 3.f : level == 2 ? 6.f : 10.f; }
+inline float backdropTexels(int level) { return level >= 3 ? 6.f : level == 2 ? 12.f : 24.f; }  // low was too blurred at 10
 constexpr float kBackdropDim = 0.6f;     // slightly darker than the picture (user decision 2026-11-01)
 // Contrast 40 % lower: toward the picture's mean colour (the mip chain's last level), so a hard flash of
 // the picture does not flash the whole screen as hard (user decision 2026-11-01). The shaders use it.

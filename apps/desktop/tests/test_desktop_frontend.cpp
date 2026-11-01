@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -2052,6 +2053,48 @@ TEST_CASE("screensaver: live demos of library games, nothing recorded; a paused 
   CHECK_EQ(w.emu->status().frame, frame);
   CHECK_EQ(w.emu->status().takeLength, uint64_t(45));
   CHECK(w.emu->paused());
+}
+
+TEST_CASE("screensaver: a shuffled round, each game once before any again, kept across launches") {
+  RN_REQUIRE_NESTOPIA();
+  std::string dir = tmpDir("screensaver-round");
+  std::set<std::string> games;
+  std::string last;
+  {
+    World w(dir + "/w", true);
+    for (const char* n : {"Game A", "Game B", "Game C", "Game D"}) testRom(w.library->romDir(), n + testRomExtension());
+    w.library->refresh();
+    for (int i = 0; i < 200 && !w.library->poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE_EQ(w.library->roms().size(), size_t(4));
+    REQUIRE(w.app->startScreensaver());
+    games.insert(w.app->screensaverRom());
+    w.app->nextScreensaverDemo();
+    games.insert(w.app->screensaverRom());
+    last = w.app->screensaverRom();
+    w.app->stopScreensaver();
+  }
+  {
+    // The next launch goes on with the same round: the two games not shown yet.
+    World w(dir + "/w", false);
+    w.library->refresh();
+    for (int i = 0; i < 200 && !w.library->poll(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE_EQ(w.library->roms().size(), size_t(4));
+    REQUIRE(w.app->startScreensaver());
+    games.insert(w.app->screensaverRom());
+    w.app->nextScreensaverDemo();
+    games.insert(w.app->screensaverRom());
+    CHECK_EQ(games.size(), size_t(4));  // all four, none twice
+    // A new round never starts with the game just shown; its four come once each again.
+    std::set<std::string> round;
+    for (int i = 0; i < 4; ++i) {
+      last = w.app->screensaverRom();
+      w.app->nextScreensaverDemo();
+      CHECK(w.app->screensaverRom() != last);
+      round.insert(w.app->screensaverRom());
+    }
+    CHECK_EQ(round.size(), size_t(4));
+    w.app->stopScreensaver();
+  }
 }
 
 TEST_CASE("session: Reset Project backs a saved project up to the Trash") {

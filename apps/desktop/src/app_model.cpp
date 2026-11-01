@@ -2,6 +2,10 @@
 #include "replaynes/product.h"
 #include "app_model.h"
 
+#include <algorithm>
+#include <fstream>
+#include <random>
+#include <set>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -250,23 +254,52 @@ bool AppModel::startScreensaver() {
   return true;
 }
 
+// The next game of the round (docs/design/SCREENSAVER.md): the saved remainder of the round, without
+// the games no longer in the library; a new shuffled round when it is used up, which never starts
+// with the game just shown.
+std::string AppModel::takeScreensaverRom(const std::vector<std::string>& library) {
+  const std::string file = paths_.configDir + "/screensaver-order.txt";
+  if (!screensaverBagLoaded_) {
+    screensaverBagLoaded_ = true;
+    std::ifstream in(file);
+    for (std::string line; std::getline(in, line);)
+      if (!line.empty()) screensaverBag_.push_back(line);
+  }
+  const std::set<std::string> present(library.begin(), library.end());
+  screensaverBag_.erase(std::remove_if(screensaverBag_.begin(), screensaverBag_.end(),
+                                       [&](const std::string& r) { return !present.count(r); }),
+                        screensaverBag_.end());
+  if (screensaverBag_.empty()) {
+    static std::mt19937_64 rng(std::random_device{}() ^
+                               uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+    screensaverBag_ = library;
+    std::shuffle(screensaverBag_.begin(), screensaverBag_.end(), rng);
+    if (screensaverBag_.size() > 1 && screensaverBag_.front() == screensaverRom_)
+      std::swap(screensaverBag_.front(), screensaverBag_.back());
+  }
+  std::string rom = screensaverBag_.front();
+  screensaverBag_.erase(screensaverBag_.begin());
+  std::error_code ec;
+  fs::create_directories(paths_.configDir, ec);
+  std::ofstream out(file, std::ios::trunc);
+  for (const std::string& r : screensaverBag_) out << r << "\n";
+  return rom;
+}
+
 void AppModel::nextScreensaverDemo() {
   if (!screensaver_) return;
-  std::vector<std::string> roms;
-  for (const LibraryROM& r : library_->roms())
-    if (r.path != screensaverRom_) roms.push_back(r.path);
-  if (roms.empty() && !screensaverRom_.empty()) roms.push_back(screensaverRom_);  // the only game: again
+  std::vector<std::string> library;
+  for (const LibraryROM& r : library_->roms()) library.push_back(r.path);
+  if (library.empty()) return;
   rn_session_options opt;
   rn_session_options_init(&opt);
   opt.open_flags = RN_OPEN_LIVE;  // nothing recorded: no take, checkpoints or rewind (memory stays flat)
   if (selectedCore == "nestopia") opt.core = RN_CORE_NESTOPIA;
   else if (selectedCore == "replaynescore") opt.core = RN_CORE_REPLAYNESCORE;
   else opt.core = RN_CORE_EXTERNAL;
-  // A random order (an LCG seeded by the clock), trying the next game when one does not open.
-  if (!screensaverSeed_) screensaverSeed_ = uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) | 1;
-  for (size_t tries = 0; tries < roms.size() && tries < 8; ++tries) {
-    screensaverSeed_ = screensaverSeed_ * 6364136223846793005ull + 1442695040888963407ull;
-    const std::string& rom = roms[size_t(screensaverSeed_ >> 33) % roms.size()];
+  // The next games of the round, trying another when one does not open.
+  for (size_t tries = 0; tries < library.size() && tries < 8; ++tries) {
+    const std::string rom = takeScreensaverRom(library);
     rn_session* s = nullptr;
     if (rn_session_new(rom.c_str(), nullptr, &opt, &s) != RN_OK) continue;
     emu_->install(s);  // not install(): no resume record, play history or project

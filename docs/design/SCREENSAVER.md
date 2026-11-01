@@ -28,3 +28,12 @@ for exactly this; a session whose work cannot be saved is not left (no screensav
   live and leaves no resume record or history entry, the chosen ROMs vary.
 - tools/ui-offscreen: a screenshot of the dimmed demo.
 - On a Steam Deck: the library and a paused game both go to the demos after the time, and come back.
+
+## The order (2026-11-01: "the random choice seems biased")
+
+The pick was a uniform random game each time (an LCG; checked: chi-square within bounds over 100 000
+draws). The bias felt was its repetition: drawing with replacement, 30 demos (an hour) from 255 games
+repeat one with a chance of 83 % while others never come, and every launch started afresh. Now a
+shuffled round: each library game once before any again, a new round never starting with the game
+just shown, the rest of the round kept in <config>/screensaver-order.txt across launches (games no
+longer in the library dropped).
