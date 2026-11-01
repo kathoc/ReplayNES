@@ -17,6 +17,9 @@ finish-args:
   # built-in controls via SDL's HIDAPI driver when Steam Input is not in charge).
   - --device=all
   - --socket=pulseaudio
+  # Steam's screen dimming / sleep held off while the app runs (game mode has no portal Inhibit;
+  # Steam serves this name itself): apps/linux/src/steam_inhibit.h.
+  - --talk-name=org.freedesktop.ScreenSaver
   - --filesystem=xdg-run/pipewire-0
   # ROM library and projects: ~/Documents/ReplayNES/{ROM,Projects}
   - --filesystem=xdg-documents/ReplayNES:create

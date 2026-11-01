@@ -14,6 +14,7 @@
 
 #include "app.h"
 #include "gamescope_overlay.h"
+#include "steam_inhibit.h"
 #include "platform/platform.h"
 #include "steam_shortcut.h"
 #include "update_service_flatpak.h"
@@ -46,7 +47,10 @@ int main(int argc, char** argv) {
     const char* d = std::getenv("XDG_CURRENT_DESKTOP");
     return d ? d : "desktop";
   };
-  if (gamingMode()) platform.systemOverlay = [] { return gamescope::steamOverlayShown(); };  // the Steam menu
+  if (gamingMode()) {
+    platform.systemOverlay = [] { return gamescope::steamOverlayShown(); };  // the Steam menu
+    steam::inhibitScreensaver();  // no dimming or sleep while the app runs
+  }
   AppOptions opt;
   if (!parseAppArgs(argc, argv, platform, &opt)) return 2;
   return runApp(opt, platform);

@@ -104,6 +104,7 @@ add_executable(${RN_PRODUCT_EXECUTABLE}
   src/fonts_fontconfig.cpp
   src/update_service_flatpak.cpp
   src/gamescope_overlay.cpp
+  src/steam_inhibit.cpp
   ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
   ${SHADER_INCS})
 target_include_directories(${RN_PRODUCT_EXECUTABLE} PRIVATE src ${SHADER_OUT})
