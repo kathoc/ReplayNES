@@ -38,6 +38,22 @@ inline std::array<float, 8> d3d11PictureUV(const rn_media_info& media,
   return out;
 }
 
+// The corners' uv of a source rectangle (u0, v0, u1, v1), rotated as d3d11PictureUV (the backdrop).
+inline std::array<float, 8> d3d11RectUV(const float uv[4], uint32_t rotation) {
+  const float u[2] = {uv[0], uv[2]}, v[2] = {uv[1], uv[3]};
+  std::array<float, 8> out{};
+  for (unsigned i = 0; i < 4; ++i) {
+    unsigned x = i & 1, y = i >> 1;
+    switch (rotation & 3) {
+      case 1: { unsigned oldX = x; x = y; y = 1 - oldX; break; }
+      case 2: x = 1 - x; y = 1 - y; break;
+      case 3: { unsigned oldX = x; x = 1 - y; y = oldX; break; }
+    }
+    out[2 * i] = u[x]; out[2 * i + 1] = v[y];
+  }
+  return out;
+}
+
 // A screenshot reads the final swapchain, including rotation, PAR, CRT and UI.
 // Preserve the legacy opaque BGRA -> RGBA conversion and ignore row padding.
 inline void d3d11ScreenshotRGBA(const void* pixels, size_t rowPitch, uint32_t width,

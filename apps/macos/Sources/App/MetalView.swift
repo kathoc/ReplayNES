@@ -6,14 +6,18 @@
 // refresh; the others present the same picture again. Never the main thread, so SwiftUI / AppKit
 // work cannot delay a frame (docs/FRAME_PACING.md).
 // SPDX-License-Identifier: GPL-2.0-or-later
+import ImageIO
 import Metal
 import QuartzCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DisplayOptions: Equatable {
     var integerScale = true
     var pixelAspect87 = false
     var hideOverscan = true
+    /// The empty sides show the picture enlarged, blurred and dimmed (docs/design/BACKDROP.md).
+    var backdrop = true
 }
 
 /// GPU execution of a new frame's command buffers (host-clock seconds, earliest start to latest
@@ -39,7 +43,11 @@ final class GameRenderer {
     let health = DisplayHealth()
     private let pipeline: MTLRenderPipelineState
     private let pillPipeline: MTLRenderPipelineState
+    private let backdropPipeline: MTLRenderPipelineState
     private let texture: MTLTexture
+    /// The blurred backdrop: a copy of each new picture with its mip chain (docs/design/BACKDROP.md).
+    private let backdrop: MTLTexture
+    private var backdropStale = true
     let frames: FrameBuffer
     private let latency: LatencyMeter
     private var seenSeq: UInt64 = .max
@@ -76,6 +84,19 @@ final class GameRenderer {
         constexpr sampler s(filter::linear, address::clamp_to_edge);
         return tex.sample(s, in.uv) * alpha;
     }
+    // The blurred backdrop: the mip chain at a coarse level, a 3x3 tent, dimmed (p: lod, dim, texel u, v).
+    fragment float4 fbackdrop(VOut in [[stage_in]], texture2d<float> tex [[texture(0)]], constant float4 &p [[buffer(0)]]) {
+        constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge);
+        float3 c = float3(0.0);
+        float w = 0.0;
+        for (int y = -1; y <= 1; ++y)
+            for (int x = -1; x <= 1; ++x) {
+                float k = (2.0 - abs(float(x))) * (2.0 - abs(float(y)));
+                c += k * tex.sample(s, in.uv + float2(x, y) * p.zw, level(p.x)).rgb;
+                w += k;
+            }
+        return float4(c / w * p.y, 1.0);
+    }
     """
 
     init?(frames: FrameBuffer, latency: LatencyMeter) {
@@ -103,6 +124,11 @@ final class GameRenderer {
             ca.destinationRGBBlendFactor = .oneMinusSourceAlpha
             ca.destinationAlphaBlendFactor = .oneMinusSourceAlpha
             pillPipeline = try device.makeRenderPipelineState(descriptor: pd)
+            let bd = MTLRenderPipelineDescriptor()
+            bd.vertexFunction = lib.makeFunction(name: "vmain")
+            bd.fragmentFunction = lib.makeFunction(name: "fbackdrop")
+            bd.colorAttachments[0].pixelFormat = .bgra8Unorm
+            backdropPipeline = try device.makeRenderPipelineState(descriptor: bd)
         } catch {
             NSLog("ReplayNES: Metal pipeline failed: \(error)")
             return nil
@@ -112,6 +138,11 @@ final class GameRenderer {
         td.storageMode = .shared
         guard let tex = device.makeTexture(descriptor: td) else { return nil }
         texture = tex
+        let bt = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: Int(RN_VIDEO_WIDTH), height: Int(RN_VIDEO_HEIGHT), mipmapped: true)
+        bt.usage = .shaderRead
+        bt.storageMode = .private
+        guard let back = device.makeTexture(descriptor: bt) else { return nil }
+        backdrop = back
     }
 
     /// Destination rectangle (pixels, origin bottom-left) and overscan crop (pixels hidden on every
@@ -235,6 +266,7 @@ final class GameRenderer {
         if let m = build { shownFrame = m.frame }
         let pictureFrame = shownFrame
         let shown = encode(newMeta: build, drawable: drawable, cb: cb, crtState: crtState, span: span)
+        MetalCapture.shared.capture(drawable.texture, cb: cb, device: device)
         let commit = HostClock.now()
         // The present's own command buffer: its failure means the drawable showed nothing new.
         // Confirmed: the present's command buffer completed without error (the drawable went to the
@@ -321,6 +353,7 @@ final class GameRenderer {
         var read = false
         let seq = frames.readFrameIfNewer(than: refetch ? .max : seenSeq) { px, codes, meta in
             texture.replace(region: MTLRegionMake2D(0, 0, w, Int(RN_VIDEO_HEIGHT)), mipmapLevel: 0, withBytes: px, bytesPerRow: w * 4)
+            backdropStale = true
             newMeta = meta
             countdownShown = (meta.countdown, meta.countdownFraction)
             countdownNote = meta.countdownNote
@@ -373,6 +406,12 @@ final class GameRenderer {
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        if backdropStale, let blit = cb.makeBlitCommandEncoder() {  // also while off: on at once when switched on
+            blit.copy(from: texture, to: backdrop)
+            blit.generateMipmaps(for: backdrop)
+            blit.endEncoding()
+            backdropStale = false
+        }
 
         // Physical CRT model (nesterm port). A recovery (display watchdog) shows the plain picture
         // for one present.
@@ -388,6 +427,7 @@ final class GameRenderer {
                 bcb.commit()
             }
             if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+                if options.backdrop { drawBackdrop(enc, size: size, picture: dst, crop: 0) }
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
                 drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: true))
                 drawPill(enc, size: size, pill)
@@ -412,6 +452,7 @@ final class GameRenderer {
                                     Float(r.width / size.width * 2), Float(r.height / size.height * 2))
             var uvr = SIMD4<Float>(Float(Double(crop) / Double(RN_VIDEO_WIDTH)), Float(Double(crop) / Double(RN_VIDEO_HEIGHT)),
                                    Float(srcW / Double(RN_VIDEO_WIDTH)), Float(srcH / Double(RN_VIDEO_HEIGHT)))
+            if options.backdrop { drawBackdrop(enc, size: size, picture: r, crop: crop) }
             enc.setRenderPipelineState(pipeline)
             enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
@@ -594,6 +635,31 @@ final class GameRenderer {
 
     /// Draws the countdown numeral centred on the picture, inside the game's own pass (so full
     /// screen stays direct-to-display): a texture drawn by CoreGraphics, premultiplied alpha.
+    /// The blurred backdrop under the picture `r` (pixels): where it leaves the screen empty, the picture
+    /// enlarged to cover the screen (centered, the part on screen drawn), blurred, dimmed - the rules of
+    /// apps/desktop/src/render/backdrop.h (kBackdropTexels 24, kBackdropDim 0.6).
+    private func drawBackdrop(_ enc: MTLRenderCommandEncoder, size: CGSize, picture r: CGRect, crop: Int) {
+        let sw = Double(size.width), sh = Double(size.height)
+        guard r.width >= 1, r.height >= 1, sw >= 1, sh >= 1 else { return }
+        guard r.minX > 1 || r.minY > 1 || r.maxX < sw - 1 || r.maxY < sh - 1 else { return }
+        let s = max(sw / r.width, sh / r.height)
+        let cw = r.width * s, ch = r.height * s
+        let fx = min(1, sw / cw), fy = min(1, sh / ch)  // the part of the covering rectangle on screen
+        let tw = Double(RN_VIDEO_WIDTH), th = Double(RN_VIDEO_HEIGHT)
+        let srcW = tw - 2 * Double(crop), srcH = th - 2 * Double(crop)
+        var rect = SIMD4<Float>(Float(-fx * cw / sw), Float(-fy * ch / sh), Float(2 * fx * cw / sw), Float(2 * fy * ch / sh))
+        var uvr = SIMD4<Float>(Float((Double(crop) + srcW * (1 - fx) / 2) / tw), Float((Double(crop) + srcH * (1 - fy) / 2) / th),
+                               Float(srcW * fx / tw), Float(srcH * fy / th))
+        let lod = max(0, log2(max(tw, th) / 24)), texel = exp2(lod)
+        var p = SIMD4<Float>(Float(lod), 0.6, Float(texel / tw), Float(texel / th))
+        enc.setRenderPipelineState(backdropPipeline)
+        enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+        enc.setFragmentTexture(backdrop, index: 0)
+        enc.setFragmentBytes(&p, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+    }
+
     private func drawCountdown(_ enc: MTLRenderCommandEncoder, size: CGSize, picture: CGRect) {
         let (count, fraction) = countdownShown
         guard count > 0 else { return }
@@ -814,7 +880,7 @@ final class GameLayerView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 512, height: 480))
         metalLayer.device = renderer?.device
         metalLayer.pixelFormat = .bgra8Unorm
-        metalLayer.framebufferOnly = true
+        metalLayer.framebufferOnly = !MetalCapture.shared.wanted  // --metal-capture reads the drawable back
         // Opaque, no transform, no overlapping views while playing in full screen: the layer can
         // then be shown direct-to-display (no compositor pass; docs/FRAME_PACING.md).
         metalLayer.isOpaque = true
@@ -941,5 +1007,51 @@ struct MetalGameView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: GameLayerView, coordinator: ()) {
         nsView.stopRendering()
+    }
+}
+
+/// `--metal-capture <sec>:<png>`: the drawable presented at that time after launch, read back from the
+/// GPU and written as a PNG - the picture exactly as the Metal path drew it (the window snapshots of
+/// --snapshot-at composite the frame in SwiftUI instead, without what only Metal draws: the backdrop).
+final class MetalCapture {
+    static let shared = MetalCapture()
+    let wanted: Bool
+    private let at: Double
+    private let url: URL?
+    private let start = HostClock.seconds(HostClock.now())
+    private var done = false
+    private init() {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--metal-capture"), i + 1 < args.count,
+           let colon = args[i + 1].firstIndex(of: ":"), let t = Double(args[i + 1][..<colon]) {
+            at = t
+            url = URL(fileURLWithPath: String(args[i + 1][args[i + 1].index(after: colon)...]))
+            wanted = true
+        } else {
+            at = 0
+            url = nil
+            wanted = false
+        }
+    }
+    func capture(_ tex: MTLTexture, cb: MTLCommandBuffer, device: MTLDevice) {
+        guard wanted, !done, let url, HostClock.seconds(HostClock.now()) - start >= at, !tex.isFramebufferOnly else { return }
+        done = true
+        let w = tex.width, h = tex.height, row = w * 4
+        guard let buf = device.makeBuffer(length: row * h, options: .storageModeShared), let blit = cb.makeBlitCommandEncoder() else { return }
+        blit.copy(from: tex, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: w, height: h, depth: 1), to: buf, destinationOffset: 0,
+                  destinationBytesPerRow: row, destinationBytesPerImage: row * h)
+        blit.endEncoding()
+        cb.addCompletedHandler { _ in
+            let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+            guard let provider = CGDataProvider(data: Data(bytes: buf.contents(), count: row * h) as CFData),
+                  let img = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: row,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info, provider: provider, decode: nil,
+                                    shouldInterpolate: false, intent: .defaultIntent),
+                  let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return }
+            CGImageDestinationAddImage(dest, img, nil)
+            CGImageDestinationFinalize(dest)
+            NSLog("ReplayNES: metal capture written to \(url.path)")
+        }
     }
 }

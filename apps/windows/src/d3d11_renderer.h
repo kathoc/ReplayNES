@@ -150,6 +150,17 @@ class D3D11Renderer final : public Renderer {
   ID3D11ShaderResourceView* gameSrv_ = nullptr;
   bool hasPicture_ = false;
   ID3D11SamplerState* point_ = nullptr;
+  // The blurred backdrop (DisplayPostProcess::backdrop, render/backdrop.h).
+  void updateBackdrop(const uint32_t* picture);
+  void drawBackdrop(const GameRect& rect, bool crt);
+  void releaseBackdrop();
+  ID3D11Texture2D* backdropTex_ = nullptr;
+  ID3D11ShaderResourceView* backdropSrv_ = nullptr;
+  uint32_t backdropW_ = 0, backdropH_ = 0, backdropLevels_ = 1;
+  ID3D11PixelShader* backdropPs_ = nullptr;
+  ID3D11Buffer* backdropCb_ = nullptr;
+  ID3D11Buffer* backdropUvCb_ = nullptr;
+  ID3D11SamplerState* linear_ = nullptr;
   ID3D11VertexShader* vs_ = nullptr;
   ID3D11PixelShader* ps_ = nullptr;
   ID3D11Buffer* cb_ = nullptr;

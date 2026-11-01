@@ -12,7 +12,8 @@ import Foundation
 
 struct SessionPaths: Equatable {
     let root: URL
-    var tempProject: URL { root.appendingPathComponent(RNF_SESSION_TEMP_PROJECT, isDirectory: true) }
+    // RNF_SESSION_TEMP_PROJECT ("current" RN_PRODUCT_PROJECT_EXT) is a concatenation Swift does not import.
+    var tempProject: URL { root.appendingPathComponent("current" + RN_PRODUCT_PROJECT_EXT, isDirectory: true) }
     var resumeFile: URL { root.appendingPathComponent(RNF_SESSION_RESUME_FILE) }
     var lockFile: URL { root.appendingPathComponent(RNF_SESSION_LOCK_FILE) }
 

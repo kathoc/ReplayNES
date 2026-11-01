@@ -32,6 +32,7 @@
 //                                                dumpMenus (logs the menu bar: "menu: <Menu> | <item> | <⌘ key>"),
 //                                                diagramFamily:<family|auto> (the controller diagram's family).
 //   --snapshot-at "<sec>:<png>,..."              extra window snapshots (see Snapshot.swift).
+//   --metal-capture "<sec>:<png>"               the drawable as Metal drew it, read back (MetalCapture).
 //   --snapshot-windows "<sec>:<prefix>,..."      captures every visible window (and sheet) to
 //                                                <prefix>-<n>-<title>.png (localization checks).
 //   --menu-walk <dir> [--menu-walk-delay s]      snapshots of every Quick Menu page, the paused seek bar

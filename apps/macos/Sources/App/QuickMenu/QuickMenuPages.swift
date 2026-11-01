@@ -257,7 +257,7 @@ enum QuickMenuPages {
                    levels.map(\.label), levels.firstIndex(of: m.flashLevel) ?? 2) { m.flashReduction = levels[$0].rawValue },
             toggle("vtr", "backward.fill", String(localized: "VTR Effect"),
                    String(localized: "Videotape-style noise while rewinding (display only)"), m.vtrEffect) { m.vtrEffect = $0 },
-            link("shape", "aspectratio", String(localized: "Picture Shape"), String(localized: "8:7 pixels, hide the edges"), .displayShape),
+            link("shape", "aspectratio", String(localized: "Picture Shape"), String(localized: "8:7 pixels, hide the edges, blurred sides"), .displayShape),
             link("crtDetail", "slider.horizontal.3", String(localized: "CRT Details"), String(localized: "Scanlines, afterglow and signal of the CRT"), .crtDetail),
         ]
     }
@@ -267,6 +267,8 @@ enum QuickMenuPages {
         [
             toggle("par", "rectangle.arrowtriangle.2.outward", "8:7", String(localized: "Pixel aspect ratio of a CRT TV"), m.displayPAR87) { m.displayPAR87 = $0 },
             toggle("overscan", "crop", String(localized: "Hide Edges"), String(localized: "Hide 8 pixels at each edge (overscan)"), m.hideOverscan) { m.hideOverscan = $0 },
+            toggle("backdrop", "photo", String(localized: "Blurred Sides"),
+                   String(localized: "The empty sides show the game enlarged, blurred and dimmed"), m.backdrop) { m.backdrop = $0 },
         ]
     }
 

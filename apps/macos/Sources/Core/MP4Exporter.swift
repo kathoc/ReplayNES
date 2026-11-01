@@ -108,7 +108,7 @@ struct ExportGeometry: Equatable {
         rnf_export_geometry(canvas_width: Int32(canvasWidth), canvas_height: Int32(canvasHeight), dst_x: Int32(dstX),
                             dst_y: Int32(dstY), dst_width: Int32(dstWidth), dst_height: Int32(dstHeight), src_x: Int32(srcX),
                             src_y: Int32(srcY), src_width: Int32(srcWidth), src_height: Int32(srcHeight),
-                            vertical_scale: Int32(verticalScale))
+                            vertical_scale: Int32(verticalScale), rotation: 0)  // the NES picture is never rotated
     }
 
     /// Source column for every destination column (exact integer repeat for 1:1).

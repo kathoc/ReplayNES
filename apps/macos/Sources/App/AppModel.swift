@@ -106,6 +106,8 @@ final class AppModel: ObservableObject {
     @AppStorage("integerScale") var integerScale = true { didSet { objectWillChange.send() } }
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
+    /// The empty sides show the picture enlarged, blurred and dimmed (Settings › Display › Picture Shape).
+    @AppStorage("backdrop") var backdrop = true { didSet { objectWillChange.send() } }
     /// The VTR tape look while rewinding / returning to A (display only; Settings › Display).
     @AppStorage("vtrEffect") var vtrEffect = true { didSet { pushPrefs(); objectWillChange.send() } }
     /// 3, 2, 1 after a practice run arrives at A (the Practice page, Options button).
@@ -152,7 +154,7 @@ final class AppModel: ObservableObject {
     func isTempSession(_ projectPath: String) -> Bool { persistSessions && sessionPaths.isTempProject(projectPath) }
 
     var displayOptions: DisplayOptions {
-        DisplayOptions(integerScale: integerScale, pixelAspect87: displayPAR87, hideOverscan: hideOverscan)
+        DisplayOptions(integerScale: integerScale, pixelAspect87: displayPAR87, hideOverscan: hideOverscan, backdrop: backdrop)
     }
 
     weak var mainWindow: NSWindow? { didSet { if mainWindow !== oldValue { chrome.window = mainWindow } } }
