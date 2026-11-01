@@ -29,6 +29,9 @@ struct SessionOptions {
   bool dropCorruptStates = false;  // open(): discard corrupt state files instead of failing
   bool dropCorruptPractice = false;  // open(): discard corrupt practice slots instead of failing
   bool live = false;  // create(): Mode::Live from the start (nothing recorded), any core
+  // The checkpoint of a stepped frame is taken by checkpointWork() (the frontend's slack after the
+  // picture), or before anything else changes the machine: not between the input and the picture.
+  bool deferCheckpoints = false;
 };
 
 struct StepInfo {
@@ -106,6 +109,9 @@ class Session {
   // Optional paused/idle maintenance. No presentation, cursor or continuity changes.
   // At most budgetFrames core steps; Practice/Live and budget zero are no-ops.
   Status idleWork(uint32_t budgetFrames);
+  /// SessionOptions::deferCheckpoints: the checkpoint (or practice snapshot) of the last stepped frame,
+  /// and a buffer for the next one (a large state written into fresh memory paid for its allocation).
+  void checkpointWork();
 
   const uint32_t* video() const { return core_->video(); }
   MediaInfo mediaInfo() const { return core_->mediaInfo(); }
@@ -218,6 +224,19 @@ class Session {
   Status resync(uint64_t target, bool forceReload, RewindBlock* block = nullptr);
   Status powerOnFresh();
   void maybeCheckpoint(uint64_t frame, ICore* source = nullptr);
+  bool wantsCheckpoint(uint64_t frame) const;
+  void takePracticeSnap();
+  // What a deferred step left (SessionOptions::deferCheckpoints): done before the machine changes.
+  void commitPending();
+  Status coreStep(const InputRecord& r, bool render) { commitPending(); return core_->stepRecord(r, render); }
+  Status coreLoadState(const uint8_t* p, size_t n) { commitPending(); return core_->loadState(p, n); }
+  Status coreLoadContent() { commitPending(); return core_->loadContent(romPath_, rom_.data(), rom_.size()); }
+  struct PendingCapture {
+    bool take = false;      // the checkpoint of frame `at` (frame_)
+    bool practice = false;  // the practice snapshot of emulated frame `at` (emuCount_)
+    uint64_t at = 0;
+    uint64_t owner = 0;  // take: the frame's state owner then (another one later: dropped)
+  } pending_;
   // One independent logical machine, not another per-frame state cache. Shared
   // physical cores arbitrate instances exactly as they do for OfflineRenderer.
   std::unique_ptr<ICore> warmCore_;

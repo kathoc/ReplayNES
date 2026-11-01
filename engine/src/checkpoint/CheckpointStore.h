@@ -73,6 +73,9 @@ class CheckpointStore {
   /// A buffer of a dropped dense checkpoint, for the next one (empty if none): a large state written
   /// into fresh memory paid its zero fill and page faults on every checkpoint.
   std::vector<uint8_t> takeSpare();
+  /// A spare of the newest checkpoint's size, its memory touched now (Session::checkpointWork, in the
+  /// slack), when there is none: until dense checkpoints are dropped every one needed fresh memory.
+  void prepareSpare();
   /// Persisted sparse checkpoints beyond sparseResidentBytes leave memory (oldest first).
   void trimResident();
   /// The bytes of removed checkpoints that were being written: freed once no write runs.
@@ -87,6 +90,7 @@ class CheckpointStore {
   uint64_t seq_ = 0;
   size_t denseCount_ = 0;
   size_t denseBytes_ = 0;
+  size_t lastBytes_ = 0;  // the newest checkpoint's size
   std::vector<std::vector<uint8_t>> spare_;  // at most 2
   std::vector<std::vector<uint8_t>> held_;   // removed while writing (Checkpoint::writing)
 };

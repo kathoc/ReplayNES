@@ -737,3 +737,58 @@ TEST_CASE("persist: autosave writes new sparse states on another thread and refe
   CHECK_EQ(r->stateHash(), hash);
   CHECK_EQ(sparse(*r).size(), size_t(2));
 }
+
+TEST_CASE("session: deferred checkpoints record, rewind and seek exactly as immediate ones") {
+  // What a session records and how it moves, with the checkpoints taken in the step (immediate) or
+  // left to checkpointWork / the next change of the machine (deferred, called on some frames only).
+  auto run = [](bool defer, const std::string& name) {
+    std::vector<uint64_t> out;
+    const std::string root = tempDir(name);
+    const std::string dir = fs::join(root, "s.nesrec"), romPath = writeTestRom(root);
+    std::vector<uint8_t> rom;
+    REQUIRE(fs::readFile(romPath, rom).ok());
+    SessionOptions o;
+    o.core = CoreKind::Mock;
+    o.deferCheckpoints = defer;
+    std::unique_ptr<Session> s;
+    REQUIRE(Session::create(rom, romPath, o, s).ok());
+    REQUIRE(s->saveAs(dir).ok());
+    auto play = [&](const std::vector<InputRecord>& recs, unsigned workEvery) {
+      for (size_t i = 0; i < recs.size(); ++i) {
+        REQUIRE(s->step(recs[i].p1, recs[i].p2, recs[i].events).ok());
+        if (defer && i % workEvery == 0) s->checkpointWork();
+      }
+    };
+    play(DeterminismHarness::randomScript(1500, 101), 3);
+    REQUIRE(s->rewind(200).ok());
+    out.push_back(s->stateHash());
+    play(DeterminismHarness::randomScript(500, 102), 2);  // a new take from 1300
+    for (uint64_t t : {uint64_t(899), uint64_t(1700), uint64_t(450)}) {
+      REQUIRE(s->seek(t).ok());
+      out.push_back(s->stateHash());
+    }
+    REQUIRE(s->setMode(Mode::Practice).ok());
+    play(DeterminismHarness::randomScript(300, 103), 4);
+    REQUIRE(s->rewind(100).ok());
+    out.push_back(s->stateHash());
+    REQUIRE(s->setMode(Mode::Record).ok());
+    play(DeterminismHarness::randomScript(95, 104), 5);  // ends between checkpoints: one left pending
+    REQUIRE(s->save().ok());
+    for (const auto& kv : s->checkpoints().all()) {
+      out.push_back(kv.second.frame);
+      out.push_back(kv.second.owner);
+      out.push_back(uint64_t(kv.second.kind));
+    }
+    s.reset();
+    std::unique_ptr<Session> r;
+    REQUIRE(reopen(dir, r).ok());
+    out.push_back(r->frame());
+    out.push_back(r->stateHash());
+    REQUIRE(r->seek(500).ok());  // the last take: 450 + 95 frames
+    out.push_back(r->stateHash());
+    return out;
+  };
+  const std::vector<uint64_t> immediate = run(false, "defer-off"), deferred = run(true, "defer-on");
+  CHECK_EQ(immediate.size(), deferred.size());
+  CHECK(immediate == deferred);
+}

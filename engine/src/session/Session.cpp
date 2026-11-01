@@ -44,7 +44,7 @@ Status Session::checkpointData(const Checkpoint& c, std::vector<uint8_t>& scratc
 }
 
 Status Session::powerOnFresh() {
-  RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));
+  RN_TRY(coreLoadContent());
   layout_ = core_->inputLayout();
   frame_ = 0;
   audioValid_ = false;
@@ -67,6 +67,25 @@ const int16_t* Session::audio(size_t* count) const {
   return a;
 }
 
+bool Session::wantsCheckpoint(uint64_t frame) const {
+  const CheckpointPolicy& p = cps_.policy();
+  return frame % p.sparseInterval == 0 || frame % p.denseInterval == 0;
+}
+
+void Session::commitPending() {
+  const PendingCapture p = pending_;
+  pending_ = {};
+  // The machine is still at the frame it was stepped to (every change of it commits first).
+  if (p.take && mode_ != Mode::Practice && mode_ != Mode::Live && frame_ == p.at && tl_.stateOwner(frame_) == p.owner)
+    maybeCheckpoint(frame_);
+  if (p.practice && mode_ == Mode::Practice && emuCount_ == p.at) takePracticeSnap();
+}
+
+void Session::checkpointWork() {
+  commitPending();
+  cps_.prepareSpare();
+}
+
 void Session::maybeCheckpoint(uint64_t frame, ICore* source) {
   const CheckpointPolicy& p = cps_.policy();
   bool sparse = frame % p.sparseInterval == 0;
@@ -85,6 +104,23 @@ void Session::maybeCheckpoint(uint64_t frame, ICore* source) {
            std::move(st));
 }
 
+void Session::takePracticeSnap() {
+  PracticeSnap snap{emuCount_, std::move(pSpare_)};  // the last dropped snapshot's memory
+  pSpare_.clear();
+  if (!captureState(snap.state).ok()) return;  // a missing snapshot only shortens rewind
+  pSnapBytes_ += snap.state.size();
+  pSnaps_.push_back(std::move(snap));
+  // By count and by bytes, as the dense checkpoints (CheckpointPolicy::denseBytes).
+  const size_t cap = std::max<size_t>(2, cps_.policy().denseCapacity);
+  while (pSnaps_.size() > 2 && (pSnaps_.size() > cap || pSnapBytes_ > cps_.policy().denseBytes)) {
+    uint64_t dropTo = pSnaps_[1].count;
+    pInputs_.erase(pInputs_.begin(), pInputs_.begin() + ptrdiff_t(dropTo - pSnaps_.front().count));
+    pSnapBytes_ -= std::min(pSnapBytes_, pSnaps_.front().state.size());
+    pSpare_ = std::move(pSnaps_.front().state);
+    pSnaps_.pop_front();
+  }
+}
+
 Status Session::step(uint8_t p1, uint8_t p2, uint8_t events, StepInfo* info) {
   return stepInput(InputRecord{p1, p2, events}, info);
 }
@@ -101,7 +137,7 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
     if ((events & kEvSoftReset) && !(events & kEvPowerCycle))
       return Error(Err::UnsupportedFormat, "soft reset is unavailable for this live core");
-    RN_TRY(core_->stepRecord(in, true));
+    RN_TRY(coreStep(in, true));
     ++frame_;
     audioValid_ = true;
     si.frame = frame_;
@@ -113,28 +149,15 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
   if (mode_ == Mode::Practice) {
     if (events & ~kEvMask) return Error(Err::InvalidArg, "unknown event flags");
     r = in;
-    RN_TRY(core_->stepRecord(r, true));
+    RN_TRY(coreStep(r, true));
     // Nothing is recorded: no timeline, no take checkpoints, no change counter.
     pInputs_.push_back(r);
     ++emuCount_;
     audioValid_ = true;
     const uint64_t interval = cps_.policy().denseInterval;
     if ((emuCount_ - pSnaps_.front().count) % interval == 0) {
-      PracticeSnap snap{emuCount_, std::move(pSpare_)};  // the last dropped snapshot's memory
-      pSpare_.clear();
-      if (captureState(snap.state).ok()) {  // a missing snapshot only shortens rewind
-        pSnapBytes_ += snap.state.size();
-        pSnaps_.push_back(std::move(snap));
-        // By count and by bytes, as the dense checkpoints (CheckpointPolicy::denseBytes).
-        const size_t cap = std::max<size_t>(2, cps_.policy().denseCapacity);
-        while (pSnaps_.size() > 2 && (pSnaps_.size() > cap || pSnapBytes_ > cps_.policy().denseBytes)) {
-          uint64_t dropTo = pSnaps_[1].count;
-          pInputs_.erase(pInputs_.begin(), pInputs_.begin() + ptrdiff_t(dropTo - pSnaps_.front().count));
-          pSnapBytes_ -= std::min(pSnapBytes_, pSnaps_.front().state.size());
-          pSpare_ = std::move(pSnaps_.front().state);
-          pSnaps_.pop_front();
-        }
-      }
+      if (opt_.deferCheckpoints) pending_.practice = true, pending_.at = emuCount_;
+      else takePracticeSnap();
     }
     si.frame = frame_;
     si.applied = r;
@@ -157,7 +180,7 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
     r = in;
   }
   // Emulate first; only a frame that was really emulated gets recorded.
-  RN_TRY(core_->stepRecord(r, true));
+  RN_TRY(coreStep(r, true));
   if (mode_ == Mode::Record) {
     bool branched = false;
     Status st = tl_.record(frame_, r, branched);
@@ -168,7 +191,8 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
   ++frame_;
   ++emuCount_;
   audioValid_ = true;
-  maybeCheckpoint(frame_);
+  if (!opt_.deferCheckpoints) maybeCheckpoint(frame_);
+  else if (wantsCheckpoint(frame_)) pending_.take = true, pending_.at = frame_, pending_.owner = tl_.stateOwner(frame_);
   si.frame = frame_;
   si.applied = r;
   si.take = tl_.head();
@@ -178,6 +202,7 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
 }
 
 void Session::clearRewindCache() {
+  commitPending();  // every operation other than a step starts here
   rewindBlocks_.clear();
   rewindPrefetch_ = {};
   warmCore_.reset();
@@ -193,8 +218,8 @@ uint64_t Session::advanceRewindPrefetch(uint64_t budget) {
   // This walk must not use resync/step: it changes neither cursor, continuity
   // nor the practice input ring. The caller always restores the
   // requested pre-frame state and renders the result afterwards, even on error.
-  Status st = work.fresh ? core_->loadContent(romPath_, rom_.data(), rom_.size())
-                         : core_->loadState(work.resume.data(), work.resume.size());
+  Status st = work.fresh ? coreLoadContent()
+                         : coreLoadState(work.resume.data(), work.resume.size());
   work.fresh = false;
   while (st.ok() && budget && work.next < work.end) {
     if (work.next >= work.block.first) {
@@ -206,7 +231,7 @@ uint64_t Session::advanceRewindPrefetch(uint64_t budget) {
     const InputRecord* input = mode_ == Mode::Practice
         ? &pInputs_[size_t(work.next - pSnaps_.front().count)] : tl_.recordAt(work.next);
     if (!input) { st = Error(Err::Internal, "missing prefetch input"); break; }
-    st = core_->stepRecord(*input, false);
+    st = coreStep(*input, false);
     ++used;
     if (st.ok()) {
       ++work.next;
@@ -410,7 +435,7 @@ Status Session::resync(uint64_t target, bool forceReload, RewindBlock* block) {
       std::vector<uint8_t> scratch;
       const std::vector<uint8_t>* d = nullptr;
       Status st = checkpointData(*cp, scratch, d);
-      if (st.ok()) st = core_->loadState(d->data(), d->size());
+      if (st.ok()) st = coreLoadState(d->data(), d->size());
       if (!st.ok()) {
         // Never silently fall back: report the broken cache entry.
         return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
@@ -427,7 +452,7 @@ Status Session::resync(uint64_t target, bool forceReload, RewindBlock* block) {
     // In particular, restoring Nestopia's power-on state does not reset its
     // picture buffer, and the first frame need not overwrite that buffer.
     if (block && frame_ > 0) cacheRewindState(*block, frame_);
-    RN_TRY(core_->stepRecord(*r, frame_ + 1 == target));
+    RN_TRY(coreStep(*r, frame_ + 1 == target));
     ++frame_;
     maybeCheckpoint(frame_);
   }
@@ -467,11 +492,11 @@ Status Session::rewind(uint64_t n) {
         // region is walked at the rate rewind consumes it, and only in reach.
         (void)warmRewindGap(target, uint32_t(std::min(pace, remaining - used)), false);
         ++emuEpoch_;  // exactly the discontinuity that resync would report
-        RN_TRY(core_->loadState(saved.data(), saved.size()));
+        RN_TRY(coreLoadState(saved.data(), saved.size()));
         frame_ = target - 1;
         const InputRecord* r = tl_.recordAt(frame_);
         if (!r) return Error(Err::Internal, "missing record during rewind");
-        RN_TRY(core_->stepRecord(*r, true));
+        RN_TRY(coreStep(*r, true));
         ++frame_;
         maybeCheckpoint(frame_);
         audioValid_ = false;
@@ -699,7 +724,7 @@ Status Session::enterPractice() {
 }
 
 Status Session::leavePractice(Mode to) {
-  Status st = frame_ == 0 ? powerOnFresh() : core_->loadState(returnState_.data(), returnState_.size());
+  Status st = frame_ == 0 ? powerOnFresh() : coreLoadState(returnState_.data(), returnState_.size());
   if (!st.ok()) {
     mode_ = returnMode_;  // fall back to rebuilding the take state from the input log
     uint64_t f = frame_;
@@ -742,17 +767,17 @@ Status Session::practiceRewind(uint64_t n) {
   if (cached) {
     const auto saved = *cached;
     prefetchOlderRewindBlock(target);
-    RN_TRY(core_->loadState(saved.data(), saved.size()));
-    RN_TRY(core_->stepRecord(pInputs_[size_t(target - 1 - inputBase)], true));
+    RN_TRY(coreLoadState(saved.data(), saved.size()));
+    RN_TRY(coreStep(pInputs_[size_t(target - 1 - inputBase)], true));
   } else {
     if (rewindBlocks_.size() == 2) rewindBlocks_.pop_front();
     RewindBlock block;
     block.first = target - std::min<uint64_t>(target - snap.count, cps_.policy().denseInterval);
-    RN_TRY(core_->loadState(snap.state.data(), snap.state.size()));
+    RN_TRY(coreLoadState(snap.state.data(), snap.state.size()));
     for (uint64_t c = snap.count; c < target; ++c) {
       cacheRewindState(block, c);
       const InputRecord& r = pInputs_[size_t(c - inputBase)];
-      RN_TRY(core_->stepRecord(r, c + 1 == target));
+      RN_TRY(coreStep(r, c + 1 == target));
     }
     retainRewindBlock(std::move(block));
   }
@@ -849,18 +874,18 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
       std::vector<uint8_t> scratch;
       const std::vector<uint8_t>* d = nullptr;
       Status st = checkpointData(*cp, scratch, d);
-      if (st.ok()) st = core_->loadState(d->data(), d->size());
+      if (st.ok()) st = coreLoadState(d->data(), d->size());
       if (!st.ok()) return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
       frame_ = cp->frame;
     } else {
-      RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));  // fresh power-on (video buffer untouched below)
+      RN_TRY(coreLoadContent());  // fresh power-on (video buffer untouched below)
       frame_ = 0;
     }
   }
   while (frame_ < target) {
     const InputRecord* r = tl_.recordAt(frame_);
     if (!r) return Error(Err::Internal, "missing record while locating A");
-    RN_TRY(core_->stepRecord(*r, false));
+    RN_TRY(coreStep(*r, false));
     ++frame_;
     maybeCheckpoint(frame_);
   }
@@ -889,7 +914,7 @@ Status Session::practiceSetRange(int slot, uint64_t a, uint64_t b) {
     const uint64_t savedFrame = frame_, savedEpoch = emuEpoch_;
     Status walk = takeStateAt(a, stA);
     // Frame 0 is restored like everywhere else: a fresh power-on (bit-identical to a new instance).
-    Status back = savedFrame == 0 ? powerOnFresh() : core_->loadState(saved.data(), saved.size());
+    Status back = savedFrame == 0 ? powerOnFresh() : coreLoadState(saved.data(), saved.size());
     frame_ = savedFrame;
     audioValid_ = false;
     bool rebuild = !back.ok() ||  // never leave the session on a wrong state
@@ -943,7 +968,7 @@ Status Session::practiceGotoA(int slot) {
     RN_TRY(enterPractice());
     entered = true;
   }
-  Status st = core_->loadState(p.state.data(), p.state.size());
+  Status st = coreLoadState(p.state.data(), p.state.size());
   if (!st.ok()) {
     if (entered) {
       Status back = leavePractice(returnMode_);
@@ -951,7 +976,7 @@ Status Session::practiceGotoA(int slot) {
     } else {
       // The practice machine state is unknown now: restart the run from the saved take state.
       ++emuEpoch_;
-      if (core_->loadState(returnState_.data(), returnState_.size()).ok()) resetPracticeRun(returnState_);
+      if (coreLoadState(returnState_.data(), returnState_.size()).ok()) resetPracticeRun(returnState_);
     }
     return Error(st.code, "practice slot " + std::to_string(slot) + " A state failed to load: " + st.message);
   }

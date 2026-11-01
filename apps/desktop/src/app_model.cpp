@@ -526,6 +526,7 @@ void AppModel::openProjectChooser() {
 void AppModel::createSession(const std::string& rom, const std::string& projectDir, bool isTemp) {
   rn_session_options opt;
   rn_session_options_init(&opt);
+  opt.defer_checkpoints = 1;  // taken in the frame's slack (EmulationController::afterFrame)
   if (selectedCore == "nestopia") opt.core = RN_CORE_NESTOPIA;
   else if (selectedCore == "replaynescore") opt.core = RN_CORE_REPLAYNESCORE;
   else if (selectedCore == "external") opt.core = RN_CORE_EXTERNAL;
@@ -559,6 +560,7 @@ void AppModel::openProject(const std::string& path, const std::string& romOverri
   rn_session_options opt;
   rn_session_options_init(&opt);
   opt.open_flags = (dropCorrupt ? RN_OPEN_DROP_CORRUPT_STATES : 0u) | (dropPractice ? RN_OPEN_DROP_CORRUPT_PRACTICE : 0u);
+  opt.defer_checkpoints = 1;  // taken in the frame's slack (EmulationController::afterFrame)
   rn_session* s = nullptr;
   rn_status st = rn_session_open(path.c_str(), romOverride.empty() ? nullptr : romOverride.c_str(), &opt, &s);
   if (st != RN_OK) {
@@ -764,7 +766,10 @@ void AppModel::saveTempAs(std::function<void()> then) {
     if (!moveTempProject(dest, &moveError)) target = paths_.tempProject();
     // The full save above wrote the cursor and take mode: the project reopens where it was.
     rn_session* reopened = nullptr;
-    if (rn_session_open(target.c_str(), nullptr, nullptr, &reopened) == RN_OK) {
+    rn_session_options opt;
+    rn_session_options_init(&opt);
+    opt.defer_checkpoints = 1;  // as every session the app opens
+    if (rn_session_open(target.c_str(), nullptr, &opt, &reopened) == RN_OK) {
       ResumeRec r;
       r.projectPath = target;
       r.isTemp = !moveError.empty();

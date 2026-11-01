@@ -20,6 +20,7 @@ uint64_t CheckpointStore::add(uint64_t frame, uint64_t owner, CpKind kind, const
   // frame (Sega System 32: 22 MB, 60 ms every 30 frames on a Mac).
   c.crc = kind == CpKind::Dense || kind == CpKind::Sparse ? 0 : crc32(data.data(), data.size());
   c.insertSeq = ++seq_;
+  lastBytes_ = data.size();
   c.data = std::move(data);
   uint64_t id = c.id;
   byId_.emplace(id, std::move(c));
@@ -84,6 +85,11 @@ void CheckpointStore::trimResident() {
     std::vector<uint8_t>().swap(victim->data);
     victim->offloaded = true;
   }
+}
+
+void CheckpointStore::prepareSpare() {
+  if (!spare_.empty() || !lastBytes_) return;
+  spare_.emplace_back(lastBytes_);  // zero-filled: every page touched here, not in the next checkpoint
 }
 
 std::vector<uint8_t> CheckpointStore::takeSpare() {

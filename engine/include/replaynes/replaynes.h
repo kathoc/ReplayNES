@@ -145,6 +145,9 @@ typedef struct rn_session_options {
   uint32_t dense_capacity;  /* max dense checkpoints kept in memory (default 1200) */
   uint32_t sparse_interval; /* frames between permanent checkpoints (default 600) */
   uint32_t open_flags;      /* RN_OPEN_* */
+  uint32_t defer_checkpoints; /* nonzero: rn_step leaves the checkpoint of its frame to
+                                 rn_session_checkpoint_work (or the next call that changes the
+                                 machine), so it is not between the input and the picture */
 } rn_session_options;
 
 void rn_session_options_init(rn_session_options* opt);
@@ -281,6 +284,10 @@ rn_status rn_rewind(rn_session* s, uint64_t nframes);
  * Call only while paused with no foreground input/transport in progress; the
  * engine has no pause flag. Zero budget, PRACTICE and LIVE do no work. */
 rn_status rn_session_idle_work(rn_session* s, uint32_t budget_frames);
+/* defer_checkpoints: the checkpoint the last rn_step left, and a buffer for the next one. Call after
+ * the picture is out, in the frame's slack; without it the next rn_step (or any other call that
+ * changes the machine or the take) does it first. No effect on what is recorded. */
+rn_status rn_session_checkpoint_work(rn_session* s);
 
 /* Verification hashes (determinism diagnostics, tests, CLI). */
 uint64_t rn_state_hash(rn_session* s);

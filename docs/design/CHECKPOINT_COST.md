@@ -24,6 +24,23 @@ remove every way the rewind record can become heavy, for all the ROMs, not only 
 | CRC32 of every sparse checkpoint on the frame thread | computed when its file is written (StateWriter) |
 | Autosave wrote each new sparse state on the frame thread: copy into a file image, two CRCs, write, fsync | StateWriter thread; the file in parts (header, bytes, CRC) with no copy; referenced by a later autosave (rn_session_autosave_background) |
 
+## On a Steam Deck (2026-11-01, after the above)
+
+Rad Mobile in game mode, 40 s with saves: a checkpoint frame still took 15 ms (others 6 ms); the
+input lead sat at its limit (22 ms), 16 frames missed their target, judder 550/min. A 22 MB copy
+alone takes 1.7 ms there: before dense checkpoints were dropped (the first 1 GiB) a checkpoint frame
+cost +12 ms (fresh memory: allocation, faults, zeroing with THP), after it +5.5 ms. Neither is needed
+for the picture, and both sat between the input sample and the picture:
+
+- `defer_checkpoints` (SessionOptions::deferCheckpoints; the desktop app sets it): rn_step leaves the
+  checkpoint (or practice snapshot) of its frame pending; rn_session_checkpoint_work, called in the
+  frame's slack after the picture (EmulationController::afterFrame), takes it and prepares a touched
+  buffer for the next one. Whatever changes the machine (every core step, state load, power-on goes
+  through Session::coreStep / coreLoadState / coreLoadContent) or the take (clearRewindCache, which
+  every other operation calls first) takes it first; a pending one whose frame or take owner changed
+  meanwhile is dropped (a cache entry less). Test: the same session with and without deferral records
+  the same checkpoints and reaches the same states (and a version without those guards fails it).
+
 ## Not adopted
 
 - Leaving System 32's tilemap draw buffers out of the state (FBNeo): they are not a pure cache, the

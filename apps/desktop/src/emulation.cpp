@@ -1499,6 +1499,9 @@ std::string EmulationController::resetProject(bool keepPracticeSlots,
 void EmulationController::afterFrame(double slack) {
   rn_session* s = session_;
   if (!s) return;
+  // The checkpoint of the frame just shown, after its picture (defer_checkpoints): in a large state
+  // (Sega System 32: 22 MB) it took most of a frame between the input and the picture.
+  rn_session_checkpoint_work(s);
   if (pendingThumb_) {
     pendingThumb_ = false;
     if (observer) observer->frameShown(s, pendingThumbFrame_);
