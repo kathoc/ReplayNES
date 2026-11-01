@@ -8,6 +8,7 @@
 #include "replaynes/product.h"
 #include "library_thumbs.h"
 #include "png_writer.h"
+#include "qoi_decode.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
 
@@ -83,6 +84,29 @@ TEST_CASE("bezel: fitted into the screen, the game laid out in its window") {
   CHECK_EQ(i.h, 448);
   CHECK_EQ(i.x, 260 + 61);
   CHECK_EQ(i.y, 79 + 74);
+}
+
+TEST_CASE("bezel image: QOI decoding, every chunk kind; cut short or not QOI is refused") {
+  // 3 x 2: RGBA, RUN (+1), DIFF, LUMA, INDEX (of the first colour), then the end marker.
+  const std::vector<uint8_t> qoi = {'q', 'o', 'i', 'f', 0, 0, 0, 3, 0, 0, 0, 2, 4, 0,
+                                    0xFF, 10, 20, 30, 40,  // QOI_OP_RGBA
+                                    0xC1,                  // QOI_OP_RUN: 2 pixels
+                                    0x76,                  // QOI_OP_DIFF: r +1, g -1, b 0
+                                    0xA5, 0xA5,            // QOI_OP_LUMA: g +5, r - g +2, b - g -3
+                                    0x0C,                  // QOI_OP_INDEX: (10*3 + 20*5 + 30*7 + 40*11) % 64
+                                    0, 0, 0, 0, 0, 0, 0, 1};
+  uint32_t w = 0, h = 0;
+  std::vector<uint8_t> px;
+  REQUIRE(decodeQoi(qoi.data(), qoi.size(), &w, &h, &px));
+  CHECK_EQ(w, 3u);
+  CHECK_EQ(h, 2u);
+  const std::vector<uint8_t> want = {10, 20, 30, 40, 10, 20, 30, 40, 10, 20, 30, 40,
+                                     11, 19, 30, 40, 18, 24, 32, 40, 10, 20, 30, 40};
+  CHECK(px == want);
+  CHECK_FALSE(decodeQoi(qoi.data(), qoi.size() - 10, &w, &h, &px));  // cut inside the chunks
+  std::vector<uint8_t> png = qoi;
+  png[0] = 0x89;
+  CHECK_FALSE(decodeQoi(png.data(), png.size(), &w, &h, &px));
 }
 
 TEST_CASE("media NES game rectangle equals legacy placement") {

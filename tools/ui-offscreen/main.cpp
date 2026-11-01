@@ -199,7 +199,7 @@ int main(int argc,char** argv) {
         renderer.requestScreenshot((out/"player-order-2.png").string());
         input.endPlayerOrder(); draw();
       }
-      // The product's bezel (RN_PRODUCT_BEZEL_PNG at configure time): a horizontal game with it, then without.
+      // The product's bezel (RN_PRODUCT_BEZEL_IMAGE at configure time): a horizontal game with it, then without.
       if(RN_PRODUCT_BEZEL) {
         std::vector<uint8_t> rom(16+16384+8192); rom[0]='N';rom[1]='E';rom[2]='S';rom[3]=26;rom[4]=1;rom[5]=1;
         rom[16]=0x78;rom[17]=0x4c;rom[18]=1;rom[19]=0x80;

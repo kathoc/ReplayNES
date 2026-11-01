@@ -9,14 +9,16 @@ vertical (rotated) games; a setting turns it off. (The iPhone app gets it separa
 
 ## Product inputs (CMake, the product profile)
 
-- `RN_PRODUCT_BEZEL_PNG`: path of the PNG (RGBA; alpha 0 in the window, the frame's own shading
-  around the window opaque). Unset: no bezel feature at all (no setting row either).
-- `RN_PRODUCT_BEZEL_WINDOW`: the window in the PNG's pixels, `"x y width height"`
+- `RN_PRODUCT_BEZEL_IMAGE`: path of the image, QOI (RGBA; alpha 0 in the window, the frame's own
+  shading around the window opaque). Unset: no bezel feature at all (no setting row either).
+- `RN_PRODUCT_BEZEL_WINDOW`: the window in the image's pixels, `"x y width height"`
   (ReplayArcade: `"321 98 944 739"`).
 
-The PNG is compiled into the executable (the way the icon font is: a generated `.inc` of bytes), so
-the Flatpak, the Windows build and the tests need no extra files at run time. Decoding: the
-existing PNG reader if there is one, else stb_image (third_party) - check what the tree has first.
+The image is compiled into the executable (a generated `.inc` of bytes), so the Flatpak, the Windows
+build and the tests need no extra files at run time. QOI, decoded by qoi_decode.cpp: the first
+version embedded a PNG for SDL 3.4's SDL_LoadPNG_IO, which the Flatpak runtime's SDL (older than
+3.4) does not have - the Flatpak build failed (2026-11-01); the tests had passed with the bundled
+SDL 3.4. A QOI decoder is a few dozen lines and depends on nothing.
 
 ## Layout (computeGameRect)
 
@@ -37,15 +39,9 @@ is vertical (its displayed picture is taller than wide, after rotation); no sess
 
 ## Renderer
 
-A new `Renderer` call for one large static texture (the bezel; the thumbnail atlas is 128 x 120
-tiles and too small):
-
-    virtual bool staticTexture(uint64_t key, const uint32_t* rgba, uint32_t width, uint32_t height,
-                               uint64_t* texId) = 0;  // uploaded once, kept until shutdown
-
-Implemented in every renderer: Vulkan (Linux), D3D11 (Windows), the software renderer of
-`tools/ui-offscreen`, and any test double. Pixel order as the thumbnails' (check the existing
-upload path: BGRA vs RGBA).
+No renderer change: the decoded image is an ImGui user texture (`ImGui::RegisterUserTexture`), which
+every ImGui renderer backend (Vulkan, D3D11, the software renderer of `tools/ui-offscreen`) creates
+and uploads like the font atlas. (The first plan was a new `Renderer::staticTexture` per backend.)
 
 ## Setting
 
@@ -63,4 +59,4 @@ the order; `scripts/check-l10n.py` must report 0 problems).
   no bezel, integer scale inside the window), the setting round trip, the menu row only with the
   feature.
 - `tools/ui-offscreen` writes a screenshot of a horizontal game with the bezel (and one without).
-- ReplayNES (no `RN_PRODUCT_BEZEL_PNG`) builds and its tests pass unchanged.
+- ReplayNES (no `RN_PRODUCT_BEZEL_IMAGE`) builds and its tests pass unchanged.

@@ -21,8 +21,8 @@
 #cmakedefine01 RN_PRODUCT_OVERSCAN_CROP
 #cmakedefine01 RN_PRODUCT_FOCUS_PAUSE
 #cmakedefine01 RN_PRODUCT_UPDATES
-/* The bezel (docs/design/BEZEL.md): its window in the PNG's pixels; the PNG's bytes are
-   generated/replaynes/bezel_png.inc. */
+/* The bezel (docs/design/BEZEL.md): its window in the image's pixels; the QOI image's bytes are
+   generated/replaynes/bezel_image.inc. */
 #cmakedefine01 RN_PRODUCT_BEZEL
 #define RN_PRODUCT_BEZEL_WINDOW_X @RN_PRODUCT_BEZEL_X@
 #define RN_PRODUCT_BEZEL_WINDOW_Y @RN_PRODUCT_BEZEL_Y@

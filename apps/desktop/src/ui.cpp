@@ -20,6 +20,7 @@
 #include "library_thumbs.h"
 #include "pad_nav.h"
 #include "paths.h"
+#include "qoi_decode.h"
 #include "replaynes/product.h"
 #include "settings.h"
 #include "thumbnails.h"
@@ -30,14 +31,14 @@ namespace fs = std::filesystem;
 
 #if RN_PRODUCT_BEZEL
 namespace {
-// The bezel's PNG (RN_PRODUCT_BEZEL_PNG), and its size from the PNG header (IHDR, big-endian).
-const unsigned char kBezelPng[] = {
-#include "replaynes/bezel_png.inc"
+// The bezel's QOI image (RN_PRODUCT_BEZEL_IMAGE), and its size from the QOI header (big-endian).
+const unsigned char kBezelImage[] = {
+#include "replaynes/bezel_image.inc"
 };
-uint32_t pngU32(size_t at) {
-  return uint32_t(kBezelPng[at]) << 24 | uint32_t(kBezelPng[at + 1]) << 16 | uint32_t(kBezelPng[at + 2]) << 8 | kBezelPng[at + 3];
+uint32_t headerU32(size_t at) {
+  return uint32_t(kBezelImage[at]) << 24 | uint32_t(kBezelImage[at + 1]) << 16 | uint32_t(kBezelImage[at + 2]) << 8 | kBezelImage[at + 3];
 }
-const uint32_t kBezelWidth = pngU32(16), kBezelHeight = pngU32(20);
+const uint32_t kBezelWidth = headerU32(4), kBezelHeight = headerU32(8);
 }  // namespace
 #endif
 
@@ -416,20 +417,16 @@ std::optional<BezelLayout> UI::bezelLayout(int w, int h) const {
 ImTextureData* UI::bezelTexture() {
 #if RN_PRODUCT_BEZEL
   if (bezelTex_ || bezelFailed_) return bezelTex_;
-  SDL_IOStream* io = SDL_IOFromConstMem(kBezelPng, sizeof kBezelPng);
-  SDL_Surface* png = io ? SDL_LoadPNG_IO(io, true) : nullptr;
-  SDL_Surface* rgba = png ? SDL_ConvertSurface(png, SDL_PIXELFORMAT_RGBA32) : nullptr;
-  SDL_DestroySurface(png);
-  if (!rgba) {
+  uint32_t w = 0, h = 0;
+  std::vector<uint8_t> rgba;
+  if (!decodeQoi(kBezelImage, sizeof kBezelImage, &w, &h, &rgba)) {
     bezelFailed_ = true;
-    std::fprintf(stderr, "bezel: %s\n", SDL_GetError());
+    std::fprintf(stderr, "bezel: not a QOI image\n");
     return nullptr;
   }
   auto* t = new ImTextureData();
-  t->Create(ImTextureFormat_RGBA32, rgba->w, rgba->h);
-  for (int y = 0; y < rgba->h; ++y)
-    std::memcpy(t->GetPixelsAt(0, y), static_cast<const uint8_t*>(rgba->pixels) + size_t(y) * size_t(rgba->pitch), size_t(rgba->w) * 4);
-  SDL_DestroySurface(rgba);
+  t->Create(ImTextureFormat_RGBA32, int(w), int(h));
+  std::memcpy(t->GetPixelsAt(0, 0), rgba.data(), rgba.size());
   ImGui::RegisterUserTexture(t);  // the renderer's ImGui backend uploads it with the UI's own textures
   bezelTex_ = t;
 #endif
