@@ -335,6 +335,7 @@ int App::run(const AppOptions& opt) {
   input_->load();
   emu_ = std::make_unique<EmulationController>(input_->input(), audioOK_ ? &audio_ : nullptr);
   thumbs_ = std::make_unique<ThumbnailManager>();
+  if (!perfMode) thumbs_->storeDir = paths_.sessionRoot + "/Filmstrips";  // the seek bar's pictures, kept
   if (!perfMode) libraryThumbs_ = std::make_unique<LibraryThumbs>(paths_.sessionRoot + "/LibraryThumbs");
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
   // Favourites / history / order: the settings folder (a scratch --session-root keeps its own).

@@ -15,7 +15,7 @@ vertical (rotated) games; a setting turns it off. (The iPhone app gets it separa
   (ReplayArcade: `"321 98 944 739"`).
 
 The image is compiled into the executable (a generated `.inc` of bytes), so the Flatpak, the Windows
-build and the tests need no extra files at run time. QOI, decoded by qoi_decode.cpp: the first
+build and the tests need no extra files at run time. QOI, decoded by qoi.cpp: the first
 version embedded a PNG for SDL 3.4's SDL_LoadPNG_IO, which the Flatpak runtime's SDL (older than
 3.4) does not have - the Flatpak build failed (2026-11-01); the tests had passed with the bundled
 SDL 3.4. A QOI decoder is a few dozen lines and depends on nothing.

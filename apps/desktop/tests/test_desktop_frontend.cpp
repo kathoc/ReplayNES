@@ -2186,6 +2186,55 @@ TEST_CASE("thumbnails: live capture and background batches") {
   rn_input_free(in);
 }
 
+TEST_CASE("thumbnails: kept across sessions by the take's input, never stale after an edit") {
+  RN_REQUIRE_NESTOPIA();
+  std::string d = tmpDir("thumbstore");
+  std::string rom = testRom(d);
+  const std::string project = d + "/p" RN_PRODUCT_PROJECT_EXT;
+  rn_input* in = rn_input_new();
+  ThumbnailManager thumbs;
+  thumbs.storeDir = d + "/Filmstrips";
+  EmulationController emu(in, nullptr);
+  emu.observer = &thumbs;
+  rn_session* s = nullptr;
+  REQUIRE(rn_session_new(rom.c_str(), project.c_str(), nullptr, &s) == RN_OK);
+  emu.install(s);
+  // Played (never laid out: the seek bar was not shown) - live capture keeps the finest grid.
+  for (int i = 0; i < 1300; ++i) {
+    emu.tick();
+    emu.afterFrame(1);
+  }
+  const double step = RNF_THUMB_BASE_STEP;
+  CHECK(bool(thumbs.imageAt(rnf_thumb_picture_frame(4, step))));
+  emu.save();
+  emu.closeSession();  // keeps them (sessionClosing)
+  CHECK(std::filesystem::exists(thumbs.storeDir));
+  // Reopened: the first reconcile shows every one at once, nothing rendered.
+  REQUIRE(rn_session_open(project.c_str(), nullptr, nullptr, &s) == RN_OK);
+  emu.install(s);
+  CHECK_FALSE(bool(thumbs.imageAt(rnf_thumb_picture_frame(1, step))));
+  thumbs.layout(1000, 64, rn_take_length(s), 0);
+  thumbs.pump(s, 1.0);
+  for (uint64_t k = 0; k <= 4; ++k) CHECK(bool(thumbs.imageAt(rnf_thumb_picture_frame(k, step))));
+  // The take re-recorded from frame 400 with other input: pictures after 400 are not the kept ones.
+  REQUIRE(rn_seek(s, 400) == RN_OK);
+  rn_set_mode(s, RN_MODE_RECORD);
+  for (int i = 0; i < 900; ++i) {
+    rn_step_info info{};
+    REQUIRE(rn_step(s, 0x08, 0, 0, &info) == RN_OK);  // START held: another game from here
+  }
+  emu.save();
+  emu.closeSession();
+  REQUIRE(rn_session_open(project.c_str(), nullptr, nullptr, &s) == RN_OK);
+  emu.install(s);
+  thumbs.layout(1000, 64, rn_take_length(s), 0);
+  thumbs.pump(s, 1.0);
+  CHECK(bool(thumbs.imageAt(rnf_thumb_picture_frame(1, step))));       // 300: before the edit, kept
+  CHECK_FALSE(bool(thumbs.imageAt(rnf_thumb_picture_frame(2, step))));  // 600: after it, rendered anew
+  emu.closeSession();
+  rn_input_free(in);
+}
+
 // ------------------------------------------------------------------ MP4 export helpers (export/)
 
 TEST_CASE("export: frame / sample times in 100 ns units from counts") {

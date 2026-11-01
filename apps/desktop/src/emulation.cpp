@@ -174,6 +174,7 @@ void EmulationController::install(rn_session* s) {
 
 void EmulationController::closeSession() {
   if (!session_) return;
+  if (observer) observer->sessionClosing(session_);
   rnf_fast_forward_end(ff_, session_);
   rn_session_close(session_);
   session_ = nullptr;

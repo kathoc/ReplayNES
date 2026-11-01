@@ -97,6 +97,8 @@ class FrameObserver {
   virtual ~FrameObserver() = default;
   /// A session was installed / replaced / reset (nullptr: none).
   virtual void sessionInstalled(rn_session* s) = 0;
+  /// The session is about to be closed (still valid here).
+  virtual void sessionClosing(rn_session* s) { (void)s; }
   /// The take frame `frame` is what rn_video shows (after a step / seek), on the frame thread.
   virtual void frameShown(rn_session* s, uint64_t frame) = 0;
   /// The active take was cut after `keepThrough` and continues from there (a rapid retry inside its

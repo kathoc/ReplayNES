@@ -15,8 +15,10 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -77,8 +79,14 @@ class ThumbnailManager : public FrameObserver {
 
   /// -no-thumbnails / perf runs: nothing is captured or rendered.
   bool enabled = true;
+  /// Pictures kept across sessions: the folder of their files, one per project ("" = none). A picture
+  /// is keyed by the input hash of the take up to its frame (rn_take_input_hashes), so a take edited
+  /// since (cut, re-recorded, another app) never gets a stale one; a reopened project's seek bar shows
+  /// at once what any earlier session showed.
+  std::string storeDir;
 
   void sessionInstalled(rn_session* s) override;
+  void sessionClosing(rn_session* s) override;
   void frameShown(rn_session* s, uint64_t frame) override;
   void takeCut(rn_session* s, uint64_t keepThrough) override;
 
@@ -114,7 +122,19 @@ class ThumbnailManager : public FrameObserver {
     bool nesPicture;
   };
   void syncTake(rn_session* s);
-  void reconcile(double now);
+  void reconcile(rn_session* s, double now);
+  // Kept pictures (storeDir): loaded with the session, used before rendering, saved when it closes
+  // and after a batch.
+  struct Stored {
+    uint64_t frame;
+    ThumbImage* image;  // retained
+  };
+  void loadStore(rn_session* s);
+  void saveStore(rn_session* s);
+  void clearStore();
+  std::string storeFile_;
+  std::map<uint64_t, Stored> stored_;  // input hash -> picture
+  bool storeDirty_ = false;
   void finishOne(const std::shared_ptr<Job>& j, uint64_t frame, ThumbImage* img, bool failed);
   void workerLoop();
   void resizeWorkers(unsigned count);

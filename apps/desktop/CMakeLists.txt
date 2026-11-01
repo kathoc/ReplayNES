@@ -24,7 +24,7 @@ add_library(rnl_logic STATIC
   src/app_model.cpp
   src/emulation.cpp
   src/game_rect.cpp
-  src/qoi_decode.cpp
+  src/qoi.cpp
   src/l10n.cpp
   src/library.cpp
   src/manifest.cpp

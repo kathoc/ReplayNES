@@ -338,6 +338,28 @@ const int16_t* rn_audio(const rn_session* s, size_t* count) {
 }
 uint64_t rn_frame(const rn_session* s) { return s ? s->s->frame() : 0; }
 uint64_t rn_take_length(const rn_session* s) { return s ? s->s->takeLength() : 0; }
+rn_status rn_take_input_hashes(const rn_session* s, const uint64_t* frames, size_t count, uint64_t* out) {
+  return guard([&] {
+    if (!s || (count && (!frames || !out))) return invalid("null argument");
+    const rn::Timeline& tl = s->s->timeline();
+    const uint64_t length = s->s->takeLength();
+    uint64_t h = 1469598103934665603ull, f = 0;  // FNV-1a 64 over every record byte, in frame order
+    for (size_t i = 0; i < count; ++i) {
+      if (i && frames[i] < frames[i - 1]) return invalid("frames not ascending");
+      if (frames[i] > length) {
+        out[i] = 0;
+        continue;
+      }
+      for (; f < frames[i]; ++f) {
+        const rn::InputRecord* r = tl.recordAt(f);
+        if (!r) return invalid("no input record");
+        for (size_t b = 0; b < rn::kInputRecordBytes; ++b) h = (h ^ r->byte(b)) * 1099511628211ull;
+      }
+      out[i] = h;
+    }
+    return RN_OK;
+  });
+}
 rn_status rn_seek(rn_session* s, uint64_t frame) {
   return guard([&] { return s ? ret(s->s->seek(frame)) : invalid("null session"); });
 }

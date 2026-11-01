@@ -259,6 +259,11 @@ uint64_t rn_session_samples_before(const rn_session* s, uint64_t frame);
 
 uint64_t rn_frame(const rn_session* s);       /* take cursor; frozen at the return frame in PRACTICE */
 uint64_t rn_take_length(const rn_session* s);
+/* For each of `frames` (ascending, each <= rn_take_length): a hash (FNV-1a 64) of the active take's
+ * input records [0, frame) - the take's picture at that frame is the same exactly when this hash is
+ * (the emulation runs deterministically from power-on for one ROM and core). A frontend keys pictures
+ * it keeps across sessions with it (the seek bar's thumbnails). out[i] = 0 for a frame past the take. */
+rn_status rn_take_input_hashes(const rn_session* s, const uint64_t* frames, size_t count, uint64_t* out);
 /* 0 <= frame <= take length. RN_ERR_WRONG_MODE in PRACTICE (leave practice first). */
 rn_status rn_seek(rn_session* s, uint64_t frame);
 /* RECORD/REPLAY: seek back on the take, clamps at 0. PRACTICE: rewinds the practice run (bounded

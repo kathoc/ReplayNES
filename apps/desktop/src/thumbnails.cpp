@@ -2,6 +2,10 @@
 #include "thumbnails.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+
+#include "qoi.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -112,6 +116,7 @@ ThumbnailManager::~ThumbnailManager() {
   for (Task& t : queue_) rn_renderer_free(t.renderer);
   finished_.clear();
   for (Ready& r : ready_) r.image->release();
+  clearStore();
   rnf_thumb_cache_free(cache_);
 }
 
@@ -177,6 +182,130 @@ void ThumbnailManager::sessionInstalled(rn_session* s) {
   if (step_ > 0) rnf_thumb_cache_set_step(cache_, step_);
   hasTarget_ = false;
   nextReconcile_ = 0;
+  clearStore();
+  if (s && enabled) loadStore(s);
+}
+
+void ThumbnailManager::sessionClosing(rn_session* s) {
+  if (enabled) saveStore(s);
+  clearStore();
+}
+
+namespace {
+constexpr char kStoreMagic[8] = {'R', 'N', 'F', 'I', 'L', 'M', '1', '\n'};
+
+uint64_t fnv(const std::string& text, uint64_t h = 1469598103934665603ull) {
+  for (unsigned char c : text) h = (h ^ c) * 1099511628211ull;
+  return h;
+}
+
+// The project's file: its folder and core (the same take may look different under another core).
+std::string storeFileFor(const std::string& dir, rn_session* s) {
+  const char* project = s ? rn_session_project_dir(s) : nullptr;
+  if (dir.empty() || !project || !*project) return {};
+  char name[40];
+  std::snprintf(name, sizeof name, "%016llx.filmstrip",
+                static_cast<unsigned long long>(fnv(std::to_string(int(rn_session_core_kind(s))), fnv(project))));
+  return dir + "/" + name;
+}
+
+template <typename T>
+bool readValue(std::istream& in, T* v) {
+  return bool(in.read(reinterpret_cast<char*>(v), sizeof *v));
+}
+template <typename T>
+void writeValue(std::ostream& out, T v) {
+  out.write(reinterpret_cast<const char*>(&v), sizeof v);
+}
+}  // namespace
+
+void ThumbnailManager::clearStore() {
+  for (auto& [hash, st] : stored_) st.image->release();
+  stored_.clear();
+  storeFile_.clear();
+  storeDirty_ = false;
+}
+
+// File: the magic, a count, then per picture its input hash, frame, size and QOI bytes.
+void ThumbnailManager::loadStore(rn_session* s) {
+  storeFile_ = storeFileFor(storeDir, s);
+  if (storeFile_.empty()) return;
+  std::ifstream in(storeFile_, std::ios::binary);
+  char magic[8] = {};
+  uint32_t count = 0;
+  if (!in.read(magic, 8) || std::memcmp(magic, kStoreMagic, 8) != 0 || !readValue(in, &count)) return;
+  std::vector<uint8_t> qoi, rgba;
+  for (uint32_t i = 0; i < count; ++i) {
+    uint64_t hash = 0, frame = 0;
+    uint32_t size = 0, w = 0, h = 0;
+    if (!readValue(in, &hash) || !readValue(in, &frame) || !readValue(in, &size) || size > (1u << 24)) break;
+    qoi.resize(size);
+    if (!in.read(reinterpret_cast<char*>(qoi.data()), size)) break;
+    if (!decodeQoi(qoi.data(), qoi.size(), &w, &h, &rgba) || w > 1024 || h > 1024) continue;
+    ThumbImage* img = ThumbImage::fromThumb(reinterpret_cast<const uint32_t*>(rgba.data()), w, h);
+    if (!img) continue;
+    auto [it, fresh] = stored_.insert({hash, Stored{frame, img}});
+    if (!fresh) {
+      it->second.image->release();
+      it->second = Stored{frame, img};
+    }
+  }
+  std::fprintf(stderr, "thumbnails: %zu kept pictures for this project\n", stored_.size());
+}
+
+void ThumbnailManager::saveStore(rn_session* s) {
+  if (!s || !storeDirty_ || storeFile_.empty() || storeFile_ != storeFileFor(storeDir, s)) return;
+  storeDirty_ = false;
+  // The take's pictures on the finest grid (every zoom level's are among them) with their hashes.
+  std::vector<uint64_t> frames(rnf_thumb_targets(rn_take_length(s), rnf_thumb_tile_step(0, 0, 0), nullptr, 0));
+  rnf_thumb_targets(rn_take_length(s), rnf_thumb_tile_step(0, 0, 0), frames.data(), frames.size());
+  std::vector<uint64_t> hashes(frames.size());
+  if (!frames.empty() && rn_take_input_hashes(s, frames.data(), frames.size(), hashes.data()) != RN_OK) return;
+  std::vector<uint64_t> current;
+  for (size_t i = 0; i < frames.size(); ++i) {
+    auto* img = static_cast<ThumbImage*>(rnf_thumb_cache_image_at(cache_, frames[i]));  // retained
+    if (!img) continue;
+    current.push_back(hashes[i]);
+    auto [it, fresh] = stored_.insert({hashes[i], Stored{frames[i], img}});
+    if (!fresh) {
+      it->second.image->release();
+      it->second = Stored{frames[i], img};
+    }
+  }
+  // Other takes' pictures stay (switching back shows them) while the file stays small.
+  constexpr size_t kMaxKept = 4000;
+  std::sort(current.begin(), current.end());
+  for (auto it = stored_.begin(); stored_.size() > kMaxKept && it != stored_.end();) {
+    if (std::binary_search(current.begin(), current.end(), it->first)) {
+      ++it;
+    } else {
+      it->second.image->release();
+      it = stored_.erase(it);
+    }
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(storeDir, ec);
+  const std::string tmp = storeFile_ + ".tmp";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    out.write(kStoreMagic, 8);
+    writeValue(out, uint32_t(stored_.size()));
+    std::vector<uint8_t> qoi;
+    for (const auto& [hash, st] : stored_) {
+      qoi.clear();
+      encodeQoi(reinterpret_cast<const uint8_t*>(st.image->px.data()), st.image->width, st.image->height, &qoi);
+      writeValue(out, hash);
+      writeValue(out, st.frame);
+      writeValue(out, uint32_t(qoi.size()));
+      out.write(reinterpret_cast<const char*>(qoi.data()), std::streamsize(qoi.size()));
+    }
+    if (!out) {
+      std::fprintf(stderr, "thumbnails: cannot write %s\n", tmp.c_str());
+      return;
+    }
+  }
+  std::filesystem::rename(tmp, storeFile_, ec);
+  if (ec) std::fprintf(stderr, "thumbnails: cannot write %s: %s\n", storeFile_.c_str(), ec.message().c_str());
 }
 
 void ThumbnailManager::syncTake(rn_session* s) {
@@ -210,7 +339,7 @@ void ThumbnailManager::frameShown(rn_session* s, uint64_t frame) {
   if (rn_session_video_frame(s, &f) != RN_OK || rn_session_media_info(s, &m) != RN_OK) return;
   ThumbImage* img = ThumbImage::make(f, m, rn_session_core_kind(s) != RN_CORE_EXTERNAL);
   if (!img) return;
-  rnf_thumb_cache_insert(cache_, frame, take, 0, 0, img);
+  if (rnf_thumb_cache_insert(cache_, frame, take, 0, 0, img)) storeDirty_ = true;
   img->release();
 }
 
@@ -240,7 +369,7 @@ double ThumbnailManager::fadeProgress(double now) const {
   return std::min(1.0, std::max(0.0, (now - fadeStart_) / kFadeDuration));
 }
 
-void ThumbnailManager::reconcile(double now) {
+void ThumbnailManager::reconcile(rn_session* s, double now) {
   if (!hasTarget_ || step_ <= 0) return;
   if (now < retryAfter_) {
     nextReconcile_ = now + 1;
@@ -260,6 +389,26 @@ void ThumbnailManager::reconcile(double now) {
   std::vector<uint64_t> missing(n);
   size_t m = rnf_thumb_cache_missing(cache_, targets.data(), n, missing.data(), n);
   missing.resize(std::min(m, n));
+  // Kept pictures first (a reopened project): the ones whose take input up to their frame is the same.
+  if (!missing.empty() && !stored_.empty() && s) {
+    std::vector<uint64_t> hashes(missing.size());
+    if (rn_take_input_hashes(s, missing.data(), missing.size(), hashes.data()) == RN_OK) {
+      const uint64_t take = rnf_thumb_cache_take(cache_);
+      size_t restored = 0;
+      std::vector<uint64_t> still;
+      for (size_t i = 0; i < missing.size(); ++i) {
+        auto it = stored_.find(hashes[i]);
+        if (it != stored_.end() && it->second.frame == missing[i] &&
+            rnf_thumb_cache_insert(cache_, missing[i], take, 1, gen, it->second.image)) {
+          ++restored;
+        } else {
+          still.push_back(missing[i]);
+        }
+      }
+      if (restored) std::fprintf(stderr, "thumbnails: %zu pictures from the kept ones\n", restored);
+      missing.swap(still);
+    }
+  }
   if (missing.empty()) return;
   auto j = std::make_shared<Job>();
   j->targets = std::move(missing);
@@ -286,21 +435,24 @@ void ThumbnailManager::pump(rn_session* s, double now, bool coreBusy) {
     ready.swap(ready_);
   }
   for (const Ready& r : ready) {
-    rnf_thumb_cache_insert(cache_, r.frame, r.take, 1, r.generation, r.image);
+    if (rnf_thumb_cache_insert(cache_, r.frame, r.take, 1, r.generation, r.image)) storeDirty_ = true;
     r.image->release();
   }
+  bool batchDone = false;
   for (auto& j : done) {
     std::fprintf(stderr, "thumbnails: %zu pictures rendered in %.2f s%s\n", j->targets.size(), now - j->started,
                  j->cancelled.load() ? " (cancelled)" : j->failed.load() ? " (some failed)" : "");
+    batchDone = batchDone || !j->cancelled.load();
     if (j->failed.load() && !j->cancelled.load()) retryAfter_ = now + 2;
     if (job_ == j) job_.reset();
     nextReconcile_ = now + 0.3;
   }
   if (!s) return;
   syncTake(s);
+  if (batchDone) saveStore(s);  // what took long to render is kept at once
   if (nextReconcile_ != 0 && now >= nextReconcile_) {
     nextReconcile_ = 0;
-    reconcile(now);
+    reconcile(s, now);
   }
   std::shared_ptr<Job> j = job_;
   if (!j || j->next >= j->targets.size()) return;

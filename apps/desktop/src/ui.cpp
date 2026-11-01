@@ -20,7 +20,7 @@
 #include "library_thumbs.h"
 #include "pad_nav.h"
 #include "paths.h"
-#include "qoi_decode.h"
+#include "qoi.h"
 #include "replaynes/product.h"
 #include "settings.h"
 #include "thumbnails.h"

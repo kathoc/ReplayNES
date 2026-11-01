@@ -8,7 +8,7 @@
 #include "replaynes/product.h"
 #include "library_thumbs.h"
 #include "png_writer.h"
-#include "qoi_decode.h"
+#include "qoi.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
 
