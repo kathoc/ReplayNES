@@ -9,6 +9,7 @@
 #include "library_thumbs.h"
 #include "png_writer.h"
 #include "qoi.h"
+#include "render/backdrop.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
 
@@ -179,4 +180,50 @@ TEST_CASE("product overscan policy: fixed picture and CRT geometry") {
     CHECK_EQ(rect.w, full.w); CHECK_EQ(rect.h, full.h);
 #endif
   }
+}
+
+TEST_CASE("backdrop: only where the picture leaves the screen empty, covering it, cut to the screen") {
+  // A 4:3 picture pillarboxed on 1280 x 800: shown, covering the width, centered.
+  BackdropPlan p = planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240);
+  REQUIRE(p.show);
+  CHECK(std::fabs(p.w - 1280) < 0.01f);
+  CHECK(std::fabs(p.h - 1280 * 800.f / 1067) < 0.5f);
+  CHECK(std::fabs(p.y - (800 - p.h) / 2) < 0.01f);
+  CHECK(std::fabs(p.lod - std::log2(320 / kBackdropTexels)) < 1e-4f);
+  CHECK_EQ(p.dim, kBackdropDim);
+  CHECK(p.dim < 1.f);  // dimmed
+  // The picture fills the screen (FILL): nothing to cover.
+  CHECK_FALSE(planBackdrop(0, 0, 1280, 800, 1280, 800, 320, 240).show);
+  CHECK_FALSE(planBackdrop(0.5f, 0, 1279.5f, 800, 1280, 800, 320, 240).show);
+  // Cut to the screen: the rectangle becomes the screen, the source the matching middle part.
+  for (int rot = 0; rot < 4; ++rot) {
+    BackdropPlan c = p;
+    float uv[4] = {0, 0, 1, 1};
+    cropBackdrop(c, 1280, 800, rot, uv);
+    CHECK(std::fabs(c.x) < 0.01f);
+    CHECK(std::fabs(c.y) < 0.01f);
+    CHECK(std::fabs(c.w - 1280) < 0.01f);
+    CHECK(std::fabs(c.h - 800) < 0.01f);
+    const float cut = (p.h - 800) / 2 / p.h;  // of the height, at the top and the bottom
+    // Rotation 0 / 2 cut the source's v, 1 / 3 its u (the picture's height is the source's width).
+    const float lo = (rot & 1) ? uv[0] : uv[1], hi = (rot & 1) ? uv[2] : uv[3];
+    const float keep0 = (rot & 1) ? uv[1] : uv[0], keep1 = (rot & 1) ? uv[3] : uv[2];
+    CHECK(std::fabs(lo - cut) < 1e-4f);
+    CHECK(std::fabs(hi - (1 - cut)) < 1e-4f);
+    CHECK(std::fabs(keep0) < 1e-6f);
+    CHECK(std::fabs(keep1 - 1) < 1e-6f);
+  }
+  // A rectangle cut off-center (rotation 1): the source side follows the rotation.
+  BackdropPlan off;
+  off.show = true;
+  off.x = -100, off.y = 0, off.w = 1000, off.h = 800;  // its left 10 % is off screen
+  float uv[4] = {0, 0, 1, 1};
+  cropBackdrop(off, 1280, 800, 1, uv);
+  CHECK(std::fabs(off.x) < 0.01f);
+  CHECK(std::fabs(off.w - 900) < 0.01f);
+  // q = (p.y, 1 - p.x): p.x in [0.1, 1] -> v in [0, 0.9]; u untouched.
+  CHECK(std::fabs(uv[1]) < 1e-5f);
+  CHECK(std::fabs(uv[3] - 0.9f) < 1e-5f);
+  CHECK(std::fabs(uv[0]) < 1e-6f);
+  CHECK(std::fabs(uv[2] - 1) < 1e-6f);
 }

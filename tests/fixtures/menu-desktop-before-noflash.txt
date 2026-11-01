@@ -8,7 +8,7 @@ settings.controls:controls.controller,controls.keyboard,controls.confirm,control
 settings.sound:sound.volume
 settings.system:system.language,system.steam,system.about,system.detail,system.quit
 display.crt:crt.lines,crt.beam,crt.persistence,crt.supply,crt.antenna,crt.reset
-display.shape:display.par87,display.overscan
+display.shape:display.par87,display.overscan,display.backdrop
 controls.controller:
 controls.assign:
 controls.keyboard:

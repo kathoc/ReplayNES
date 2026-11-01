@@ -195,9 +195,12 @@ TEST_CASE("settings round trip and tolerant parsing") {
   s.diagramFamily = "4";
   s.timelineSlot = 5;
   s.checkForUpdates = false;
+  s.backdrop = false;
   Settings t = Settings::parse(s.serialize());
   CHECK_FALSE(t.checkForUpdates);
   CHECK(Settings::parse("").checkForUpdates);  // on by default
+  CHECK_FALSE(t.backdrop);
+  CHECK(Settings::parse("").backdrop);  // the blurred sides: on by default
   CHECK_FALSE(t.integerScale);
   CHECK(t.par87);
   CHECK_EQ(t.flash, RN_PRODUCT_FLASH_FILTER ? 3 : 0);

@@ -130,9 +130,9 @@ const std::vector<ItemDef>& items() {
        "rewind-backward-5", TOGGLE, "", 0, {}},
       {"settings.display", "display.shape", RNF_L("Picture Shape"),
 #if RN_PRODUCT_OVERSCAN_CROP
-       RNF_L("8:7 pixels, hide the edges"),
+       RNF_L("8:7 pixels, hide the edges, blurred sides"),
 #else
-       RNF_L("8:7 Pixels"),
+       RNF_L("8:7 pixels, blurred sides"),
 #endif
        "aspect-ratio", PAGE,
        "display.shape", 0, {}},
@@ -145,6 +145,8 @@ const std::vector<ItemDef>& items() {
       {"display.shape", "display.overscan", RNF_L("Hide Edges"), RNF_L("Hides 8 pixels on each side, like a TV"),
        "crop", TOGGLE, "", 0, {}},
 #endif
+      {"display.shape", "display.backdrop", RNF_L("Blurred Sides"),
+       RNF_L("The empty sides show the game enlarged, blurred and dimmed"), "photo", TOGGLE, "", 0, {}},
       // Display > CRT details.
       {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "line-scan", SLIDER,
        "", F_CRT, {}},

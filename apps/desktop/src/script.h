@@ -19,6 +19,7 @@
 //   wheel <y> [<x>]         mouse wheel notches (+y = up / away from the user, +x = right)
 //   focus lost|gained       the window loses / gets the input focus (another window in front)
 //   overlay on|off          the system's UI in front without a focus change (the Steam menu in gamescope)
+//   screensaver             the game demos now, as after the idle time
 //   mousemove <dx> <dy> [<frames>]   relative mouse motion (a captured mouse), spread over frames
 //   mousebutton left|right|middle [<s>]  a mouse button press held <s> seconds (default 0.05)
 //   osktype <text>          types <text> on the built-in on-screen keyboard

@@ -26,6 +26,7 @@ struct Settings {
   std::string preservedFlashLines;  // opaque settings lines: ignore the value without rewriting it
 #endif
   bool showFlashIndicator = true;
+  bool backdrop = true;   // the empty sides show the picture enlarged, blurred, dimmed (render/backdrop.h)
   bool vtrEffect = true;  // the VTR tape look while rewinding / returning to A (rnf_vtr; display only)
   float uiScale = 1.0f;  // multiplies the automatic scale (window height / 800)
   // CRT display (nesterm physical model; display only). Defaults are nesterm's.

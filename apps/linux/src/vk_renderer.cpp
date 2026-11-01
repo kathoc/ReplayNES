@@ -254,7 +254,7 @@ bool VkRenderer::createGameTexture() {
   ici.arrayLayers = 1;
   ici.samples = VK_SAMPLE_COUNT_1_BIT;
   ici.tiling = VK_IMAGE_TILING_OPTIMAL;
-  ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;  // SRC: the backdrop
   ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   if (vkCreateImage(device_, &ici, nullptr, &gameImage_) != VK_SUCCESS) return false;
   VkMemoryRequirements mr;
@@ -499,7 +499,13 @@ bool VkRenderer::createPipeline() {
   VkResult r = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &pipeline_);
   vkDestroyShaderModule(device_, vs, nullptr);
   vkDestroyShaderModule(device_, fs, nullptr);
-  return r == VK_SUCCESS;
+  if (r != VK_SUCCESS) return false;
+  if (!backdrop_.create(device_, renderPass_, kBlitVert, sizeof(kBlitVert),
+                        [this](uint32_t bits, VkMemoryPropertyFlags f) { return findMemory(bits, f); })) {
+    std::fprintf(stderr, "video: no blurred backdrop (its pipeline failed)\n");
+    backdrop_.release();
+  }
+  return true;
 }
 
 bool VkRenderer::initImGui() {
@@ -671,6 +677,10 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
                          nullptr, 1, &toRead);
     hasPicture_ = true;
   }
+  // The blurred backdrop's copy: of each new picture, or the first after it was turned on / resized.
+  if (post_.backdrop && hasPicture_ &&
+      (newPicture || !backdrop_.ready() || backdrop_.width() != int(frame_.width) || backdrop_.height() != int(frame_.height)))
+    backdrop_.update(cmd, gameImage_, frame_.width, frame_.height);
   recordAtlasUploads(cmd, slot_);
   // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
   // here before the show pass (or, built ahead, after this present: the next one shows it).
@@ -700,7 +710,20 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   rbi.clearValueCount = 1;
   rbi.pClearValues = &clear;
   vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
-  if (crtOn && rect.visible && crt_.canShow() && !plain) {
+  const bool crtShows = crtOn && rect.visible && crt_.canShow() && !plain;
+  if (post_.backdrop && rect.visible && hasPicture_ && backdrop_.ready()) {
+    // Under the picture, where it leaves the screen empty (render/backdrop.h).
+    const float px = crtShows ? rect.crt.x : rect.x, py = crtShows ? rect.crt.y : rect.y;
+    const float pw = crtShows ? rect.crt.w : rect.w, ph = crtShows ? rect.crt.h : rect.h;
+    BackdropPlan plan = planBackdrop(px, py, pw, ph, int(extent_.width), int(extent_.height), backdrop_.width(),
+                                     backdrop_.height());
+    float uv[8] = {float(rect.crop) / frame_.width, float(rect.crop) / frame_.height,
+                   float(frame_.width - rect.crop) / frame_.width, float(frame_.height - rect.crop) / frame_.height,
+                   float(media_.rotation), 0, 0, 0};
+    cropBackdrop(plan, int(extent_.width), int(extent_.height), int(media_.rotation), uv);
+    backdrop_.draw(cmd, plan, extent_, uv);
+  }
+  if (crtShows) {
     crt_.show(cmd, int(extent_.width), int(extent_.height), rect.crt, rect.crtCrop);
     status_.crtShown = true;
   } else if (rect.visible && hasPicture_) {
@@ -861,6 +884,7 @@ void VkRenderer::releaseDevice() {
     destroySwapchain();
     swapGen_ += 1;
   }
+  backdrop_.release();
   if (pipeline_) vkDestroyPipeline(device_, pipeline_, nullptr);
   if (pipeLayout_) vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);
   if (descPool_) vkDestroyDescriptorPool(device_, descPool_, nullptr);

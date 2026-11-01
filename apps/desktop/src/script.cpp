@@ -250,6 +250,8 @@ void Script::step(double now) {
       return;  // one press per frame (the release goes out with the next step)
     } else if (op == "setting") {
       if (!ui_->scriptSetting(arg(1), arg(2))) std::fprintf(stderr, "script: unknown setting %s\n", arg(1).c_str());
+    } else if (op == "screensaver") {  // the demos now (AppModel::startScreensaver), as after the idle time
+      if (app_ && !app_->startScreensaver()) std::fprintf(stderr, "script: the screensaver did not start\n");
     } else if (op == "pause") {
       emu_->setPaused(true);
     } else if (op == "play") {

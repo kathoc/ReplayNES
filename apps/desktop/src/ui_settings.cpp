@@ -173,6 +173,7 @@ bool UI::itemOn(const std::string& id) const {
   if (id == "display.par87") return s.par87;
   if (id == "display.overscan") return RN_PRODUCT_OVERSCAN_CROP && s.hideOverscan;
   if (id == "display.vtr") return s.vtrEffect;
+  if (id == "display.backdrop") return s.backdrop;
   if (id == "crt.beam") return s.crtBeamGrowth;
   if (id == "crt.persistence") return s.crtPersistence;
   if (id == "crt.supply") return s.crtSupply;
@@ -257,6 +258,7 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "display.par87") s.par87 = !s.par87;
     else if (id == "display.overscan") s.hideOverscan = RN_PRODUCT_OVERSCAN_CROP && !s.hideOverscan;
     else if (id == "display.vtr") s.vtrEffect = !s.vtrEffect;
+    else if (id == "display.backdrop") s.backdrop = !s.backdrop;
     else if (id == "crt.beam") s.crtBeamGrowth = !s.crtBeamGrowth;
     else if (id == "crt.persistence") s.crtPersistence = !s.crtPersistence;
     else if (id == "crt.supply") s.crtSupply = !s.crtSupply;

@@ -155,6 +155,7 @@ void App::applyPostProcess() {
   pp.maxTubeWidth = opt_.crtMaxWidth;
   pp.adaptiveResolution = opt_.crtAdaptive;
   pp.allowBuildAhead = opt_.crtBuildAhead;
+  pp.backdrop = settings_.backdrop;
   renderer_->setPostProcess(pp);
 }
 
@@ -686,13 +687,27 @@ int App::run(const AppOptions& opt) {
     rec.sample = nowSeconds();
     // The controllers read once more here (the pad thread's last read is up to 1 ms old): what the
     // kernel has at the sample point reaches this frame.
+    // <PREFIX>_DEBUG_EVENTS: which part of the event stage took long (over 3 ms), with its frame.
+    static const bool debugEvents = std::getenv(productEnvName("DEBUG_EVENTS").c_str()) != nullptr;
+    double mark = rec.sample;
+    auto lap = [&](const char* what) {
+      if (!debugEvents) return;
+      const double t = nowSeconds();
+      if (t - mark > 0.003) std::fprintf(stderr, "events: %s %.1f ms (seq %llu)\n", what, (t - mark) * 1e3, (unsigned long long)rec.seq);
+      mark = t;
+    };
     SDL_UpdateJoysticks();
+    lap("SDL_UpdateJoysticks");
     input_->syncPads();  // which controller is which player: what is connected now, every frame
+    lap("syncPads");
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
+    lap("events");
     input_->tick(nowSeconds());  // L or R held alone past the chord window fires now
+    lap("input tick");
     updateOverlay(script ? script->overlay : -1);
     updateScreensaver(nowSeconds());
+    lap("overlay / screensaver");
     if (!running_) break;
     rec.polled = nowSeconds();
     double ev = input_->lastEventTime();

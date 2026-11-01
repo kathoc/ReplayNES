@@ -56,6 +56,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "hideOverscan") s.preservedOverscanLines += rawLine + "\n";
 #endif
     else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
+    else if (k == "backdrop") s.backdrop = parseBool(v, s.backdrop);
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
     else if (k == "countdownSeconds") {
@@ -109,6 +110,7 @@ std::string Settings::serialize() const {
   o << preservedOverscanLines;
 #endif
   o << "vtrEffect=" << int(vtrEffect) << "\n";
+  o << "backdrop=" << int(backdrop) << "\n";
   o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "resumeCountdown=" << int(resumeCountdown) << "\n";
   o << "countdownSeconds=" << countdownSeconds << "\n";

@@ -24,6 +24,7 @@
 #include "render/crt_display.h"
 #include "render/post_process.h"
 #include "renderer.h"
+#include "vk_backdrop.h"
 
 struct ImDrawData;
 
@@ -186,6 +187,7 @@ class VkRenderer final : public Renderer {
   VkDescriptorSet set_ = VK_NULL_HANDLE;
   VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
   VkPipeline pipeline_ = VK_NULL_HANDLE;
+  VkBackdrop backdrop_;  // the blurred backdrop (DisplayPostProcess::backdrop)
   bool imguiReady_ = false;
   bool imguiWanted_ = false;  // initImGui() was called (the backend comes back with a new device)
   double lastAcquireWait_ = 0;
