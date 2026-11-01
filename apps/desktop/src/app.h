@@ -52,6 +52,9 @@ struct PlatformHooks {
   std::function<void()> setupFrameThread;
   /// "mode" of the --perf-seconds summary (gamescope / the desktop).
   std::function<std::string()> sessionMode;
+  /// The system's own UI is in front of the window without taking its focus (gamescope: the Steam
+  /// menu, docs/design/STEAM_OVERLAY_PAUSE.md). Cheap: called from the frame loop. Empty: none.
+  std::function<bool()> systemOverlay;
 };
 
 /// Parses the shared command line (unknown options: usage + false).

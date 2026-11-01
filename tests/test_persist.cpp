@@ -1,6 +1,8 @@
 // .nesrec persistence: save/close/reopen ("next day"), crash recovery via journal,
 // corruption detection, core/ROM mismatch, ROM moved, disk full.
+#include <chrono>
 #include <cstdio>
+#include <thread>
 
 #include "core/MockCore.h"
 #include "persist/ProjectStore.h"
@@ -605,4 +607,133 @@ TEST_CASE("persist: failed journal append leaves sparse state retryable without 
   REQUIRE(reopen(dir, r).ok());
   CHECK_EQ(r->frame(), uint64_t(650));
   CHECK_EQ(r->stateHash(), hash);
+}
+
+TEST_CASE("persist: saved sparse states beyond the memory budget leave memory and are read back when used") {
+  const std::string root = tempDir("sparse-offload");
+  const std::string dir = fs::join(root, "s.nesrec");
+  const std::string romPath = writeTestRom(root);
+  std::vector<uint8_t> rom;
+  REQUIRE(fs::readFile(romPath, rom).ok());
+  SessionOptions o;
+  o.core = CoreKind::Mock;
+  o.checkpoints.denseCapacity = 2;          // seeks start from the sparse states
+  o.checkpoints.sparseResidentBytes = 1;    // none of them stays in memory once saved
+  std::unique_ptr<Session> s;
+  REQUIRE(Session::create(rom, romPath, o, s).ok());
+  REQUIRE(s->saveAs(dir).ok());
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(4000, 81)).ok());
+  const std::vector<InputRecord> active = s->timeline().flattenActive();
+  const Replay ref = straightReplay(CoreKind::Mock, active, true);
+  auto offloadedSparse = [](const Session& x) {
+    size_t n = 0;
+    for (const auto& kv : x.checkpoints().all())
+      if (kv.second.kind == CpKind::Sparse) {
+        CHECK(kv.second.offloaded);
+        CHECK(kv.second.data.empty());
+        ++n;
+      }
+    return n;
+  };
+  for (const auto& kv : s->checkpoints().all())
+    if (kv.second.kind == CpKind::Sparse) CHECK_FALSE(kv.second.offloaded);  // not saved yet
+  REQUIRE(s->save().ok());
+  CHECK_EQ(offloadedSparse(*s), size_t(6));
+  for (uint64_t t : {uint64_t(650), uint64_t(1799), uint64_t(3000), uint64_t(3990)}) {
+    REQUIRE(s->seek(t).ok());
+    CHECK_EQ(s->stateHash(), ref.state[size_t(t - 1)]);
+  }
+  CHECK_EQ(offloadedSparse(*s), size_t(6));  // used, not kept
+  s.reset();
+
+  // Opening reads them one at a time and keeps none; the cursor is restored from one read back.
+  std::unique_ptr<Session> r;
+  REQUIRE(ProjectStore::open(dir, "", o, r, nullptr).ok());
+  CHECK_EQ(offloadedSparse(*r), size_t(6));
+  CHECK_EQ(r->stateHash(), ref.state[3999]);
+  REQUIRE(r->seek(2450).ok());
+  CHECK_EQ(r->stateHash(), ref.state[2449]);
+
+  // Cutting the take keeps the earlier states as new ones: their bytes are read back first.
+  REQUIRE(r->truncateTake().ok());
+  size_t kept = 0;
+  for (const auto& kv : r->checkpoints().all())
+    if (kv.second.kind == CpKind::Sparse) {
+      CHECK_FALSE(kv.second.offloaded);
+      CHECK_FALSE(kv.second.data.empty());
+      ++kept;
+    }
+  CHECK_EQ(kept, size_t(4));
+  REQUIRE(r->save().ok());
+  CHECK_EQ(offloadedSparse(*r), size_t(4));
+  REQUIRE(r->seek(1300).ok());
+  CHECK_EQ(r->stateHash(), ref.state[1299]);
+  r.reset();
+  REQUIRE(ProjectStore::open(dir, "", o, r, nullptr).ok());
+  CHECK_EQ(r->takeLength(), uint64_t(2450));
+  REQUIRE(r->seek(1900).ok());
+  CHECK_EQ(r->stateHash(), ref.state[1899]);
+}
+
+TEST_CASE("persist: autosave writes new sparse states on another thread and references them later") {
+  const std::string root = tempDir("sparse-writer");
+  const std::string dir = fs::join(root, "s.nesrec");
+  auto s = createProject(dir, writeTestRom(root), CoreKind::Mock);
+  REQUIRE(s);
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(1300, 91)).ok());
+  auto sparse = [](const Session& x) {
+    std::vector<const Checkpoint*> v;
+    for (const auto& kv : x.checkpoints().all())
+      if (kv.second.kind == CpKind::Sparse) v.push_back(&kv.second);
+    return v;
+  };
+  REQUIRE_EQ(sparse(*s).size(), size_t(2));
+  REQUIRE(s->autosave(false).ok());
+  for (const Checkpoint* c : sparse(*s)) {
+    CHECK_FALSE(c->persisted);  // handed to the writer, referenced by a later autosave
+    CHECK_EQ(c->crc, 0u);       // not checksummed on this thread
+  }
+  // A later autosave references what the writer finished.
+  auto settle = [&](Session& x) {
+    for (int i = 0; i < 400; ++i) {
+      REQUIRE(x.autosave(false).ok());
+      bool all = true;
+      for (const Checkpoint* c : sparse(x)) all = all && c->persisted;
+      if (all) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return false;
+  };
+  REQUIRE(settle(*s));
+  for (const Checkpoint* c : sparse(*s)) {
+    CHECK(c->fileWritten);
+    CHECK(c->crc != 0u);
+    CHECK(fs::exists(fs::join(dir, "states/" + std::to_string(c->id) + ".state")));
+  }
+  const std::string jp = fs::join(dir, "journal/journal.bin");
+  const int64_t journalSize = fs::fileSize(jp);
+  REQUIRE(s->autosave(false).ok());
+  CHECK_EQ(fs::fileSize(jp), journalSize);  // each referenced once
+
+  // One removed while it is being written: its bytes stay until the write ends; the next full save
+  // collects its file.
+  REQUIRE(recordScript(*s, DeterminismHarness::randomScript(600, 92)).ok());  // sparse 1800
+  REQUIRE_EQ(sparse(*s).size(), size_t(3));
+  uint64_t removedId = 0;
+  for (const Checkpoint* c : sparse(*s))
+    if (c->frame == 1800) removedId = c->id;
+  REQUIRE(s->autosave(false).ok());
+  REQUIRE(s->seek(1700).ok());
+  REQUIRE(s->truncateTake().ok());
+  CHECK_FALSE(s->checkpoints().get(removedId));
+  REQUIRE(settle(*s));
+  const uint64_t hash = s->stateHash();
+  REQUIRE(s->save().ok());
+  CHECK_FALSE(fs::exists(fs::join(dir, "states/" + std::to_string(removedId) + ".state")));
+  s.reset();
+  std::unique_ptr<Session> r;
+  REQUIRE(reopen(dir, r).ok());
+  CHECK_EQ(r->takeLength(), uint64_t(1700));
+  CHECK_EQ(r->stateHash(), hash);
+  CHECK_EQ(sparse(*r).size(), size_t(2));
 }

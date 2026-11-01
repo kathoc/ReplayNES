@@ -112,7 +112,8 @@ Status decodeSegment(const std::string& name, const std::vector<uint8_t>& b, Seg
   return Status::Ok();
 }
 
-std::vector<uint8_t> encodeState(const Checkpoint& c) {
+// A state file: this header, the bytes, the CRC32 of both.
+std::vector<uint8_t> stateHeader(const Checkpoint& c) {
   ByteWriter w;
   w.u32(kStateMagic);
   w.u32(kBinVersion);
@@ -123,6 +124,12 @@ std::vector<uint8_t> encodeState(const Checkpoint& c) {
   w.u32(c.stateFormatVersion);
   w.str(c.compat);
   w.u64(c.data.size());
+  return w.buf;
+}
+
+std::vector<uint8_t> encodeState(const Checkpoint& c) {
+  ByteWriter w;
+  w.buf = stateHeader(c);
   w.bytes(c.data.data(), c.data.size());
   w.u32(crc32(w.buf.data(), w.buf.size()));
   return w.buf;
@@ -191,6 +198,40 @@ Status parseJsonFile(const std::string& path, Json& out) {
 }  // namespace
 
 std::string ProjectStore::path(const std::string& rel) const { return fs::join(dir_, rel); }
+
+Status ProjectStore::readState(const Checkpoint& meta, std::vector<uint8_t>& out) const {
+  const std::string rel = stateRel(meta.id);
+  std::vector<uint8_t> b;
+  RN_TRY(fs::readFile(path(rel), b));
+  Checkpoint c;
+  RN_TRY(decodeState(rel, b, c));
+  if (c.id != meta.id || c.frame != meta.frame || c.owner != meta.owner || c.crc != meta.crc || c.kind != meta.kind ||
+      c.compat != meta.compat)
+    return Error(Err::Corrupt, "state file disagrees with its checkpoint: " + rel);
+  out.swap(c.data);
+  return Status::Ok();
+}
+
+void ProjectStore::absorbWrites(Session& s, Status& err) {
+  for (StateWriter::Job& j : writer_.takeDone()) {
+    Checkpoint* c = s.cps_.getMutable(j.id);
+    if (!c) continue;  // removed meanwhile: its file is an orphan, collected by the next full save
+    c->writing = false;
+    if (j.status.ok()) {
+      c->crc = j.crc;
+      c->fileWritten = true;
+    } else if (err.ok()) {
+      err = j.status;  // written again at the next autosave
+    }
+  }
+  if (!writer_.outstanding()) s.cps_.releaseHeld();
+}
+
+void ProjectStore::settleWrites(Session& s) {
+  writer_.drain();
+  Status ignored;  // a failed write is retried by the next save
+  absorbWrites(s, ignored);
+}
 
 Status ProjectStore::readManifest(const std::string& dir, std::string& json) {
   return fs::readText(fs::join(dir, "manifest.json"), json);
@@ -354,6 +395,7 @@ Status ProjectStore::resetJournal() {
 }
 
 Status ProjectStore::fullSave(Session& s) {
+  settleWrites(s);  // the state files on their way: written, then referenced by the new index
   // Exact-resume state at the cursor.
   std::vector<uint64_t> oldHeads;
   for (auto& kv : s.cps_.all()) if (kv.second.kind == CpKind::Head) oldHeads.push_back(kv.first);
@@ -380,7 +422,8 @@ Status ProjectStore::fullSave(Session& s) {
   }
   for (auto& kv : s.cps_.all()) {
     const Checkpoint& c = kv.second;
-    if (!persistable(c.kind) || c.persisted) continue;
+    if (!persistable(c.kind) || c.persisted || c.fileWritten) continue;
+    if (c.kind == CpKind::Sparse) s.cps_.getMutable(kv.first)->crc = crc32(c.data.data(), c.data.size());
     std::vector<uint8_t> b = encodeState(c);
     RN_TRY(fs::writeFileAtomic(path(stateRel(c.id)), b.data(), b.size()));
   }
@@ -442,7 +485,11 @@ Status ProjectStore::fullSave(Session& s) {
     kv.second.journalCreated = true;
   }
   for (auto& kv : s.cps_.all())
-    if (persistable(kv.second.kind)) s.cps_.getMutable(kv.first)->persisted = true;
+    if (persistable(kv.second.kind)) {
+      Checkpoint* c = s.cps_.getMutable(kv.first);
+      c->persisted = c->fileWritten = true;
+    }
+  s.cps_.trimResident();
   for (auto& p : s.slots_)
     if (p.used) p.stateFiled = p.stateJournaled = true;
   lastMeta_ = meta;
@@ -505,8 +552,27 @@ Status ProjectStore::fullSave(Session& s) {
   return Status::Ok();
 }
 
-Status ProjectStore::autosave(Session& s) {
+Status ProjectStore::autosave(Session& s, bool waitForStates) {
   if (journalBase_ != gen_) RN_TRY(resetJournal());
+  // New sparse states go to the writer; the ones it finished are referenced below.
+  Status writeErr;
+  absorbWrites(s, writeErr);
+  for (auto& kv : s.cps_.all()) {
+    Checkpoint& c = *s.cps_.getMutable(kv.first);
+    if (c.kind != CpKind::Sparse || c.persisted || c.writing || c.fileWritten) continue;
+    StateWriter::Job j;
+    j.id = c.id;
+    j.path = path(stateRel(c.id));
+    j.header = stateHeader(c);
+    j.data = c.data.data();
+    j.n = c.data.size();
+    c.writing = true;
+    writer_.submit(std::move(j));
+  }
+  if (waitForStates) {
+    writer_.drain();
+    absorbWrites(s, writeErr);
+  }
   ByteWriter w;
   struct Pending { Segment* seg; uint64_t newCount; };
   std::vector<Pending> pend;
@@ -538,10 +604,8 @@ Status ProjectStore::autosave(Session& s) {
   std::vector<uint64_t> pendStates;
   for (const auto& kv : s.cps_.all()) {
     const Checkpoint& c = kv.second;
-    if (c.kind != CpKind::Sparse || c.persisted) continue;
-    const auto b = encodeState(c);
-    // The durable file must precede its reference. An interrupted append leaves only an orphan.
-    RN_TRY(fs::writeFileAtomic(path(stateRel(c.id)), b.data(), b.size()));
+    // The durable file precedes its reference. An interrupted append leaves only an orphan.
+    if (c.kind != CpKind::Sparse || c.persisted || !c.fileWritten) continue;
     ByteWriter p;
     p.u64(c.id);
     p.u64(c.frame);
@@ -564,7 +628,7 @@ Status ProjectStore::autosave(Session& s) {
   if (metaChanged) putRecord(w, J_META, std::vector<uint8_t>(meta.begin(), meta.end()));
   // META establishes the active head before a crash can tear a sparse reference.
   if (!sparseRecords.buf.empty()) w.bytes(sparseRecords.buf.data(), sparseRecords.buf.size());
-  if (w.buf.empty()) return Status::Ok();
+  if (w.buf.empty()) return writeErr;
 
   const std::string jp = path(kJournalRel);
   int64_t before = fs::fileSize(jp);
@@ -579,9 +643,10 @@ Status ProjectStore::autosave(Session& s) {
     p.seg->journalCount = p.newCount;
   }
   for (uint64_t id : pendStates) s.cps_.getMutable(id)->persisted = true;
+  if (!pendStates.empty()) s.cps_.trimResident();
   for (PracticeSlot* p : pendSlots) p->stateJournaled = true;
   if (metaChanged) lastMeta_ = meta;
-  return Status::Ok();
+  return writeErr;
 }
 
 // ------------------------------------------------------------------ open
@@ -705,6 +770,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
     }
     c.persisted = true;
     RN_TRY(s->cps_.insertLoaded(std::move(c)));
+    s->cps_.trimResident();  // read one at a time: a long take of a large state does not fit in memory
   }
   s->cps_.setNextId(uint64_t(idx["nextCheckpointId"].asInt(1)));
 
@@ -838,6 +904,7 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
             }
             c.persisted = true;
             RN_TRY(s->cps_.insertLoaded(std::move(c)));
+            s->cps_.trimResident();
             break;
           }
           case J_PRACTICE_STATE: {
@@ -890,6 +957,8 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   for (auto& b : s->bookmarks_)
     if (b.owner != 0 && !s->tl_.segment(b.owner)) return Error(Err::Corrupt, "bookmark refers to missing take");
 
+  // The project before the replay: the nearest checkpoint may be one whose bytes left memory.
+  s->store_ = std::move(ps);
   // Bring the core to the cursor (power-on + nearest checkpoint + replay).
   uint64_t cursor = s->frame_;
   s->frame_ = 0;
@@ -905,7 +974,6 @@ Status ProjectStore::open(const std::string& dir, const std::string& romOverride
   s->recovered_ = rep.journalApplied;
   // Recovered journal data / a relocated ROM are not in a committed full save yet.
   if (rep.journalApplied || romPath != romJ["lastPath"].asString() || s->droppedPracticeMask_) s->changeSeq_ = 1;
-  s->store_ = std::move(ps);
   if (report) *report = rep;
   out = std::move(s);
   return Status::Ok();

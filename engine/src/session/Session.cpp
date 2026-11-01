@@ -34,6 +34,15 @@ Status Session::create(std::vector<uint8_t> rom, const std::string& romPath, con
 
 std::string Session::projectDir() const { return store_ ? store_->dir() : std::string(); }
 
+Status Session::checkpointData(const Checkpoint& c, std::vector<uint8_t>& scratch, const std::vector<uint8_t>*& out) const {
+  out = &c.data;
+  if (!c.offloaded) return Status::Ok();
+  if (!store_) return Error(Err::Internal, "an offloaded checkpoint without its project");
+  RN_TRY(store_->readState(c, scratch));
+  out = &scratch;
+  return Status::Ok();
+}
+
 Status Session::powerOnFresh() {
   RN_TRY(core_->loadContent(romPath_, rom_.data(), rom_.size()));
   layout_ = core_->inputLayout();
@@ -69,7 +78,7 @@ void Session::maybeCheckpoint(uint64_t frame, ICore* source) {
   } else if (cps_.find(frame, owner)) {
     return;
   }
-  std::vector<uint8_t> st;
+  std::vector<uint8_t> st = cps_.takeSpare();  // a dropped checkpoint's memory, already paged in
   ICore& machine = source ? *source : *core_;
   if (!machine.saveState(st).ok()) return;  // a missing cache entry only costs seek time
   cps_.add(frame, owner, sparse ? CpKind::Sparse : CpKind::Dense, machine.compatId(), machine.stateFormatVersion(),
@@ -111,13 +120,18 @@ Status Session::stepInput(const InputRecord& in, StepInfo* info) {
     audioValid_ = true;
     const uint64_t interval = cps_.policy().denseInterval;
     if ((emuCount_ - pSnaps_.front().count) % interval == 0) {
-      PracticeSnap snap{emuCount_, {}};
+      PracticeSnap snap{emuCount_, std::move(pSpare_)};  // the last dropped snapshot's memory
+      pSpare_.clear();
       if (captureState(snap.state).ok()) {  // a missing snapshot only shortens rewind
+        pSnapBytes_ += snap.state.size();
         pSnaps_.push_back(std::move(snap));
+        // By count and by bytes, as the dense checkpoints (CheckpointPolicy::denseBytes).
         const size_t cap = std::max<size_t>(2, cps_.policy().denseCapacity);
-        while (pSnaps_.size() > cap) {
+        while (pSnaps_.size() > 2 && (pSnaps_.size() > cap || pSnapBytes_ > cps_.policy().denseBytes)) {
           uint64_t dropTo = pSnaps_[1].count;
           pInputs_.erase(pInputs_.begin(), pInputs_.begin() + ptrdiff_t(dropTo - pSnaps_.front().count));
+          pSnapBytes_ -= std::min(pSnapBytes_, pSnaps_.front().state.size());
+          pSpare_ = std::move(pSnaps_.front().state);
           pSnaps_.pop_front();
         }
       }
@@ -227,6 +241,7 @@ uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget, uin
   const uint64_t interval = cps_.policy().denseInterval;
   uint64_t first, end, seed;
   const std::vector<uint8_t>* initial = nullptr;
+  const Checkpoint* seedCp = nullptr;
   if (mode_ == Mode::Practice) {
     size_t k = pSnaps_.size();
     while (k && pSnaps_[k - 1].count > target - 1) --k;
@@ -241,15 +256,16 @@ uint64_t Session::prefetchOlderRewindBlock(uint64_t target, uint64_t budget, uin
     end = (target - 1) / interval * interval;
     if (!end) return 0;
     first = end - interval;
-    const auto* cp = cps_.best(first, tl_);
-    seed = cp ? cp->frame : 0;
-    if (seed) initial = &cp->data;
+    seedCp = cps_.best(first, tl_);
+    seed = seedCp ? seedCp->frame : 0;
     // Take frame zero is always fresh power-on, never a serialized state.
     first = std::max<uint64_t>(1, first);
   }
   if (first >= end || (rewindState(first) && rewindState(end - 1))) return 0;
   auto& work = rewindPrefetch_;
   if (work.end != end || work.block.first != first) {
+    std::vector<uint8_t> loaded;  // an offloaded seed, read when the block starts (not every tick)
+    if (seed && seedCp && !checkpointData(*seedCp, loaded, initial).ok()) return 0;
     work = {};
     work.block.first = first;
     work.next = seed;
@@ -321,7 +337,12 @@ Status Session::warmRewindGap(uint64_t target, uint32_t budgetFrames, bool idle)
     } else if (!seed) {
       RN_TRY(warmCore_->loadContent(romPath_, rom_.data(), rom_.size()));
     }
-    if (seed) RN_TRY(warmCore_->loadState(cp->data.data(), cp->data.size()));
+    if (seed) {
+      std::vector<uint8_t> scratch;
+      const std::vector<uint8_t>* d = nullptr;
+      RN_TRY(checkpointData(*cp, scratch, d));
+      RN_TRY(warmCore_->loadState(d->data(), d->size()));
+    }
     warmNext_ = seed;
     warmEnd_ = end;
   }
@@ -386,7 +407,10 @@ Status Session::resync(uint64_t target, bool forceReload, RewindBlock* block) {
   bool continueCurrent = !forceReload && target > frame_ && (!cp || cp->frame <= frame_);
   if (!continueCurrent) {
     if (cp && cp->frame > 0) {
-      Status st = core_->loadState(cp->data.data(), cp->data.size());
+      std::vector<uint8_t> scratch;
+      const std::vector<uint8_t>* d = nullptr;
+      Status st = checkpointData(*cp, scratch, d);
+      if (st.ok()) st = core_->loadState(d->data(), d->size());
       if (!st.ok()) {
         // Never silently fall back: report the broken cache entry.
         return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
@@ -613,7 +637,14 @@ Status Session::truncateTake() {
     const Checkpoint& c = kv.second;
     if (c.owner != oldId) continue;
     drop.push_back(kv.first);
-    if (c.frame <= frame_ && (c.kind == CpKind::Dense || c.kind == CpKind::Sparse)) keep.push_back(c);
+    if (c.frame <= frame_ && (c.kind == CpKind::Dense || c.kind == CpKind::Sparse)) {
+      keep.push_back(c);
+      if (c.offloaded) {  // a new, unpersisted checkpoint needs its bytes: read back now
+        const std::vector<uint8_t>* d = nullptr;
+        if (checkpointData(c, keep.back().data, d).ok()) keep.back().offloaded = false;
+        else keep.pop_back();  // an unreadable one is only a cache entry less
+      }
+    }
   }
   for (uint64_t c : drop) cps_.remove(c);
   for (Checkpoint& c : keep) cps_.add(c.frame, newId, c.kind, c.compat, c.stateFormatVersion, std::move(c.data));
@@ -647,6 +678,7 @@ Status Session::cursorState(std::vector<uint8_t>& out) {
 void Session::resetPracticeRun(std::vector<uint8_t> base) {
   pSnaps_.clear();
   pInputs_.clear();
+  pSnapBytes_ = base.size();
   pSnaps_.push_back({emuCount_, std::move(base)});
 }
 
@@ -677,6 +709,7 @@ Status Session::leavePractice(Mode to) {
   ++emuEpoch_;
   audioValid_ = false;
   pSnaps_.clear();
+  pSnapBytes_ = 0;
   pInputs_.clear();
   returnState_.clear();
   returnState_.shrink_to_fit();
@@ -724,6 +757,8 @@ Status Session::practiceRewind(uint64_t n) {
     retainRewindBlock(std::move(block));
   }
   pSnaps_.erase(pSnaps_.begin() + ptrdiff_t(k), pSnaps_.end());
+  pSnapBytes_ = 0;
+  for (const PracticeSnap& s : pSnaps_) pSnapBytes_ += s.state.size();
   pInputs_.resize(size_t(target - inputBase));
   emuCount_ = target;  // same epoch: the run from the anchor is still unbroken
   for (auto& p : slots_)
@@ -811,7 +846,10 @@ Status Session::takeStateAt(uint64_t target, std::vector<uint8_t>& out) {
   bool continueCurrent = target >= frame_ && (!cp || cp->frame <= frame_);
   if (!continueCurrent) {
     if (cp && cp->frame > 0) {
-      Status st = core_->loadState(cp->data.data(), cp->data.size());
+      std::vector<uint8_t> scratch;
+      const std::vector<uint8_t>* d = nullptr;
+      Status st = checkpointData(*cp, scratch, d);
+      if (st.ok()) st = core_->loadState(d->data(), d->size());
       if (!st.ok()) return Error(st.code, "checkpoint " + std::to_string(cp->id) + " failed to load: " + st.message);
       frame_ = cp->frame;
     } else {
@@ -983,6 +1021,7 @@ Status Session::reset(bool keepPracticeSlots) {
   clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (mode_ == Mode::Practice) return Error(Err::WrongMode, "cannot reset the project while practicing (leave practice first)");
+  if (store_) store_->settleWrites(*this);  // no write may still read the checkpoints replaced here
   // The previous content, restored if the reset cannot be committed.
   Timeline oldTl = std::move(tl_);
   CheckpointStore oldCps = std::move(cps_);
@@ -1049,11 +1088,11 @@ Status Session::reset(bool keepPracticeSlots) {
   return Status::Ok();
 }
 
-Status Session::autosave() {
+Status Session::autosave(bool waitForStates) {
   clearRewindCache();
   if (mode_ == Mode::Live) return Error(Err::UnsupportedFormat, "recording, persistence and timeline operations are unavailable in live mode");
   if (!store_) return Error(Err::InvalidArg, "session has no project directory (use saveAs)");
-  return store_->autosave(*this);
+  return store_->autosave(*this, waitForStates);
 }
 
 Status Session::saveAs(const std::string& dir) {

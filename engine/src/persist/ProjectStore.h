@@ -8,7 +8,8 @@
 //   metadata/practice.json   human-readable mirror of the practice slots in index.json
 //   journal/journal.bin      append-only records since generation g (CRC32 per record)
 // Full save = write new data files, index (g+1), mirror, manifest (g+1), reset journal, GC.
-// Autosave = write new sparse state files, append journal references/records + fsync.
+// Autosave = append journal records + fsync; new sparse state files are written on a thread of their
+// own (StateWriter) and referenced by the autosave after they are durable.
 // Every write is atomic (temp+fsync+rename) or an
 // fsync'ed append that is truncated back on failure.
 #pragma once
@@ -17,6 +18,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "persist/StateWriter.h"
 
 #include "session/Session.h"
 
@@ -44,7 +47,13 @@ class ProjectStore {
   static Status readManifest(const std::string& dir, std::string& json);
 
   Status fullSave(Session& s);
-  Status autosave(Session& s);
+  /// The journal append. New sparse states are written by writer_ meanwhile and referenced by a later
+  /// autosave (waitForStates: by this one, after waiting for them).
+  Status autosave(Session& s, bool waitForStates);
+  /// Waits for the state files on their way (before the checkpoints are replaced wholesale).
+  void settleWrites(Session& s);
+  /// The bytes of a persisted state (an offloaded sparse checkpoint), checked against its metadata.
+  Status readState(const Checkpoint& meta, std::vector<uint8_t>& out) const;
   const std::string& dir() const { return dir_; }
   uint64_t generation() const { return gen_; }
 
@@ -54,6 +63,7 @@ class ProjectStore {
   Status resetJournal();
   std::string metaJson(const Session& s) const;
   Status applyMeta(Session& s, const std::string& json);
+  void absorbWrites(Session& s, Status& err);  // the writer's finished jobs into their checkpoints
 
   struct PracticeBlob {
     Status status;
@@ -70,6 +80,7 @@ class ProjectStore {
   uint64_t gen_ = 0;
   uint64_t journalBase_ = UINT64_MAX;
   std::string lastMeta_;
+  StateWriter writer_;
 };
 
 }  // namespace rn

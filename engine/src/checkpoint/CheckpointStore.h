@@ -24,9 +24,16 @@ struct Checkpoint {
   CpKind kind = CpKind::Dense;
   std::string compat;
   uint32_t stateFormatVersion = 0;
-  uint32_t crc = 0;  // of data, for what is persisted (not Dense: 0)
+  uint32_t crc = 0;  // of data, for what is persisted (set when its file is written; Dense: 0)
   uint64_t insertSeq = 0;
   bool persisted = false;
+  // A persisted sparse checkpoint whose bytes left memory (CheckpointStore::trimResident): `data` is empty,
+  // Session::checkpointData reads them back from the project.
+  bool offloaded = false;
+  // A sparse state on its way to its file (StateWriter): `data` is read there meanwhile and stays as is.
+  bool writing = false;
+  // Its file is written and durable, its reference (journal / index) is not yet (then: persisted).
+  bool fileWritten = false;
   std::vector<uint8_t> data;
 };
 
@@ -34,6 +41,14 @@ struct CheckpointPolicy {
   uint32_t denseInterval = 30;
   uint32_t denseCapacity = 1200;  // ~10 min of rewind at 30f spacing
   uint32_t sparseInterval = 600;
+  // Bytes the dense checkpoints may hold (oldest dropped first, as by count). Without it a large state
+  // filled memory: 1200 x 22 MB (Sega System 32) = 26 GB; at 1 GiB that game keeps ~45 (23 s), and
+  // rewinding further back starts from the sparse checkpoints.
+  size_t denseBytes = size_t(1) << 30;
+  // Bytes of persisted sparse checkpoints kept in memory (the oldest leave first; read back when used).
+  // Every sparse checkpoint was kept: a 22 MB state is 1.3 GB per 10 minutes of take, and opening a
+  // project read all of them.
+  size_t sparseResidentBytes = size_t(512) << 20;
 };
 
 class CheckpointStore {
@@ -55,14 +70,25 @@ class CheckpointStore {
   uint64_t nextId() const { return nextId_; }
   void setNextId(uint64_t n) { if (n > nextId_) nextId_ = n; }
   size_t memoryBytes() const;
+  /// A buffer of a dropped dense checkpoint, for the next one (empty if none): a large state written
+  /// into fresh memory paid its zero fill and page faults on every checkpoint.
+  std::vector<uint8_t> takeSpare();
+  /// Persisted sparse checkpoints beyond sparseResidentBytes leave memory (oldest first).
+  void trimResident();
+  /// The bytes of removed checkpoints that were being written: freed once no write runs.
+  void releaseHeld() { held_.clear(); }
 
  private:
   void evictDense();
+  void dropped(Checkpoint& c);  // the bookkeeping of a checkpoint leaving the store
   CheckpointPolicy policy_;
   std::map<uint64_t, Checkpoint> byId_;
   uint64_t nextId_ = 1;
   uint64_t seq_ = 0;
   size_t denseCount_ = 0;
+  size_t denseBytes_ = 0;
+  std::vector<std::vector<uint8_t>> spare_;  // at most 2
+  std::vector<std::vector<uint8_t>> held_;   // removed while writing (Checkpoint::writing)
 };
 
 }  // namespace rn

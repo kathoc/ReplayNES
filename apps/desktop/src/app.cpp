@@ -113,9 +113,11 @@ class App {
   bool running_ = true;
   bool fullscreen_ = false;
   bool focused_ = true;  // the window has the input focus (another window in front: false)
+  bool overlay_ = false;  // the system's UI in front (PlatformHooks::systemOverlay, --script "overlay")
   // Screensaver (docs/design/SCREENSAVER.md): the last input, the current demo's start.
   double lastInput_ = 0, screensaverDemoAt_ = 0;
   void updateScreensaver(double now);
+  void updateOverlay(int scripted);
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
   int lastWidth_ = 0;
@@ -208,7 +210,7 @@ void App::updateScreensaver(double now) {
     return;
   }
   const int minutes = settings_.screensaverMinutes;
-  if (minutes <= 0 || now - lastInput_ < minutes * 60.0 || !focused_ || ui_->screensaverBlocked()) return;
+  if (minutes <= 0 || now - lastInput_ < minutes * 60.0 || !focused_ || overlay_ || ui_->screensaverBlocked()) return;
   const EmuStatus& st = emu_->status();
   if (emu_->session() && (!st.paused || st.practicing || st.countdown > 0 || emu_->live())) return;
   if (app_->startScreensaver()) {
@@ -217,6 +219,21 @@ void App::updateScreensaver(double now) {
   } else {
     lastInput_ = now;  // could not leave the session (its work not saved): another full wait
   }
+}
+
+// The Steam menu in gamescope (docs/design/STEAM_OVERLAY_PAUSE.md): no focus event comes, so its
+// coming is a focus loss here, and a game open shows the pause menu, still there when it goes.
+void App::updateOverlay(int scripted) {
+  const bool shown = scripted >= 0 ? scripted > 0 : platform_.systemOverlay && platform_.systemOverlay();
+  if (shown == overlay_) return;
+  overlay_ = shown;
+  std::fprintf(stderr, "input: system overlay %s\n", shown ? "shown" : "gone");
+  if (!shown || !RN_PRODUCT_FOCUS_PAUSE || settings_.playInBackground) return;
+  if (emu_->session() && !app_->screensaverActive()) {
+    if (!emu_->paused()) emu_->setPaused(true);
+    ui_->setMenu(true);  // paused, the pause menu (an open menu stays where it is)
+  }
+  input_->releaseControllers();
 }
 
 void App::handleEvent(const SDL_Event& e, double now) {
@@ -247,7 +264,7 @@ void App::handleEvent(const SDL_Event& e, double now) {
   } else if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
     focused_ = true;
   }
-  if (RN_PRODUCT_FOCUS_PAUSE && !focused_ && !settings_.playInBackground &&
+  if (RN_PRODUCT_FOCUS_PAUSE && (!focused_ || overlay_) && !settings_.playInBackground &&
       (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP ||
        e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN ||
        e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION || e.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP))
@@ -668,6 +685,7 @@ int App::run(const AppOptions& opt) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
     input_->tick(nowSeconds());  // L or R held alone past the chord window fires now
+    updateOverlay(script ? script->overlay : -1);
     updateScreensaver(nowSeconds());
     if (!running_) break;
     rec.polled = nowSeconds();

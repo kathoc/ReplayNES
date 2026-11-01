@@ -1,6 +1,7 @@
 // Platform file layer. The ONLY place in the engine with OS-specific calls
 // (fsync / FlushFileBuffers, directory sync). Everything else uses these wrappers.
 #pragma once
+#include <initializer_list>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -18,6 +19,12 @@ Status readFile(const std::string& path, std::vector<uint8_t>& out);
 Status readText(const std::string& path, std::string& out);
 // temp file in same directory -> write -> flush+fsync -> rename over target -> fsync directory.
 Status writeFileAtomic(const std::string& path, const void* data, size_t n);
+// The same for a file in parts (written one after another; nothing is copied together first).
+struct FilePart {
+  const void* data;
+  size_t n;
+};
+Status writeFileAtomic(const std::string& path, std::initializer_list<FilePart> parts);
 inline Status writeFileAtomic(const std::string& path, const std::string& s) {
   return writeFileAtomic(path, s.data(), s.size());
 }

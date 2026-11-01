@@ -1520,7 +1520,7 @@ void EmulationController::maybeAutosave(double slack) {
     st = rn_session_save(s);
     if (st == RN_OK) lastFullSave_ = now;
   } else {
-    st = rn_session_autosave(s);
+    st = rn_session_autosave_background(s);  // while playing: the frame thread does not wait for state files
   }
   if (st == RN_OK) {
     autosaveFailed_ = false;

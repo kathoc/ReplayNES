@@ -103,11 +103,12 @@ add_executable(${RN_PRODUCT_EXECUTABLE}
   src/vk_ui_resources.cpp
   src/fonts_fontconfig.cpp
   src/update_service_flatpak.cpp
+  src/gamescope_overlay.cpp
   ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
   ${SHADER_INCS})
 target_include_directories(${RN_PRODUCT_EXECUTABLE} PRIVATE src ${SHADER_OUT})
 target_link_libraries(${RN_PRODUCT_EXECUTABLE} PRIVATE rnl_app rnl_crt_export rnl_render rnl_export SDL3::SDL3 Vulkan::Vulkan
-  PkgConfig::FONTCONFIG Threads::Threads)
+  PkgConfig::FONTCONFIG Threads::Threads ${CMAKE_DL_LIBS})
 target_compile_options(${RN_PRODUCT_EXECUTABLE} PRIVATE ${RNL_WARNINGS})
 if(RN_PRODUCT_STARTUP_TARGET)
   if(NOT TARGET ${RN_PRODUCT_STARTUP_TARGET})

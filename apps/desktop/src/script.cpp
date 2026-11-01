@@ -192,6 +192,9 @@ void Script::step(double now) {
       e.window.windowID = windowId ? windowId() : 0;
       SDL_PushEvent(&e);
       return;
+    } else if (op == "overlay") {  // on | off: the system's UI in front (the Steam menu in gamescope)
+      overlay = arg(1, "on") == "on" ? 1 : 0;
+      continue;
     } else if (op == "mousemove") {  // <dx> <dy> [<frames>]: relative motion, spread over frames (60 Hz)
       const int n = std::max(1, std::atoi(arg(3, "1").c_str()));
       const double dx = std::atof(arg(1, "0").c_str()) / n, dy = std::atof(arg(2, "0").c_str()) / n;

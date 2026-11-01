@@ -18,6 +18,7 @@
 //                           held <s> seconds (default: released at once)
 //   wheel <y> [<x>]         mouse wheel notches (+y = up / away from the user, +x = right)
 //   focus lost|gained       the window loses / gets the input focus (another window in front)
+//   overlay on|off          the system's UI in front without a focus change (the Steam menu in gamescope)
 //   mousemove <dx> <dy> [<frames>]   relative mouse motion (a captured mouse), spread over frames
 //   mousebutton left|right|middle [<s>]  a mouse button press held <s> seconds (default 0.05)
 //   osktype <text>          types <text> on the built-in on-screen keyboard
@@ -62,6 +63,8 @@ class Script {
   /// The window injected mouse events go to.
   std::function<SDL_WindowID()> windowId;
   std::function<bool()> mouseCaptured;  // "status": mouse= (the game has the mouse)
+  /// "overlay on|off": stands in for PlatformHooks::systemOverlay (-1: not scripted).
+  int overlay = -1;
   /// Layout check failures so far (the exit code of a scripted run).
   int failures = 0;
 

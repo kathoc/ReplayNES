@@ -162,7 +162,9 @@ class Session {
 
   // --- persistence
   Status save();
-  Status autosave();
+  /// waitForStates false (rn_session_autosave_background, every few seconds while playing): new sparse
+  /// state files are written on another thread and referenced by a later autosave; true: by this one.
+  Status autosave(bool waitForStates = true);
   Status saveAs(const std::string& dir);
   // "Reset Project": the project starts over from power-on (frame 0, record mode, empty
   // timeline: every take, bookmark, checkpoint and the take undo history are dropped). Same ROM
@@ -173,6 +175,8 @@ class Session {
   // practice.
   Status reset(bool keepPracticeSlots);
   bool hasProject() const { return store_ != nullptr; }
+  /// A checkpoint's bytes: in memory, or read back from the project into `scratch` (offloaded).
+  Status checkpointData(const Checkpoint& c, std::vector<uint8_t>& scratch, const std::vector<uint8_t>*& out) const;
   bool recovered() const { return recovered_; }
   bool unsavedChanges() const { return mode_ != Mode::Live && changeSeq_ != savedSeq_; }
   std::string projectDir() const;
@@ -272,6 +276,8 @@ class Session {
     std::vector<uint8_t> state;
   };
   std::deque<PracticeSnap> pSnaps_;      // every denseInterval frames, front = oldest
+  size_t pSnapBytes_ = 0;                // their states' bytes (CheckpointPolicy::denseBytes)
+  std::vector<uint8_t> pSpare_;          // the last dropped one's state, for the next
   std::vector<InputRecord> pInputs_;     // inputs applied since pSnaps_.front().count
 };
 

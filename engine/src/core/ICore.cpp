@@ -1,4 +1,6 @@
 #include "core/ICore.h"
+
+#include <algorithm>
 #include "replaynes/product.h"
 
 #include "core/MockCore.h"
@@ -162,8 +164,14 @@ uint8_t* begin(std::vector<uint8_t>& out, const std::string& compat, uint64_t fr
   w.u64(frame);
   w.u64(n);
   const size_t header = w.buf.size();
-  out.swap(w.buf);
-  out.resize(header + n);
+  if (out.size() == header + n) {
+    // A recycled buffer of the same layout (CheckpointStore::takeSpare): no fresh memory to zero and
+    // fault in, only the header rewritten.
+    std::copy(w.buf.begin(), w.buf.end(), out.begin());
+  } else {
+    out.swap(w.buf);
+    out.resize(header + n);
+  }
   return out.data() + header;
 }
 

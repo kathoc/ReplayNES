@@ -222,7 +222,10 @@ rn_status rn_session_save(rn_session* s) {
   return guard([&] { return s ? ret(s->s->save()) : invalid("null session"); });
 }
 rn_status rn_session_autosave(rn_session* s) {
-  return guard([&] { return s ? ret(s->s->autosave()) : invalid("null session"); });
+  return guard([&] { return s ? ret(s->s->autosave(true)) : invalid("null session"); });
+}
+rn_status rn_session_autosave_background(rn_session* s) {
+  return guard([&] { return s ? ret(s->s->autosave(false)) : invalid("null session"); });
 }
 rn_status rn_session_reset(rn_session* s, int keep_practice_slots) {
   return guard([&] { return s ? ret(s->s->reset(keep_practice_slots != 0)) : invalid("null session"); });

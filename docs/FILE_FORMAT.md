@@ -168,6 +168,18 @@ leaves an unreferenced file; a torn reference is discarded by the usual tail rec
 full save includes recovered sparse checkpoints in the index and collects unreferenced files.
 Call every few seconds; already-persisted sparse checkpoints are not written again.
 
+**Background autosave** (`rn_session_autosave_background`, what the desktop app calls while
+playing): the same journal append, but the state files are written by a thread of the project
+(`persist/StateWriter`: checksums, file, fsync) and their SPARSE_STATE references go into the
+first autosave of either kind after the file is durable; the frame thread never waits for a state
+file. `rn_session_autosave`, `rn_session_save` and a project reset wait for the files on their way.
+
+**In memory**: dense checkpoints are bounded by count and bytes (`CheckpointPolicy::denseBytes`,
+1 GiB); persisted sparse checkpoints beyond `sparseResidentBytes` (512 MiB) leave memory, oldest
+first, and are read back from `states/<id>.state` (checked against the index / journal metadata)
+when a seek, a resync or an export starts from one. Opening reads the state files one at a time
+under the same bound. See docs/design/CHECKPOINT_COST.md.
+
 ## Open / recovery rules
 
 1. `manifest.json` must parse; `format` must match; `formatVersion` > supported → `RN_ERR_UNSUPPORTED_FORMAT`;

@@ -137,7 +137,9 @@ Status syncDir(const std::string& path) {
 #endif
 }
 
-Status writeFileAtomic(const std::string& path, const void* data, size_t n) {
+Status writeFileAtomic(const std::string& path, const void* data, size_t n) { return writeFileAtomic(path, {{data, n}}); }
+
+Status writeFileAtomic(const std::string& path, std::initializer_list<FilePart> parts) {
   stdfs::path target = stdfs::u8path(path);
   stdfs::path dir = target.parent_path();
   std::string tmp = (dir / stdfs::u8path("." + target.filename().u8string() + ".tmp" +
@@ -145,7 +147,9 @@ Status writeFileAtomic(const std::string& path, const void* data, size_t n) {
                         .u8string();
   std::FILE* f = openFile(tmp, "wb");
   if (!f) return ioErr("create", tmp, errno);
-  int e = checkedWrite(f, data, n);
+  int e = 0;
+  for (const FilePart& part : parts)
+    if (!e) e = checkedWrite(f, part.data, part.n);
   if (!e) e = flushAndSync(f);
   std::fclose(f);
   if (e) {

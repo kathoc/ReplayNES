@@ -11,7 +11,9 @@ Status OfflineRenderer::create(const Session& s, uint64_t start, uint64_t end, s
   // Copies: the session may keep changing.
   const Checkpoint* cp = start > 0 ? s.checkpoints().best(start, s.timeline()) : nullptr;
   if (cp && cp->frame > 0) {
-    r->seed_ = cp->data;
+    const std::vector<uint8_t>* d = nullptr;
+    RN_TRY(s.checkpointData(*cp, r->seed_, d));
+    if (d != &r->seed_) r->seed_ = *d;
     r->recBase_ = cp->frame;
     r->recs_.reserve(size_t(end - cp->frame));
     for (uint64_t f = cp->frame; f < end; ++f) {
