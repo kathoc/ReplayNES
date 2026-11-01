@@ -13,7 +13,7 @@ the game picture enlarged, blurred and slightly dimmed; on every platform; can b
   screen with the picture's aspect, centered; cut to the screen (cropBackdrop: a viewport within the
   device's limits, the source cut alike, for the four rotations); brightness 0.6.
 - The blur: a copy of each new picture with its full mip chain, read at the level whose long side is
-  about 24 texels, a 3 x 3 tent of trilinear samples there. Display only (no emulation state, no
+  about 12 texels (24 at first; user 2026-11-01: more clearly blurred), a 3 x 3 tent of trilinear samples there. Display only (no emulation state, no
   recording, no export).
 - Vulkan (Linux / Steam Deck): VkBackdrop (vkCmdBlitImage copy and mip chain, backdrop.frag with
   the picture's blit.vert). D3D11 (Windows) and Metal (macOS, iOS): the same plan and the same blur

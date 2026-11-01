@@ -16,7 +16,7 @@ struct BackdropPlan {
   float dim = 0;                     // brightness factor
 };
 
-constexpr float kBackdropTexels = 24.f;  // the blur: the picture seen through about 24 texels across
+constexpr float kBackdropTexels = 12.f;  // the blur: the picture seen through about 12 texels across (user: "more clearly blurred")
 constexpr float kBackdropDim = 0.6f;     // slightly darker than the picture (user decision 2026-11-01)
 
 /// `pic*`: the rectangle the picture is drawn in; `srcW` x `srcH`: the backdrop texture's level 0.
