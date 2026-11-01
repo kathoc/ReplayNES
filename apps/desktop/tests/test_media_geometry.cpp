@@ -47,6 +47,44 @@ TEST_CASE("media game rectangle follows rotation and pixel aspect") {
   CHECK_EQ(smaller.h, 720);
 }
 
+TEST_CASE("bezel: fitted into the screen, the game laid out in its window") {
+  // ReplayArcade's: 1586 x 992, the window at 321,98 944 x 739.
+  const BezelLayout deck = placeBezel(1280, 800, 1586, 992, 321, 98, 944, 739);  // Steam Deck, 16:10
+  CHECK_EQ(deck.w, 1279);
+  CHECK_EQ(deck.h, 800);
+  CHECK_EQ(deck.x, 1);
+  CHECK_EQ(deck.y, 0);
+  CHECK_EQ(deck.wx, 260);
+  CHECK_EQ(deck.wy, 79);
+  CHECK_EQ(deck.ww, 761);
+  CHECK_EQ(deck.wh, 596);
+  const BezelLayout wide = placeBezel(1920, 1080, 1586, 992, 321, 98, 944, 739);  // 16:9: bars left and right
+  CHECK_EQ(wide.w, 1727);
+  CHECK_EQ(wide.h, 1080);
+  CHECK_EQ(wide.x, 97);
+  CHECK_EQ(wide.wx, 446);
+  CHECK_EQ(wide.ww, 1028);
+  CHECK_EQ(wide.wh, 805);
+  CHECK_EQ(placeBezel(0, 800, 1586, 992, 321, 98, 944, 739).w, 0);
+  // The picture of the test above (320 x 224, pixels 4:3 wide) in the Deck's window: as large as the
+  // window allows, centred in it.
+  rn_media_info m{320, 224, 5963, 100, 2, 4, 3, 0};
+  rn_video_frame_info f{nullptr, 320, 224, 336};
+  const GameRect g = moveIntoBezel(computeGameRect(int(deck.ww), int(deck.wh), m, f, false, true, false), deck);
+  REQUIRE(g.visible);
+  CHECK_EQ(g.w, 761);
+  CHECK_EQ(g.h, 400);
+  CHECK_EQ(g.x, 260);
+  CHECK_EQ(g.y, 79 + 98);
+  CHECK(g.x >= deck.wx && g.x + g.w <= deck.wx + deck.ww && g.y >= deck.wy && g.y + g.h <= deck.wy + deck.wh);
+  // Integer scale inside the window: whole multiples that fit it.
+  const GameRect i = moveIntoBezel(computeGameRect(int(deck.ww), int(deck.wh), m, f, true, false, false), deck);
+  CHECK_EQ(i.w, 640);
+  CHECK_EQ(i.h, 448);
+  CHECK_EQ(i.x, 260 + 61);
+  CHECK_EQ(i.y, 79 + 74);
+}
+
 TEST_CASE("media NES game rectangle equals legacy placement") {
   rn_media_info m{256, 240, RN_FPS_NUM, RN_FPS_DEN, 1, 8, 7, 0};
   rn_video_frame_info f{nullptr, 256, 240, 256};

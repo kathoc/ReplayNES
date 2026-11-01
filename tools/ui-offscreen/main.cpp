@@ -9,6 +9,7 @@
 #include "png_writer.h"
 #include "renderer.h"
 #include "settings.h"
+#include "replaynes/product.h"
 #include "thumbnails.h"
 #include "ui.h"
 #include "imgui.h"
@@ -197,6 +198,21 @@ int main(int argc,char** argv) {
         input.handleEvent(e,1,false); check(input.pad(0).name=="Pad B","Pad B is not player 1"); draw(); draw();
         renderer.requestScreenshot((out/"player-order-2.png").string());
         input.endPlayerOrder(); draw();
+      }
+      // The product's bezel (RN_PRODUCT_BEZEL_PNG at configure time): a horizontal game with it, then without.
+      if(RN_PRODUCT_BEZEL) {
+        std::vector<uint8_t> rom(16+16384+8192); rom[0]='N';rom[1]='E';rom[2]='S';rom[3]=26;rom[4]=1;rom[5]=1;
+        rom[16]=0x78;rom[17]=0x4c;rom[18]=1;rom[19]=0x80;
+        for(int i=0;i<3;++i) rom[16+0x3ffb+i*2]=0x80;
+        auto path=out/"bezel-test.nes"; { std::ofstream f(path,std::ios::binary); f.write(reinterpret_cast<char*>(rom.data()),rom.size()); }
+        app.tryRom(path.string()); check(emu.session()!=nullptr,"bezel test ROM did not open"); ui.setMenu(false);
+        for(int i=0;i<10;++i) emu.tick();
+        check(settings.bezel,"bezel is not on by default");
+        check(ui.bezelLayout(1280,800).has_value(),"no bezel for a horizontal game");
+        draw(); draw(); renderer.requestScreenshot((out/"bezel-on.png").string());
+        settings.bezel=false; check(!ui.bezelLayout(1280,800),"bezel shown with the setting off"); draw(); draw();
+        renderer.requestScreenshot((out/"bezel-off.png").string());
+        settings.bezel=true; app.closeProject(); draw();
       }
       // The library with two pages of cartridges: the next page peeks in at the right edge, and the
       // cards without a picture get their frame-300 picture from a background run.

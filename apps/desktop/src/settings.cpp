@@ -50,6 +50,7 @@ Settings Settings::parse(const std::string& text) {
     bool num = parseNumber(v, &d);
     if (k == "integerScale") s.integerScale = parseBool(v, s.integerScale);
     else if (k == "par87") s.par87 = parseBool(v, s.par87);
+    else if (k == "bezel") s.bezel = parseBool(v, s.bezel);
 #if RN_PRODUCT_OVERSCAN_CROP
     else if (k == "hideOverscan") s.hideOverscan = parseBool(v, s.hideOverscan);
 #else
@@ -102,6 +103,7 @@ std::string Settings::serialize() const {
   o << "# " RN_PRODUCT_NAME " (Linux) settings\n";
   o << "integerScale=" << int(integerScale) << "\n";
   o << "par87=" << int(par87) << "\n";
+  o << "bezel=" << int(bezel) << "\n";
 #if RN_PRODUCT_OVERSCAN_CROP
   o << "hideOverscan=" << int(hideOverscan) << "\n";
 #else

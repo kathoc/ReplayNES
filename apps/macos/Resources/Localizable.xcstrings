@@ -8514,6 +8514,26 @@
           }
         }
       }
+    },
+    "Bezel": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベゼル"
+          }
+        }
+      }
+    },
+    "A cabinet frame around horizontal games": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "横画面のゲームの周りに筐体の枠を表示"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

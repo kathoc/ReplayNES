@@ -59,4 +59,27 @@ GameRect computeGameRect(int width, int height, const rn_media_info& media,
   return r;
 }
 
+BezelLayout placeBezel(int screenW, int screenH, int imageW, int imageH, int winX, int winY, int winW, int winH) {
+  BezelLayout b;
+  if (screenW <= 0 || screenH <= 0 || imageW <= 0 || imageH <= 0 || winW <= 0 || winH <= 0) return b;
+  const double s = std::min(double(screenW) / imageW, double(screenH) / imageH);
+  b.w = float(std::round(imageW * s));
+  b.h = float(std::round(imageH * s));
+  b.x = float(std::round((screenW - b.w) / 2));
+  b.y = float(std::round((screenH - b.h) / 2));
+  b.wx = float(std::round(b.x + winX * s));
+  b.wy = float(std::round(b.y + winY * s));
+  b.ww = float(std::round(winW * s));
+  b.wh = float(std::round(winH * s));
+  return b;
+}
+
+GameRect moveIntoBezel(GameRect r, const BezelLayout& b) {
+  r.x += b.wx;
+  r.y += b.wy;
+  r.crt.x += b.wx;
+  r.crt.y += b.wy;
+  return r;
+}
+
 }  // namespace rnl

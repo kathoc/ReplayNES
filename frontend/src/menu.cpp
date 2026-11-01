@@ -49,7 +49,7 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
                    F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND,
-                   F_MOUSE = RNF_MENU_FEATURE_MOUSE;
+                   F_MOUSE = RNF_MENU_FEATURE_MOUSE, F_BEZEL = RNF_MENU_FEATURE_BEZEL;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -141,6 +141,8 @@ const std::vector<ItemDef>& items() {
       // Display > Picture Shape.
       {"display.shape", "display.par87", RNF_L("8:7 Pixels"), RNF_L("The pixel shape of a CRT TV"), "aspect-ratio", TOGGLE,
        "", 0, {}},
+      {"display.shape", "display.bezel", RNF_L("Bezel"), RNF_L("A cabinet frame around horizontal games"), "device-tv-old",
+       TOGGLE, "", F_BEZEL, {}},
 #if RN_PRODUCT_OVERSCAN_CROP
       {"display.shape", "display.overscan", RNF_L("Hide Edges"), RNF_L("Hides 8 pixels on each side, like a TV"),
        "crop", TOGGLE, "", 0, {}},
