@@ -530,6 +530,76 @@ TEST_CASE("P the mouse is off by default; a pad or a game key puts its stick bac
   CHECK_EQ(axisAt(r, 9), 0);
 }
 
+TEST_CASE("P stick shape: rest, past the core's dead zone, square travel for a two-axis stick") {
+  using rnl::shapeStick;
+  using rnl::StickShape;
+  const StickShape off{};
+  auto pr = shapeStick(0.03f, -0.5f, off);
+  CHECK_EQ(pr.first, 0.03f);  // no hint: the raw position
+  CHECK_EQ(pr.second, -0.5f);
+  const StickShape round{true, false, 0.334f}, square{true, true, 0.334f};
+  pr = shapeStick(0.05f, 0.02f, round);  // inside the rest radius: the centre
+  CHECK_EQ(pr.first, 0.f);
+  CHECK_EQ(pr.second, 0.f);
+  pr = shapeStick(0.08f, 0.f, round);  // just out of it: just past the core's dead zone, nothing on y
+  CHECK(pr.first > 0.334f);
+  CHECK(pr.first < 0.36f);
+  CHECK_EQ(pr.second, 0.f);
+  pr = shapeStick(1.f, 0.01f, square);  // straight right with a little noise on y
+  CHECK(std::fabs(pr.first - 1.f) < 1e-4f);
+  CHECK_EQ(pr.second, 0.f);
+  const float d = std::sqrt(0.5f);
+  pr = shapeStick(d, -d, square);  // a round stick's full diagonal reaches the square's corner
+  CHECK(std::fabs(pr.first - 1.f) < 1e-4f);
+  CHECK(std::fabs(pr.second + 1.f) < 1e-4f);
+  pr = shapeStick(d, -d, round);  // without the hint it stays on the circle
+  CHECK(pr.first < 0.95f);
+  // Smooth: along a direction the value never goes back and steps by little.
+  float last = 0;
+  for (int i = 7; i <= 100; ++i) {
+    const float v = shapeStick(i / 100.f * 0.8f, i / 100.f * 0.6f, square).first;
+    CHECK(v >= last);
+    if (last > 0) CHECK(v - last < 0.02f);
+    last = v;
+  }
+}
+
+TEST_CASE("P a controller's left stick on a flight stick gets the shape the layout's hints ask for") {
+  const char* squareLayout = R"({"name":"fbneo:sq","recordBytes":11,"buttons":[{"id":"p1.b1","byte":3,"bit":0},{"id":"p1.coin","byte":3,"bit":2},{"id":"p1.start","byte":3,"bit":3},{"id":"p1.up","byte":4,"bit":0},{"id":"p1.down","byte":4,"bit":1},{"id":"p1.left","byte":4,"bit":2},{"id":"p1.right","byte":4,"bit":3}],"axes":[{"id":"p1.axis.x","byte":5,"deadzone":0.334,"square":true},{"id":"p1.axis.y","byte":7,"deadzone":0.334,"square":true}]})";
+  Files files;
+  Devices devices;
+  rnl::Settings settings;
+  rnl::InputRouter router((files.root / "bindings.json").string(), &settings);
+  router.setLayout(squareLayout);
+  const auto id = devices.add("Pad", 0x0101);
+  connect(router, id);
+  auto move = [&](int axis, int16_t v, double t) {
+    SDL_Event a{};
+    a.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
+    a.gaxis.which = id;
+    a.gaxis.axis = Uint8(axis);
+    a.gaxis.value = v;
+    router.handleEvent(a, t, false);
+  };
+  // A full diagonal (SDL: y down) reaches both ends.
+  move(SDL_GAMEPAD_AXIS_LEFTX, 23170, 1);
+  move(SDL_GAMEPAD_AXIS_LEFTY, -23170, 1.01);
+  rn_input_record r = sample(router, 0);
+  CHECK(std::abs(std::abs(axisAt(r, 5)) - 32767) <= 2);
+  CHECK(std::abs(std::abs(axisAt(r, 7)) - 32767) <= 2);
+  // A little push right: just past the game's dead zone (the smallest motion moves it).
+  move(SDL_GAMEPAD_AXIS_LEFTY, 0, 2);
+  move(SDL_GAMEPAD_AXIS_LEFTX, 3000, 2.01);
+  r = sample(router, 1);
+  const int x = std::abs(axisAt(r, 5));
+  CHECK(x > int(0.334f * 32767));
+  CHECK(x < int(0.37f * 32767));
+  CHECK_EQ(axisAt(r, 7), 0);
+  // At rest (drift): nothing.
+  move(SDL_GAMEPAD_AXIS_LEFTX, 1200, 3);
+  CHECK_EQ(axisAt(sample(router, 2), 5), 0);
+}
+
 TEST_CASE("P players: a controller connected takes player 1 from the Steam Deck's own controls, which get it back") {
   Files files;
   Devices devices;

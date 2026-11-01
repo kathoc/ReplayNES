@@ -624,10 +624,7 @@ void UI::buildPlayers(double now) {
   bool any = false;
   for (int s = 0; s < n; ++s) any = any || d_.input->pad(s).pad != nullptr;
   if (!any) return;  // keyboard / touch only
-  const double since = now - d_.input->playersChanged();
-  const bool paused = d_.emu->status().paused;
-  const float a = paused || since < 4.6 ? 1.0f : since < 5.0 ? float((5.0 - since) / 0.4) : 0.0f;
-  if (a <= 0) return;
+  const float a = 1.0f;  // always shown: which controller is which player is never a guess
   const UiMetrics& m = metrics_;
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   const float h = pill_.h > 0 ? pill_.h : m.label() + 14 * m.s;

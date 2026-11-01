@@ -52,9 +52,12 @@ struct InputLayout {
     uint16_t byte = 0;    // int16 little-endian at [byte, byte + 1]
     // Hints for the frontend, not part of the stored layout (toJson(false), ==): the value is a
     // speed (a dial, a trackball: moved by a mouse's motion) rather than a position (a stick, a
-    // lever), and the core ignores values below `deadzone` (0..1) in magnitude.
+    // lever), and the core ignores values below `deadzone` (0..1) in magnitude. `square`: one of a
+    // stick's two axes whose travel is a square (an arcade flight stick, a gun's aim): a round
+    // controller stick's diagonals should reach both axes' ends.
     bool relative = false;
     float deadzone = 0;
+    bool square = false;
   };
   std::string name;       // "nes" for the NES layout; otherwise the core's name for it
   uint32_t recordBytes = 3;

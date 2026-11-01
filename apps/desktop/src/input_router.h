@@ -29,6 +29,7 @@
 
 #include "replaynes/frontend.h"
 #include "replaynes/replaynes.h"
+#include "stick_shape.h"
 #include "ui_logic.h"
 
 namespace rnl {
@@ -51,7 +52,10 @@ struct PadInfo {
   // The machine's own controls (a Steam Deck's, a Steam Controller): player 1 while no other controller
   // is; waiting aside (standby) while one is (InputRouter::attach).
   bool builtIn = false;
-  std::string key;          // this controller's identity across a disconnect (serial, or guid + name)
+  // Steam Input's player (0 = player 1) of a Steam virtual gamepad ("Microsoft X-Box 360 pad N" on
+  // Linux): Steam decides who is which player there, the user reorders them in Steam; -1 otherwise.
+  int steamSlot = -1;
+  std::string key;         // this controller's identity across a disconnect (serial, or guid + name)
   double lastPress = -1e9;  // CLOCK_MONOTONIC s of its last button (the player indicator)
 };
 
@@ -223,6 +227,8 @@ class InputRouter {
   int slotOf(SDL_JoystickID id) const;
   void attach(SDL_JoystickID id);
   void detach(SDL_JoystickID id);
+  void describe(PadInfo& p);              // name, identity, kind and labels, as SDL tells them now
+  void steamInfoChanged(SDL_JoystickID id);  // Steam moved another controller behind this virtual pad
 
   void mouseEvent(const SDL_Event& e, double t);
   void setMouseAxes();
@@ -237,6 +243,17 @@ class InputRouter {
   float mouseX_ = 0, mouseY_ = 0, mouseLever_ = 0, mouseDx_ = 0, mouseDy_ = 0;
   int wheelPress_ = 0;
   float stickDeadzone_ = 0, dialDeadzone_ = 0;
+  // Controller sticks driving an analog axis with hints ("gc0:lstick" ...): how their position is
+  // shaped for the game (stick_shape.h). Rebuilt with the bindings.
+  std::map<std::string, StickShape> stickShape_;
+  // Diagnostics: a file "debug-input" next to the bindings (or <PREFIX>DEBUG_INPUT set) logs each pad
+  // press / release, where it went and the game bindings of the controller slots (stderr).
+  bool debugInput_ = false;
+
+ public:
+  bool debugInput() const { return debugInput_; }
+
+ private:
   int editingSlot_ = -1;
   std::map<std::string, KindOverride> kindOverrides_;
   std::string file_;

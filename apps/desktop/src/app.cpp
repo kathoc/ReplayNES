@@ -180,6 +180,13 @@ void App::handleEvent(const SDL_Event& e, double now) {
   // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
   // game pauses and the controllers reach neither the game nor the menus until the window is back.
   // The game stays paused then (play resumes when the player says so).
+  if (input_->debugInput()) {
+    if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST || e.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+      std::fprintf(stderr, "input: window focus %s\n", e.type == SDL_EVENT_WINDOW_FOCUS_GAINED ? "gained" : "lost");
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
+      std::fprintf(stderr, "input: SDL gamepad %u button %d down (focused %d, play in background %d)\n", unsigned(e.gbutton.which),
+                   int(e.gbutton.button), int(focused_), int(settings_.playInBackground));
+  }
   if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
     focused_ = false;
     if (RN_PRODUCT_FOCUS_PAUSE && !settings_.playInBackground) {

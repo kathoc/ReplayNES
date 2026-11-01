@@ -91,6 +91,7 @@ std::string InputLayout::toJson(bool hints) const {
     e.set("byte", uint32_t(a.byte));
     if (hints && a.relative) e.set("relative", true);
     if (hints && a.deadzone > 0) e.set("deadzone", double(a.deadzone));
+    if (hints && a.square) e.set("square", true);
     as.push(e);
   }
   j.set("axes", as);
@@ -132,6 +133,7 @@ Status InputLayout::fromJson(const std::string& text, InputLayout& out) {
     a.byte = uint16_t(byte);
     a.relative = e["relative"].asBool(false);
     a.deadzone = float(e["deadzone"].asDouble(0));
+    a.square = e["square"].asBool(false);
     l.axes.push_back(a);
   }
   for (const Json& e : j["opposite"].items()) l.opposite.push_back({e.at(0).asString(), e.at(1).asString()});
