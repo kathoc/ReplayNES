@@ -114,6 +114,7 @@ class App {
   bool fullscreen_ = false;
   bool focused_ = true;  // the window has the input focus (another window in front: false)
   bool overlay_ = false;  // the system's UI in front (PlatformHooks::systemOverlay, --script "overlay")
+  bool overlayArmed_ = false;  // the window was in front once (before that it is the launch, not a menu)
   // Screensaver (docs/design/SCREENSAVER.md): the last input, the current demo's start.
   double lastInput_ = 0, screensaverDemoAt_ = 0;
   void updateScreensaver(double now);
@@ -225,10 +226,15 @@ void App::updateScreensaver(double now) {
 // coming is a focus loss here, and a game open shows the pause menu, still there when it goes.
 void App::updateOverlay(int scripted) {
   const bool shown = scripted >= 0 ? scripted > 0 : platform_.systemOverlay && platform_.systemOverlay();
-  if (shown == overlay_) return;
+  if (shown == overlay_) {
+    if (!shown) overlayArmed_ = true;
+    return;
+  }
   overlay_ = shown;
   std::fprintf(stderr, "input: system overlay %s\n", shown ? "shown" : "gone");
-  if (!shown || !RN_PRODUCT_FOCUS_PAUSE || settings_.playInBackground) return;
+  // Steam's UI is in front while the app starts, until gamescope shows its window: not the Steam menu.
+  if (!shown) overlayArmed_ = true;
+  if (!shown || !overlayArmed_ || !RN_PRODUCT_FOCUS_PAUSE || settings_.playInBackground) return;
   if (emu_->session() && !app_->screensaverActive()) {
     if (!emu_->paused()) emu_->setPaused(true);
     ui_->setMenu(true);  // paused, the pause menu (an open menu stays where it is)

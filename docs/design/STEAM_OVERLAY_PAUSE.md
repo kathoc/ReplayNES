@@ -21,6 +21,8 @@ front, 769 for Steam's own UI (read on a Deck: the library shown, `GAMESCOPE_FOC
   game pauses, the controllers are released and kept from the game and the menus while it is shown;
   and with a game open (not the screensaver demo) the pause menu opens (UI::setMenu(true): paused,
   "quick" page). When it goes, nothing happens: the game stays paused with the menu open.
+- Only after the window was in front once: while the app starts, Steam's UI is in front until
+  gamescope shows the window (seen on a Deck: a game opened from the command line paused at once).
 - The screensaver does not start while it is shown (as while the window is not focused).
 - `--script "overlay on|off"` stands in for the hook (tools/ui-offscreen, the tests).
 
