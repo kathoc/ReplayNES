@@ -188,6 +188,7 @@ class VkRenderer final : public Renderer {
   VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
   VkPipeline pipeline_ = VK_NULL_HANDLE;
   VkBackdrop backdrop_;  // the blurred backdrop (DisplayPostProcess::backdrop)
+  uint64_t backdropPictures_ = 0;
   bool imguiReady_ = false;
   bool imguiWanted_ = false;  // initImGui() was called (the backend comes back with a new device)
   double lastAcquireWait_ = 0;

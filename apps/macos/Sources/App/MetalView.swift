@@ -17,7 +17,7 @@ struct DisplayOptions: Equatable {
     var pixelAspect87 = false
     var hideOverscan = true
     /// The empty sides show the picture enlarged, blurred and dimmed (docs/design/BACKDROP.md).
-    var backdrop = true
+    var backdrop = 1  // 0 off, 1 low, 2 standard, 3 high (render/backdrop.h backdropTexels)
 }
 
 /// GPU execution of a new frame's command buffers (host-clock seconds, earliest start to latest
@@ -428,7 +428,7 @@ final class GameRenderer {
                 bcb.commit()
             }
             if crt.hasOutput, let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
-                if options.backdrop { drawBackdrop(enc, size: size, picture: dst, crop: 0) }
+                if options.backdrop > 0 { drawBackdrop(enc, size: size, picture: dst, crop: 0, level: options.backdrop) }
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction)
                 drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: true))
                 drawPill(enc, size: size, pill)
@@ -453,7 +453,7 @@ final class GameRenderer {
                                     Float(r.width / size.width * 2), Float(r.height / size.height * 2))
             var uvr = SIMD4<Float>(Float(Double(crop) / Double(RN_VIDEO_WIDTH)), Float(Double(crop) / Double(RN_VIDEO_HEIGHT)),
                                    Float(srcW / Double(RN_VIDEO_WIDTH)), Float(srcH / Double(RN_VIDEO_HEIGHT)))
-            if options.backdrop { drawBackdrop(enc, size: size, picture: r, crop: crop) }
+            if options.backdrop > 0 { drawBackdrop(enc, size: size, picture: r, crop: crop, level: options.backdrop) }
             enc.setRenderPipelineState(pipeline)
             enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
             enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
@@ -638,8 +638,8 @@ final class GameRenderer {
     /// screen stays direct-to-display): a texture drawn by CoreGraphics, premultiplied alpha.
     /// The blurred backdrop under the picture `r` (pixels): where it leaves the screen empty, the picture
     /// enlarged to cover the screen (centered, the part on screen drawn), blurred, dimmed - the rules of
-    /// apps/desktop/src/render/backdrop.h (kBackdropTexels 12, kBackdropDim 0.6).
-    private func drawBackdrop(_ enc: MTLRenderCommandEncoder, size: CGSize, picture r: CGRect, crop: Int) {
+    /// apps/desktop/src/render/backdrop.h (backdropTexels by level, kBackdropDim 0.6).
+    private func drawBackdrop(_ enc: MTLRenderCommandEncoder, size: CGSize, picture r: CGRect, crop: Int, level: Int) {
         let sw = Double(size.width), sh = Double(size.height)
         guard r.width >= 1, r.height >= 1, sw >= 1, sh >= 1 else { return }
         guard r.minX > 1 || r.minY > 1 || r.maxX < sw - 1 || r.maxY < sh - 1 else { return }
@@ -651,7 +651,8 @@ final class GameRenderer {
         var rect = SIMD4<Float>(Float(-fx * cw / sw), Float(-fy * ch / sh), Float(2 * fx * cw / sw), Float(2 * fy * ch / sh))
         var uvr = SIMD4<Float>(Float((Double(crop) + srcW * (1 - fx) / 2) / tw), Float((Double(crop) + srcH * (1 - fy) / 2) / th),
                                Float(srcW * fx / tw), Float(srcH * fy / th))
-        let lod = max(0, log2(max(tw, th) / 12)), texel = exp2(lod)
+        let texels: Double = level >= 3 ? 3 : level == 2 ? 6 : 10
+        let lod = max(0, log2(max(tw, th) / texels)), texel = exp2(lod)
         var p = SIMD4<Float>(Float(lod), 0.6, Float(texel / tw), Float(texel / th))
         enc.setRenderPipelineState(backdropPipeline)
         enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)

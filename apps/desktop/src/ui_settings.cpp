@@ -75,6 +75,7 @@ namespace {
 int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id) {
   if (id == "display.size") return s.integerScale ? 0 : 1;
   if (id == "display.flash") return std::clamp(s.flash, 0, 3);
+  if (id == "display.backdrop") return std::clamp(s.backdrop, 0, 3);
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
@@ -173,7 +174,6 @@ bool UI::itemOn(const std::string& id) const {
   if (id == "display.par87") return s.par87;
   if (id == "display.overscan") return RN_PRODUCT_OVERSCAN_CROP && s.hideOverscan;
   if (id == "display.vtr") return s.vtrEffect;
-  if (id == "display.backdrop") return s.backdrop;
   if (id == "crt.beam") return s.crtBeamGrowth;
   if (id == "crt.persistence") return s.crtPersistence;
   if (id == "crt.supply") return s.crtSupply;
@@ -258,7 +258,6 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "display.par87") s.par87 = !s.par87;
     else if (id == "display.overscan") s.hideOverscan = RN_PRODUCT_OVERSCAN_CROP && !s.hideOverscan;
     else if (id == "display.vtr") s.vtrEffect = !s.vtrEffect;
-    else if (id == "display.backdrop") s.backdrop = !s.backdrop;
     else if (id == "crt.beam") s.crtBeamGrowth = !s.crtBeamGrowth;
     else if (id == "crt.persistence") s.crtPersistence = !s.crtPersistence;
     else if (id == "crt.supply") s.crtSupply = !s.crtSupply;
@@ -289,6 +288,7 @@ void UI::adjustItem(const std::string& id, int dir) {
     int next = ((i + step) % n + n) % n;
     if (id == "display.size") s.integerScale = next == 0;
     else if (id == "display.flash") s.flash = next;
+    else if (id == "display.backdrop") s.backdrop = next;
     else if (id == "controls.osk") s.onScreenKeyboard = next == 1 ? "builtin" : next == 2 ? "steam" : "auto";
     else if (id == "controls.confirm") s.southConfirm = next == 1;
     else if (id == "controls.socd") {

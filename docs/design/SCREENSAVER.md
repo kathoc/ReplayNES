@@ -9,8 +9,9 @@ User decisions 2026-11-01:
 - Nothing is recorded: the demo is an in-memory session in RN_MODE_LIVE, installed into the
   emulation directly (AppModel::install is not used: no resume record, no play history, no library
   card picture, no project).
-- The screen is dimmed (a translucent black over the picture); the UI shows nothing else but a faint
-  line saying how to return. The demo is muted.
+- The screen is dimmed to half its brightness (a 50 % black over the picture); the UI shows nothing
+  else - no line saying how to return, which would burn into the screen (user decisions 2026-11-01:
+  darker, no text). The demo is muted.
 - Any input (a key, a mouse button or move, a controller button or stick) ends it; that input does
   nothing else. The app is where it was: the library, or the paused session at its point.
 

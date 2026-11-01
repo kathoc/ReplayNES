@@ -18,6 +18,11 @@ the game picture enlarged, blurred and slightly dimmed; on every platform; can b
 - The blur: a copy of each new picture with its full mip chain, read at the level whose long side is
   about 12 texels (24 at first; user 2026-11-01: more clearly blurred), a 3 x 3 tent of trilinear samples there. Display only (no emulation state, no
   recording, no export).
+- Levels (user 2026-11-01: adjustable, low by default): Off / Low / Standard / High = the picture
+  seen through about 10 / 6 / 3 texels (backdropTexels); Settings > Display > Picture Shape >
+  Blurred Sides is a choice now (desktop `backdrop=0..3`, an older `1` is Low; Apple `backdropLevel`).
+- With the CRT on (the heavy GPU load) the copy is made for every other picture: 30 fps of blur
+  (user: 30 fps is fine under load).
 - Vulkan (Linux / Steam Deck): VkBackdrop (vkCmdBlitImage copy and mip chain, backdrop.frag with
   the picture's blit.vert). D3D11 (Windows) and Metal (macOS, iOS): the same plan and the same blur
   (GenerateMips / generateMipmaps).

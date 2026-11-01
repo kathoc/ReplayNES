@@ -267,8 +267,10 @@ enum QuickMenuPages {
         [
             toggle("par", "rectangle.arrowtriangle.2.outward", "8:7", String(localized: "Pixel aspect ratio of a CRT TV"), m.displayPAR87) { m.displayPAR87 = $0 },
             toggle("overscan", "crop", String(localized: "Hide Edges"), String(localized: "Hide 8 pixels at each edge (overscan)"), m.hideOverscan) { m.hideOverscan = $0 },
-            toggle("backdrop", "photo", String(localized: "Blurred Sides"),
-                   String(localized: "The empty sides show the game enlarged, blurred and dimmed"), m.backdrop) { m.backdrop = $0 },
+            choice("backdrop", "photo", String(localized: "Blurred Sides"),
+                   String(localized: "The empty sides show the game enlarged, blurred and dimmed"),
+                   [String(localized: "Off"), String(localized: "Low"), String(localized: "Standard"), String(localized: "High")],
+                   min(max(m.backdrop, 0), 3)) { m.backdrop = $0 },
         ]
     }
 

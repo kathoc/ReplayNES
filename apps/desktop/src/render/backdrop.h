@@ -16,7 +16,9 @@ struct BackdropPlan {
   float dim = 0;                     // brightness factor
 };
 
-constexpr float kBackdropTexels = 12.f;  // the blur: the picture seen through about 12 texels across (user: "more clearly blurred")
+// The blur, by level (Settings: 0 off, 1 low - the default -, 2 standard, 3 high): the picture seen
+// through about this many texels across (user decisions 2026-11-01: more clearly blurred, adjustable).
+inline float backdropTexels(int level) { return level >= 3 ? 3.f : level == 2 ? 6.f : 10.f; }
 constexpr float kBackdropDim = 0.6f;     // slightly darker than the picture (user decision 2026-11-01)
 // Contrast 40 % lower: toward the picture's mean colour (the mip chain's last level), so a hard flash of
 // the picture does not flash the whole screen as hard (user decision 2026-11-01). The shaders use it.
@@ -24,9 +26,9 @@ constexpr float kBackdropContrast = 0.6f;
 
 /// `pic*`: the rectangle the picture is drawn in; `srcW` x `srcH`: the backdrop texture's level 0.
 inline BackdropPlan planBackdrop(float picX, float picY, float picW, float picH, int screenW, int screenH, int srcW,
-                                 int srcH) {
+                                 int srcH, int level = 1) {
   BackdropPlan p;
-  if (picW < 1 || picH < 1 || screenW < 1 || screenH < 1 || srcW < 1 || srcH < 1) return p;
+  if (level <= 0 || picW < 1 || picH < 1 || screenW < 1 || screenH < 1 || srcW < 1 || srcH < 1) return p;
   // Something of the screen left empty (more than a pixel).
   const bool empty = picX > 1 || picY > 1 || picX + picW < screenW - 1 || picY + picH < screenH - 1;
   if (!empty) return p;
@@ -35,7 +37,7 @@ inline BackdropPlan planBackdrop(float picX, float picY, float picW, float picH,
   p.h = picH * s;
   p.x = (screenW - p.w) * 0.5f;
   p.y = (screenH - p.h) * 0.5f;
-  p.lod = std::max(0.f, std::log2(float(std::max(srcW, srcH)) / kBackdropTexels));
+  p.lod = std::max(0.f, std::log2(float(std::max(srcW, srcH)) / backdropTexels(level)));
   p.dim = kBackdropDim;
   p.show = true;
   return p;

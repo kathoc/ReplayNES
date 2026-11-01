@@ -146,7 +146,8 @@ const std::vector<ItemDef>& items() {
        "crop", TOGGLE, "", 0, {}},
 #endif
       {"display.shape", "display.backdrop", RNF_L("Blurred Sides"),
-       RNF_L("The empty sides show the game enlarged, blurred and dimmed"), "photo", TOGGLE, "", 0, {}},
+       RNF_L("The empty sides show the game enlarged, blurred and dimmed"), "photo", CHOICE, "", 0,
+       {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
       // Display > CRT details.
       {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "line-scan", SLIDER,
        "", F_CRT, {}},

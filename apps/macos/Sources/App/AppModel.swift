@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
     /// The empty sides show the picture enlarged, blurred and dimmed (Settings › Display › Picture Shape).
-    @AppStorage("backdrop") var backdrop = true { didSet { objectWillChange.send() } }
+    @AppStorage("backdropLevel") var backdrop = 1 { didSet { objectWillChange.send() } }  // 0 off, 1 low, 2 standard, 3 high
     /// The VTR tape look while rewinding / returning to A (display only; Settings › Display).
     @AppStorage("vtrEffect") var vtrEffect = true { didSet { pushPrefs(); objectWillChange.send() } }
     /// 3, 2, 1 after a practice run arrives at A (the Practice page, Options button).

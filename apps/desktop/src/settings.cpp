@@ -2,6 +2,7 @@
 #include "replaynes/product.h"
 #include "settings.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -56,7 +57,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "hideOverscan") s.preservedOverscanLines += rawLine + "\n";
 #endif
     else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
-    else if (k == "backdrop") s.backdrop = parseBool(v, s.backdrop);
+    else if (k == "backdrop" && num) s.backdrop = std::clamp(int(d), 0, 3);  // an older "1" (on) is the default level
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
     else if (k == "countdownSeconds") {

@@ -119,6 +119,8 @@ class App {
   double lastInput_ = 0, screensaverDemoAt_ = 0;
   void updateScreensaver(double now);
   void updateOverlay(int scripted);
+  // The input's paused-in-play mode from the emulation's state, every frame (not only on a change).
+  void syncPausedStepMode() { input_->setPausedStepMode(emu_->paused()); }
   int lastHeight_ = 0;
   float lastUIScale_ = 0;
   int lastWidth_ = 0;
@@ -166,6 +168,7 @@ void App::applyPostProcess() {
 void App::updateNavigation() {
   bool inter = ui_->interactive();
   input_->setUIMode(inter);
+  syncPausedStepMode();
   // The mouse plays a game that binds it while it runs (not paused, no menu, the window focused):
   // relative mode keeps the pointer in the window and hides it. Esc (the menu) gives it back.
   const bool capture = input_->mouseGame() && !inter && emu_->session() && !emu_->paused() &&
@@ -458,6 +461,10 @@ int App::run(const AppOptions& opt) {
       rn_input_bind(input_->input(), "inject:b", rnf_input_button_id(0));
     ui_->inputLayoutChanged();
   };
+  // At once on a change (a press later in the same frame), and every frame from the state itself
+  // (syncPausedStepMode): a session opened paused while the emulation already was paused (the library's
+  // Continue right after the start: paused_ starts true) never sent a change, the input stayed in play
+  // and the cancel button's "Continue" did nothing.
   emu_->onPausedChanged = [this](bool p) { input_->setPausedStepMode(p); };
   emu_->pressSequence = [this] { return input_->pressSequence(); };
   emu_->beforeSample = [this] { input_->beginMouseFrame(); };
@@ -700,6 +707,7 @@ int App::run(const AppOptions& opt) {
     lap("SDL_UpdateJoysticks");
     input_->syncPads();  // which controller is which player: what is connected now, every frame
     lap("syncPads");
+    syncPausedStepMode();  // before this frame's presses (a tap needs it at its press and its release)
     SDL_Event e;
     while (SDL_PollEvent(&e)) handleEvent(e, rec.sample);
     lap("events");

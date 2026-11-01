@@ -189,7 +189,11 @@ TEST_CASE("backdrop: only where the picture leaves the screen empty, covering it
   CHECK(std::fabs(p.w - 1280) < 0.01f);
   CHECK(std::fabs(p.h - 1280 * 800.f / 1067) < 0.5f);
   CHECK(std::fabs(p.y - (800 - p.h) / 2) < 0.01f);
-  CHECK(std::fabs(p.lod - std::log2(320 / kBackdropTexels)) < 1e-4f);
+  CHECK(std::fabs(p.lod - std::log2(320 / backdropTexels(1))) < 1e-4f);
+  // Stronger levels read coarser levels; off draws nothing.
+  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 3).lod > planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 2).lod);
+  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 2).lod > p.lod);
+  CHECK_FALSE(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 0).show);
   CHECK_EQ(p.dim, kBackdropDim);
   CHECK(p.dim < 1.f);  // dimmed
   // The picture fills the screen (FILL): nothing to cover.

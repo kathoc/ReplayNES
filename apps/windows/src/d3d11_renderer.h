@@ -157,6 +157,7 @@ class D3D11Renderer final : public Renderer {
   ID3D11Texture2D* backdropTex_ = nullptr;
   ID3D11ShaderResourceView* backdropSrv_ = nullptr;
   uint32_t backdropW_ = 0, backdropH_ = 0, backdropLevels_ = 1;
+  uint64_t backdropPictures_ = 0;
   ID3D11PixelShader* backdropPs_ = nullptr;
   ID3D11Buffer* backdropCb_ = nullptr;
   ID3D11Buffer* backdropUvCb_ = nullptr;

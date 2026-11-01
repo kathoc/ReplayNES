@@ -488,11 +488,9 @@ void UI::build(double now) {
 void UI::buildScreensaver() {
   const ImVec2 size = ImGui::GetIO().DisplaySize;
   ImDrawList* dl = ImGui::GetBackgroundDrawList();  // over the game picture, under nothing
-  dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(0, 0, 0, 110));
-  const std::string hint = TR("Screensaver · press any button to return");
-  const float fs = metrics_.hint();
-  const ImVec2 ts = measure(fs, hint.c_str());
-  dl->AddText(ImGui::GetFont(), fs, ImVec2((size.x - ts.x) / 2, size.y - ts.y - S(18)), IM_COL32(242, 242, 246, 90), hint.c_str());
+  // Half the brightness, and nothing else: a fixed line of text would burn into the screen over the
+  // hours a screensaver runs (user decisions 2026-11-01).
+  dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(0, 0, 0, 128));
 }
 
 void UI::buildOverlays(double now) {

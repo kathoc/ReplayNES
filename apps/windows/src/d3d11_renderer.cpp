@@ -535,7 +535,7 @@ void D3D11Renderer::updateBackdrop(const uint32_t* picture) {
 
 void D3D11Renderer::drawBackdrop(const GameRect& rect, bool crt) {
   const CrtRect pic = crt ? rect.crt : CrtRect{rect.x, rect.y, rect.w, rect.h};
-  BackdropPlan plan = planBackdrop(pic.x, pic.y, pic.w, pic.h, width_, height_, int(backdropW_), int(backdropH_));
+  BackdropPlan plan = planBackdrop(pic.x, pic.y, pic.w, pic.h, width_, height_, int(backdropW_), int(backdropH_), post_.backdrop);
   float uv[4] = {float(rect.crop) / backdropW_, float(rect.crop) / backdropH_, float(backdropW_ - rect.crop) / backdropW_,
                  float(backdropH_ - rect.crop) / backdropH_};
   cropBackdrop(plan, width_, height_, int(media_.rotation), uv);
@@ -709,7 +709,9 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
       ctx_->Unmap(gameTex_, 0);
       hasPicture_ = true;
     }
-    updateBackdrop(newPicture);  // also while off: turned on in a paused menu, it shows at once
+    // Also while off (turned on in a paused menu, it shows at once); with the CRT on (the GPU's heavy
+    // load) every other picture: the blur at 30 fps is enough.
+    if (!crtOn || (++backdropPictures_ & 1) == 0 || !backdropSrv_) updateBackdrop(newPicture);
   }
   uploadThumbs();
   lastAcquireWait_ = nowSeconds() - t0;  // Map may wait for the GPU (the picture in use)
@@ -752,7 +754,7 @@ uint64_t D3D11Renderer::drawAndPresent(const uint32_t* newPicture, const GameRec
   const float black[4] = {0, 0, 0, 1};
   ctx_->ClearRenderTargetView(rtv_, black);
   const bool crtShows = crtOn && rect.visible && crt_->hasOutput() && !plain;
-  if (post_.backdrop && rect.visible && hasPicture_ && backdropSrv_) drawBackdrop(rect, crtShows);
+  if (post_.backdrop > 0 && rect.visible && hasPicture_ && backdropSrv_) drawBackdrop(rect, crtShows);
   if (crtShows) {
     crt_->drawShow(width_, height_, rect.crt, rect.crtCrop);
     status_.crtShown = true;

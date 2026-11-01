@@ -678,8 +678,11 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
     hasPicture_ = true;
   }
   // The blurred backdrop's copy: of each new picture, or the first after it was turned on / resized.
-  if (post_.backdrop && hasPicture_ &&
-      (newPicture || !backdrop_.ready() || backdrop_.width() != int(frame_.width) || backdrop_.height() != int(frame_.height)))
+  // With the CRT on (the GPU's heavy load) every other picture: the blur at 30 fps is enough.
+  if (newPicture) backdropPictures_ += 1;
+  const bool backdropDue = newPicture && (!crtOn || (backdropPictures_ & 1) == 0);
+  if (post_.backdrop > 0 && hasPicture_ &&
+      (backdropDue || !backdrop_.ready() || backdrop_.width() != int(frame_.width) || backdrop_.height() != int(frame_.height)))
     backdrop_.update(cmd, gameImage_, frame_.width, frame_.height);
   recordAtlasUploads(cmd, slot_);
   // CRT: a new picture (or a changed size / setting / tube plan) is built by its compute passes,
@@ -711,12 +714,12 @@ uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& 
   rbi.pClearValues = &clear;
   vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
   const bool crtShows = crtOn && rect.visible && crt_.canShow() && !plain;
-  if (post_.backdrop && rect.visible && hasPicture_ && backdrop_.ready()) {
+  if (post_.backdrop > 0 && rect.visible && hasPicture_ && backdrop_.ready()) {
     // Under the picture, where it leaves the screen empty (render/backdrop.h).
     const float px = crtShows ? rect.crt.x : rect.x, py = crtShows ? rect.crt.y : rect.y;
     const float pw = crtShows ? rect.crt.w : rect.w, ph = crtShows ? rect.crt.h : rect.h;
     BackdropPlan plan = planBackdrop(px, py, pw, ph, int(extent_.width), int(extent_.height), backdrop_.width(),
-                                     backdrop_.height());
+                                     backdrop_.height(), post_.backdrop);
     float uv[8] = {float(rect.crop) / frame_.width, float(rect.crop) / frame_.height,
                    float(frame_.width - rect.crop) / frame_.width, float(frame_.height - rect.crop) / frame_.height,
                    float(media_.rotation), 0, 0, 0};

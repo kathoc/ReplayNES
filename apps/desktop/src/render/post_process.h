@@ -21,7 +21,7 @@ struct DisplayPostProcess {
   int maxTubeWidth = 1600;         // nesterm OUTPUT-RESOLUTION-SPEC cap (4:3 -> 1600x1200)
   bool adaptiveResolution = true;  // lower the tube resolution when the GPU can't keep 60 fps
   bool allowBuildAhead = true;     // build GPU-heavy pictures one frame ahead when they wouldn't fit
-  bool backdrop = true;            // the empty sides show the picture enlarged, blurred, dimmed (render/backdrop.h)
+  int backdrop = 1;                // the empty sides show the picture enlarged, blurred, dimmed: 0 off, 1..3 the blur (render/backdrop.h)
   bool operator==(const DisplayPostProcess& o) const {
     return crt == o.crt && crtSettings == o.crtSettings && maxTubeWidth == o.maxTubeWidth &&
            adaptiveResolution == o.adaptiveResolution && allowBuildAhead == o.allowBuildAhead && backdrop == o.backdrop;
