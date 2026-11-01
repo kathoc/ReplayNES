@@ -1,5 +1,5 @@
 // The blurred backdrop behind the game picture (docs/design/BACKDROP.md): the picture's mip chain read
-// at a coarse level, a 3x3 tent of it, dimmed. SPDX-License-Identifier: GPL-2.0-or-later
+// at a coarse level, a 3x3 tent of it, its contrast lowered, dimmed. SPDX-License-Identifier: GPL-2.0-or-later
 #version 450
 layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(push_constant) uniform PC { layout(offset = 32) vec4 p; } pc;  // lod, dim, texel u, texel v
@@ -14,5 +14,7 @@ void main() {
       c += k * textureLod(tex, vUV + vec2(x, y) * pc.p.zw, pc.p.x).rgb;
       w += k;
     }
-  outColor = vec4(c / w * pc.p.y, 1.0);
+  // Contrast 40 % lower (kBackdropContrast 0.6): toward the mean colour, the last mip level.
+  vec3 mean = textureLod(tex, vec2(0.5), 64.0).rgb;
+  outColor = vec4(mix(mean, c / w, 0.6) * pc.p.y, 1.0);
 }

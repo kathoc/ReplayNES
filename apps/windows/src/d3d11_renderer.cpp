@@ -81,7 +81,8 @@ float4 ps_backdrop(VsOut i) : SV_Target {
       c += k * picture.SampleLevel(trilinear, i.uv + float2(x, y) * bd.zw, bd.x).rgb;
       w += k;
     }
-  return float4(c / w * bd.y, 1.0);
+  float3 mean = picture.SampleLevel(trilinear, float2(0.5, 0.5), 64.0).rgb;  // kBackdropContrast 0.6
+  return float4(lerp(mean, c / w, 0.6) * bd.y, 1.0);
 }
 )";
 

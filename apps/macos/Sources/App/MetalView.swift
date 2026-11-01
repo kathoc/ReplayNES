@@ -95,7 +95,8 @@ final class GameRenderer {
                 c += k * tex.sample(s, in.uv + float2(x, y) * p.zw, level(p.x)).rgb;
                 w += k;
             }
-        return float4(c / w * p.y, 1.0);
+        float3 mean = tex.sample(s, float2(0.5), level(64.0)).rgb;  // contrast 40 % lower (kBackdropContrast)
+        return float4(mix(mean, c / w, 0.6) * p.y, 1.0);
     }
     """
 

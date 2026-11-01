@@ -18,6 +18,9 @@ struct BackdropPlan {
 
 constexpr float kBackdropTexels = 12.f;  // the blur: the picture seen through about 12 texels across (user: "more clearly blurred")
 constexpr float kBackdropDim = 0.6f;     // slightly darker than the picture (user decision 2026-11-01)
+// Contrast 40 % lower: toward the picture's mean colour (the mip chain's last level), so a hard flash of
+// the picture does not flash the whole screen as hard (user decision 2026-11-01). The shaders use it.
+constexpr float kBackdropContrast = 0.6f;
 
 /// `pic*`: the rectangle the picture is drawn in; `srcW` x `srcH`: the backdrop texture's level 0.
 inline BackdropPlan planBackdrop(float picX, float picY, float picW, float picH, int screenW, int screenH, int srcW,

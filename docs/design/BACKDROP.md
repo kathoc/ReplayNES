@@ -12,6 +12,9 @@ the game picture enlarged, blurred and slightly dimmed; on every platform; can b
   empty around the picture (the CRT tube rectangle when the CRT shows); the rectangle covering the
   screen with the picture's aspect, centered; cut to the screen (cropBackdrop: a viewport within the
   device's limits, the source cut alike, for the four rotations); brightness 0.6.
+- Contrast 40 % lower (user 2026-11-01: a hard flash should not flash the whole screen as hard):
+  the blurred colour mixed 60 / 40 with the picture's mean colour (the mip chain's last level),
+  then dimmed (kBackdropContrast).
 - The blur: a copy of each new picture with its full mip chain, read at the level whose long side is
   about 12 texels (24 at first; user 2026-11-01: more clearly blurred), a 3 x 3 tent of trilinear samples there. Display only (no emulation state, no
   recording, no export).
