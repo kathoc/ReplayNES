@@ -16,7 +16,6 @@ struct Settings {
   // Display
   bool integerScale = true;  // Integer (largest integer scale) vs FILL
   bool par87 = false;
-  bool bezel = true;  // the product's bezel around horizontal games (RN_PRODUCT_BEZEL)
   bool hideOverscan = RN_PRODUCT_OVERSCAN_CROP;
 #if !RN_PRODUCT_OVERSCAN_CROP
   std::string preservedOverscanLines;  // opaque settings lines, as for the flash option

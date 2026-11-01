@@ -21,14 +21,4 @@ GameRect computeGameRect(int width, int height, bool integerScale, bool par87, b
 GameRect computeGameRect(int width, int height, const rn_media_info& media,
                          const rn_video_frame_info& frame, bool integerScale, bool gameAspect, bool hideOverscan);
 
-/// The bezel (docs/design/BEZEL.md) fitted into a screen: the picture's place (aspect kept, centred)
-/// and its window's, scaled the same way. Empty (w = 0) when nothing fits.
-struct BezelLayout {
-  float x = 0, y = 0, w = 0, h = 0;       // the bezel picture
-  float wx = 0, wy = 0, ww = 0, wh = 0;   // its window
-};
-BezelLayout placeBezel(int screenW, int screenH, int imageW, int imageH, int winX, int winY, int winW, int winH);
-/// `rect`, laid out in a window of the size `b.ww` x `b.wh`, moved to that window's place.
-GameRect moveIntoBezel(GameRect rect, const BezelLayout& b);
-
 }  // namespace rnl

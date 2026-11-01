@@ -106,9 +106,6 @@ class UI : public DialogHost {
   void slack(double now);
   /// Where the game picture goes in a w x h drawable (menus draw over the dimmed game).
   GameRect gameRect(int w, int h) const;
-  /// The product's bezel on a w x h screen when it is shown (docs/design/BEZEL.md): a session of a
-  /// horizontal game with Settings > Display > Picture Shape > Bezel on. Else nothing.
-  std::optional<BezelLayout> bezelLayout(int w, int h) const;
 
   /// Whether ImGui / the UI have the controller and keyboard (menus, library, seek bar, dialogs).
   bool interactive() const;
@@ -314,10 +311,6 @@ class UI : public DialogHost {
   void buildPlayers(double now);
   void buildPlayerOrder();  // Settings > Controls > Controller > Player Order: whose press is which player
   bool playerOrderOffered_ = true;
-  void buildBezel();
-  ImTextureData* bezelTexture();  // decoded and registered with ImGui on first use
-  ImTextureData* bezelTex_ = nullptr;
-  bool bezelFailed_ = false;
   float playersW_ = 0;  // its width this frame (the flash badge goes after it)
   bool thumbImage(ThumbRef& img, ImTextureID* tex, ImVec2* uv0, ImVec2* uv1);
 

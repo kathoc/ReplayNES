@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -20,27 +19,12 @@
 #include "library_thumbs.h"
 #include "pad_nav.h"
 #include "paths.h"
-#include "qoi.h"
-#include "replaynes/product.h"
 #include "settings.h"
 #include "thumbnails.h"
 #include "ui_theme.h"
 #include "ui_widgets.h"
 
 namespace fs = std::filesystem;
-
-#if RN_PRODUCT_BEZEL
-namespace {
-// The bezel's QOI image (RN_PRODUCT_BEZEL_IMAGE), and its size from the QOI header (big-endian).
-const unsigned char kBezelImage[] = {
-#include "replaynes/bezel_image.inc"
-};
-uint32_t headerU32(size_t at) {
-  return uint32_t(kBezelImage[at]) << 24 | uint32_t(kBezelImage[at + 1]) << 16 | uint32_t(kBezelImage[at + 2]) << 8 | kBezelImage[at + 3];
-}
-const uint32_t kBezelWidth = headerU32(4), kBezelHeight = headerU32(8);
-}  // namespace
-#endif
 
 namespace rnl {
 
@@ -119,7 +103,6 @@ UI::UI(Deps d) : d_(d) {
   if (RNL_HAVE_MP4_EXPORT) menuFeatures_ |= RNF_MENU_FEATURE_EXPORT;
   if (RNL_HAVE_CRT) menuFeatures_ |= RNF_MENU_FEATURE_CRT;
   if (RNL_HAVE_STEAM) menuFeatures_ |= RNF_MENU_FEATURE_STEAM | RNF_MENU_FEATURE_OSK;
-  if (RN_PRODUCT_BEZEL) menuFeatures_ |= RNF_MENU_FEATURE_BEZEL;
   // Under Steam Input (a Steam Deck, Big Picture) Steam orders the players: no Player Order of its own.
   playerOrderOffered_ = std::getenv("SteamVirtualGamepadInfo") == nullptr;
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
@@ -154,11 +137,6 @@ void UI::inputLayoutChanged() {
 }
 
 UI::~UI() {
-  if (bezelTex_) {
-    if (ImGui::GetCurrentContext()) ImGui::UnregisterUserTexture(bezelTex_);
-    bezelTex_->DestroyPixels();
-    delete bezelTex_;
-  }
   rnf_menu_free(menu_);
   rnf_markers_free(markers_);
   rnf_step_repeater_free(markerRepeat_);
@@ -389,59 +367,7 @@ void UI::changed() {
 GameRect UI::gameRect(int w, int h) const {
   if (!hasSession()) return GameRect{};
   const Settings& st = *d_.settings;
-  const bool crop = RN_PRODUCT_OVERSCAN_CROP && st.hideOverscan;
-  // With the bezel: laid out in its window as it would be in the whole screen.
-  if (const std::optional<BezelLayout> b = bezelLayout(w, h))
-    return moveIntoBezel(computeGameRect(int(b->ww), int(b->wh), d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, crop), *b);
-  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, crop);
-}
-
-std::optional<BezelLayout> UI::bezelLayout(int w, int h) const {
-#if RN_PRODUCT_BEZEL
-  const Settings& st = *d_.settings;
-  if (!hasSession() || !st.bezel) return std::nullopt;
-  // A vertical game (taller than wide as shown, rotated or not) keeps the whole screen.
-  const GameRect whole = computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), false, st.par87, false);
-  if (!whole.visible || whole.h > whole.w) return std::nullopt;
-  const BezelLayout b = placeBezel(w, h, int(kBezelWidth), int(kBezelHeight), RN_PRODUCT_BEZEL_WINDOW_X, RN_PRODUCT_BEZEL_WINDOW_Y,
-                                   RN_PRODUCT_BEZEL_WINDOW_W, RN_PRODUCT_BEZEL_WINDOW_H);
-  if (b.ww < 1 || b.wh < 1) return std::nullopt;
-  return b;
-#else
-  (void)w;
-  (void)h;
-  return std::nullopt;
-#endif
-}
-
-ImTextureData* UI::bezelTexture() {
-#if RN_PRODUCT_BEZEL
-  if (bezelTex_ || bezelFailed_) return bezelTex_;
-  uint32_t w = 0, h = 0;
-  std::vector<uint8_t> rgba;
-  if (!decodeQoi(kBezelImage, sizeof kBezelImage, &w, &h, &rgba)) {
-    bezelFailed_ = true;
-    std::fprintf(stderr, "bezel: not a QOI image\n");
-    return nullptr;
-  }
-  auto* t = new ImTextureData();
-  t->Create(ImTextureFormat_RGBA32, int(w), int(h));
-  std::memcpy(t->GetPixelsAt(0, 0), rgba.data(), rgba.size());
-  ImGui::RegisterUserTexture(t);  // the renderer's ImGui backend uploads it with the UI's own textures
-  bezelTex_ = t;
-#endif
-  return bezelTex_;
-}
-
-// Over the game (ImGui's background list, the first thing of the UI pass), under everything else:
-// the frame's inner shading covers the picture's edge, the transparent window shows the game.
-void UI::buildBezel() {
-  const ImVec2 size = ImGui::GetIO().DisplaySize;
-  const std::optional<BezelLayout> b = bezelLayout(int(size.x), int(size.y));
-  if (!b) return;
-  ImTextureData* t = bezelTexture();
-  if (!t) return;
-  ImGui::GetBackgroundDrawList()->AddImage(t->GetTexRef(), ImVec2(b->x, b->y), ImVec2(b->x + b->w, b->y + b->h));
+  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, st.par87, RN_PRODUCT_OVERSCAN_CROP && st.hideOverscan);
 }
 
 void UI::slack(double now) {
@@ -532,7 +458,6 @@ void UI::build(double now) {
   updateMarkers(now);
   tickCoach(now);
   if (d_.libraryThumbs) d_.libraryThumbs->setPicturesPaused(hasSession());  // a game has the machine to itself
-  buildBezel();
   if (!hasSession()) buildLibrary(now);
   else if (!menuOpen_ && seekBarShown()) buildSeekBar(now);
   if (menuOpen_) buildMenu(now);

@@ -1,6 +1,6 @@
-// QOI ("Quite OK Image", qoiformat.org, specification 1.0): the bezel's image format
-// (docs/design/BEZEL.md) and the seek bar thumbnails kept across sessions (thumbnails.cpp).
-// Self-contained: no SDL_image / SDL 3.4 PNG loader, which the Flatpak runtime's SDL does not have.
+// QOI ("Quite OK Image", qoiformat.org, specification 1.0): the seek bar thumbnails kept across
+// sessions (thumbnails.cpp). Self-contained: no SDL_image / SDL 3.4 PNG loader, which the Flatpak
+// runtime's SDL does not have.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
