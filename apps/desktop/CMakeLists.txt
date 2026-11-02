@@ -37,6 +37,8 @@ add_library(rnl_logic STATIC
   src/library_thumbs.cpp
   src/osk.cpp
   src/face_layout.cpp
+  src/touch/touch_gamepad.cpp
+  src/touch/touch_layout.cpp
   src/update_model.cpp
   src/platform/platform.cpp
   src/render/crt_settings.cpp
@@ -96,13 +98,14 @@ if(RNL_DESKTOP_TESTS)
   set(RNL_TEST_TMP ${CMAKE_CURRENT_BINARY_DIR}/tmp)
   file(MAKE_DIRECTORY ${RNL_TEST_TMP})
   add_executable(test_desktop_frontend tests/test_desktop_frontend.cpp ${RNL_REPO_ROOT}/tests/support/rn_test_main.cpp
-    tests/test_thumbnail_scheduling.cpp tests/test_media_audio.cpp tests/test_export_media.cpp tests/test_media_geometry.cpp tests/test_input_layout.cpp
+    tests/test_thumbnail_scheduling.cpp tests/test_media_audio.cpp tests/test_export_media.cpp tests/test_media_geometry.cpp tests/test_input_layout.cpp tests/test_touch.cpp
     ../windows/tests/test_d3d11_media.cpp
     tests/test_mf_export_media.cpp
     tests/sparse_file.cpp src/export/export_frame.cpp src/export/mp4_retime.cpp src/export/mp4_check.cpp)
   target_include_directories(test_desktop_frontend PRIVATE ${RNL_REPO_ROOT}/tests)
   target_link_libraries(test_desktop_frontend PRIVATE rnl_logic)
-  target_compile_definitions(test_desktop_frontend PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}")
+  target_compile_definitions(test_desktop_frontend PRIVATE RNL_TEST_TMP="${RNL_TEST_TMP}"
+    RNL_TOUCH_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/touch")
   target_compile_options(test_desktop_frontend PRIVATE ${RNL_WARNINGS})
   rnl_windows_manifest(test_desktop_frontend)
   # Next to the engine tests (scripts/windows-vm/run-tests.sh and CI run build/tests/test_*.exe).
