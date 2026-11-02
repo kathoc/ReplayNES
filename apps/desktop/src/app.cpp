@@ -513,6 +513,10 @@ int App::run(const AppOptions& opt) {
     th.togglePause = [this] { emu_->togglePause(); };
     th.toggleSlow = [this] { emu_->toggleSlow(); };
     th.haptic = platform_.haptic;
+    th.setWays = [this](int ways) {
+      setTouchWaysFor(settings_, ways);
+      settings_.save(paths_.settingsFile());
+    };
     touch_ = std::make_unique<TouchControls>(std::move(th));
   }
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
@@ -822,6 +826,10 @@ int App::run(const AppOptions& opt) {
       }
       tf.fill = !settings_.integerScale;
       tf.nowMs = nowSeconds() * 1000;
+      settings_.touchWaysRom = emu_->session() ? app_->currentRomSHA256() : std::string();
+      tf.ways = touchWaysFor(settings_);
+      tf.playing = emu_->session() && !emu_->paused();
+      tf.sessionKey = emu_->session() ? emu_->status().romPath + "|" + settings_.touchWaysRom : std::string();
       touch_->update(tf, settings_);
       ui_->setPictureArea(touch_->pictureArea());
       ui_->setTouchControlsShown(touch_->visible());

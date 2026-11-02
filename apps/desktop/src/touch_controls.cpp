@@ -71,9 +71,14 @@ void TouchControls::update(const Frame& f, const Settings& s) {
     options_ = o;
     haveLayout_ = true;
   }
-  if (ways_ != s.touchWays) {
-    ways_ = s.touchWays;
+  if (ways_ != f.ways) {
+    ways_ = f.ways == 4 ? 4 : 8;
     pad_->setWays(ways_);
+  }
+  nowMs_ = f.nowMs;
+  if (f.playing && !f.sessionKey.empty() && f.sessionKey != hintKey_) {
+    hintKey_ = f.sessionKey;
+    hintStart_ = f.nowMs;
   }
   pad_->setHomeGain(s.touchFollowX, s.touchFollowY);
   if (pad_->hasPendingAnimationFrame()) pad_->animationFrame(f.nowMs);
@@ -110,6 +115,7 @@ void TouchControls::onExtra(const TouchExtra& e, bool down) {
     if (down) {
       ways_ = ways_ == 8 ? 4 : 8;
       pad_->setWays(ways_);
+      if (host_.setWays) host_.setWays(ways_);
     }
     return;
   }
@@ -237,6 +243,24 @@ void TouchControls::draw(ImDrawList* dl, bool paused, bool slow) const {
     dl->AddText(font, size, ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), col, t.c_str());
   };
 
+  // The side quarters' marks: in 0.3 s, held to 3 s, out in 0.6 s (PlayView.showZoneHint).
+  if (hintStart_ >= 0 && picture_.z > 0) {
+    const double t = nowMs_ - hintStart_;
+    const float m = t < 300 ? float(t / 300) : t < 3000 ? 1.0f : t < 3600 ? float(1 - (t - 3000) / 600) : 0.0f;
+    if (m > 0) {
+      const float r = 28 * k, q = picture_.z / 4, cy = picture_.y + picture_.w / 2;
+      for (int side = 0; side < 2; ++side) {
+        const float cx = side ? picture_.x + picture_.z - q / 2 : picture_.x + q / 2;
+        dl->AddCircleFilled(ImVec2(cx, cy), r, IM_COL32(0, 0, 0, int(255 * 0.35f * m)), 40);
+        const ImU32 col = IM_COL32(255, 255, 255, int(255 * 0.85f * m));
+        const float h = 10 * k, w = 9 * k, dir = side ? 1.0f : -1.0f;
+        for (int n = 0; n < 2; ++n) {  // two triangles: backward / forward
+          const float x0 = cx + dir * (n ? w * 0.9f : -w * 0.1f) - dir * w * 0.4f;
+          dl->AddTriangleFilled(ImVec2(x0 + dir * w, cy), ImVec2(x0, cy - h), ImVec2(x0, cy + h), col);
+        }
+      }
+    }
+  }
   // D-pad: a cross at its place moved by the home offset (ox, oy); pressed arms in the accent.
   {
     const Rect& d = layout_.pad.dpad;

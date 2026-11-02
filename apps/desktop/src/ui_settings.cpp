@@ -79,7 +79,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
-  if (id == "touch.ways") return s.touchWays == 4 ? 1 : 0;
+  if (id == "touch.ways") return touchWaysFor(s) == 4 ? 1 : 0;
   if (id == "system.core") {
     for (size_t i = 0; i < rnf_product_core_count(); ++i)
       if (s.core == rnf_product_core_id(i)) return int(i);
@@ -308,7 +308,7 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "display.backdrop") s.backdrop = next;
     else if (id == "controls.osk") s.onScreenKeyboard = next == 1 ? "builtin" : next == 2 ? "steam" : "auto";
     else if (id == "controls.confirm") s.southConfirm = next == 1;
-    else if (id == "touch.ways") s.touchWays = next == 1 ? 4 : 8;
+    else if (id == "touch.ways") setTouchWaysFor(s, next == 1 ? 4 : 8);
     else if (id == "controls.socd") {
       in.setSOCD(next == 1 ? "last_wins" : next == 2 ? "allow" : "neutral");
       return;

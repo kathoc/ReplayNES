@@ -26,6 +26,7 @@ class TouchControls {
     std::function<void(const std::string& id, bool down)> press;  // "touch:a" ...
     std::function<void()> toggleMenu, togglePause, toggleSlow;
     std::function<void()> haptic;
+    std::function<void(int ways)> setWays;  // 8-WAY pressed: the game's directions (setTouchWaysFor)
   };
   struct Frame {
     int widthPx = 0, heightPx = 0;
@@ -37,6 +38,9 @@ class TouchControls {
     std::optional<double> pictureAspect;  // the picture's shown width / height
     bool fill = false;                    // Size: FILL
     double nowMs = 0;
+    int ways = 8;            // the open game's D-pad directions (touchWaysFor)
+    std::string sessionKey;  // which game / project is open (the zone marks show once per game)
+    bool playing = false;    // not paused
   };
   explicit TouchControls(Host host);
   ~TouchControls();
@@ -86,6 +90,9 @@ class TouchControls {
   std::map<SDL_FingerID, Finger> fingers_;
   bool rewindHeld_ = false, fastForwardHeld_ = false;
   bool mouseTaken_ = false;
+  // The picture's side quarters' marks for a few seconds when a game starts playing (the iPhone's ZoneHintMarks).
+  std::string hintKey_;
+  double hintStart_ = -1, nowMs_ = 0;
 };
 
 }  // namespace rnl

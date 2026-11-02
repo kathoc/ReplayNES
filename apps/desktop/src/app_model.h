@@ -119,6 +119,8 @@ class AppModel {
 
   bool hasSession() const { return emu_->session() != nullptr; }
   bool isTempSession() const { return current_ && current_->isTemp; }
+  /// The open game's ROM (SHA-256), "" when none or unknown.
+  std::string currentRomSHA256() const { return current_ ? current_->romSHA256 : std::string(); }
   std::string windowTitle() const;
   std::string romName() const;  // of the current session
   const Paths& paths() const { return paths_; }

@@ -73,6 +73,10 @@ struct Settings {
   bool touchTurbo = true;
   bool touchVibration = true;
   bool touchHideWithPad = true;
+  // D-pad directions per game, as on the iPhone: "<ROM SHA-256>:<4|8>,..."; a game without an entry uses
+  // touchWays. touchWaysRom: the open game's ROM (set by the app each frame, not saved).
+  std::string touchWaysPerRom;
+  std::string touchWaysRom;
   // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),
   // "builtin" (ReplayNES's controller keyboard), "steam" (Steam's only). See osk.h.
   std::string onScreenKeyboard = "auto";
@@ -100,6 +104,36 @@ struct Settings {
 /// the NES (ReplayArcade) always does: its games' pixel grids are not their screens' shape (384 x 224 on a
 /// 4:3 screen), and square pixels stretched them; the 8:7 toggle is the NES's. With the NES: the toggle.
 inline bool gamePixelAspect(const Settings& s) { return !RN_PRODUCT_NES || s.par87; }
+
+/// The touch D-pad's directions (8 / 4) for the open game (touchWaysRom), else the global setting.
+inline int touchWaysFor(const Settings& s) {
+  if (!s.touchWaysRom.empty()) {
+    const std::string key = s.touchWaysRom + ":";
+    for (size_t a = 0, b; a < s.touchWaysPerRom.size(); a = b + 1) {
+      b = s.touchWaysPerRom.find(',', a);
+      if (b == std::string::npos) b = s.touchWaysPerRom.size();
+      if (s.touchWaysPerRom.compare(a, key.size(), key) == 0) return s.touchWaysPerRom[a + key.size()] == '4' ? 4 : 8;
+    }
+  }
+  return s.touchWays == 4 ? 4 : 8;
+}
+/// Sets it for the open game (touchWaysRom), else the global setting.
+inline void setTouchWaysFor(Settings& s, int ways) {
+  ways = ways == 4 ? 4 : 8;
+  if (s.touchWaysRom.empty()) {
+    s.touchWays = ways;
+    return;
+  }
+  std::string out;
+  const std::string key = s.touchWaysRom + ":";
+  for (size_t a = 0, b; a < s.touchWaysPerRom.size(); a = b + 1) {
+    b = s.touchWaysPerRom.find(',', a);
+    if (b == std::string::npos) b = s.touchWaysPerRom.size();
+    const std::string e = s.touchWaysPerRom.substr(a, b - a);
+    if (!e.empty() && e.compare(0, key.size(), key) != 0) out += (out.empty() ? "" : ",") + e;
+  }
+  s.touchWaysPerRom = out + (out.empty() ? "" : ",") + key + std::to_string(ways);
+}
 
 
 }  // namespace rnl

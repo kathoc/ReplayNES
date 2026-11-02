@@ -94,6 +94,7 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "touchTurbo") s.touchTurbo = parseBool(v, s.touchTurbo);
     else if (k == "touchVibration") s.touchVibration = parseBool(v, s.touchVibration);
     else if (k == "touchHideWithPad") s.touchHideWithPad = parseBool(v, s.touchHideWithPad);
+    else if (k == "touchWaysPerRom") s.touchWaysPerRom = v;
     else if (k == "onScreenKeyboard" && (v == "auto" || v == "builtin" || v == "steam")) s.onScreenKeyboard = v;
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
     else if (k == "core") s.core = v;  // preserve unknown IDs: creation reports an error, never silently substitutes
@@ -154,6 +155,7 @@ std::string Settings::serialize() const {
   o << "touchFollowY=" << touchFollowY << "\n" << "touchFollowX=" << touchFollowX << "\n";
   o << "touchWays=" << touchWays << "\n" << "touchTurbo=" << int(touchTurbo) << "\n";
   o << "touchVibration=" << int(touchVibration) << "\n" << "touchHideWithPad=" << int(touchHideWithPad) << "\n";
+  o << "touchWaysPerRom=" << touchWaysPerRom << "\n";
   o << "onScreenKeyboard=" << onScreenKeyboard << "\n";
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";
   o << "core=" << core << "\n";
