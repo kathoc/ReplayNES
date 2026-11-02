@@ -177,7 +177,10 @@ std::optional<TouchExtra> TouchLayout::extra(TouchButton b) const {
   return std::nullopt;
 }
 
-double TouchLayout::islandMidY(double safeTop) { return safeTop > 20 ? std::round(safeTop / 2) : 22; }
+// Android deviation (docs/design/TOUCH_ANDROID.md): never above minTarget / 2, so the slow button's 44 pt touch
+// area stays on screen when the top inset is between 20 and 44 (Android's status bar, 24); the iPhone's insets
+// (0, 20, 47 and up) give the same values as the Swift.
+double TouchLayout::islandMidY(double safeTop) { return std::max(minTarget / 2, safeTop > 20 ? std::round(safeTop / 2) : 22); }
 
 const std::vector<TouchButton>& TouchLayout::transportOrder() {
   static const std::vector<TouchButton> v = {TouchButton::l2, TouchButton::stepBack, TouchButton::stepForward, TouchButton::r2};

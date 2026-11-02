@@ -33,6 +33,13 @@ Tests/BrickboyGoldenTests.swift with Tests/Fixtures/golden-{portrait,landscape}.
   provenance line; THIRD_PARTY_NOTICES.md names them. (Apache-2.0 code may be combined into this
   GPL-2.0-or-later program under GPL-3.0.)
 
+### Deviations from the iPhone's
+
+- TouchLayout::islandMidY keeps the slow button's centre at least minTarget / 2 (22 pt) from the top: with a
+  top inset between 20 and 44 pt (an Android phone's 24 pt status bar) the iPhone's rule (half the inset)
+  put its 44 pt touch area 6 pt above the screen (found by the layout test on a 412 x 915 phone). The
+  iPhone's insets give the same places as before.
+
 ### 2. In the app (Android only, behind a platform flag)
 
 - Shown when the platform has a touch screen (Android) and, by default, no controller is connected
