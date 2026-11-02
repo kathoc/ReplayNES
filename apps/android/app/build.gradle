@@ -12,6 +12,13 @@ def sdlJava = "${rootDir}/../../third_party/SDL/android-project/app/src/main/jav
 // The launcher icon: -PrnIcon=<a square PNG> (the product's; default ReplayNES's), as a mipmap.
 def iconPng = file(project.findProperty('rnIcon') ?: "${rootDir}/../../apps/linux/steam/artwork/png/hicolor/512.png")
 def iconRes = layout.buildDirectory.dir('generated/rn-icon/res')
+// The version: -PrnVersion=<major.minor.patch> (the product's); versionCode major * 10000 + minor * 100 + patch.
+def rnVersionName = (project.findProperty('rnVersion') ?: '0.1.0').toString()
+def vparts = (rnVersionName.tokenize('.') + ['0', '0', '0']).take(3).collect { it.toInteger() }
+// Release signing from the environment (scripts/build-android.sh reads it from the user's config; never
+// in the repository): RN_ANDROID_KEYSTORE, RN_ANDROID_KEYSTORE_PASSWORD, RN_ANDROID_KEY_ALIAS,
+// RN_ANDROID_KEY_PASSWORD. Without them a release build is unsigned.
+def keystore = System.getenv('RN_ANDROID_KEYSTORE')
 
 android {
     namespace = 'io.github.replaynes.android'
@@ -21,8 +28,8 @@ android {
         applicationId = appId
         minSdk = 29          // Vulkan 1.1 on every 64-bit device that has Vulkan
         targetSdk = 36
-        versionCode = 1
-        versionName = '0.1'
+        versionCode = vparts[0] * 10000 + vparts[1] * 100 + vparts[2]
+        versionName = rnVersionName
         resValue 'string', 'app_name', appName
         externalNativeBuild {
             cmake {
@@ -32,6 +39,16 @@ android {
         }
         ndk { abiFilters 'arm64-v8a' }
     }
+    signingConfigs {
+        if (keystore) {
+            release {
+                storeFile = file(keystore)
+                storePassword = System.getenv('RN_ANDROID_KEYSTORE_PASSWORD')
+                keyAlias = System.getenv('RN_ANDROID_KEY_ALIAS')
+                keyPassword = System.getenv('RN_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         debug {
             // The emulation is far too slow unoptimized (as on iOS): native code is always Release.
@@ -39,6 +56,7 @@ android {
         }
         release {
             minifyEnabled false
+            if (keystore) signingConfig = signingConfigs.release
         }
     }
     buildFeatures { resValues = true }  // app_name from the product
