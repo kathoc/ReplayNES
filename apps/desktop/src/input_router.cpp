@@ -1224,8 +1224,22 @@ void InputRouter::playerOrderPress(SDL_JoystickID id) {
   if (orderNext_ >= kSlots || orderNext_ >= connectedCount() + (standby_.pad ? 1 : 0)) endPlayerOrder();
 }
 
+SDL_Event InputRouter::atFacePosition(const SDL_Event& e) const {
+  if ((e.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.type != SDL_EVENT_GAMEPAD_BUTTON_UP) ||
+      e.gbutton.button > SDL_GAMEPAD_BUTTON_NORTH)
+    return e;
+  const SDL_JoystickID id = e.gbutton.which;
+  const int s = slotOf(id);
+  const PadInfo* p = s >= 0 ? &pads_[s] : standby_.pad && standby_.id == id ? &standby_ : nullptr;
+  for (const PadInfo& w : overflow_)
+    if (!p && w.id == id) p = &w;
+  if (!p || !p->facesSwapped) return e;
+  SDL_Event moved = e;
+  moved.gbutton.button = Uint8(faceButtonAt(e.gbutton.button, true));
+  return moved;
+}
+
 void InputRouter::padButton(int slot, int button, bool down, double t) {
-  button = faceButtonAt(button, pads_[slot].facesSwapped);  // where the button is (the user's check)
   const char* el = rnf_sdl_button_element(button);
   if (debugInput_)
     std::fprintf(stderr, "input: pad slot %d (%s) button %d (%s) %s, ui %d, capture %d\n", slot, pads_[slot].name.c_str(), button,

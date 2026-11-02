@@ -755,7 +755,7 @@ int exportCmd(const Args& a) {
   const uint64_t flash = a.num("--flash", 0);
   if (flash > 3) return usage();
   opt.flash = rn_flash_level(flash);
-  if (a.has("--par87")) opt.settings.pixel_aspect_87 = 1;
+  if (a.has("--par87") || !RN_PRODUCT_NES) opt.settings.pixel_aspect_87 = 1;  // without the NES: the game's own, always
   if (a.has("--no-crop")) opt.settings.crop_top = opt.settings.crop_bottom = 0;
   if (const char* e = a.get("--encoder")) opt.encoder = e;
   if (const char* q = a.get("--quality")) opt.quality = std::atoi(q);

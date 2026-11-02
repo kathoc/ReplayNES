@@ -61,6 +61,16 @@
         }
       }
     },
+    "Blurred sides": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ぼかし背景"
+          }
+        }
+      }
+    },
     "8:7 pixels, blurred sides": {
       "localizations": {
         "ja": {

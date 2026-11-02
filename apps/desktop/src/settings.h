@@ -15,7 +15,7 @@ namespace rnl {
 struct Settings {
   // Display
   bool integerScale = true;  // Integer (largest integer scale) vs FILL
-  bool par87 = false;
+  bool par87 = false;  // the NES's 8:7 pixels; without the NES (ReplayArcade) every game has its own: gamePixelAspect()
   bool hideOverscan = RN_PRODUCT_OVERSCAN_CROP;
 #if !RN_PRODUCT_OVERSCAN_CROP
   std::string preservedOverscanLines;  // opaque settings lines, as for the flash option
@@ -84,5 +84,11 @@ struct Settings {
   bool load(const std::string& path);  // false if the file is missing (defaults kept)
   bool save(const std::string& path) const;  // atomic (temp file + rename)
 };
+
+/// Whether the picture takes the game's own pixel aspect (rn_media_info.pixel_aspect_*). A product without
+/// the NES (ReplayArcade) always does: its games' pixel grids are not their screens' shape (384 x 224 on a
+/// 4:3 screen), and square pixels stretched them; the 8:7 toggle is the NES's. With the NES: the toggle.
+inline bool gamePixelAspect(const Settings& s) { return !RN_PRODUCT_NES || s.par87; }
+
 
 }  // namespace rnl

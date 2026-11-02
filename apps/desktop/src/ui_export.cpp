@@ -59,7 +59,7 @@ void UI::openExportDialog() {
   exportError_.clear();
   exportApplyFlash_ = RN_PRODUCT_FLASH_FILTER && d_.settings->flash != RN_FLASH_OFF;
   exportApplyCRT_ = d_.settings->crt && d_.emu->crtAvailable();
-  exportPar87_ = d_.settings->par87;
+  exportPar87_ = gamePixelAspect(*d_.settings);
   videoCursor_ = st.frame;
   videoRange_ = RNF_VIDEO_RANGE_ALL;
   videoSection_ = -1;
@@ -245,10 +245,12 @@ void UI::buildExportDialog() {
           std::string l = str(rnf_export_preset_label(&p)) + "##preset" + std::to_string(i);
           if (ImGui::RadioButton(l.c_str(), exportPreset_ == int(i))) exportPreset_ = int(i);
         }
+#if RN_PRODUCT_NES  // without the NES the game's own pixel aspect, always (gamePixelAspect)
         ImGui::TextUnformatted(TR("Pixel Aspect Ratio"));
         if (ImGui::RadioButton(TR("1:1 (square pixels)"), !exportPar87_)) exportPar87_ = false;
         ImGui::SameLine();
         if (ImGui::RadioButton((d_.emu->crtAvailable() ? TR("8:7 (as on a CRT TV)") : TR("Pixel Aspect Ratio")), exportPar87_)) exportPar87_ = true;
+#endif
 #if RN_PRODUCT_OVERSCAN_CROP
         ImGui::Checkbox(TR("Hide overscan (crop 8 px on each side)"), &exportCropOverscan_);
 #endif

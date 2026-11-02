@@ -43,3 +43,30 @@ devices cannot keep up with Android's variety.
 
 - Unit tests: the swap of a pad's positions; the file round trip; which controllers are asked.
 - On the Retroid Pocket 5 in both of its layouts: the check, then the hints match the buttons.
+
+## Defect 2026-11-02: the menus did not follow the check
+
+Symptom (Retroid Pocket 5, checked as swapped, Confirm Button on the east): the button at the east
+position cancelled in the menus while the hint showed the east circle as confirm.
+
+Every reader of a gamepad button, from App::handleEvent on, and which number it used:
+
+| Reader | Purpose | Before |
+|---|---|---|
+| App::handleFaceCheck | the check | SDL's (it must be) |
+| InputRouter::handleEvent -> padButton | game bindings, hotkeys, chords, the settings diagram's pressed state | the position (the swap was inside padButton) |
+| PadNavFeed (pad_nav.h) | every menu: confirm / cancel, X / Y actions, held buttons | SDL's |
+| UI::textEntryEvent -> oskButton (ui_osk.cpp) | the on-screen keyboard's A / B | SDL's |
+| player order | which controller pressed (no meaning) | SDL's |
+
+What is drawn: the hint bar's position glyph (UI::faceGlyph) fills the position the Confirm Button
+setting names; the settings diagram's letters come from PadInfo::labels, moved to the positions by
+describe(). Both are positions. So on a swapped controller the game and the pictures had the buttons
+where they are, the menus and the on-screen keyboard where SDL said - the swap was applied inside one
+reader instead of where the events come in.
+
+Fix: App::handleEvent moves a face button to its position once (InputRouter::atFacePosition), right
+after the check (which keeps SDL's numbers) and before any other reader; padButton no longer swaps
+(it would swap back). Nothing else reads gamepad buttons: no SDL_GetGamepadButton calls, no event
+watches or filters, ImGui's SDL3 backend has no gamepads (manual mode), the scripts' events go through
+App::handleEvent too.

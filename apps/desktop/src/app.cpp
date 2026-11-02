@@ -262,8 +262,8 @@ bool App::handleFaceCheck(const SDL_Event& e) {
   return true;
 }
 
-void App::handleEvent(const SDL_Event& e, double now) {
-  if (isUserInput(e)) {
+void App::handleEvent(const SDL_Event& reported, double now) {
+  if (isUserInput(reported)) {
     lastInput_ = now;
     if (app_->screensaverActive()) {  // the input that ends it does nothing else
       app_->stopScreensaver();
@@ -271,7 +271,13 @@ void App::handleEvent(const SDL_Event& e, double now) {
       return;
     }
   }
-  if (ui_->faceCheckActive() && handleFaceCheck(e)) return;
+  if (ui_->faceCheckActive() && handleFaceCheck(reported)) return;  // the check needs SDL's own numbers
+  // From here on a face button is where it is (docs/design/FACE_CHECK.md): the one place the user's check
+  // applies, so the menus (PadNavFeed), the on-screen keyboard, ImGui, the player order and the game all
+  // see the same button. (The menus read SDL's numbers before: on a swapped controller the east button
+  // was the south one there - confirm and cancel the other way round - while the game and the hints
+  // had it right.)
+  const SDL_Event e = input_->atFacePosition(reported);
   // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
   // game pauses and the controllers reach neither the game nor the menus until the window is back.
   // The game stays paused then (play resumes when the player says so).

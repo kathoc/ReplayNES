@@ -172,6 +172,9 @@ class InputRouter {
   /// checked again. False: none to check.
   bool recheckFaceLayouts();
   int slotOfPad(SDL_JoystickID id) const { return slotOf(id); }
+  /// The event with a face button where it is on its controller (the user's check, docs/design/FACE_CHECK.md);
+  /// other events as they are. App::handleEvent applies it once, before anything reads the event.
+  SDL_Event atFacePosition(const SDL_Event& e) const;
   /// Which player each controller is (docs/design/UI_REDESIGN.md, "Controllers and players"): a controller
   /// connected while player 1 is the machine's own controls (or nobody) becomes player 1, the built-in ones
   /// wait aside; it gives player 1 back to them when disconnected. Players 2 to 4 keep their controllers

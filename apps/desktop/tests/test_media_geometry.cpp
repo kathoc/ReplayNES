@@ -51,6 +51,23 @@ TEST_CASE("media game rectangle follows rotation and pixel aspect") {
   CHECK_EQ(smaller.h, 720);
 }
 
+TEST_CASE("arcade pixel grids that are not their screen's shape are shown 4:3") {
+  // FinalBurn Neo's drivers: Strider 384 x 224 and Kid Niki 384 x 256, both on 4:3 screens; the pixel
+  // aspect as FbneoCore derives it (4 * h : 3 * w). Square pixels stretched them to 1.71 and 1.50.
+  struct { uint32_t w, h, num, den; } games[] = {{384, 224, 7, 9}, {384, 256, 8, 9}, {320, 224, 14, 15}};
+  for (const auto& g : games) {
+    rn_media_info m{g.w, g.h, 5963, 100, 2, g.num, g.den, 0};
+    rn_video_frame_info f{nullptr, g.w, g.h, g.w};
+    auto r = computeGameRect(1920, 1080, m, f, false, true, false);
+    CHECK_EQ(r.w, 1440);
+    CHECK_EQ(r.h, 1080);
+    m.rotation = 1;  // a vertical game: 3:4
+    auto v = computeGameRect(1920, 1080, m, f, false, true, false);
+    CHECK_EQ(v.w, 810);
+    CHECK_EQ(v.h, 1080);
+  }
+}
+
 TEST_CASE("QOI decoding, every chunk kind; cut short or not QOI is refused") {
   // 3 x 2: RGBA, RUN (+1), DIFF, LUMA, INDEX (of the first colour), then the end marker.
   const std::vector<uint8_t> qoi = {'q', 'o', 'i', 'f', 0, 0, 0, 3, 0, 0, 0, 2, 4, 0,
