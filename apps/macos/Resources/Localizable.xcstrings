@@ -1,6 +1,140 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Play (settings page)": {
+      "comment": "Settings page title (pausing, rewinding, resuming, saving)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレイ"
+          }
+        }
+      }
+    },
+    "App (settings page)": {
+      "comment": "Settings page title (language, updates, folders)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ"
+          }
+        }
+      }
+    },
+    "Looks like a CRT TV: scanlines, afterglow, signal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウン管のテレビの見た目（走査線・残光・電波）"
+          }
+        }
+      }
+    },
+    "Input Details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力の詳細"
+          }
+        }
+      }
+    },
+    "Opposite directions, stick, button positions, reset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逆方向の同時押し、スティック、ボタンの位置、リセット"
+          }
+        }
+      }
+    },
+    "How fast turbo buttons repeat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射ボタンの速さ"
+          }
+        }
+      }
+    },
+    "Updates": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート"
+          }
+        }
+      }
+    },
+    "Version and updates": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョンとアップデート"
+          }
+        }
+      }
+    },
+    "ROM and project folders, license": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM とプロジェクトのフォルダ、ライセンス"
+          }
+        }
+      }
+    },
+    "Display, controls, sound, play and app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面、操作、音、プレイ、アプリ"
+          }
+        }
+      }
+    },
+    "4-way ignores diagonals (remembered per game)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4方向では斜めを無視します（ゲームごとに記憶）"
+          }
+        }
+      }
+    },
+    "CRT settings are back to the defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウン管の設定を既定に戻しました"
+          }
+        }
+      }
+    },
     "Touch Controls": {
       "localizations": {
         "ja": {
@@ -167,16 +301,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "十字キーの方向数"
-          }
-        }
-      }
-    },
-    "4-way ignores diagonals": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "4方向では斜めを無視します"
           }
         }
       }

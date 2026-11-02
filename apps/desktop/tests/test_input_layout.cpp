@@ -447,7 +447,8 @@ TEST_CASE("S5b Turbo settings page enumerates every layout button and global con
   }
 }
 
-TEST_CASE("S5b layout Turbo pages are opt-in and legacy Controls retain their exact rows") {
+TEST_CASE("S5b Controls: the Turbo page for every game, per-button timing only with a layout; rows fixed by the table") {
+  // docs/design/UI_REDESIGN.md "Settings" (2026-11-03): no item moves between pages by feature.
   LayoutScope scope;
   const auto ids = [](rnf_menu* menu, const char* pageId) {
     const int page = rnf_menu_page_find(menu, pageId);
@@ -457,30 +458,31 @@ TEST_CASE("S5b layout Turbo pages are opt-in and legacy Controls retain their ex
     for (size_t i = 0; rnf_menu_item_get(menu, size_t(page), i, &item); ++i) result.emplace_back(item.id);
     return result;
   };
-  const std::vector<std::string> controls = {"controls.controller", "controls.keyboard", "controls.abxy",
-      "controls.dpad_paused", "controls.osk", "controls.detail"};
-  const std::vector<std::string> detail = {"controls.rewind_pause", "controls.turbo", "controls.turbo_duty",
-      "controls.socd", "controls.stick", "controls.reset"};
+  const std::vector<std::string> controls = {"controls.controller", "controls.keyboard", "controls.confirm",
+      "controls.turbo_page", "controls.detail"};
+  const std::vector<std::string> detail = {"controls.socd", "controls.stick", "controls.osk", "controls.faces", "controls.reset"};
   for (const bool generic : {false, true}) {
     REQUIRE_EQ(rnf_input_set_layout_json(generic ? s5b::layout().toJson().c_str() : nullptr), RN_OK);
     std::unique_ptr<rnf_menu, decltype(&rnf_menu_free)> legacy(rnf_menu_new(RNF_MENU_FEATURE_OSK), rnf_menu_free);
     CHECK(ids(legacy.get(), "settings.controls") == controls);
     CHECK(ids(legacy.get(), "controls.detail") == detail);
-    CHECK_EQ(rnf_menu_page_find(legacy.get(), "controls.turbo_page"), -1);
+    CHECK(ids(legacy.get(), "controls.turbo_page") == std::vector<std::string>({"controls.turbo", "controls.turbo_duty"}));
     CHECK_EQ(rnf_menu_page_find(legacy.get(), "controls.turbo_buttons"), -1);
     for (size_t i = 0; i < rnf_input_button_count(); ++i)
       CHECK_EQ(rnf_menu_page_find(legacy.get(), ("controls.button_turbo." + std::to_string(i)).c_str()), -1);
   }
   std::unique_ptr<rnf_menu, decltype(&rnf_menu_free)> enabled(
       rnf_menu_new(RNF_MENU_FEATURE_OSK | RNF_MENU_FEATURE_LAYOUT_TURBO), rnf_menu_free);
-  const auto enabledControls = ids(enabled.get(), "settings.controls");
-  const auto enabledDetail = ids(enabled.get(), "controls.detail");
-  CHECK(std::find(enabledControls.begin(), enabledControls.end(), "controls.osk") == enabledControls.end());
-  CHECK(std::find(enabledDetail.begin(), enabledDetail.end(), "controls.osk") != enabledDetail.end());
-  CHECK(std::find(enabledDetail.begin(), enabledDetail.end(), "controls.turbo") == enabledDetail.end());
+  CHECK(ids(enabled.get(), "settings.controls") == controls);
+  CHECK(ids(enabled.get(), "controls.detail") == detail);
   CHECK(ids(enabled.get(), "controls.turbo_page") == std::vector<std::string>({"controls.turbo", "controls.turbo_duty", "controls.turbo_buttons"}));
-  CHECK(enabledControls.size() <= RNF_MENU_MAX_ITEMS);
-  CHECK(enabledDetail.size() <= RNF_MENU_MAX_ITEMS);
+  // A touch platform: Touch Controls in the Keyboard's place.
+  std::unique_ptr<rnf_menu, decltype(&rnf_menu_free)> touch(
+      rnf_menu_new(RNF_MENU_FEATURE_TOUCH | RNF_MENU_FEATURE_LAYOUT_TURBO | RNF_MENU_FEATURE_MOUSE), rnf_menu_free);
+  CHECK(ids(touch.get(), "settings.controls") == std::vector<std::string>({"controls.controller", "controls.touch",
+      "controls.confirm", "controls.turbo_page", "controls.detail"}));
+  CHECK(ids(touch.get(), "controls.detail") == std::vector<std::string>({"controls.socd", "controls.stick", "controls.mouse",
+      "controls.faces", "controls.reset"}));
 }
 
 TEST_CASE("P stick defaults use arcade rows turbo and dedicated hotkeys") {

@@ -69,21 +69,20 @@ const PageDef kPages[] = {
     {"settings.display", RNF_L("Display (settings page)"), "device-desktop", RNF_MENU_PAGE_SETTINGS, "settings", 0},
     {"settings.controls", RNF_L("Controls"), "device-gamepad", RNF_MENU_PAGE_SETTINGS, "settings", 0},
     {"settings.sound", RNF_L("Sound"), "volume", RNF_MENU_PAGE_SETTINGS, "settings", 0},
-    {"settings.system", RNF_L("System"), "adjustments-horizontal", RNF_MENU_PAGE_SETTINGS, "settings", 0},
-    {"display.crt", RNF_L("CRT Details"), "device-tv-old", RNF_MENU_PAGE_SETTINGS, "", F_CRT},
+    {"settings.play", RNF_L("Play (settings page)"), "player-play", RNF_MENU_PAGE_SETTINGS, "settings", 0},
+    {"settings.system", RNF_L("App (settings page)"), "adjustments-horizontal", RNF_MENU_PAGE_SETTINGS, "settings", 0},
+    {"display.crt", RNF_L("CRT"), "device-tv-old", RNF_MENU_PAGE_SETTINGS, "", F_CRT},
     {"display.shape", RNF_L("Picture Shape"), "aspect-ratio", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"controls.controller", RNF_L("Controller"), "device-gamepad", RNF_MENU_PAGE_CUSTOM, "", 0},
-    {"controls.abxy", RNF_L("ABXY Buttons"), "circle-check", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"controls.touch", RNF_L("Touch Controls"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", F_TOUCH},
     {"touch.dpad", RNF_L("D-pad"), "plus", RNF_MENU_PAGE_SETTINGS, "", F_TOUCH},
     {"controls.assign", RNF_L("Button Action"), "list", RNF_MENU_PAGE_LIST, "", 0},
     {"controls.keyboard", RNF_L("Keyboard"), "keyboard", RNF_MENU_PAGE_LIST, "", 0},
     {"controls.turbo_buttons", RNF_L("Buttons"), "device-gamepad", RNF_MENU_PAGE_LIST, "", F_LAYOUT_TURBO},
-    {"controls.turbo_page", RNF_L("Turbo"), "bolt", RNF_MENU_PAGE_SETTINGS, "", F_LAYOUT_TURBO},
-    {"controls.detail", RNF_L("More Controls"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", 0},
-    {"system.about", RNF_L("ReplayNES Version"), "info-circle", RNF_MENU_PAGE_SETTINGS, "", 0},
+    {"controls.turbo_page", RNF_L("Turbo"), "bolt", RNF_MENU_PAGE_SETTINGS, "", 0},
+    {"controls.detail", RNF_L("Input Details"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", 0},
+    {"system.about", RNF_L("Updates"), "info-circle", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"about.folders", RNF_L("Folders and License"), "folder", RNF_MENU_PAGE_SETTINGS, "", 0},
-    {"system.detail", RNF_L("More Settings"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"game", RNF_L("Game"), "device-gamepad-2", RNF_MENU_PAGE_TILES, "", 0},
     {"library.projects", RNF_L("Projects"), "folder", RNF_MENU_PAGE_LIST, "", 0},
 };
@@ -106,7 +105,7 @@ const std::vector<ItemDef>& items() {
        "practice", 0, {}},
       {"quick", "share", RNF_L("Share"), RNF_L("Make a video or send the picture to other apps"), "share", PAGE, "share",
        F_SHARE_ANY, {}},
-      {"quick", "settings", RNF_L("Settings"), RNF_L("Display, controls, sound and system"), "settings", PAGE,
+      {"quick", "settings", RNF_L("Settings"), RNF_L("Display, controls, sound, play and app"), "settings", PAGE,
        "settings.display", 0, {}},
       {"quick", "game", RNF_L("Game"), RNF_L("Choose a game, save, reset"), "device-gamepad-2", PAGE, "game", 0, {}},
       // Retry (docs/design/VTR_UX.md: one tape; takes are never shown).
@@ -123,17 +122,13 @@ const std::vector<ItemDef>& items() {
        F_EXPORT, {}},
       {"share", "share.stream", RNF_L("Stream Output"), RNF_L("Send the picture to OBS and other apps"), "broadcast", TOGGLE,
        "", F_STREAM, {}},
-      // Settings: Display.
+      // Settings (docs/design/UI_REDESIGN.md "Settings", 2026-11-03): five pages by purpose - Display, Controls,
+      // Sound, Play, App - so a setting's place follows from what it does (docs/reviews/settings-menu-ia-1.md).
+      // Settings: Display (how the picture looks and how large it is).
       {"settings.display", "display.size", RNF_L("Size"), RNF_L("Integer: sharp pixels · FILL: as large as the screen"),
        "maximize", CHOICE, "", 0, {RNF_L("Integer"), RNF_L("FILL")}},
-      {"settings.display", "display.crt", RNF_L("CRT"), RNF_L("Looks like a CRT TV (display only)"), "device-tv-old", TOGGLE,
-       "", F_CRT, {}},
-#if RN_PRODUCT_FLASH_FILTER
-      {"settings.display", "display.flash", RNF_L("Reduce Flashing"), RNF_L("Dims hard full-screen flashes (photosensitivity)"),
-       "bolt-off", CHOICE, "", 0, {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
-#endif
-      {"settings.display", "display.vtr", RNF_L("VTR Effect"), RNF_L("Videotape-style noise while rewinding (display only)"),
-       "rewind-backward-5", TOGGLE, "", 0, {}},
+      {"settings.display", "system.fullscreen", RNF_L("Full Screen"), RNF_L("Use the whole screen"), "maximize", TOGGLE, "",
+       F_FULLSCREEN, {}},
       {"settings.display", "display.shape", RNF_L("Picture Shape"),
 #if RN_PRODUCT_OVERSCAN_CROP
        RNF_L("8:7 pixels, hide the edges, blurred sides"),
@@ -144,8 +139,14 @@ const std::vector<ItemDef>& items() {
 #endif
        "aspect-ratio", PAGE,
        "display.shape", 0, {}},
-      {"settings.display", "display.crt_detail", RNF_L("CRT Details"), RNF_L("Scanlines, afterglow, signal"), "adjustments",
-       PAGE, "display.crt", F_CRT, {}},
+      {"settings.display", "display.crt_detail", RNF_L("CRT"), RNF_L("Looks like a CRT TV: scanlines, afterglow, signal"),
+       "device-tv-old", PAGE, "display.crt", F_CRT, {}},
+#if RN_PRODUCT_FLASH_FILTER
+      {"settings.display", "display.flash", RNF_L("Reduce Flashing"), RNF_L("Dims hard full-screen flashes (photosensitivity)"),
+       "bolt-off", CHOICE, "", 0, {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
+#endif
+      {"settings.display", "system.ui_scale", RNF_L("UI Size"), RNF_L("Size of menus and text"), "text-size", SLIDER, "",
+       F_UI_SCALE, {}},
       // Display > Picture Shape.
 #if RN_PRODUCT_NES  // without the NES every game takes its own pixel aspect (gamePixelAspect)
       {"display.shape", "display.par87", RNF_L("8:7 Pixels"), RNF_L("The pixel shape of a CRT TV"), "aspect-ratio", TOGGLE,
@@ -158,32 +159,33 @@ const std::vector<ItemDef>& items() {
       {"display.shape", "display.backdrop", RNF_L("Blurred Sides"),
        RNF_L("The empty sides show the game enlarged, blurred and dimmed"), "photo", CHOICE, "", 0,
        {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
-      // Display > CRT details.
+      // Display > CRT: on / off first, then its details (Y: back to the defaults, ui_menu.cpp).
+      {"display.crt", "display.crt", RNF_L("CRT"), RNF_L("Looks like a CRT TV (display only)"), "device-tv-old", TOGGLE,
+       "", F_CRT, {}},
       {"display.crt", "crt.lines", RNF_L("Scanlines"), RNF_L("240 = standard; fewer lines is an experiment"), "line-scan", SLIDER,
+       "", F_CRT, {}},
+      {"display.crt", "crt.antenna", RNF_L("Signal"), RNF_L("Antenna signal strength (weaker = noisier)"), "antenna", SLIDER,
        "", F_CRT, {}},
       {"display.crt", "crt.beam", RNF_L("Beam Growth"), RNF_L("Bright lines get thicker"), "line-height", TOGGLE, "", F_CRT, {}},
       {"display.crt", "crt.persistence", RNF_L("Afterglow"), RNF_L("Phosphor persistence"), "sun-low", TOGGLE, "", F_CRT, {}},
       {"display.crt", "crt.supply", RNF_L("Power Sag"), RNF_L("Bright screens widen and dim the picture"), "bolt", TOGGLE, "",
        F_CRT, {}},
-      {"display.crt", "crt.antenna", RNF_L("Signal"), RNF_L("Antenna signal strength (weaker = noisier)"), "antenna", SLIDER,
-       "", F_CRT, {}},
-      {"display.crt", "crt.reset", RNF_L("Defaults"), RNF_L("Back to nesterm’s defaults"), "restore", ACTION, "", F_CRT, {}},
-      // Settings: Controls.
+      // Settings: Controls (the devices and what their buttons do).
       {"settings.controls", "controls.controller", RNF_L("Controller"), RNF_L("See and change what each button does"),
        "device-gamepad", PAGE, "controls.controller", 0, {}},
       {"settings.controls", "controls.keyboard", RNF_L("Keyboard"), RNF_L("Keys for the game and the hotkeys"), "keyboard",
        PAGE, "controls.keyboard", F_NO_TOUCH, {}},
-      {"settings.controls", "controls.abxy", RNF_L("ABXY Buttons"), RNF_L("The confirm button, where the buttons are"),
-       "circle-check", PAGE, "controls.abxy", 0, {}},
-      // Controls > ABXY Buttons (docs/design/FACE_CHECK.md: not under Controller, a reset keeps it).
-      {"controls.abxy", "controls.confirm", RNF_L("Confirm Button"), RNF_L("Which button confirms in menus (the other goes back)"),
-       "circle-check", CHOICE, "", 0, {RNF_L("East Confirms"), RNF_L("South Confirms")}},
-      {"controls.abxy", "controls.faces", RNF_L("ABXY Button Positions"),
-       RNF_L("Match the hints to where the connected controllers' buttons are"), "device-gamepad", ACTION, "", 0, {}},
-      // Controls > Touch Controls: the iPhone's settings of the on-screen controller (docs/design/TOUCH_ANDROID.md).
+      // Controls > Touch Controls: the iPhone's settings of the on-screen controller (docs/design/TOUCH_ANDROID.md), in
+      // the Keyboard's place.
       {"settings.controls", "controls.touch", RNF_L("Touch Controls"),
        RNF_L("D-pad size and follow, opacity, turbo buttons and vibration of the on-screen controls"), "adjustments", PAGE,
        "controls.touch", F_TOUCH, {}},
+      {"settings.controls", "controls.confirm", RNF_L("Confirm Button"), RNF_L("Which button confirms in menus (the other goes back)"),
+       "circle-check", CHOICE, "", 0, {RNF_L("East Confirms"), RNF_L("South Confirms")}},
+      {"settings.controls", "controls.turbo_page", RNF_L("Turbo"), RNF_L("How fast turbo buttons repeat"), "bolt", PAGE,
+       "controls.turbo_page", 0, {}},
+      {"settings.controls", "controls.detail", RNF_L("Input Details"),
+       RNF_L("Opposite directions, stick, button positions, reset"), "adjustments", PAGE, "controls.detail", 0, {}},
       {"controls.touch", "touch.opacity", RNF_L("Opacity"), RNF_L("How visible the on-screen controls are"), "eye", SLIDER, "",
        F_TOUCH, {}},
       {"controls.touch", "touch.dpad", RNF_L("D-pad"), RNF_L("Size, follow and directions of the on-screen D-pad"), "plus", PAGE,
@@ -199,32 +201,25 @@ const std::vector<ItemDef>& items() {
        "arrows-diff", SLIDER, "", F_TOUCH, {}},
       {"touch.dpad", "touch.follow_x", RNF_L("Follow Left / Right"), RNF_L("How fast the D-pad follows your thumb left and right"),
        "arrows-horizontal", SLIDER, "", F_TOUCH, {}},
-      {"touch.dpad", "touch.ways", RNF_L("D-pad Directions"), RNF_L("4-way ignores diagonals"), "arrows-diff", CHOICE, "", F_TOUCH,
-       {"8", "4"}},
-      {"settings.controls", "controls.dpad_paused", RNF_L("D-pad While Paused"), RNF_L("← / → step one frame while paused"),
-       "arrows-horizontal", TOGGLE, "", 0, {}},
-      {"settings.controls", "controls.osk", RNF_L("On-screen Keyboard"), RNF_L("For names and search: Steam’s or the built-in one"),
-       "keyboard", CHOICE, "", F_OSK, {RNF_L("Automatic"), RNF_L("Built-in"), "=Steam"}},
-      {"settings.controls", "controls.detail", RNF_L("More"), RNF_L("Turbo, opposite directions, stick"),
-       "adjustments", PAGE, "controls.detail", 0, {}},
-      {"settings.controls", "controls.turbo_page", RNF_L("Turbo"), RNF_L("Global and per-button turbo timing"), "bolt",
-       PAGE, "controls.turbo_page", F_LAYOUT_TURBO, {}},
+      {"touch.dpad", "touch.ways", RNF_L("D-pad Directions"), RNF_L("4-way ignores diagonals (remembered per game)"), "arrows-diff",
+       CHOICE, "", F_TOUCH, {"8", "4"}},
+      // Controls > Turbo: the same page for every game; another core's game adds the per-button timing.
       {"controls.turbo_page", "controls.turbo", RNF_L("Turbo Speed"), RNF_L("Presses per second"), "bolt", SLIDER, "", 0, {}},
       {"controls.turbo_page", "controls.turbo_duty", RNF_L("Turbo Press Length"), RNF_L("Frames each turbo press is held"), "clock", SLIDER, "", 0, {}},
-      {"controls.turbo_page", "controls.turbo_buttons", RNF_L("Buttons"), RNF_L("Per-button turbo timing"), "device-gamepad", PAGE, "controls.turbo_buttons", 0, {}},
-      // Controls > More.
-      {"controls.detail", "controls.rewind_pause", RNF_L("Pause After Rewind"), RNF_L("Pause when rewind / fast-forward is released"),
-       "player-pause", TOGGLE, "", 0, {}},
-      {"controls.detail", "controls.turbo", RNF_L("Turbo Speed"), RNF_L("Presses per second of Turbo A / B"), "bolt",
-       SLIDER, "", 0, {}},
-      {"controls.detail", "controls.turbo_duty", RNF_L("Turbo Press Length"), RNF_L("Frames each turbo press is held"), "clock",
-       SLIDER, "", 0, {}},
-      {"controls.detail", "controls.mouse", RNF_L("Mouse"), RNF_L("The mouse moves the sticks, dials and levers of games with analog controls"),
-       "target", TOGGLE, "", F_MOUSE, {}},
+      {"controls.turbo_page", "controls.turbo_buttons", RNF_L("Buttons"), RNF_L("Per-button turbo timing"), "device-gamepad", PAGE,
+       "controls.turbo_buttons", F_LAYOUT_TURBO, {}},
+      // Controls > Input Details (the devices' fine adjustments; ABXY Button Positions is not under Controller, so
+      // Reset Controls never changes it: docs/design/FACE_CHECK.md).
       {"controls.detail", "controls.socd", RNF_L("Opposite Directions"), RNF_L("← and → (or ↑ and ↓) pressed together"),
        "arrows-diff", CHOICE, "", 0, {RNF_L("Neutral"), RNF_L("Last Wins"), RNF_L("Both")}},
       {"controls.detail", "controls.stick", RNF_L("Stick Threshold"), RNF_L("How far the stick moves before it counts"),
        "device-gamepad-3", SLIDER, "", 0, {}},
+      {"controls.detail", "controls.mouse", RNF_L("Mouse"), RNF_L("The mouse moves the sticks, dials and levers of games with analog controls"),
+       "target", TOGGLE, "", F_MOUSE, {}},
+      {"controls.detail", "controls.osk", RNF_L("On-screen Keyboard"), RNF_L("For names and search: Steam’s or the built-in one"),
+       "keyboard", CHOICE, "", F_OSK, {RNF_L("Automatic"), RNF_L("Built-in"), "=Steam"}},
+      {"controls.detail", "controls.faces", RNF_L("ABXY Button Positions"),
+       RNF_L("Match the hints to where the connected controllers' buttons are"), "device-gamepad", ACTION, "", 0, {}},
       {"controls.detail", "controls.reset", RNF_L("Reset Controls"), RNF_L("Every key and button back to the defaults"),
        "restore", ACTION, "", 0, {}},
       // Settings: Sound.
@@ -233,20 +228,38 @@ const std::vector<ItemDef>& items() {
        "volume-2", TOGGLE, "", F_SLOW_AUDIO, {}},
       {"settings.sound", "sound.low_latency", RNF_L("Low Latency"), RNF_L("A smaller sound buffer (may crackle)"), "bolt",
        TOGGLE, "", F_LOW_LATENCY, {}},
-      // Settings: System.
-      {"settings.system", "system.core", RNF_L("Core"), RNF_L("Applies to the next new game; existing recordings keep their core"),
-       "device-gamepad-2", CHOICE, "", F_CORE, {"=Nestopia", "=ReplayNEScore"}},
+      // Settings: Play (pausing, rewinding, resuming, saving).
+      {"settings.play", "controls.rewind_pause", RNF_L("Pause After Rewind"), RNF_L("Pause when rewind / fast-forward is released"),
+       "player-pause", TOGGLE, "", 0, {}},
+      {"settings.play", "controls.dpad_paused", RNF_L("D-pad While Paused"), RNF_L("← / → step one frame while paused"),
+       "arrows-horizontal", TOGGLE, "", 0, {}},
+      {"settings.play", "system.resume_countdown", RNF_L("Countdown"),
+       RNF_L("Before play resumes after a pause, and before each practice run (1: the ring alone)"), "player-play", CHOICE,
+       "", 0, {"=3", "=1", RNF_L("None")}},
+      {"settings.play", "display.vtr", RNF_L("VTR Effect"), RNF_L("Videotape-style noise while rewinding (display only)"),
+       "rewind-backward-5", TOGGLE, "", 0, {}},
+      {"settings.play", "system.autosave", RNF_L("Autosave"), RNF_L("How often the recording is saved"), "device-floppy",
+       CHOICE, "", 0, {RNF_L("2 s"), RNF_L("3 s"), RNF_L("5 s"), RNF_L("10 s"), RNF_L("30 s")}},
+#if RN_PRODUCT_FOCUS_PAUSE
+      {"settings.play", "system.background", RNF_L("Play in the Background"),
+       RNF_L("Keep playing and take the controllers while another window is in front"), "player-play", TOGGLE, "",
+       F_BACKGROUND, {}},
+#endif
+      // Settings: App (the application itself: language, updates, folders).
       {"settings.system", "system.language", RNF_L("Language"), RNF_L("Automatic follows the system language"), "language",
        CHOICE, "", 0, {RNF_L("Automatic"), RNF_JAPANESE_NAME, "=English"}},
-      {"settings.system", "system.steam", RNF_L("Add to Steam"), RNF_L("Adds ReplayNES to the Steam library (close Steam first)"),
-       "brand-steam", ACTION, "", F_STEAM, {}},
-      {"settings.system", "system.about", RNF_L("ReplayNES Version"), RNF_L("Version, updates and folders"), "info-circle",
+      {"settings.system", "system.core", RNF_L("Core"), RNF_L("Applies to the next new game; existing recordings keep their core"),
+       "device-gamepad-2", CHOICE, "", F_CORE, {"=Nestopia", "=ReplayNEScore"}},
+      {"settings.system", "system.screensaver", RNF_L("Screensaver"),
+       RNF_L("Game demos after a time without input (nothing is recorded)"), "device-tv-old", CHOICE, "", 0,
+       {RNF_L("Off"), RNF_L("1 min"), RNF_L("3 min"), RNF_L("5 min"), RNF_L("10 min"), RNF_L("30 min")}},
+      {"settings.system", "system.about", RNF_L("Updates"), RNF_L("Version and updates"), "info-circle",
        PAGE, "system.about", 0, {}},
-      {"settings.system", "system.detail", RNF_L("More"), RNF_L("Full screen, UI size, autosave"), "adjustments", PAGE,
-       "system.detail", 0, {}},
+      {"settings.system", "about.folders", RNF_L("Folders and License"), RNF_L("ROM and project folders, license"),
+       "folder", PAGE, "about.folders", 0, {}},
       {"settings.system", "system.quit", RNF_L("Quit"), RNF_L("Close ReplayNES (where you are is kept)"), "power", ACTION, "",
        F_QUIT, {}},
-      // System > ReplayNES Version: the version and the in-app updates (status, check, update, automatic).
+      // App > Updates: the version and the in-app updates (status, check, update, automatic), Add to Steam.
       {"system.about", "about.version", RNF_L("Version"), "", "info-circle", INFO, "", 0, {}},
       {"system.about", "updates.status", RNF_L("Status"), "", "circle-check", INFO, "", F_UPDATES, {}},
       {"system.about", "updates.check", RNF_L("Check Now"), RNF_L("Look for a new version now"), "refresh", ACTION, "",
@@ -255,40 +268,13 @@ const std::vector<ItemDef>& items() {
        F_UPDATES, {}},
       {"system.about", "updates.auto", RNF_L("Check Automatically"), RNF_L("Look for updates in the background"),
        "clock", TOGGLE, "", F_UPDATES, {}},
-      {"system.about", "about.folders", RNF_L("Folders and License"), RNF_L("ROM and project folders, settings file"),
-       "folder", PAGE, "about.folders", 0, {}},
-      // System > ReplayNES Version > Folders and License.
+      {"system.about", "system.steam", RNF_L("Add to Steam"), RNF_L("Adds ReplayNES to the Steam library (close Steam first)"),
+       "brand-steam", ACTION, "", F_STEAM, {}},
+      // App > Folders and License.
       {"about.folders", "about.roms", RNF_L("ROM Folder"), RN_PRODUCT_NES ? RNF_L("Put .nes files here") : RNF_L("Put ROM zips here (FinalBurn Neo set names)"), "folder", ACTION, "", 0, {}},
       {"about.folders", "about.projects", RNF_L("Projects Folder"), RNF_L("Your recordings are saved here"), "folder", ACTION,
        "", 0, {}},
-      {"about.folders", "about.settings", RNF_L("Settings File"), "", "file-text", INFO, "", 0, {}},
       {"about.folders", "about.license", RNF_L("License"), RNF_L("Free software (GPL-2.0-or-later)"), "license", INFO, "", 0, {}},
-      {"about.folders", "system.stats", RNF_L("Latency Stats"), RNF_L("Measured latency and timing (F3)"), "chart-line", TOGGLE,
-       "", 0, {}},
-      // System > More.
-      {"system.detail", "system.fullscreen", RNF_L("Full Screen"), RNF_L("Use the whole screen"), "maximize", TOGGLE, "",
-       F_FULLSCREEN, {}},
-      {"system.detail", "system.ui_scale", RNF_L("UI Size"), RNF_L("Size of menus and text"), "text-size", SLIDER, "",
-       F_UI_SCALE, {}},
-      {"system.detail", "system.autosave", RNF_L("Autosave"), RNF_L("How often the recording is saved"), "device-floppy",
-       CHOICE, "", 0, {RNF_L("2 s"), RNF_L("3 s"), RNF_L("5 s"), RNF_L("10 s"), RNF_L("30 s")}},
-      // Here, not under Controls: Controls and Controls > More are full on Linux (docs/design/UI_REDESIGN.md).
-      {"system.detail", "system.resume_countdown", RNF_L("Countdown"),
-       RNF_L("Before play resumes after a pause, and before each practice run (1: the ring alone)"), "player-play", CHOICE,
-       "", 0, {"=3", "=1", RNF_L("None")}},
-#if RN_PRODUCT_FOCUS_PAUSE
-      {"system.detail", "system.background", RNF_L("Play in the Background"),
-       RNF_L("Keep playing and take the controllers while another window is in front"), "player-play", TOGGLE, "",
-       F_BACKGROUND, {}},
-#endif
-#if RN_PRODUCT_FLASH_FILTER
-      {"system.detail", "system.flash_badge", RNF_L("Flash Badge"), RNF_L("Show a badge while flashes are reduced"), "bolt-off",
-       TOGGLE, "", 0, {}},
-#endif
-      // Here, not under Display: Display is full (docs/design/SCREENSAVER.md); Latency Stats moved to Folders.
-      {"system.detail", "system.screensaver", RNF_L("Screensaver"),
-       RNF_L("Game demos after a time without input (nothing is recorded)"), "device-tv-old", CHOICE, "", 0,
-       {RNF_L("Off"), RNF_L("1 min"), RNF_L("3 min"), RNF_L("5 min"), RNF_L("10 min"), RNF_L("30 min")}},
       // Game.
       {"game", "game.library", RNF_L("Choose Game"), RNF_L("Back to the game library"), "layout-grid", ACTION, "", 0, {}},
       {"game", "game.save", RNF_L("Save"), RNF_L("Save the project now"), "device-floppy", ACTION, "", 0, {}},
@@ -428,18 +414,9 @@ rnf_menu* rnf_menu_new(uint32_t features) {
     p.def = &d;
     if (d.kind == RNF_MENU_PAGE_CARDS) p.count = RNF_MENU_MAX_CARDS;
     for (const ItemDef& it : items()) {
-      const bool layoutTurbo = (features & F_LAYOUT_TURBO) != 0;
-      const bool globalTurbo = std::strcmp(it.id, "controls.turbo") == 0 || std::strcmp(it.id, "controls.turbo_duty") == 0;
-      if (layoutTurbo && globalTurbo && std::strcmp(it.page, "controls.detail") == 0) continue;
-      // Only layout-aware menus relocate OSK; legacy menus retain their exact row order.
-      const bool moveOsk = layoutTurbo && std::strcmp(it.id, "controls.osk") == 0;
-      const char* page = moveOsk ? "controls.detail" : it.page;
-      if (std::strcmp(page, d.id) != 0 || !featureOK(it.features, features)) continue;
-      if (moveOsk) {
-        m->ownedItems.push_back(it);
-        m->ownedItems.back().page = page;
-        p.items.push_back({&m->ownedItems.back()});
-      } else p.items.push_back({&it});
+      // The tree is the table's (no item moves between pages by feature).
+      if (std::strcmp(it.page, d.id) != 0 || !featureOK(it.features, features)) continue;
+      p.items.push_back({&it});
     }
     m->pages.push_back(std::move(p));
   }

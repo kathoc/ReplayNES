@@ -622,6 +622,9 @@ void UI::buildSettingsPage(const PageGeometry& g, size_t page, double now) {
       else if (it.kind != RNF_MENU_ITEM_INFO && en) prompt({"ui.confirm"}, it.kind == RNF_MENU_ITEM_PAGE ? TR("Open") : TR("Select"));
     }
   }
+  rnf_menu_page_info pageInfo{};
+  if (rnf_menu_page_get(menu_, page, &pageInfo) && std::strcmp(pageInfo.id, "display.crt") == 0)
+    prompt({"face.north"}, TR("Defaults"), [this] { rowAction("display.crt", 0, 'y'); });
   prompt({"ui.cancel"}, TR("Back"));
 }
 
@@ -1014,6 +1017,11 @@ void UI::activateRow(const std::string& page, size_t row) {
 
 void UI::rowAction(const std::string& page, size_t row, char key) {
   EmulationController* emu = d_.emu;
+  if (page == "display.crt" && key == 'y') {  // Display > CRT: Y = back to the defaults (was the Defaults row)
+    activateItem("crt.reset");
+    notice(TR("CRT settings are back to the defaults"));
+    return;
+  }
   if (page == "practice") {
     const SessionStructure& ss = emu->structure();
     if (row >= ss.slots.size() || !ss.slots[row].hasA) return;

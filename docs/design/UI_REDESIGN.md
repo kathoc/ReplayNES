@@ -38,17 +38,24 @@ Applies to macOS (SwiftUI), Linux/Steam Deck and Windows (shared ImGui frontend 
 | やり直す / Retry | history | ここから録り直す · 前の試行へ · テイク一覧 · ブックマーク · 再生で見る · 記録を最初からやり直す (6 = the limit) |
 | 練習 / Practice | target | 8 A/B slots as 4×2 cards (thumbnail of A, name, length); A = practice, Y = rename, X = clear; empty slot = "＋" (set A here) |
 | 共有 / Share | share | MP4に書き出す · 配信出力 (Syphon/Spout) |
-| 設定 / Settings | settings | 画面 · 操作 · 音 · システム (L1/R1 switch between these four) |
+| 設定 / Settings | settings | 画面 · 操作 · 音 · プレイ · アプリ (L1/R1 switch between these five) |
 | ゲーム / Game | device-gamepad | ゲーム選択 · 保存 · 別名で保存 · プロジェクトを開く · リセット |
 
 **記録を最初からやり直す / Restart Recording** (Retry, 6th item) opens the same Reset Project confirmation as ゲーム › リセット › プロジェクトをリセット… (keep the A/B sections or not; a saved project is backed up to the Trash first). It is where a player looks for "start the run over"; the Game page keeps its リセット (soft reset / power cycle / reset project) because it still fits (5 items) and soft reset / power cycle belong there. Retry is now full: anything new for it goes one level down.
 
 ### Settings pages (≤ 6 rows each, 2 columns; deeper detail one level further)
 
-- **画面 / Display:** サイズ (等倍 | FILL) · ブラウン管 (on/off) · 点滅を抑える (切 弱 中 強) · ビデオ演出 / VTR Effect (on/off, default on) · 画面の形 / Picture Shape › (8:7 · 端を隠す) · ブラウン管の詳細 ›. (2026-10-09: VTR Effect joined this page; 8:7 and Hide Edges - set once, both about the picture's shape - moved one level down so the page keeps six rows and the depth stays 3.)
-- **操作 / Controls:** コントローラー › (diagram page) · キーボード › · 決定ボタン (east | south, as glyph pairs) · 一時停止中の十字キー (on/off) · 画面キーボード (自動 | 内蔵 | Steam; Linux only) · 詳細 › (巻き戻し後に一時停止 (off by default since 0.5.1) · 連射の速さ · 連射の押す長さ · 逆方向の同時押し · スティックのしきい値 · 初期設定に戻す). macOS: 巻き戻し後に一時停止 is a row of this page itself (no 画面キーボード there), so its 詳細 › has room and also holds **再開時のカウントダウン / Resume Countdown** (see "Resume countdown").
-- **音 / Sound:** 音量 (slider) · スロー中の音 (on/off if supported) · 低遅延 (on/off where applicable)
-- **システム / System:** 言語 (自動 | 日本語 | English) · Steamに追加 (Linux) · **ReplayNESのバージョン / ReplayNES Version ›** (the former アップデート and バージョン情報 in one page: バージョン · 状態 · 今すぐ確認 · アップデート · 自動で確認 · フォルダとライセンス › (ROM / プロジェクトのフォルダ · 設定ファイル · ライセンス); macOS: バージョン (決定 = 今すぐ確認) · 自動で確認 · 自動でインストール · エミュレーションコア · Web サイト · ライセンス) · 詳細 › (Linux / Windows: フルスクリーン · UI の大きさ · 自動保存 · **再開時のカウントダウン / Resume Countdown** (on/off, default on) · 点滅抑制の表示 · 遅延の表示) · 終了. (macOS: one page, no 詳細.)
+2026-11-03 (user: "設定メニューが多すぎて、かつ整理されておらず煩雑"; review docs/reviews/settings-menu-ia-1.md): the
+pages are by purpose, so a setting's place follows from what it does - never "where a row was free". Item IDs and
+settings-file keys did not change (only the table's page column), so saved settings are kept. Desktop (Linux, Windows,
+Android); macOS keeps its own Swift pages (QuickMenuModel.swift) and has not followed yet.
+
+- **画面 / Display** (how the picture looks and how large it is): サイズ (等倍 | FILL) · フルスクリーン · 画面の形 › (8:7 · 端を隠す · ぼかし背景) · ブラウン管 › (ブラウン管 on/off first, then 走査線 · 電波の強さ · 線の太り · 残光 · 電源のたわみ; Y = 既定に戻す) · 点滅を抑える · UI の大きさ.
+- **操作 / Controls** (the devices and what their buttons do): コントローラー › · キーボード › (touch platforms: タッチ操作 › in its place, as on the iPhone) · 決定ボタン · 連射 › (連射の速さ · 連射の押す長さ; another core's game adds ボタン › per-button timing) · 入力の詳細 › (逆方向の同時押し · スティックのしきい値 · [マウス] · [画面キーボード] · ABXYボタンの位置合わせ (not under Controller: Reset Controls keeps it) · 操作をリセット).
+- **音 / Sound:** 音量 · スロー中の音 (if supported) · 低遅延 (where applicable).
+- **プレイ / Play** (pausing, rewinding, resuming, saving): 巻き戻し後に一時停止 · 一時停止中の十字キー · カウントダウン · ビデオ演出 · 自動保存 · [背面でも動かす].
+- **アプリ / App** (the application itself): 言語 · [コア] · スクリーンセーバー · アップデート › (バージョン · 状態 · 今すぐ確認 · アップデート · 自動で確認 · [Steam に追加]) · フォルダとライセンス › (ROM / プロジェクトのフォルダ · ライセンス) · 終了.
+- Removed rows (developer-facing; their settings stay in the file): 遅延の表示 (F3 still toggles it), 点滅抑制の表示, 設定ファイル, ブラウン管 › 既定に戻す (Y on the CRT page). No row moves between pages by feature any more (the former OSK / Turbo relocations).
 
 ### Remapping with the controller alone
 
