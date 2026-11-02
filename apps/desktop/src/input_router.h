@@ -168,8 +168,9 @@ class InputRouter {
   int faceCheckSlot() const;
   /// The check's answer: the model reports its face buttons swapped (south <-> east, west <-> north).
   void setFaceLayout(int slot, bool swapped);
-  /// Settings > Controls > Controller: that slot's controller model is checked again.
-  void recheckFaceLayout(int slot);
+  /// Settings > Controls > ABXY Buttons: the connected controllers (not Steam's virtual pads) are
+  /// checked again. False: none to check.
+  bool recheckFaceLayouts();
   int slotOfPad(SDL_JoystickID id) const { return slotOf(id); }
   /// Which player each controller is (docs/design/UI_REDESIGN.md, "Controllers and players"): a controller
   /// connected while player 1 is the machine's own controls (or nobody) becomes player 1, the built-in ones

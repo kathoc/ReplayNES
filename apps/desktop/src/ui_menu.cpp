@@ -871,8 +871,7 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
                       (pad.pad ? pad.name : std::string(TR("Not Connected")) + "  ·  " + str(rnf_controller_family_title(fam)));
   textFit(dl, m.label(), ImVec2(g.panel.x + S(20), g.panel.y + S(16)), g.panel.w - S(40), kText, title);
   LRect area{g.panel.x + S(20), g.panel.y + S(16) + m.label() * 1.8f, g.panel.w - S(40), 0};
-  LRect kindRow{}, orderRow{}, facesRow{};
-  const bool facesOffered = pad.pad && pad.steamSlot < 0;  // Steam's virtual pads: Steam's own setting
+  LRect kindRow{}, orderRow{};
   if (d_.input->usesDeviceKinds()) {
     kindRow = {area.x, area.y, area.w, m.label() + S(18)};
     area.y += kindRow.h + S(8);
@@ -880,10 +879,6 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
   if (playerOrderOffered_) {
     orderRow = {area.x, area.y, area.w, m.label() + S(18)};
     area.y += orderRow.h + S(8);
-  }
-  if (facesOffered) {
-    facesRow = {area.x, area.y, area.w, m.label() + S(18)};
-    area.y += facesRow.h + S(8);
   }
   area.h = g.panel.bottom() - area.y - S(16);
   buildDiagram(fam, slot, area, now);
@@ -924,24 +919,6 @@ void UI::buildControllerPage(const PageGeometry& g, double now) {
     if (diagramFocus_ == index) {
       drawFocus(orderRow, S(8), now);
       description_ = TR("Press a button on each controller, player 1 first");
-    }
-  }
-  // Button Positions: this controller's face buttons checked again (docs/design/FACE_CHECK.md).
-  if (facesOffered) {
-    const int index = int(diagramIds_.size());
-    diagramIds_.push_back("__faces__");
-    diagramCenters_.push_back(ImVec2(facesRow.x + facesRow.w / 2, facesRow.y + facesRow.h / 2));
-    diagramHubs_.push_back(-1);
-    const std::string label = TR("Button Positions");
-    dl->AddRectFilled(tl(facesRow), br(facesRow), kTile, S(8));
-    textFit(dl, m.label(), ImVec2(facesRow.x + S(12), facesRow.y + S(9)), facesRow.w - S(24), kText, label);
-    ImGui::SetCursorScreenPos(tl(facesRow));
-    const bool clicked = ImGui::InvisibleButton("##facepositions", ImVec2(facesRow.w, facesRow.h));
-    if (ImGui::IsItemHovered() && (clicked || ImGui::GetIO().MouseDelta.x || ImGui::GetIO().MouseDelta.y)) diagramFocus_ = index;
-    if (clicked) activateRow("controls.controller", size_t(index));
-    if (diagramFocus_ == index) {
-      drawFocus(facesRow, S(8), now);
-      description_ = TR("Match the hints to where this controller's buttons are");
     }
   }
   prompt({"ui.confirm"}, TR("Change"));
@@ -1013,9 +990,7 @@ void UI::activateRow(const std::string& page, size_t row) {
     else if (row - 2 < projects.size()) d_.app->continueProject(projects[row - 2].path);
   } else if (page == "controls.controller") {
     if (diagramFocus_ >= 0 && size_t(diagramFocus_) < diagramIds_.size()) {
-      if (diagramIds_[size_t(diagramFocus_)] == "__faces__") {
-        d_.input->recheckFaceLayout(std::clamp(d_.settings->diagramSlot, 0, InputRouter::kSlots - 1));
-      } else if (diagramIds_[size_t(diagramFocus_)] == "__order__") {
+      if (diagramIds_[size_t(diagramFocus_)] == "__order__") {
         d_.input->beginPlayerOrder();
         if (!d_.input->playerOrderActive()) notice(TR("No controller is connected"));
       } else if (diagramIds_[size_t(diagramFocus_)] == "__kind__") {

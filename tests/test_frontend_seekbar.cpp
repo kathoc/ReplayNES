@@ -317,14 +317,19 @@ TEST_CASE("assign picker: None first, the slot's player, the other player, hotke
   CHECK_EQ((n + RNF_MENU_MAX_ITEMS - 1) / RNF_MENU_MAX_ITEMS, size_t(6));
 }
 
-TEST_CASE("menu: Controls has the Confirm Button choice; the action picker is a LIST page under the diagram") {
+TEST_CASE("menu: Controls > ABXY Buttons has the Confirm Button choice and the positions check; the action picker is a LIST page under the diagram") {
   rnf_menu* m = rnf_menu_new(RNF_MENU_FEATURE_OSK);
   int controls = rnf_menu_page_find(m, "settings.controls");
   REQUIRE(controls >= 0);
-  int confirm = rnf_menu_item_find(m, size_t(controls), "controls.confirm");
+  CHECK(rnf_menu_item_find(m, size_t(controls), "controls.abxy") >= 0);
+  CHECK_EQ(rnf_menu_item_find(m, size_t(controls), "controls.confirm"), -1);  // on ABXY Buttons now
+  int abxy = rnf_menu_page_find(m, "controls.abxy");
+  REQUIRE(abxy >= 0);
+  CHECK(rnf_menu_item_find(m, size_t(abxy), "controls.faces") >= 0);
+  int confirm = rnf_menu_item_find(m, size_t(abxy), "controls.confirm");
   REQUIRE(confirm >= 0);
   rnf_menu_item_info it{};
-  REQUIRE(rnf_menu_item_get(m, size_t(controls), size_t(confirm), &it));
+  REQUIRE(rnf_menu_item_get(m, size_t(abxy), size_t(confirm), &it));
   CHECK_EQ(it.kind, RNF_MENU_ITEM_CHOICE);
   CHECK_EQ(it.choice_count, size_t(2));
   CHECK_EQ(rnf_menu_item_find(m, size_t(controls), "controls.turbo"), -1);  // moved to More

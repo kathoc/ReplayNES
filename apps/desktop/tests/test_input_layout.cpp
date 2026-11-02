@@ -457,7 +457,7 @@ TEST_CASE("S5b layout Turbo pages are opt-in and legacy Controls retain their ex
     for (size_t i = 0; rnf_menu_item_get(menu, size_t(page), i, &item); ++i) result.emplace_back(item.id);
     return result;
   };
-  const std::vector<std::string> controls = {"controls.controller", "controls.keyboard", "controls.confirm",
+  const std::vector<std::string> controls = {"controls.controller", "controls.keyboard", "controls.abxy",
       "controls.dpad_paused", "controls.osk", "controls.detail"};
   const std::vector<std::string> detail = {"controls.rewind_pause", "controls.turbo", "controls.turbo_duty",
       "controls.socd", "controls.stick", "controls.reset"};

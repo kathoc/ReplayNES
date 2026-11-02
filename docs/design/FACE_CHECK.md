@@ -21,8 +21,9 @@ devices cannot keep up with Android's variety.
   brand names (Xbox, Nintendo ...) appear.
 - Shown for every new controller model whose layout is not certain (SDL's type standard / unknown:
   not a known Xbox, PlayStation, Switch controller, not Steam's virtual pads, not a Steam Deck), when
-  no game is playing (the library, or a paused game). Settings > Controls has it again for the
-  controllers connected.
+  no game is playing (the library, or a paused game). Settings > Controls > ABXY Buttons > ABXY Button
+  Positions checks the connected controllers again (user 2026-11-02: not under Controller, so Reset
+  Controls never changes it; the page also has Confirm Button, moved there).
 - Remembered per model (SDL GUID + name) in <config>/face-layouts.txt. The choice is applied where a
   button becomes a position (InputRouter::padButton, the printed labels): hints, game bindings and the
   UI's confirm / cancel all follow the physical buttons.

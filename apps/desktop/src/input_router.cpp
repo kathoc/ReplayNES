@@ -1059,8 +1059,14 @@ void InputRouter::setFaceLayout(int slot, bool swapped) {
   if (standby_.pad && standby_.model == model) describe(standby_);
 }
 
-void InputRouter::recheckFaceLayout(int slot) {
-  if (slot >= 0 && slot < kSlots && pads_[slot].pad && pads_[slot].steamSlot < 0) faceRecheck_.insert(pads_[slot].model);
+bool InputRouter::recheckFaceLayouts() {
+  bool any = false;
+  for (const PadInfo& p : pads_)
+    if (p.pad && p.steamSlot < 0) {
+      faceRecheck_.insert(p.model);
+      any = true;
+    }
+  return any;
 }
 
 void InputRouter::syncPads() {

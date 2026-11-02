@@ -353,6 +353,9 @@ void UI::activateItem(const std::string& id) {
     s.crtBeamGrowth = s.crtPersistence = s.crtSupply = true;
     s.crtAntenna = 65;
     changed();
+  } else if (id == "controls.faces") {
+    // The connected controllers' face buttons checked again (docs/design/FACE_CHECK.md); not a reset.
+    if (!d_.input->recheckFaceLayouts()) notice(TR("No controller is connected"));
   } else if (id == "controls.reset") {
     Dialog d;
     d.title = TR("Reset Controls");

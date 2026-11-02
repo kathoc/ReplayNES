@@ -699,7 +699,7 @@ void UI::buildFaceCheck() {
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   dl->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 170));
   if (faceLitSlot_ != slot) faceLit_.clear();  // another controller's turn
-  const std::string title = TR("Button Positions");
+  const std::string title = TR("ABXY Button Positions");
   const std::string name = d_.input->pad(slot).name;
   const std::string ask = TRF("Press one of the four buttons on the right of %@.", {name});
   const std::string pick = TR("Then choose the picture with the dot where that button is: left or right, or tap it.");
