@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Match the hints to where this controller's buttons are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の案内を、このコントローラーのボタンの位置に合わせます"
+          }
+        }
+      }
+    },
+    "Then choose the picture with the dot where that button is: left or right, or tap it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "押したボタンと同じ位置が●になった絵を、左右で選ぶかタップしてください"
+          }
+        }
+      }
+    },
+    "Press one of the four buttons on the right of %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の右側にある 4 つのボタンを、どれか 1 つ押してください"
+          }
+        }
+      }
+    },
+    "Button Positions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンの位置合わせ"
+          }
+        }
+      }
+    },
     "8:7 pixels, blurred sides": {
       "localizations": {
         "ja": {

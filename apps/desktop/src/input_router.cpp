@@ -33,6 +33,8 @@ std::string slotPrefix(int slot) { return "gc" + std::to_string(slot) + ":"; }
 InputRouter::InputRouter(std::string bindingsFile, Settings* settings)
     : in_(rn_input_new()), file_(std::move(bindingsFile)), baseFile_(file_), settings_(settings), chord_(rnf_chord_new(0)),
       undoChord_(rnf_chord_new(0)) {
+  // After baseFile_ is set (faces_ is declared before it).
+  faces_ = FaceLayouts((std::filesystem::path(baseFile_).parent_path() / "face-layouts.txt").string());
   debugInput_ = std::getenv(productEnvName("DEBUG_INPUT").c_str()) ||
                 std::filesystem::exists(std::filesystem::path(baseFile_).parent_path() / "debug-input");
   profiles_[0] = rn_input_new();
@@ -1027,6 +1029,38 @@ void InputRouter::describe(PadInfo& p) {
   SDL_GetJoystickGUIDInfo(g, &vendor, &product, nullptr, nullptr);
   p.steamSlot = vendor == 0x28de && product == 0x11ff ? SDL_GetGamepadPlayerIndex(p.pad) : -1;
   p.steamHandle = SDL_GetGamepadSteamHandle(p.pad);
+  // The face layout the user checked for this model (docs/design/FACE_CHECK.md): its labels where they are.
+  p.model = p.guid + "/" + p.name;
+  p.faceUncertain = faceLayoutUncertain(p.family, p.steamSlot >= 0);
+  p.facesSwapped = faces_.swapped(p.model);
+  if (p.facesSwapped) {
+    std::map<std::string, std::string> at;
+    for (const auto& [el, label] : p.labels) at[faceElementAt(el, true) ? faceElementAt(el, true) : el] = label;
+    p.labels.swap(at);
+  }
+}
+
+int InputRouter::faceCheckSlot() const {
+  for (int s = 0; s < kSlots; ++s) {
+    const PadInfo& p = pads_[s];
+    if (p.pad && (faceRecheck_.count(p.model) || (p.faceUncertain && !faces_.known(p.model)))) return s;
+  }
+  return -1;
+}
+
+void InputRouter::setFaceLayout(int slot, bool swapped) {
+  if (slot < 0 || slot >= kSlots || !pads_[slot].pad) return;
+  const std::string model = pads_[slot].model;
+  faces_.set(model, swapped);
+  faceRecheck_.erase(model);
+  std::fprintf(stderr, "input: %s reports its face buttons %s\n", pads_[slot].name.c_str(), swapped ? "swapped" : "where they are");
+  for (PadInfo& p : pads_)
+    if (p.pad && p.model == model) describe(p);
+  if (standby_.pad && standby_.model == model) describe(standby_);
+}
+
+void InputRouter::recheckFaceLayout(int slot) {
+  if (slot >= 0 && slot < kSlots && pads_[slot].pad && pads_[slot].steamSlot < 0) faceRecheck_.insert(pads_[slot].model);
 }
 
 void InputRouter::syncPads() {
@@ -1185,6 +1219,7 @@ void InputRouter::playerOrderPress(SDL_JoystickID id) {
 }
 
 void InputRouter::padButton(int slot, int button, bool down, double t) {
+  button = faceButtonAt(button, pads_[slot].facesSwapped);  // where the button is (the user's check)
   const char* el = rnf_sdl_button_element(button);
   if (debugInput_)
     std::fprintf(stderr, "input: pad slot %d (%s) button %d (%s) %s, ui %d, capture %d\n", slot, pads_[slot].name.c_str(), button,

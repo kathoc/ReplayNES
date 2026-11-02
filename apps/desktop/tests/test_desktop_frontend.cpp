@@ -27,6 +27,7 @@
 #include "cadence.h"
 #include "display_scheduler.h"
 #include "dialogs.h"
+#include "face_layout.h"
 #include "display_health.h"
 #include "emulation.h"
 #include "export/export_frame.h"
@@ -2053,6 +2054,39 @@ TEST_CASE("screensaver: live demos of library games, nothing recorded; a paused 
   CHECK_EQ(w.emu->status().frame, frame);
   CHECK_EQ(w.emu->status().takeLength, uint64_t(45));
   CHECK(w.emu->paused());
+}
+
+TEST_CASE("face layouts: a model's swapped face buttons, remembered; which controllers are asked") {
+  std::string dir = tmpDir("faces");
+  const std::string file = dir + "/config/face-layouts.txt";
+  {
+    FaceLayouts f(file);
+    CHECK_FALSE(f.known("guid/Retroid Pocket Controller"));
+    f.set("guid/Retroid Pocket Controller", true);
+    f.set("guid2/Other Pad", false);
+  }
+  FaceLayouts f(file);  // the next launch
+  CHECK(f.known("guid/Retroid Pocket Controller"));
+  CHECK(f.swapped("guid/Retroid Pocket Controller"));
+  CHECK(f.known("guid2/Other Pad"));
+  CHECK_FALSE(f.swapped("guid2/Other Pad"));
+  f.forget("guid2/Other Pad");
+  CHECK_FALSE(FaceLayouts(file).known("guid2/Other Pad"));
+  // Swapped: south <-> east, west <-> north; the rest as it is.
+  CHECK_EQ(faceButtonAt(0, true), 1);
+  CHECK_EQ(faceButtonAt(1, true), 0);
+  CHECK_EQ(faceButtonAt(2, true), 3);
+  CHECK_EQ(faceButtonAt(3, true), 2);
+  CHECK_EQ(faceButtonAt(4, true), 4);  // back
+  CHECK_EQ(faceButtonAt(0, false), 0);
+  CHECK_EQ(std::string(faceElementAt("face.south", true)), std::string("face.east"));
+  CHECK(faceElementAt("face.south", false) == nullptr);
+  // Asked: no known family, not Steam's virtual pad.
+  CHECK(faceLayoutUncertain(RNF_FAMILY_GENERIC, false));
+  CHECK_FALSE(faceLayoutUncertain(RNF_FAMILY_GENERIC, true));
+  CHECK_FALSE(faceLayoutUncertain(RNF_FAMILY_XBOX, false));
+  CHECK_FALSE(faceLayoutUncertain(RNF_FAMILY_NINTENDO, false));
+  CHECK_FALSE(faceLayoutUncertain(RNF_FAMILY_STEAM_DECK, false));
 }
 
 TEST_CASE("screensaver: a shuffled round, each game once before any again, kept across launches") {

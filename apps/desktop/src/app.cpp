@@ -114,11 +114,13 @@ class App {
   bool fullscreen_ = false;
   bool focused_ = true;  // the window has the input focus (another window in front: false)
   bool overlay_ = false;  // the system's UI in front (PlatformHooks::systemOverlay, --script "overlay")
+  bool faceStickArmed_ = true;  // the face check: a stick back in the middle since its last answer
   bool overlayArmed_ = false;  // the window was in front once (before that it is the launch, not a menu)
   // Screensaver (docs/design/SCREENSAVER.md): the last input, the current demo's start.
   double lastInput_ = 0, screensaverDemoAt_ = 0;
   void updateScreensaver(double now);
   void updateOverlay(int scripted);
+  bool handleFaceCheck(const SDL_Event& e);
   // The input's paused-in-play mode from the emulation's state, every frame (not only on a change).
   void syncPausedStepMode() { input_->setPausedStepMode(emu_->paused()); }
   int lastHeight_ = 0;
@@ -246,6 +248,33 @@ void App::updateOverlay(int scripted) {
   input_->releaseControllers();
 }
 
+// The face button check on screen (docs/design/FACE_CHECK.md): the controllers are its own. The checked
+// controller's face buttons light a circle (as SDL reports them, before any swap); left / right on its
+// D-pad or a stick answers. Nothing reaches the UI or a game meanwhile.
+bool App::handleFaceCheck(const SDL_Event& e) {
+  const bool button = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP;
+  const bool axis = e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION;
+  if (!button && !axis) return false;
+  const int slot = input_->faceCheckSlot();
+  const SDL_JoystickID which = button ? e.gbutton.which : e.gaxis.which;
+  if (slot < 0 || input_->slotOfPad(which) != slot) return true;  // another controller: nothing
+  if (button && e.gbutton.down) {
+    const int b = e.gbutton.button;
+    if (b <= SDL_GAMEPAD_BUTTON_NORTH) ui_->faceCheckPress(rnf_sdl_button_element(b));
+    else if (b == SDL_GAMEPAD_BUTTON_DPAD_LEFT) ui_->faceCheckChoose(false);
+    else if (b == SDL_GAMEPAD_BUTTON_DPAD_RIGHT) ui_->faceCheckChoose(true);
+  } else if (axis && (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX || e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHTX)) {
+    // A stick pushed most of the way (once: back to the middle before the next answer).
+    const float v = float(e.gaxis.value) / 32767.0f;
+    if (std::fabs(v) < 0.3f) faceStickArmed_ = true;
+    else if (faceStickArmed_ && std::fabs(v) > 0.7f) {
+      faceStickArmed_ = false;
+      ui_->faceCheckChoose(v > 0);
+    }
+  }
+  return true;
+}
+
 void App::handleEvent(const SDL_Event& e, double now) {
   if (isUserInput(e)) {
     lastInput_ = now;
@@ -255,6 +284,7 @@ void App::handleEvent(const SDL_Event& e, double now) {
       return;
     }
   }
+  if (ui_->faceCheckActive() && handleFaceCheck(e)) return;
   // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
   // game pauses and the controllers reach neither the game nor the menus until the window is back.
   // The game stays paused then (play resumes when the player says so).

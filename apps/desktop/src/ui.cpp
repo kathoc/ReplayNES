@@ -237,7 +237,29 @@ void UI::updateScale(int windowWidth, int windowHeight) {
 
 bool UI::interactive() const {
   return menuOpen_ || !hasSession() || !dialogs_.empty() || chooser_.has_value() || rename_.has_value() ||
-         exportDialog_;
+         exportDialog_ || faceCheckActive();
+}
+
+// A controller whose face layout is not checked, and nothing else wants the controls: the library, or a
+// paused game (never in play), no dialog, no player order.
+bool UI::faceCheckActive() const {
+  if (d_.input->faceCheckSlot() < 0 || d_.input->playerOrderActive()) return false;
+  if (!dialogs_.empty() || chooser_ || rename_ || exportDialog_) return false;
+  if (d_.app && d_.app->screensaverActive()) return false;
+  return !hasSession() || d_.emu->paused();
+}
+
+void UI::faceCheckPress(const std::string& element) {
+  faceLit_ = element;
+  faceLitSlot_ = d_.input->faceCheckSlot();
+}
+
+void UI::faceCheckChoose(bool swapped) {
+  const int slot = d_.input->faceCheckSlot();
+  if (slot < 0) return;
+  d_.input->setFaceLayout(slot, swapped);
+  faceLit_.clear();
+  faceLitSlot_ = -1;
 }
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }
@@ -471,6 +493,7 @@ void UI::build(double now) {
   if (menuOpen_) buildMenu(now);
   buildOverlays(now);
   if (d_.input->playerOrderActive()) buildPlayerOrder();
+  if (faceCheckActive()) buildFaceCheck();
   pollAddToSteam();
   buildDialogs();
   buildChooser();

@@ -20,6 +20,7 @@
 #include "l10n.h"
 #include "settings.h"
 #include "thumbnails.h"
+#include "face_layout.h"
 #include "ui.h"
 #include "ui_theme.h"
 #include "ui_widgets.h"
@@ -685,6 +686,56 @@ void UI::buildPlayerOrder() {
   }
   y += box + S(18);
   centered(hs, foot, kTextDim);
+}
+
+// The face button check (docs/design/FACE_CHECK.md): two pictures of the four face buttons; a press
+// fills a circle in both - on the left where the controller says, on the right with the pairs swapped.
+// The side whose filled circle is where the pressed button is: left / right on the D-pad or a stick
+// (App::handleFaceCheck), or a tap on it. No brand names.
+void UI::buildFaceCheck() {
+  const int slot = d_.input->faceCheckSlot();
+  const UiMetrics& m = metrics_;
+  ImGuiIO& io = ImGui::GetIO();
+  ImDrawList* dl = ImGui::GetForegroundDrawList();
+  dl->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 170));
+  if (faceLitSlot_ != slot) faceLit_.clear();  // another controller's turn
+  const std::string title = TR("Button Positions");
+  const std::string name = d_.input->pad(slot).name;
+  const std::string ask = TRF("Press one of the four buttons on the right of %@.", {name});
+  const std::string pick = TR("Then choose the picture with the dot where that button is: left or right, or tap it.");
+  const float fs = m.label(), hs = m.hint(), r = fs * 0.9f, pic = r * 6.2f, gap = pic * 0.7f;
+  const float w = std::max({pic * 2 + gap, measure(fs * 1.2f, title.c_str()).x, measure(fs, ask.c_str()).x,
+                            measure(hs, pick.c_str()).x}) + S(64);
+  const float h = S(24) + fs * 1.2f + S(14) + fs + S(10) + hs + S(22) + pic + S(26);
+  const ImVec2 p0((io.DisplaySize.x - w) / 2, (io.DisplaySize.y - h) / 2);
+  dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(22, 22, 25, 245), S(16));
+  dl->AddRect(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(255, 255, 255, 40), S(16), 0, 1.0f);
+  float y = p0.y + S(24);
+  auto centered = [&](float size, const std::string& t, ImU32 col, float after) {
+    dl->AddText(ImGui::GetFont(), size, ImVec2(p0.x + (w - measure(size, t.c_str()).x) / 2, y), col, t.c_str());
+    y += size + after;
+  };
+  centered(fs * 1.2f, title, kText, S(14));
+  centered(fs, ask, kText, S(10));
+  centered(hs, pick, kTextDim, S(22));
+  // The two pictures: four circles in a diamond (north, west, east, south), the pressed one filled.
+  const float x0 = p0.x + (w - (pic * 2 + gap)) / 2;
+  for (int side = 0; side < 2; ++side) {
+    const ImVec2 c(x0 + side * (pic + gap) + pic / 2, y + pic / 2);
+    const ImVec2 b0(c.x - pic / 2, c.y - pic / 2), b1(c.x + pic / 2, c.y + pic / 2);
+    const bool hover = ImGui::IsMouseHoveringRect(b0, b1);
+    dl->AddRectFilled(b0, b1, IM_COL32(255, 255, 255, hover ? 22 : 10), S(12));
+    std::string lit = faceLit_;
+    if (side == 1 && !lit.empty()) lit = faceElementAt(lit, true) ? faceElementAt(lit, true) : lit;
+    const struct { const char* el; float dx, dy; } pos[] = {
+        {"face.north", 0, -1}, {"face.west", -1, 0}, {"face.east", 1, 0}, {"face.south", 0, 1}};
+    for (const auto& q : pos) {
+      const ImVec2 at(c.x + q.dx * r * 1.9f, c.y + q.dy * r * 1.9f);
+      if (lit == q.el) dl->AddCircleFilled(at, r, kBrand, 32);
+      else dl->AddCircle(at, r, IM_COL32(242, 242, 246, 200), 32, S(2.0f));
+    }
+    if (hover && ImGui::IsMouseClicked(0)) faceCheckChoose(side == 1);
+  }
 }
 
 std::string UI::statusLabelText(bool practicePart) const {

@@ -111,6 +111,11 @@ class UI : public DialogHost {
 
   /// Whether ImGui / the UI have the controller and keyboard (menus, library, seek bar, dialogs).
   bool interactive() const;
+  /// The face button check (docs/design/FACE_CHECK.md) is on screen: it takes the controllers' events
+  /// (App::handleFaceCheck) - a face button lights a circle, left / right answers.
+  bool faceCheckActive() const;
+  void faceCheckPress(const std::string& element);  // the element SDL reported (before any swap)
+  void faceCheckChoose(bool swapped);
   /// Settings > Controls > Confirm Button: the south button confirms (default: east).
   bool southConfirm() const;
   /// Text input active (keys go to the text field, not the game).
@@ -312,6 +317,9 @@ class UI : public DialogHost {
   /// and for a few seconds after a controller joins, leaves or changes player.
   void buildPlayers(double now);
   void buildPlayerOrder();
+  void buildFaceCheck();
+  std::string faceLit_;  // the face check: the element SDL reported for the last face button pressed
+  int faceLitSlot_ = -1;
   void buildScreensaver();  // the demo dimmed, one faint line (docs/design/SCREENSAVER.md)  // Settings > Controls > Controller > Player Order: whose press is which player
   bool playerOrderOffered_ = true;
   float playersW_ = 0;  // its width this frame (the flash badge goes after it)
