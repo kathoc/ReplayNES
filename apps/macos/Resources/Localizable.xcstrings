@@ -1,6 +1,186 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Touch Controls": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タッチ操作"
+          }
+        }
+      }
+    },
+    "D-pad size and follow, opacity, turbo buttons and vibration of the on-screen controls": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面のコントローラーの十字キー（大きさ・追従）、不透明度、連射ボタン、振動"
+          }
+        }
+      }
+    },
+    "Opacity": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不透明度"
+          }
+        }
+      }
+    },
+    "How visible the on-screen controls are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面上のボタンの見やすさ"
+          }
+        }
+      }
+    },
+    "Size, follow and directions of the on-screen D-pad": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の十字キーの大きさ、追従、方向数"
+          }
+        }
+      }
+    },
+    "Turbo Buttons": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連射ボタン"
+          }
+        }
+      }
+    },
+    "Show AA / BB (Turbo A / Turbo B) up-left of A / B": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A / B の左斜め上に AA / BB（連射A / 連射B）を表示します"
+          }
+        }
+      }
+    },
+    "Vibration": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "振動"
+          }
+        }
+      }
+    },
+    "A short vibration when a button is pressed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンを押したときに短く振動します"
+          }
+        }
+      }
+    },
+    "Hide With Controller": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コントローラ接続時に隠す"
+          }
+        }
+      }
+    },
+    "Hide the on-screen controls while a controller is connected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コントローラが接続されている間は画面上のボタンを隠します"
+          }
+        }
+      }
+    },
+    "Size of the on-screen D-pad": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の十字キーの大きさ"
+          }
+        }
+      }
+    },
+    "Follow Up / Down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追従（上下）"
+          }
+        }
+      }
+    },
+    "How fast the D-pad follows your thumb up and down": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "十字キーが親指の上下のずれに追従する速さ"
+          }
+        }
+      }
+    },
+    "Follow Left / Right": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追従（左右）"
+          }
+        }
+      }
+    },
+    "How fast the D-pad follows your thumb left and right": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "十字キーが親指の左右のずれに追従する速さ"
+          }
+        }
+      }
+    },
+    "D-pad Directions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "十字キーの方向数"
+          }
+        }
+      }
+    },
+    "4-way ignores diagonals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4方向では斜めを無視します"
+          }
+        }
+      }
+    },
     "Match the hints to where the connected controllers' buttons are": {
       "localizations": {
         "ja": {

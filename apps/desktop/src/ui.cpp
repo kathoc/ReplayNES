@@ -107,6 +107,7 @@ UI::UI(Deps d) : d_(d) {
   // Under Steam Input (a Steam Deck, Big Picture) Steam orders the players: no Player Order of its own.
   playerOrderOffered_ = std::getenv("SteamVirtualGamepadInfo") == nullptr;
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
+  if (d_.touchControls) menuFeatures_ |= RNF_MENU_FEATURE_TOUCH;
   // Offer a choice only when multiple product cores are available.
   if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
   menu_ = rnf_menu_new(menuFeatures_);

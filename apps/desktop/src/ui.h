@@ -78,6 +78,7 @@ class UI : public DialogHost {
     SDL_Window* window;
     UpdateService* updates = nullptr;    // in-app updates (Linux: Flatpak portal; Windows: WinSparkle); null: none
     LibraryThumbs* libraryThumbs = nullptr;
+    bool touchControls = false;  // the on-screen controller (PlatformHooks::touchControls): its settings page
   };
   explicit UI(Deps d);
   ~UI() override;

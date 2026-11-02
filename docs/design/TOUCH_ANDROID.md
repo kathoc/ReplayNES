@@ -72,6 +72,13 @@ The iPhone's items and defaults: Opacity (15-100 %, 100), D-pad Size (130-210, 1
 1.0) / ↔ (0-2, 0.3), D-pad Directions (8 / 4), Turbo Buttons (on), Vibration (on), Hide With Controller
 (on). Saved in settings.txt like the other settings.
 
+As built (2026-11-02): a page cannot hold more than RNF_MENU_MAX_ITEMS (6) rows, so two pages -
+Touch Controls: Opacity, D-pad (a page), Turbo Buttons, Vibration, Hide With Controller; D-pad: Size,
+Follow Up / Down, Follow Left / Right, D-pad Directions (the iPhone's ↕︎ / ↔︎ are not in the UI font: words
+instead; Directions is one setting, not per game yet). RNF_MENU_FEATURE_TOUCH shows them; on that platform
+Touch Controls takes the Keyboard's place on the Controls page, as on the iPhone (an arcade session adds the
+Turbo page there, which made 7 rows; keys keep their defaults).
+
 ## Not adopted
 
 - Porting from NESTERM's input.mjs again: the iPhone port already carries the changes since (roll tap,
@@ -82,6 +89,17 @@ The iPhone's items and defaults: Opacity (15-100 %, 100), D-pad Size (130-210, 1
 - An SDL virtual joystick fed by touch: cannot carry the roll tap, the moving D-pad home or per-region
   rules.
 - Touch controls on Windows / Linux touch screens: not asked; the flag allows it later.
+
+## Checked (2026-11-02)
+
+- test_touch: the golden traces (portrait, landscape) match to 1e-4; a changed follow gain fails them. The
+  layout rules on 8 iPhone and 2 Android screens.
+- Android emulator (1080 x 2424, portrait), ReplayArcade, 1942: SELECT inserts a coin, START starts, the
+  D-pad moves the plane, the left quarter rewinds; pause / resume; the seek bar above the controls; the
+  settings pages (size 184, opacity 60 % seen in play); FILL puts the tall picture under the controls (as on
+  the iPhone). Screenshots in the session's scratchpad.
+- Not yet: a device in landscape (the Retroid Pocket 5 was not connected), vibration felt on a device,
+  multi-touch on a device.
 
 ## Done when
 

@@ -79,6 +79,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;
+  if (id == "touch.ways") return s.touchWays == 4 ? 1 : 0;
   if (id == "system.core") {
     for (size_t i = 0; i < rnf_product_core_count(); ++i)
       if (s.core == rnf_product_core_id(i)) return int(i);
@@ -142,6 +143,12 @@ std::string UI::itemValue(const std::string& id) const {
     return b;
   }
   if (id == "controls.turbo_duty") return TRF("%lld frames", {in.turboDuty()});
+  if (id == "touch.opacity") return std::to_string(s.touchOpacity) + "%";
+  if (id == "touch.dpad_size") return std::to_string(s.touchDpadSize) + " pt";
+  if (id == "touch.follow_y" || id == "touch.follow_x") {
+    std::snprintf(b, sizeof b, "%.2fx", id == "touch.follow_y" ? s.touchFollowY : s.touchFollowX);
+    return b;
+  }
   if (id == "controls.stick") {
     std::snprintf(b, sizeof b, "%.2f", in.analogThreshold());
     return b;
@@ -178,6 +185,9 @@ bool UI::itemOn(const std::string& id) const {
   if (id == "crt.persistence") return s.crtPersistence;
   if (id == "crt.supply") return s.crtSupply;
   if (id == "controls.dpad_paused") return s.dpadStepWhenPaused;
+  if (id == "touch.turbo") return s.touchTurbo;
+  if (id == "touch.vibration") return s.touchVibration;
+  if (id == "touch.hide_with_pad") return s.touchHideWithPad;
   if (id == "controls.mouse") return s.mouseControls;
   if (id == "controls.rewind_pause") return s.pauseAfterRewind;
   if (id == "system.fullscreen") return isFullscreen && isFullscreen();
@@ -202,6 +212,10 @@ float UI::itemFraction(const std::string& id) const {
   if (id == "crt.lines") return float(std::clamp(s.crtLines, 110, 240) - 110) / 130.0f;
   if (id == "crt.antenna") return float((s.crtAntenna - 20) / 70);
   if (id == "controls.turbo") return float(30 - std::clamp(in.turboPeriod(), 2, 30)) / 28.0f;
+  if (id == "touch.opacity") return float(std::clamp(s.touchOpacity, 15, 100) - 15) / 85.0f;
+  if (id == "touch.dpad_size") return float(std::clamp(s.touchDpadSize, 130, 210) - 130) / 80.0f;
+  if (id == "touch.follow_y") return float(std::clamp(s.touchFollowY, 0.0, 2.0) / 2);
+  if (id == "touch.follow_x") return float(std::clamp(s.touchFollowX, 0.0, 2.0) / 2);
   if (id == "controls.turbo_duty") return in.turboPeriod() > 2 ? float(in.turboDuty() - 1) / float(in.turboPeriod() - 2) : 0.0f;
   if (id == "controls.stick") return float((in.analogThreshold() - 0.2) / 0.7);
   if (id == "sound.volume") return s.volume;
@@ -262,6 +276,9 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "crt.persistence") s.crtPersistence = !s.crtPersistence;
     else if (id == "crt.supply") s.crtSupply = !s.crtSupply;
     else if (id == "controls.dpad_paused") s.dpadStepWhenPaused = !s.dpadStepWhenPaused;
+    else if (id == "touch.turbo") s.touchTurbo = !s.touchTurbo;
+    else if (id == "touch.vibration") s.touchVibration = !s.touchVibration;
+    else if (id == "touch.hide_with_pad") s.touchHideWithPad = !s.touchHideWithPad;
     else if (id == "controls.mouse") s.mouseControls = !s.mouseControls;
     else if (id == "controls.rewind_pause") s.pauseAfterRewind = !s.pauseAfterRewind;
     else if (id == "system.fullscreen") {
@@ -291,6 +308,7 @@ void UI::adjustItem(const std::string& id, int dir) {
     else if (id == "display.backdrop") s.backdrop = next;
     else if (id == "controls.osk") s.onScreenKeyboard = next == 1 ? "builtin" : next == 2 ? "steam" : "auto";
     else if (id == "controls.confirm") s.southConfirm = next == 1;
+    else if (id == "touch.ways") s.touchWays = next == 1 ? 4 : 8;
     else if (id == "controls.socd") {
       in.setSOCD(next == 1 ? "last_wins" : next == 2 ? "allow" : "neutral");
       return;
@@ -316,6 +334,14 @@ void UI::adjustItem(const std::string& id, int dir) {
       s.crtLines = kCrtLines[std::clamp(at + dir, 0, 7)];
     } else if (id == "crt.antenna") {
       s.crtAntenna = std::clamp(s.crtAntenna + 5.0 * dir, 20.0, 90.0);
+    } else if (id == "touch.opacity") {
+      s.touchOpacity = std::clamp(s.touchOpacity + 5 * dir, 15, 100);
+    } else if (id == "touch.dpad_size") {
+      s.touchDpadSize = std::clamp(s.touchDpadSize + 2 * dir, 130, 210);
+    } else if (id == "touch.follow_y") {
+      s.touchFollowY = std::clamp(std::round((s.touchFollowY + 0.05 * dir) * 20) / 20, 0.0, 2.0);
+    } else if (id == "touch.follow_x") {
+      s.touchFollowX = std::clamp(std::round((s.touchFollowX + 0.05 * dir) * 20) / 20, 0.0, 2.0);
     } else if (id == "controls.turbo") {
       int p = std::clamp(in.turboPeriod() - dir, 2, 30);
       in.setTurbo(p, std::min(in.turboDuty(), p - 1));

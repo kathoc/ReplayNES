@@ -465,6 +465,7 @@ int App::run(const AppOptions& opt) {
   UI::Deps deps{nullptr,          emu_.get(), library_.get(), input_.get(), thumbs_.get(), renderer_.get(), &settings_, window_,
                 updates_.get(), libraryThumbs_.get()};
   // The UI is the app model's dialog host and shows its state.
+  deps.touchControls = platform_.touchControls;
   ui_ = std::make_unique<UI>(deps);
   app_ = std::make_unique<AppModel>(paths_, emu_.get(), library_.get(), ui_.get());
   ui_->setApp(app_.get());

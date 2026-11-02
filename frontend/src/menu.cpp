@@ -46,7 +46,10 @@ struct GroupDef {
 constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATURE_STREAM, F_CRT = RNF_MENU_FEATURE_CRT,
                    F_STEAM = RNF_MENU_FEATURE_STEAM, F_OSK = RNF_MENU_FEATURE_OSK, F_UPDATES = RNF_MENU_FEATURE_UPDATES,
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
-                   F_QUIT = RNF_MENU_FEATURE_QUIT, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
+                   F_QUIT = RNF_MENU_FEATURE_QUIT, F_TOUCH = RNF_MENU_FEATURE_TOUCH,
+                   // Only without a touch screen: Touch Controls takes the Keyboard's place, as on the iPhone (the
+                   // Controls page stays within RNF_MENU_MAX_ITEMS; keys keep their defaults).
+                   F_NO_TOUCH = 1u << 31, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
                    F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND,
                    F_MOUSE = RNF_MENU_FEATURE_MOUSE;
@@ -71,6 +74,8 @@ const PageDef kPages[] = {
     {"display.shape", RNF_L("Picture Shape"), "aspect-ratio", RNF_MENU_PAGE_SETTINGS, "", 0},
     {"controls.controller", RNF_L("Controller"), "device-gamepad", RNF_MENU_PAGE_CUSTOM, "", 0},
     {"controls.abxy", RNF_L("ABXY Buttons"), "circle-check", RNF_MENU_PAGE_SETTINGS, "", 0},
+    {"controls.touch", RNF_L("Touch Controls"), "adjustments", RNF_MENU_PAGE_SETTINGS, "", F_TOUCH},
+    {"touch.dpad", RNF_L("D-pad"), "plus", RNF_MENU_PAGE_SETTINGS, "", F_TOUCH},
     {"controls.assign", RNF_L("Button Action"), "list", RNF_MENU_PAGE_LIST, "", 0},
     {"controls.keyboard", RNF_L("Keyboard"), "keyboard", RNF_MENU_PAGE_LIST, "", 0},
     {"controls.turbo_buttons", RNF_L("Buttons"), "device-gamepad", RNF_MENU_PAGE_LIST, "", F_LAYOUT_TURBO},
@@ -167,7 +172,7 @@ const std::vector<ItemDef>& items() {
       {"settings.controls", "controls.controller", RNF_L("Controller"), RNF_L("See and change what each button does"),
        "device-gamepad", PAGE, "controls.controller", 0, {}},
       {"settings.controls", "controls.keyboard", RNF_L("Keyboard"), RNF_L("Keys for the game and the hotkeys"), "keyboard",
-       PAGE, "controls.keyboard", 0, {}},
+       PAGE, "controls.keyboard", F_NO_TOUCH, {}},
       {"settings.controls", "controls.abxy", RNF_L("ABXY Buttons"), RNF_L("The confirm button, where the buttons are"),
        "circle-check", PAGE, "controls.abxy", 0, {}},
       // Controls > ABXY Buttons (docs/design/FACE_CHECK.md: not under Controller, a reset keeps it).
@@ -175,6 +180,27 @@ const std::vector<ItemDef>& items() {
        "circle-check", CHOICE, "", 0, {RNF_L("East Confirms"), RNF_L("South Confirms")}},
       {"controls.abxy", "controls.faces", RNF_L("ABXY Button Positions"),
        RNF_L("Match the hints to where the connected controllers' buttons are"), "device-gamepad", ACTION, "", 0, {}},
+      // Controls > Touch Controls: the iPhone's settings of the on-screen controller (docs/design/TOUCH_ANDROID.md).
+      {"settings.controls", "controls.touch", RNF_L("Touch Controls"),
+       RNF_L("D-pad size and follow, opacity, turbo buttons and vibration of the on-screen controls"), "adjustments", PAGE,
+       "controls.touch", F_TOUCH, {}},
+      {"controls.touch", "touch.opacity", RNF_L("Opacity"), RNF_L("How visible the on-screen controls are"), "eye", SLIDER, "",
+       F_TOUCH, {}},
+      {"controls.touch", "touch.dpad", RNF_L("D-pad"), RNF_L("Size, follow and directions of the on-screen D-pad"), "plus", PAGE,
+       "touch.dpad", F_TOUCH, {}},
+      {"controls.touch", "touch.turbo", RNF_L("Turbo Buttons"), RNF_L("Show AA / BB (Turbo A / Turbo B) up-left of A / B"), "bolt",
+       TOGGLE, "", F_TOUCH, {}},
+      {"controls.touch", "touch.vibration", RNF_L("Vibration"), RNF_L("A short vibration when a button is pressed"), "antenna", TOGGLE,
+       "", F_TOUCH, {}},
+      {"controls.touch", "touch.hide_with_pad", RNF_L("Hide With Controller"),
+       RNF_L("Hide the on-screen controls while a controller is connected"), "device-gamepad", TOGGLE, "", F_TOUCH, {}},
+      {"touch.dpad", "touch.dpad_size", RNF_L("Size"), RNF_L("Size of the on-screen D-pad"), "plus", SLIDER, "", F_TOUCH, {}},
+      {"touch.dpad", "touch.follow_y", RNF_L("Follow Up / Down"), RNF_L("How fast the D-pad follows your thumb up and down"),
+       "arrows-diff", SLIDER, "", F_TOUCH, {}},
+      {"touch.dpad", "touch.follow_x", RNF_L("Follow Left / Right"), RNF_L("How fast the D-pad follows your thumb left and right"),
+       "arrows-horizontal", SLIDER, "", F_TOUCH, {}},
+      {"touch.dpad", "touch.ways", RNF_L("D-pad Directions"), RNF_L("4-way ignores diagonals"), "arrows-diff", CHOICE, "", F_TOUCH,
+       {"8", "4"}},
       {"settings.controls", "controls.dpad_paused", RNF_L("D-pad While Paused"), RNF_L("← / → step one frame while paused"),
        "arrows-horizontal", TOGGLE, "", 0, {}},
       {"settings.controls", "controls.osk", RNF_L("On-screen Keyboard"), RNF_L("For names and search: Steam’s or the built-in one"),
@@ -274,6 +300,10 @@ const std::vector<ItemDef>& items() {
 }
 
 bool featureOK(uint32_t need, uint32_t have) {
+  if (need & F_NO_TOUCH) {
+    if (have & F_TOUCH) return false;
+    need &= ~F_NO_TOUCH;
+  }
   if (need == 0) return true;
   if (need == F_SHARE_ANY) return (have & F_SHARE_ANY) != 0;
   return (need & have) == need;
