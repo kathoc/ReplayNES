@@ -86,6 +86,14 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "dpadStepWhenPaused") s.dpadStepWhenPaused = parseBool(v, s.dpadStepWhenPaused);
     else if (k == "mouseControls") s.mouseControls = parseBool(v, s.mouseControls);
     else if (k == "southConfirm") s.southConfirm = parseBool(v, s.southConfirm);
+    else if (k == "touchOpacity" && num && d >= 15 && d <= 100) s.touchOpacity = int(d);
+    else if (k == "touchDpadSize" && num && d >= 130 && d <= 210) s.touchDpadSize = int(d);
+    else if (k == "touchFollowY" && num && d >= 0 && d <= 2) s.touchFollowY = d;
+    else if (k == "touchFollowX" && num && d >= 0 && d <= 2) s.touchFollowX = d;
+    else if (k == "touchWays" && num && (d == 4 || d == 8)) s.touchWays = int(d);
+    else if (k == "touchTurbo") s.touchTurbo = parseBool(v, s.touchTurbo);
+    else if (k == "touchVibration") s.touchVibration = parseBool(v, s.touchVibration);
+    else if (k == "touchHideWithPad") s.touchHideWithPad = parseBool(v, s.touchHideWithPad);
     else if (k == "onScreenKeyboard" && (v == "auto" || v == "builtin" || v == "steam")) s.onScreenKeyboard = v;
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
     else if (k == "core") s.core = v;  // preserve unknown IDs: creation reports an error, never silently substitutes
@@ -142,6 +150,10 @@ std::string Settings::serialize() const {
   o << "dpadStepWhenPaused=" << int(dpadStepWhenPaused) << "\n";
   o << "mouseControls=" << int(mouseControls) << "\n";
   o << "southConfirm=" << int(southConfirm) << "\n";
+  o << "touchOpacity=" << touchOpacity << "\n" << "touchDpadSize=" << touchDpadSize << "\n";
+  o << "touchFollowY=" << touchFollowY << "\n" << "touchFollowX=" << touchFollowX << "\n";
+  o << "touchWays=" << touchWays << "\n" << "touchTurbo=" << int(touchTurbo) << "\n";
+  o << "touchVibration=" << int(touchVibration) << "\n" << "touchHideWithPad=" << int(touchHideWithPad) << "\n";
   o << "onScreenKeyboard=" << onScreenKeyboard << "\n";
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";
   o << "core=" << core << "\n";

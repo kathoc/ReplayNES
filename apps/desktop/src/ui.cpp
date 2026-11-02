@@ -183,6 +183,7 @@ bool UI::loadFonts(bool japanese) {
 
 void UI::updateScale(int windowWidth, int windowHeight) {
   metrics_ = UiMetrics::make(float(windowWidth), float(windowHeight), d_.settings->uiScale, textScale_);
+  metrics_.overlay = overlay_;
   float s = metrics_.s;
   ImGuiStyle& style = ImGui::GetStyle();
   style = ImGuiStyle();
@@ -402,7 +403,21 @@ void UI::changed() {
 GameRect UI::gameRect(int w, int h) const {
   if (!hasSession()) return GameRect{};
   const Settings& st = *d_.settings;
-  return computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, gamePixelAspect(st), RN_PRODUCT_OVERSCAN_CROP && st.hideOverscan);
+  // The touch controller's layout leaves the picture an area of its own (docs/design/TOUCH_ANDROID.md).
+  float ax = 0, ay = 0;
+  if (pictureArea_) {
+    ax = pictureArea_->x;
+    ay = pictureArea_->y;
+    w = int(pictureArea_->z);
+    h = int(pictureArea_->w);
+  }
+  GameRect r = computeGameRect(w, h, d_.emu->media(), d_.emu->videoFrame(), st.integerScale, gamePixelAspect(st),
+                               RN_PRODUCT_OVERSCAN_CROP && st.hideOverscan);
+  r.x += ax;
+  r.y += ay;
+  r.crt.x += ax;
+  r.crt.y += ay;
+  return r;
 }
 
 void UI::slack(double now) {
@@ -538,7 +553,7 @@ void UI::buildOverlays(double now) {
     if (d_.emu->status().countdown > 0) buildCountdown();
   }
   buildNotice(now);
-  buildMenuPill(now);
+  if (!touchControlsShown_) buildMenuPill(now);
   if (d_.settings->showStats && stats) buildStats();
 }
 

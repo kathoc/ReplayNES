@@ -114,7 +114,8 @@ SeekGeometry layoutSeek(const UiMetrics& m) {
   const float s = m.s, pad = 16 * s;
   float laneH = 16 * s, stripH = 60 * s, hintsH = m.hint() + 10 * s;
   float h = pad * 2 + laneH + stripH + 8 * s + hintsH;
-  g.panel = {m.margin(), m.H - m.margin() * 0.75f - h, m.W - 2 * m.margin(), h};
+  const LRect b = m.overlayBase();
+  g.panel = {b.x + m.margin(), b.bottom() - m.margin() * 0.75f - h, b.w - 2 * m.margin(), h};
   float timeW = m.label() * 4.6f;
   float x0 = g.panel.x + pad, x1 = g.panel.right() - pad;
   g.timeLeft = {x0, g.panel.y + pad + laneH, timeW, stripH};

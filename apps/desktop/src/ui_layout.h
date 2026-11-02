@@ -31,6 +31,10 @@ struct UiMetrics {
   // box for its em, so its glyphs come out ~20 % smaller at the same pixel size.
   float text = 1;
   float W = 1280, H = 800;
+  /// Where the bottom bar and the seek bar go while the touch controller shows (its overlayArea, pixels);
+  /// empty: the window.
+  LRect overlay{0, 0, 0, 0};
+  LRect overlayBase() const { return overlay.w > 0 && overlay.h > 0 ? overlay : LRect{0, 0, W, H}; }
   // Text: title 22 / label 15 / hint 12 (the spec's sizes) times kText for a TV / handheld distance.
   static constexpr float kText = 1.3f;
   float title() const { return 22 * kText * s * text; }
@@ -44,7 +48,10 @@ struct UiMetrics {
   float minTouch() const { return 40 * s; }
   /// Top bar (breadcrumb, Menu pill) and bottom bar (description, hints).
   LRect topBar() const { return {margin(), margin() * 0.75f, W - 2 * margin(), title() + 12 * s}; }
-  LRect bottomBar() const { return {margin(), H - margin() * 0.75f - hint() - 18 * s, W - 2 * margin(), hint() + 18 * s}; }
+  LRect bottomBar() const {
+    const LRect b = overlayBase();
+    return {b.x + margin(), b.bottom() - margin() * 0.75f - hint() - 18 * s, b.w - 2 * margin(), hint() + 18 * s};
+  }
   /// Where a page's content goes.
   LRect content() const {
     LRect t = topBar(), b = bottomBar();

@@ -172,6 +172,12 @@ class InputRouter {
   /// checked again. False: none to check.
   bool recheckFaceLayouts();
   int slotOfPad(SDL_JoystickID id) const { return slotOf(id); }
+  /// Touch controls (docs/design/TOUCH_ANDROID.md): "touch:<name>" inputs bound to the game's actions as on
+  /// the iPhone (TouchBindings), pressed by TouchControls. Off: no touch bindings.
+  void setTouchEnabled(bool on);
+  void setTouch(const std::string& id, bool down);
+  /// The game's fire buttons (p1.b1 ... p1.b8 in the layout; the NES: 2), for the touch layout's discs.
+  int fireButtons() const;
   /// The event with a face button where it is on its controller (the user's check, docs/design/FACE_CHECK.md);
   /// other events as they are. App::handleEvent applies it once, before anything reads the event.
   SDL_Event atFacePosition(const SDL_Event& e) const;
@@ -233,7 +239,9 @@ class InputRouter {
   void rebuildRuntime();
   void loadKindOverrides();
   FaceLayouts faces_;
-  std::set<std::string> faceRecheck_;  // models to check again although certain (recheckFaceLayouts)
+  std::set<std::string> faceRecheck_;
+  bool touch_ = false;
+  void bindTouch();  // models to check again although certain (recheckFaceLayouts)
   void persistKindOverrides();
   void configureRuntimeBindings();
   void refreshBindings(bool configureRuntime = true);

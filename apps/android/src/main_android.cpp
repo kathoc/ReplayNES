@@ -1,6 +1,7 @@
 // ReplayNES for Android: the shared desktop frontend (apps/desktop/src/app.h) with the Vulkan presenter
 // of apps/linux (vk_renderer.h), full screen. SDLActivity calls SDL_main in libmain.so.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <jni.h>
 #include "replaynes/product.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -43,6 +44,19 @@ void logToLogcat() {
 }
 }  // namespace
 
+// A touch control's press (TouchControls): MainActivity.haptic() on the UI thread (the view's haptic feedback).
+void androidHaptic() {
+  auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (!env || !activity) return;
+  jclass cls = env->GetObjectClass(activity);
+  static jmethodID haptic = env->GetMethodID(cls, "haptic", "()V");
+  if (haptic) env->CallVoidMethod(activity, haptic);
+  if (env->ExceptionCheck()) env->ExceptionClear();
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+}
+
 int main(int argc, char** argv) {
   using namespace rnl;
   logToLogcat();
@@ -55,6 +69,8 @@ int main(int argc, char** argv) {
   platform.windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN;
   platform.makeRenderer = [](const AppOptions&) { return std::unique_ptr<Renderer>(new VkRenderer()); };
   platform.sessionMode = [] { return std::string("android"); };
+  platform.touchControls = true;  // docs/design/TOUCH_ANDROID.md
+  platform.haptic = androidHaptic;
   AppOptions opt;
   if (!parseAppArgs(argc, argv, platform, &opt)) return 2;
   return runApp(opt, platform);

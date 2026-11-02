@@ -57,6 +57,7 @@
 #include "script.h"
 #include "settings.h"
 #include "thumbnails.h"
+#include "touch_controls.h"
 #include "ui.h"
 #include "update_service.h"
 
@@ -102,6 +103,7 @@ class App {
   std::unique_ptr<LibraryThumbs> libraryThumbs_;
   std::unique_ptr<LibraryModel> library_;
   std::unique_ptr<UI> ui_;
+  std::unique_ptr<TouchControls> touch_;  // the on-screen controller (PlatformHooks::touchControls)
   std::unique_ptr<AppModel> app_;
   std::unique_ptr<UpdateService> updates_;
   bool restart_ = false;  // quit, then start the newest installed version (an update)
@@ -278,6 +280,16 @@ void App::handleEvent(const SDL_Event& reported, double now) {
   // was the south one there - confirm and cancel the other way round - while the game and the hints
   // had it right.)
   const SDL_Event e = input_->atFacePosition(reported);
+  // The on-screen controller takes the fingers on it (and the mouse events SDL makes from them).
+  if (touch_ && touch_->visible()) {
+    const bool finger = e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION || e.type == SDL_EVENT_FINGER_UP ||
+                        e.type == SDL_EVENT_FINGER_CANCELED;
+    if (finger && touch_->handleFinger(e, now * 1000)) {
+      ui_->touchUsed();
+      return;
+    }
+    if (touch_->takesTouchMouse(e)) return;
+  }
   // Another window in front (RN_PRODUCT_FOCUS_PAUSE): unless Play in the Background is on (Settings > System > More), the
   // game pauses and the controllers reach neither the game nor the menus until the window is back.
   // The game stays paused then (play resumes when the player says so).
@@ -492,6 +504,16 @@ int App::run(const AppOptions& opt) {
   emu_->pressSequence = [this] { return input_->pressSequence(); };
   emu_->beforeSample = [this] { input_->beginMouseFrame(); };
   input_->onMenuButton = [this] { ui_->toggleMenu(); };
+  if (platform_.touchControls) {  // docs/design/TOUCH_ANDROID.md
+    input_->setTouchEnabled(true);
+    TouchControls::Host th;
+    th.press = [this](const std::string& id, bool down) { input_->setTouch(id, down); };
+    th.toggleMenu = [this] { ui_->toggleMenu(); };
+    th.togglePause = [this] { emu_->togglePause(); };
+    th.toggleSlow = [this] { emu_->toggleSlow(); };
+    th.haptic = platform_.haptic;
+    touch_ = std::make_unique<TouchControls>(std::move(th));
+  }
   input_->onPausedStep = [this](int dir, bool down) { emu_->pausedStep(dir, down); };
   input_->onPausedResume = [this] { ui_->resumeFromSeekBar(); };
   input_->onPracticeStop = [this] { ui_->stopPracticeFromPad(); };
@@ -773,11 +795,45 @@ int App::run(const AppOptions& opt) {
     ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;  // fed from the events (PadNavFeed)
     padNav_.setSuppressed(ui_->textEntryOwnsPad());
     if (padNav_.takeActivity()) ui_->padUsed();
+    if (touch_) {
+      TouchControls::Frame tf;
+      tf.widthPx = w;
+      tf.heightPx = h;
+      const float ds = SDL_GetWindowDisplayScale(window_);
+      tf.density = ds > 0 ? ds : 1;
+      int ww = 0, wh = 0;
+      SDL_GetWindowSize(window_, &ww, &wh);
+      tf.windowToPx = ww > 0 ? double(w) / ww : 1;
+      SDL_Rect safe{};
+      if (ww > 0 && wh > 0 && SDL_GetWindowSafeArea(window_, &safe) && safe.w > 0 && safe.h > 0) {
+        const double k = tf.windowToPx / tf.density;  // window coordinates -> points
+        tf.safe = touch::TouchInsets{safe.y * k, safe.x * k, (wh - safe.y - safe.h) * k, (ww - safe.x - safe.w) * k};
+      }
+      tf.show = emu_->session() && !ui_->playCovered() &&
+                !(settings_.touchHideWithPad && input_->connectedCount() > 0);
+      tf.fireButtons = input_->fireButtons();
+      const rn_media_info& m = emu_->media();
+      const rn_video_frame_info vf = emu_->videoFrame();
+      if (vf.width && vf.height) {
+        double par = gamePixelAspect(settings_) && m.pixel_aspect_num && m.pixel_aspect_den ? double(m.pixel_aspect_num) / m.pixel_aspect_den : 1.0;
+        double aspect = vf.width * par / vf.height;
+        tf.pictureAspect = (m.rotation & 1) ? 1 / aspect : aspect;
+      }
+      tf.fill = !settings_.integerScale;
+      tf.nowMs = nowSeconds() * 1000;
+      touch_->update(tf, settings_);
+      ui_->setPictureArea(touch_->pictureArea());
+      ui_->setTouchControlsShown(touch_->visible());
+      const auto ov = touch_->overlayArea();
+      ui_->setOverlayArea(ov ? LRect{ov->x, ov->y, ov->z, ov->w} : LRect{0, 0, 0, 0});
+    }
     ImGui::NewFrame();
     ui_->build(rec.sample);
+    if (touch_) touch_->draw(ImGui::GetForegroundDrawList(), emu_->paused(), emu_->status().slow > 1);
     ImGui::Render();
     rec.ui = nowSeconds();
     GameRect rect = ui_->gameRect(w, h);
+    if (touch_) touch_->setPicture(rect.x, rect.y, rect.w, rect.h);
     bool newPicture = tick.newPicture || extraPicture;
     const EmulationController::Signal& es = emu_->signal();
     FrameSignal sig{es.codes, es.burstPhase, es.ordinal, es.flashAltered, es.receptionStep, es.receptionCounter, es.flashReduced};

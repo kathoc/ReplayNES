@@ -62,6 +62,17 @@ struct Settings {
   bool playInBackground = false;
   // UI confirm / cancel (rnf_ui_confirm_element): false = east confirms, south goes back (default).
   bool southConfirm = false;
+  // Touch controls (platforms with a touch screen: Android; docs/design/TOUCH_ANDROID.md), the iPhone's
+  // settings and defaults: opacity (15-100 %), D-pad size (130-210 CSS px), D-pad follow up-down / left-right
+  // (0-2), directions (8 / 4), the turbo buttons AA / BB, vibration, hidden while a controller is connected.
+  int touchOpacity = 100;
+  int touchDpadSize = 144;
+  double touchFollowY = 1.0;
+  double touchFollowX = 0.3;
+  int touchWays = 8;
+  bool touchTurbo = true;
+  bool touchVibration = true;
+  bool touchHideWithPad = true;
   // Text fields: "auto" (Steam's keyboard where it can be asked for, else the built-in one),
   // "builtin" (ReplayNES's controller keyboard), "steam" (Steam's only). See osk.h.
   std::string onScreenKeyboard = "auto";

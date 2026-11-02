@@ -34,6 +34,7 @@ add_library(rnl_app STATIC
   ${RNL_APP_SRC}/input_router.cpp
   ${RNL_APP_SRC}/perf_stats.cpp
   ${RNL_APP_SRC}/script.cpp
+  ${RNL_APP_SRC}/touch_controls.cpp
   ${RNL_APP_SRC}/ui.cpp
   ${RNL_APP_SRC}/ui_dialogs.cpp
   ${RNL_APP_SRC}/ui_menu.cpp

@@ -4,6 +4,7 @@ package io.github.replaynes.android;
 
 import android.os.Build;
 import android.os.Bundle;
+import android.view.HapticFeedbackConstants;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 
@@ -25,6 +26,11 @@ public class MainActivity extends SDLActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) hideSystemBars();
+    }
+
+    /** A touch control's press (TouchControls through JNI, any thread): the view's haptic feedback. */
+    public void haptic() {
+        runOnUiThread(() -> getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY));
     }
 
     // The app is always full screen (docs/design/ANDROID.md). SDL hides the bars with the deprecated

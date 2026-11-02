@@ -55,6 +55,10 @@ struct PlatformHooks {
   /// The system's own UI is in front of the window without taking its focus (gamescope: the Steam
   /// menu, docs/design/STEAM_OVERLAY_PAUSE.md). Cheap: called from the frame loop. Empty: none.
   std::function<bool()> systemOverlay;
+  /// A touch screen to play on (Android): the on-screen controller (docs/design/TOUCH_ANDROID.md).
+  bool touchControls = false;
+  /// A short vibration for a touch control's press (Settings: Vibration). Empty: none.
+  std::function<void()> haptic;
 };
 
 /// Parses the shared command line (unknown options: usage + false).

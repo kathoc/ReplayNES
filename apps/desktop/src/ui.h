@@ -124,6 +124,14 @@ class UI : public DialogHost {
   void inputLayoutChanged();
   void setMenu(bool open);
   bool menuOpen() const { return menuOpen_; }
+  /// The picture's area (pixels) while the touch controller shows (TouchControls::pictureArea), else the window.
+  void setPictureArea(std::optional<ImVec4> a) { pictureArea_ = a; }
+  /// The Quick Menu or a dialog covers the game (the touch controller hides).
+  bool playCovered() const { return menuOpen_ || popupOpen(); }
+  /// The touch controller shows (its MENU button replaces the Menu pill, as on the iPhone).
+  void setTouchControlsShown(bool on) { touchControlsShown_ = on; }
+  /// The bottom bar and the seek bar inside the touch controller's overlay area (pixels); empty: the window.
+  void setOverlayArea(const LRect& r) { overlay_ = metrics_.overlay = r; }
   /// Id of the menu page shown ("" when the menu is closed); script / test hooks.
   std::string shownMenuPage() const { return menuOpen_ ? menuPageId() : std::string(); }
   /// L / R in the UI (InputRouter::onUiShoulder): previous / next page.
@@ -357,6 +365,9 @@ class UI : public DialogHost {
   UiMetrics metrics_;
   ImFont* font_ = nullptr;
   bool menuOpen_ = false;
+  std::optional<ImVec4> pictureArea_;
+  bool touchControlsShown_ = false;
+  LRect overlay_{0, 0, 0, 0};
   std::string inputCatalog_;
   rnf_menu* menu_ = nullptr;
   uint32_t menuFeatures_ = 0;
