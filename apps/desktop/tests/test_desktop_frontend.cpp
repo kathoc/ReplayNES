@@ -2081,6 +2081,12 @@ TEST_CASE("face layouts: a model's swapped face buttons, remembered; which contr
   CHECK_EQ(faceButtonAt(0, false), 0);
   CHECK_EQ(std::string(faceElementAt("face.south", true)), std::string("face.east"));
   CHECK(faceElementAt("face.south", false) == nullptr);
+  // The check: the button held at the south position, then at the east position.
+  CHECK_EQ(faceLayoutFromHolds(0, 1), 0);   // south reports south: where they are
+  CHECK_EQ(faceLayoutFromHolds(1, 0), 1);   // south reports east: swapped
+  CHECK_EQ(faceLayoutFromHolds(1, 1), -1);  // the same button twice
+  CHECK_EQ(faceLayoutFromHolds(0, 0), -1);
+  CHECK_EQ(faceLayoutFromHolds(2, 1), -1);  // a west / north button at the south position
   // Asked: no known family, not Steam's virtual pad.
   CHECK(faceLayoutUncertain(RNF_FAMILY_GENERIC, false));
   CHECK_FALSE(faceLayoutUncertain(RNF_FAMILY_GENERIC, true));

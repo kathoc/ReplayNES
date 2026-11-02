@@ -62,3 +62,12 @@ window, a surface without identity. The renderer logs what it found and chose wh
 ("video: surface ... turned ..., window ... -> swapchain ..."); stdout / stderr go to logcat (tag = the
 product). Checked on a Retroid Pocket 5 (Android 13): landscape and upright; a ROM pushed into
 Android/data/<id>/files/ReplayArcade/ROM shows in the library.
+
+## Full screen (2026-11-02, Retroid Pocket 5)
+
+The status and navigation bars stayed over the top and bottom of the picture (the window 1920 x 1080,
+the bars 54 px each). SDL asks for full screen with the deprecated system UI flags
+(setSystemUiVisibility FULLSCREEN | HIDE_NAVIGATION | IMMERSIVE_STICKY); on Android 13 the window kept
+only the layout flags and its requested visibilities said both bars visible (dumpsys window), from the
+launch on. MainActivity hides them with the window's insets controller (Android 11+; systemBars, shown
+for a moment by a swipe from an edge), at creation and whenever the window gets the focus back.

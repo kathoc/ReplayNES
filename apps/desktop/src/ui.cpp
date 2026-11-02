@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -249,17 +250,27 @@ bool UI::faceCheckActive() const {
   return !hasSession() || d_.emu->paused();
 }
 
-void UI::faceCheckPress(const std::string& element) {
-  faceLit_ = element;
-  faceLitSlot_ = d_.input->faceCheckSlot();
+void UI::faceCheckReset(int slot) {
+  faceSlot_ = slot;
+  faceStep_ = 0;
+  faceAtSouth_ = faceHeld_ = -1;
 }
 
-void UI::faceCheckChoose(bool swapped) {
+// A face button down / up on the checked controller; held a second (buildFaceCheck counts) it answers.
+void UI::faceCheckButton(int sdlButton, bool down, double now) {
   const int slot = d_.input->faceCheckSlot();
-  if (slot < 0) return;
-  d_.input->setFaceLayout(slot, swapped);
-  faceLit_.clear();
-  faceLitSlot_ = -1;
+  if (slot != faceSlot_) {
+    faceCheckReset(slot);
+    faceMismatch_ = false;
+  }
+  std::fprintf(stderr, "input: face check: button %d %s (asked: %s)\n", sdlButton, down ? "down" : "up",
+               faceStep_ ? "east" : "south");
+  if (down) {
+    faceHeld_ = sdlButton;
+    faceHeldSince_ = now;
+  } else if (sdlButton == faceHeld_) {
+    faceHeld_ = -1;
+  }
 }
 
 bool UI::wantsKeyboard() const { return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput; }

@@ -41,22 +41,22 @@
         }
       }
     },
-    "Then choose the picture with the dot where that button is: left or right, or tap it.": {
+    "They did not match. Once more from the first.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "押したボタンと同じ位置が●になった絵を、左右で選ぶかタップしてください"
+            "value": "1 回目と合いませんでした。最初からもう一度お願いします"
           }
         }
       }
     },
-    "Press one of the four buttons on the right of %@.": {
+    "On %@, hold the button at the lit circle for a second.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ の右側にある 4 つのボタンを、どれか 1 つ押してください"
+            "value": "%@ の、光っている○の位置にあるボタンを 1 秒押し続けてください"
           }
         }
       }

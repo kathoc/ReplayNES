@@ -112,10 +112,9 @@ class UI : public DialogHost {
   /// Whether ImGui / the UI have the controller and keyboard (menus, library, seek bar, dialogs).
   bool interactive() const;
   /// The face button check (docs/design/FACE_CHECK.md) is on screen: it takes the controllers' events
-  /// (App::handleFaceCheck) - a face button lights a circle, left / right answers.
+  /// (App::handleFaceCheck) - the button at the lit position held for a second, south then east.
   bool faceCheckActive() const;
-  void faceCheckPress(const std::string& element);  // the element SDL reported (before any swap)
-  void faceCheckChoose(bool swapped);
+  void faceCheckButton(int sdlButton, bool down, double now);  // a face button as SDL reported it (before any swap)
   /// Settings > Controls > Confirm Button: the south button confirms (default: east).
   bool southConfirm() const;
   /// Text input active (keys go to the text field, not the game).
@@ -318,8 +317,12 @@ class UI : public DialogHost {
   void buildPlayers(double now);
   void buildPlayerOrder();
   void buildFaceCheck();
-  std::string faceLit_;  // the face check: the element SDL reported for the last face button pressed
-  int faceLitSlot_ = -1;
+  // The face check: which position is asked (0 south, 1 east), the button held at the south position,
+  // the button held now and since when, whether the last two answers disagreed; for this controller.
+  int faceStep_ = 0, faceAtSouth_ = -1, faceHeld_ = -1, faceSlot_ = -1;
+  double faceHeldSince_ = 0;
+  bool faceMismatch_ = false;
+  void faceCheckReset(int slot);
   void buildScreensaver();  // the demo dimmed, one faint line (docs/design/SCREENSAVER.md)  // Settings > Controls > Controller > Player Order: whose press is which player
   bool playerOrderOffered_ = true;
   float playersW_ = 0;  // its width this frame (the flash badge goes after it)

@@ -13,12 +13,13 @@ devices cannot keep up with Android's variety.
 
 ## Adopted
 
-- A check the user does once per controller model: two pictures side by side, each the four face
-  buttons as four circles. Pressing a face button fills a circle in both: on the left where the
-  controller says it is, on the right with the two pairs swapped (south <-> east, west <-> north).
-  The user picks the side whose filled circle is where the pressed button is: left / right on the
-  D-pad or a stick, or a tap on that side; no confirm button (it is the thing being checked). No
-  brand names (Xbox, Nintendo ...) appear.
+- A check the user does once per controller model (user 2026-11-02, after the first version): the four
+  face buttons as four circles in a diamond, one lit - first south, then east. The user holds the
+  button at the lit position for a second (a ring fills meanwhile); a shorter press does not count, so a
+  stray press answers nothing. From the two buttons SDL reported: south then east as reported -> where
+  they are; east then south -> swapped (west <-> north with them); anything else -> "They did not match",
+  from the first again. No choosing between pictures, no confirm button (it is the thing being
+  checked), no brand names. Each press and the answer are logged ("input: face check: ...").
 - Shown for every new controller model whose layout is not certain (SDL's type standard / unknown:
   not a known Xbox, PlayStation, Switch controller, not Steam's virtual pads, not a Steam Deck), when
   no game is playing (the library, or a paused game). Settings > Controls > ABXY Buttons > ABXY Button
@@ -33,6 +34,10 @@ devices cannot keep up with Android's variety.
 - Reading a device's own setting (the Retroid's `button_set`): one device; the check covers all.
 - Asking which brand the controller is: users do not know which layout a brand means; the picture is
   what they see.
+- The first version (2026-11-02): two pictures, a press filled a circle in both (left as reported,
+  right swapped), the user chose a side with left / right or a tap. On the Retroid the user ended up
+  with the reverse layout twice; which side means what had to be reasoned out, and a choice could not be
+  told from a slip. Holding the button at a lit position needs no reasoning.
 
 ## Done when
 

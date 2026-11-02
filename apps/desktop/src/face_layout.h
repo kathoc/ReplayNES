@@ -46,6 +46,15 @@ inline const char* faceElementAt(const std::string& element, bool swapped) {
   return nullptr;
 }
 
+/// The check's answer from the two buttons held (SDL's numbers as reported, before any swap): the one at
+/// the south position, then the one at the east position. 0: where they are, 1: swapped, -1: the two do
+/// not agree (or not a south / east button) - ask again.
+inline int faceLayoutFromHolds(int atSouth, int atEast) {
+  if (atSouth == 0 && atEast == 1) return 0;
+  if (atSouth == 1 && atEast == 0) return 1;
+  return -1;
+}
+
 /// Asked about: a controller whose layout is not certain - no known family (Xbox, PlayStation, Nintendo,
 /// a Steam Deck) and not one of Steam's virtual pads (Steam has its own setting).
 inline bool faceLayoutUncertain(rnf_controller_family family, bool steamVirtual) {
