@@ -547,7 +547,7 @@ void D3D11Renderer::drawBackdrop(const GameRect& rect, bool crt) {
     ctx_->Unmap(backdropUvCb_, 0);
   }
   const float level = std::min(plan.lod, float(backdropLevels_ - 1)), texel = std::exp2(level);
-  const float bd[4] = {level, plan.dim, texel / backdropW_, texel / backdropH_};
+  const float bd[4] = {level, plan.dim, texel * plan.spread / backdropW_, texel * plan.spread / backdropH_};
   if (SUCCEEDED(ctx_->Map(backdropCb_, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
     std::memcpy(m.pData, bd, sizeof bd);
     ctx_->Unmap(backdropCb_, 0);

@@ -75,7 +75,7 @@ namespace {
 int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id) {
   if (id == "display.size") return s.integerScale ? 0 : 1;
   if (id == "display.flash") return std::clamp(s.flash, 0, 3);
-  if (id == "display.backdrop") return std::clamp(s.backdrop, 0, 3);
+  if (id == "display.backdrop") return std::clamp(s.backdrop, 0, 4);
   if (id == "controls.osk") return s.onScreenKeyboard == "builtin" ? 1 : s.onScreenKeyboard == "steam" ? 2 : 0;
   if (id == "controls.socd") return in.socd() == "last_wins" ? 1 : in.socd() == "allow" ? 2 : 0;
   if (id == "controls.confirm") return s.southConfirm ? 1 : 0;

@@ -14,11 +14,15 @@ struct BackdropPlan {
   float x = 0, y = 0, w = 0, h = 0;  // the covering rectangle (pixels, origin top-left; beyond the screen)
   float lod = 0;                     // mip level to read: its long side is about kBackdropTexels
   float dim = 0;                     // brightness factor
+  float spread = 1;                  // the 3x3 tent's step in texels of that level (0: no blur at all)
 };
 
-// The blur, by level (Settings: 0 off, 1 low - the default -, 2 standard, 3 high): the picture seen
-// through about this many texels across (user decisions 2026-11-01: more clearly blurred, adjustable).
-inline float backdropTexels(int level) { return level >= 3 ? 6.f : level == 2 ? 12.f : 24.f; }  // low was too blurred at 10
+// The blur, by level (Settings "backdrop2": 0 none, 1 sharp, 2 low - the default -, 3 medium, 4 high): the
+// picture seen through about this many texels across. User decision 2026-11-03: the former low (24) was
+// still too blurred - high is now finer than it - and a level with no blur at all (sharp: the picture
+// enlarged and dimmed, read at level 0 without the tent).
+inline float backdropTexels(int level) { return level >= 4 ? 48.f : level == 3 ? 96.f : 160.f; }
+inline float backdropSpread(int level) { return level == 1 ? 0.f : 1.f; }
 constexpr float kBackdropDim = 0.6f;     // slightly darker than the picture (user decision 2026-11-01)
 // Contrast 40 % lower: toward the picture's mean colour (the mip chain's last level), so a hard flash of
 // the picture does not flash the whole screen as hard (user decision 2026-11-01). The shaders use it.
@@ -26,7 +30,7 @@ constexpr float kBackdropContrast = 0.6f;
 
 /// `pic*`: the rectangle the picture is drawn in; `srcW` x `srcH`: the backdrop texture's level 0.
 inline BackdropPlan planBackdrop(float picX, float picY, float picW, float picH, int screenW, int screenH, int srcW,
-                                 int srcH, int level = 1) {
+                                 int srcH, int level = 2) {
   BackdropPlan p;
   if (level <= 0 || picW < 1 || picH < 1 || screenW < 1 || screenH < 1 || srcW < 1 || srcH < 1) return p;
   // Something of the screen left empty (more than a pixel).
@@ -37,7 +41,8 @@ inline BackdropPlan planBackdrop(float picX, float picY, float picW, float picH,
   p.h = picH * s;
   p.x = (screenW - p.w) * 0.5f;
   p.y = (screenH - p.h) * 0.5f;
-  p.lod = std::max(0.f, std::log2(float(std::max(srcW, srcH)) / backdropTexels(level)));
+  p.lod = level == 1 ? 0.f : std::max(0.f, std::log2(float(std::max(srcW, srcH)) / backdropTexels(level)));
+  p.spread = backdropSpread(level);
   p.dim = kBackdropDim;
   p.show = true;
   return p;

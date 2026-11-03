@@ -36,3 +36,14 @@ the game picture enlarged, blurred and slightly dimmed; on every platform; can b
 
 - Unit test of the plan (shown / not shown, covering, cut, rotations).
 - A screenshot on each platform with the setting on and off; on a Steam Deck the frame time with it on.
+
+## Levels, 2026-11-03
+
+User: the low level was still too blurred; wanted なし / くっきり / 弱 / 中 / 強 with the new 強 blurring less than
+the former 弱, and a level with no blur at all. Levels (Settings > Display > Picture Shape > Blurred Sides, saved as
+`backdrop2`): 0 none, 1 sharp (the picture enlarged and dimmed, read at mip level 0 without the 3x3 tent:
+BackdropPlan::spread 0), 2 low (160 texels across, the default), 3 medium (96), 4 high (48; the former low was
+24). The older key `backdrop` (0 off, 1-3) reads as none or the default; macOS likewise (`backdropLevel2`).
+Dimming and the lower contrast are the same at every level. Checked in the Android emulator (1942): the band
+above the picture's detail (mean absolute neighbour difference) 0.211 sharp, 0.024 low, 0.004 medium, 0.001
+high, 0 none, the same mean brightness.

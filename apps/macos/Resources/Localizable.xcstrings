@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Sharp": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "くっきり"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
+          }
+        }
+      }
+    },
+    "The empty sides show the game enlarged and dimmed: sharp or blurred": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の空いた部分に、ゲーム画面を拡大して少し暗く表示します（くっきり、またはぼかして）"
+          }
+        }
+      }
+    },
     "Play (settings page)": {
       "comment": "Settings page title (pausing, rewinding, resuming, saving)",
       "localizations": {

@@ -38,6 +38,7 @@ Settings Settings::parse(const std::string& text) {
   Settings s;
   std::istringstream in(text);
   std::string line;
+  bool backdrop2 = false;  // the newer key wins over the older one wherever they are
   while (std::getline(in, line)) {
 #if !RN_PRODUCT_FLASH_FILTER || !RN_PRODUCT_OVERSCAN_CROP
     const std::string rawLine = line;
@@ -57,7 +58,10 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "hideOverscan") s.preservedOverscanLines += rawLine + "\n";
 #endif
     else if (k == "vtrEffect") s.vtrEffect = parseBool(v, s.vtrEffect);
-    else if (k == "backdrop" && num) s.backdrop = std::clamp(int(d), 0, 3);  // an older "1" (on) is the default level
+    else if (k == "backdrop2" && num) {
+      s.backdrop = std::clamp(int(d), 0, 4);
+      backdrop2 = true;
+    } else if (k == "backdrop" && num && !backdrop2) s.backdrop = d == 0 ? 0 : 2;  // the older levels: none or the default
     else if (k == "practiceCountdown") s.practiceCountdown = parseBool(v, s.practiceCountdown);
     else if (k == "resumeCountdown") s.resumeCountdown = parseBool(v, s.resumeCountdown);
     else if (k == "countdownSeconds") {
@@ -120,7 +124,7 @@ std::string Settings::serialize() const {
   o << preservedOverscanLines;
 #endif
   o << "vtrEffect=" << int(vtrEffect) << "\n";
-  o << "backdrop=" << int(backdrop) << "\n";
+  o << "backdrop2=" << int(backdrop) << "\n";
   o << "practiceCountdown=" << int(practiceCountdown) << "\n";
   o << "resumeCountdown=" << int(resumeCountdown) << "\n";
   o << "countdownSeconds=" << countdownSeconds << "\n";

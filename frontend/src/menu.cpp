@@ -157,8 +157,8 @@ const std::vector<ItemDef>& items() {
        "crop", TOGGLE, "", 0, {}},
 #endif
       {"display.shape", "display.backdrop", RNF_L("Blurred Sides"),
-       RNF_L("The empty sides show the game enlarged, blurred and dimmed"), "photo", CHOICE, "", 0,
-       {RNF_L("Off"), RNF_L("Low"), RNF_L("Standard"), RNF_L("High")}},
+       RNF_L("The empty sides show the game enlarged and dimmed: sharp or blurred"), "photo", CHOICE, "", 0,
+       {RNF_L("None"), RNF_L("Sharp"), RNF_L("Low"), RNF_L("Medium"), RNF_L("High")}},
       // Display > CRT: on / off first, then its details (Y: back to the defaults, ui_menu.cpp).
       {"display.crt", "display.crt", RNF_L("CRT"), RNF_L("Looks like a CRT TV (display only)"), "device-tv-old", TOGGLE,
        "", F_CRT, {}},

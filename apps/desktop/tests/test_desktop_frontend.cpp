@@ -202,9 +202,9 @@ TEST_CASE("settings round trip and tolerant parsing") {
   CHECK_FALSE(t.checkForUpdates);
   CHECK(Settings::parse("").checkForUpdates);  // on by default
   CHECK_EQ(t.backdrop, 3);
-  CHECK_EQ(Settings::parse("").backdrop, 1);  // the blurred sides: low by default
+  CHECK_EQ(Settings::parse("").backdrop, 2);  // the blurred sides: low by default (2026-11-03: 0 none ... 4 high)
   CHECK_EQ(Settings::parse("backdrop=0\n").backdrop, 0);
-  CHECK_EQ(Settings::parse("backdrop=9\n").backdrop, 3);
+  CHECK_EQ(Settings::parse("backdrop2=9\n").backdrop, 4);
   CHECK_FALSE(t.integerScale);
   CHECK(t.par87);
   CHECK_EQ(t.flash, RN_PRODUCT_FLASH_FILTER ? 3 : 0);

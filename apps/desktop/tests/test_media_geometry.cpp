@@ -11,6 +11,7 @@
 #include "png_writer.h"
 #include "qoi.h"
 #include "render/backdrop.h"
+#include "settings.h"
 #include "render/surface_plan.h"
 #include "support/rn_test.h"
 #include "thumbnails.h"
@@ -208,10 +209,18 @@ TEST_CASE("backdrop: only where the picture leaves the screen empty, covering it
   CHECK(std::fabs(p.w - 1280) < 0.01f);
   CHECK(std::fabs(p.h - 1280 * 800.f / 1067) < 0.5f);
   CHECK(std::fabs(p.y - (800 - p.h) / 2) < 0.01f);
-  CHECK(std::fabs(p.lod - std::log2(320 / backdropTexels(1))) < 1e-4f);
-  // Stronger levels read coarser levels; off draws nothing.
-  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 3).lod > planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 2).lod);
-  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 2).lod > p.lod);
+  CHECK(std::fabs(p.lod - std::log2(320 / backdropTexels(2))) < 1e-4f);  // the default: low
+  CHECK_EQ(p.spread, 1.f);
+  // Stronger levels read coarser levels; none draws nothing; sharp reads level 0 without the tent.
+  const BackdropPlan sharp = planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 1);
+  REQUIRE(sharp.show);
+  CHECK_EQ(sharp.lod, 0.f);
+  CHECK_EQ(sharp.spread, 0.f);
+  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 4).lod > planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 3).lod);
+  CHECK(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 3).lod > p.lod);
+  CHECK(p.lod > sharp.lod);
+  // User decision 2026-11-03: high is finer than the former low (24 texels across).
+  CHECK(backdropTexels(4) > 24.f);
   CHECK_FALSE(planBackdrop(107, 0, 1067, 800, 1280, 800, 320, 240, 0).show);
   CHECK_EQ(p.dim, kBackdropDim);
   CHECK(p.dim < 1.f);  // dimmed
@@ -301,4 +310,19 @@ TEST_CASE("surface plan: every device's orientation and size give an identity sw
   // Minimised.
   CHECK_EQ(planSurface(caps(0, 0, kSurfaceIdentity), 0, 0).width, 0u);
   CHECK_EQ(planSurface(caps(kSurfaceUndefinedExtent, kSurfaceUndefinedExtent, kSurfaceIdentity), 0, 0).width, 0u);
+}
+
+TEST_CASE("backdrop setting: the older levels read as none or the default, the newer key wins, saved as backdrop2") {
+  CHECK_EQ(Settings::parse("").backdrop, 2);
+  CHECK_EQ(Settings::parse("backdrop=0\n").backdrop, 0);
+  for (const char* old : {"backdrop=1\n", "backdrop=2\n", "backdrop=3\n"}) CHECK_EQ(Settings::parse(old).backdrop, 2);
+  CHECK_EQ(Settings::parse("backdrop2=1\n").backdrop, 1);
+  CHECK_EQ(Settings::parse("backdrop2=4\nbackdrop=0\n").backdrop, 4);
+  CHECK_EQ(Settings::parse("backdrop=0\nbackdrop2=3\n").backdrop, 3);
+  CHECK_EQ(Settings::parse("backdrop2=9\n").backdrop, 4);
+  Settings s;
+  s.backdrop = 1;
+  const std::string text = s.serialize();
+  CHECK(text.find("backdrop2=1\n") != std::string::npos);
+  CHECK(text.find("\nbackdrop=") == std::string::npos);
 }

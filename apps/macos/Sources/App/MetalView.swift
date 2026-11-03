@@ -17,7 +17,7 @@ struct DisplayOptions: Equatable {
     var pixelAspect87 = false
     var hideOverscan = true
     /// The empty sides show the picture enlarged, blurred and dimmed (docs/design/BACKDROP.md).
-    var backdrop = 1  // 0 off, 1 low, 2 standard, 3 high (render/backdrop.h backdropTexels)
+    var backdrop = 2  // 0 none, 1 sharp, 2 low, 3 medium, 4 high (render/backdrop.h backdropTexels)
 }
 
 /// GPU execution of a new frame's command buffers (host-clock seconds, earliest start to latest
@@ -651,9 +651,10 @@ final class GameRenderer {
         var rect = SIMD4<Float>(Float(-fx * cw / sw), Float(-fy * ch / sh), Float(2 * fx * cw / sw), Float(2 * fy * ch / sh))
         var uvr = SIMD4<Float>(Float((Double(crop) + srcW * (1 - fx) / 2) / tw), Float((Double(crop) + srcH * (1 - fy) / 2) / th),
                                Float(srcW * fx / tw), Float(srcH * fy / th))
-        let texels: Double = level >= 3 ? 6 : level == 2 ? 12 : 24
-        let lod = max(0, log2(max(tw, th) / texels)), texel = exp2(lod)
-        var p = SIMD4<Float>(Float(lod), 0.6, Float(texel / tw), Float(texel / th))
+        let texels: Double = level >= 4 ? 48 : level == 3 ? 96 : 160
+        let lod = level == 1 ? 0 : max(0, log2(max(tw, th) / texels)), texel = exp2(lod)
+        let spread: Double = level == 1 ? 0 : 1  // sharp: no tent
+        var p = SIMD4<Float>(Float(lod), 0.6, Float(texel * spread / tw), Float(texel * spread / th))
         enc.setRenderPipelineState(backdropPipeline)
         enc.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
         enc.setVertexBytes(&uvr, length: MemoryLayout<SIMD4<Float>>.size, index: 1)

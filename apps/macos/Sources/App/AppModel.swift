@@ -107,7 +107,9 @@ final class AppModel: ObservableObject {
     @AppStorage("displayPAR87") var displayPAR87 = false { didSet { objectWillChange.send() } }
     @AppStorage("hideOverscan") var hideOverscan = true { didSet { objectWillChange.send() } }
     /// The empty sides show the picture enlarged, blurred and dimmed (Settings › Display › Picture Shape).
-    @AppStorage("backdropLevel") var backdrop = 1 { didSet { objectWillChange.send() } }  // 0 off, 1 low, 2 standard, 3 high
+    // 0 none, 1 sharp, 2 low, 3 medium, 4 high (render/backdrop.h); "backdropLevel2" since 2026-11-03 (the levels
+    // changed meaning): the older "backdropLevel" reads as none or the default (migrateBackdrop).
+    @AppStorage("backdropLevel2") var backdrop = 2 { didSet { objectWillChange.send() } }
     /// The VTR tape look while rewinding / returning to A (display only; Settings › Display).
     @AppStorage("vtrEffect") var vtrEffect = true { didSet { pushPrefs(); objectWillChange.send() } }
     /// 3, 2, 1 after a practice run arrives at A (the Practice page, Options button).
@@ -167,6 +169,11 @@ final class AppModel: ObservableObject {
     private var menuRefreshQueued = false
 
     private init() {
+        // Blurred Sides: the older "backdropLevel" (0 off, 1-3 blurred more than the new high) as none or the default.
+        let d = UserDefaults.standard
+        if d.object(forKey: "backdropLevel2") == nil, d.object(forKey: "backdropLevel") != nil {
+            d.set(d.integer(forKey: "backdropLevel") == 0 ? 0 : 2, forKey: "backdropLevel2")
+        }
         emu = EmulationController(input: input)
         inputConfig = input.config
         emu.onStatus = { [weak self] st in

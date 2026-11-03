@@ -224,7 +224,7 @@ void VkBackdrop::draw(VkCommandBuffer cmd, const BackdropPlan& plan, VkExtent2D 
   vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, 32, uv);
   const float level = std::min(plan.lod, float(levels_ - 1));
   const float texel = std::exp2(level);
-  const float fp[4] = {level, plan.dim, texel / float(w_), texel / float(h_)};
+  const float fp[4] = {level, plan.dim, texel * plan.spread / float(w_), texel * plan.spread / float(h_)};
   vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 32, 16, fp);
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &set_, 0, nullptr);
   vkCmdDraw(cmd, 4, 1, 0, 0);

@@ -26,7 +26,10 @@ struct Settings {
   std::string preservedFlashLines;  // opaque settings lines: ignore the value without rewriting it
 #endif
   bool showFlashIndicator = true;
-  int backdrop = 1;       // the empty sides show the picture enlarged, blurred, dimmed: 0 off, 1 low, 2 standard, 3 high
+  // The empty sides show the picture enlarged and dimmed: 0 none, 1 sharp (no blur), 2 low, 3 medium, 4 high
+  // (render/backdrop.h). Saved as "backdrop2" since 2026-11-03; the older "backdrop" (0 off, 1-3 blurred
+  // more than the new high) reads as none or the default.
+  int backdrop = 2;
   bool vtrEffect = true;  // the VTR tape look while rewinding / returning to A (rnf_vtr; display only)
   float uiScale = 1.0f;  // multiplies the automatic scale (window height / 800)
   // CRT display (nesterm physical model; display only). Defaults are nesterm's.
