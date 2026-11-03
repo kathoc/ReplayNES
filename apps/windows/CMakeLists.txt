@@ -165,6 +165,7 @@ if(RN_PRODUCT_STARTUP_TARGET)
 endif()
 if(RNW_HAVE_UPDATES)
   target_sources(replaynes-win PRIVATE src/update_winsparkle.cpp)
+  target_link_libraries(replaynes-win PRIVATE rstrtmgr)  # Restart Manager: who holds a file the update writes
   target_compile_definitions(replaynes-win PRIVATE RNW_UPDATE_PUBLIC_KEY="${RNW_UPDATE_PUBLIC_KEY}"
     RNW_APPCAST_URL="${RNW_APPCAST_URL}")
   add_custom_command(TARGET replaynes-win POST_BUILD

@@ -236,6 +236,13 @@ failed / cancelled export removes its file.
   installation (backup + restore on failure; it needs write access to the folder - fine for an
   unzipped portable app), and starts the new version with the same arguments. Log:
   `%LOCALAPPDATA%\ReplayNES\Update\update.log`; old staging folders are removed at the next start.
+* 2026-11-03: a user's update to ReplayArcade 0.3.10 failed with "cannot write ...\ReplayArcade.exe (error 32)"
+  (a sharing violation: the old exe still in use) eleven seconds after "installing" - the copy's retry time - and a
+  second try a minute later succeeded; every earlier update in that log finished within a second. The log could
+  not show whether the helper had waited, and an OpenProcess failure skipped the wait without a word. The helper
+  now logs how long it waited for the pid, or why it could not ("had quit already" for no such process, else the
+  OpenProcess error), and on a sharing violation the processes holding the file (Restart Manager, `rstrtmgr`), in
+  the log and the message. Not reproduced here (no Windows machine); the next failure names its cause.
 
 ### Limitations
 

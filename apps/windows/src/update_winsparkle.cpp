@@ -7,6 +7,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <restartmanager.h>
 #include <shlobj.h>
 
 #include <SDL3/SDL.h>
@@ -293,12 +294,37 @@ class WinSparkleUpdates : public UpdateService {
 };
 
 // ------------------------------------------------------------------ the finishing helper
+/// The processes that have `file` open (Windows' Restart Manager), "name (pid)" each; "" when none or unknown.
+/// 2026-11-03: an update failed with error 32 on ReplayArcade.exe and the log could not tell what held it.
+std::string lockers(const fs::path& file) {
+  DWORD session = 0;
+  WCHAR key[CCH_RM_SESSION_KEY + 1] = {};
+  if (RmStartSession(&session, 0, key) != ERROR_SUCCESS) return {};
+  std::string out;
+  PCWSTR name = file.c_str();
+  if (RmRegisterResources(session, 1, &name, 0, nullptr, 0, nullptr) == ERROR_SUCCESS) {
+    UINT need = 0, have = 16;
+    RM_PROCESS_INFO info[16];
+    DWORD reasons = 0;
+    if (RmGetList(session, &need, &have, info, &reasons) == ERROR_SUCCESS)
+      for (UINT i = 0; i < have; ++i)
+        out += (out.empty() ? "" : ", ") + narrow(info[i].strAppName) + " (" + std::to_string(info[i].Process.dwProcessId) + ")";
+  }
+  RmEndSession(session);
+  return out;
+}
+
 bool copyWithRetry(const fs::path& from, const fs::path& to, std::string* why) {
-  for (int i = 0; i < 50; ++i) {  // antivirus scanners / a slow exit can hold the files briefly
+  for (int i = 0; i < 50; ++i) {  // antivirus scanners can hold the files briefly
     if (CopyFileW(from.c_str(), to.c_str(), FALSE)) return true;
     Sleep(200);
   }
-  *why = "cannot write " + narrow(to.wstring()) + " (error " + std::to_string(GetLastError()) + ")";
+  const DWORD err = GetLastError();
+  *why = "cannot write " + narrow(to.wstring()) + " (error " + std::to_string(err) + ")";
+  if (err == ERROR_SHARING_VIOLATION) {
+    const std::string held = lockers(to);
+    *why += held.empty() ? std::string(", held by an unknown process") : ", held by " + held;
+  }
   return false;
 }
 
@@ -324,15 +350,23 @@ int finishUpdate(int argc, char** argv) {
   for (int i = 4; i < argc; ++i)
     if (std::strcmp(argv[i], "--") != 0 || i != 4) appArgs.push_back(widen(argv[i]));
   const fs::path stage = exePath().parent_path();
-  // 1. The old instance quits (WinSparkle asked it to): wait for it.
+  // 1. The old instance quits (WinSparkle asked it to): wait for it. Logged, so a failed update shows whether
+  // it was waited for (2026-11-03: error 32 eleven seconds after the start, the log could not tell).
+  const DWORD t0 = GetTickCount();
   if (HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, pid)) {
-    if (WaitForSingleObject(h, 120000) != WAIT_OBJECT_0) {
-      CloseHandle(h);
-      logLine("the running " RN_PRODUCT_NAME " did not quit: update cancelled");
+    const DWORD w = WaitForSingleObject(h, 120000);
+    CloseHandle(h);
+    if (w != WAIT_OBJECT_0) {
+      logLine("the running " RN_PRODUCT_NAME " (pid " + std::to_string(pid) + ") did not quit: update cancelled");
       MessageBoxW(nullptr, widen(RN_PRODUCT_NAME " did not quit, so the update was not installed.").c_str(), widen(RN_PRODUCT_NAME).c_str(), MB_ICONWARNING);
       return 1;
     }
-    CloseHandle(h);
+    logLine("waited " + std::to_string(GetTickCount() - t0) + " ms for " RN_PRODUCT_NAME " (pid " + std::to_string(pid) + ") to quit");
+  } else {
+    // Gone already (no such process: ERROR_INVALID_PARAMETER); anything else is logged.
+    const DWORD err = GetLastError();
+    logLine(err == ERROR_INVALID_PARAMETER ? "pid " + std::to_string(pid) + " had quit already"
+                                           : "cannot wait for pid " + std::to_string(pid) + " (OpenProcess error " + std::to_string(err) + ")");
   }
   // 2. Copy the new files over the installation, keeping a backup of the ones replaced.
   std::error_code ec;
