@@ -407,6 +407,23 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - The rest of the artwork (emblem from the ReplayNES app icon, backgrounds, scanline / rewind motifs)
   is ReplayNES's own and under the project's license.
 
+## Noto Sans JP (Japanese UI font, Android app)
+
+- `third_party/fonts/noto-sans-jp/NotoSansJP-Regular.otf`, Noto Sans JP Regular 2.004 (static OpenType / CFF),
+  unmodified, from https://github.com/notofonts/noto-cjk (release Sans2.004), shipped in the Android app
+  (assets/fonts) together with its licence (`OFL.txt`).
+- © 2014-2021 Adobe (http://www.adobe.com/). Licensed under the **SIL Open Font License, Version 1.1**
+  (https://openfontlicense.org): it may be bundled with and sold as part of software of any licence; the font is
+  not sold by itself. See `third_party/fonts/noto-sans-jp/README.md`.
+
+## Brickboy touch controller (on-screen controls, Android app)
+
+- `apps/desktop/src/touch/` (touch_gamepad, touch_layout) is a C++ port of the iPhone app's on-screen touch
+  controller, itself derived from Brickboy (https://github.com/kathoc/brickboy) as vendored and modified by
+  NESTERM. Copyright 2026 Katsuya Hokamura. Licensed under the **Apache License, Version 2.0**; see
+  `third_party/brickboy/LICENSE` and `third_party/brickboy/PROVENANCE.md`. Modified for ReplayNES (C++ port,
+  2026); the ported files carry `SPDX-License-Identifier: Apache-2.0`.
+
 ## Tabler Icons (menu icons, Linux and Windows apps)
 
 - Project: https://tabler.io/icons / https://github.com/tabler/tabler-icons

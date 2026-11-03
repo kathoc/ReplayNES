@@ -71,3 +71,15 @@ the bars 54 px each). SDL asks for full screen with the deprecated system UI fla
 only the layout flags and its requested visibilities said both bars visible (dumpsys window), from the
 launch on. MainActivity hides them with the window's insets controller (Android 11+; systemBars, shown
 for a moment by a swipe from an edge), at creation and whenever the window gets the focus back.
+
+## Fonts (2026-11-03)
+
+On the Android 16 emulator the Japanese UI showed "?": the system's Noto Sans CJK is a variable font (OpenType with
+CFF2, fvar), which Dear ImGui's stb_truetype cannot read; the Retroid Pocket 5 (Android 13) carries the older
+static one and was fine. UI::loadFonts also took "found" for "loaded", so Japanese was kept with no glyphs.
+Adopted (user: bundle a font with no licence problem, the app may later be sold with another core): Noto Sans JP
+Regular 2.004, static OTF (CFF), SIL OFL 1.1, in the APK's assets/fonts with OFL.txt (third_party/fonts/noto-sans-jp);
+fonts_android.cpp prefers it (SDL_LoadFile, AddFontFromMemoryTTF), the system fonts remain the fallback, and
+loadFonts keeps Japanese only when the Japanese font was actually read. Not adopted: FreeType (reads CFF2, but a
+second font rasteriser to build on every platform for one font). Checked on the Android 16 emulator: the settings
+and the library in Japanese, the log names the bundled font.

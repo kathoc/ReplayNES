@@ -12,6 +12,9 @@ def sdlJava = "${rootDir}/../../third_party/SDL/android-project/app/src/main/jav
 // The launcher icon: -PrnIcon=<a square PNG> (the product's; default ReplayNES's), as a mipmap.
 def iconPng = file(project.findProperty('rnIcon') ?: "${rootDir}/../../apps/linux/steam/artwork/png/hicolor/512.png")
 def iconRes = layout.buildDirectory.dir('generated/rn-icon/res')
+// The bundled Japanese UI font and its licence (third_party/fonts/noto-sans-jp) as assets/fonts/.
+def fontDir = "${rootDir}/../../third_party/fonts/noto-sans-jp"
+def fontAssets = layout.buildDirectory.dir('generated/rn-fonts/assets')
 // The version: -PrnVersion=<major.minor.patch> (the product's); versionCode major * 10000 + minor * 100 + patch.
 def rnVersionName = (project.findProperty('rnVersion') ?: '0.1.0').toString()
 def vparts = (rnVersionName.tokenize('.') + ['0', '0', '0']).take(3).collect { it.toInteger() }
@@ -62,6 +65,7 @@ android {
     buildFeatures { resValues = true }  // app_name from the product
     sourceSets.main.java.srcDirs += [sdlJava]
     sourceSets.main.res.srcDirs += [iconRes]
+    sourceSets.main.assets.srcDirs += [fontAssets]
     externalNativeBuild {
         cmake {
             path '../CMakeLists.txt'
@@ -81,4 +85,8 @@ def rnIcon = tasks.register('rnIcon', Copy) {
     into(iconRes.map { it.dir('mipmap-xxxhdpi') })
     inputs.property('icon', iconPng.absolutePath)
 }
-tasks.named('preBuild') { dependsOn rnIcon }
+def rnFonts = tasks.register('rnFonts', Copy) {
+    from(fontDir) { include 'NotoSansJP-Regular.otf', 'OFL.txt' }
+    into(fontAssets.map { it.dir('fonts') })
+}
+tasks.named('preBuild') { dependsOn rnIcon, rnFonts }

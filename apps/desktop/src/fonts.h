@@ -13,6 +13,7 @@ namespace rnl {
 struct FontFile {
   std::string path;
   int index = 0;  // face index in a collection (.ttc)
+  bool asset = false;  // path is inside the app package (Android's APK assets), read with SDL_LoadFile
   bool found() const { return !path.empty(); }
 };
 

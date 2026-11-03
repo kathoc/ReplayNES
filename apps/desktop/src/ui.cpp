@@ -160,13 +160,30 @@ bool UI::loadFonts(bool japanese) {
   else order = {latin, jp, sym};
   font_ = nullptr;
   std::string used;
+  bool jpLoaded = false;  // found is not enough: a font stb_truetype cannot read (CFF2) is skipped below
   for (const FontFile& f : order) {
     if (!f.found()) continue;
     ImFontConfig c;
     c.MergeMode = font_ != nullptr;
     c.FontNo = f.index;
-    ImFont* r = io.Fonts->AddFontFromFileTTF(f.path.c_str(), 0.0f, &c);
-    if (!r) continue;
+    ImFont* r = nullptr;
+    if (f.asset) {  // inside the app package: read with SDL, handed to the atlas (it frees the copy)
+      size_t n = 0;
+      void* data = SDL_LoadFile(f.path.c_str(), &n);
+      if (data && n > 0) {
+        void* copy = IM_ALLOC(n);
+        std::memcpy(copy, data, n);
+        r = io.Fonts->AddFontFromMemoryTTF(copy, int(n), 0.0f, &c);
+      }
+      SDL_free(data);
+    } else {
+      r = io.Fonts->AddFontFromFileTTF(f.path.c_str(), 0.0f, &c);
+    }
+    if (!r) {
+      std::fprintf(stderr, "fonts: cannot read %s\n", f.path.c_str());
+      continue;
+    }
+    if (jp.found() && f.path == jp.path) jpLoaded = true;
     if (!font_) {
       font_ = r;
       icons::addToAtlas(io.Fonts);
@@ -178,8 +195,8 @@ bool UI::loadFonts(bool japanese) {
     icons::addToAtlas(io.Fonts);
   }
   std::fprintf(stderr, "fonts: %s + icons\n", used.empty() ? "(ImGui default)" : used.c_str());
-  textScale_ = japanese && jp.found() ? 1.18f : 1.0f;  // CJK primary font: smaller glyphs per pixel size
-  return !japanese || jp.found();
+  textScale_ = japanese && jpLoaded ? 1.18f : 1.0f;  // CJK primary font: smaller glyphs per pixel size
+  return !japanese || jpLoaded;
 }
 
 void UI::updateScale(int windowWidth, int windowHeight) {
