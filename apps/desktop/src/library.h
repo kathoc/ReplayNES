@@ -51,8 +51,15 @@ class LibraryModel {
   const std::string& root() const { return root_; }
   std::string romDir() const;
   std::string projectsDir() const;
+  /// The ROM and Projects folders chosen in Settings ("": the library's own); rescans when they change.
+  void setFolders(const std::string& romFolder, const std::string& projectsFolder);
+  bool romFolderChosen() const { return !romFolder_.empty(); }
+  bool projectsFolderChosen() const { return !projectsFolder_.empty(); }
+  /// The folder an in-app chooser may not leave when it starts in `dir`: the library, or a chosen folder
+  /// outside it.
+  std::string chooserRoot(const std::string& dir) const;
 
-  /// Creates ROM/ and Projects/. Returns false with folderError() set.
+  /// Creates ROM/ and Projects/ (and chosen folders). Returns false with folderError() set.
   bool ensureFolders();
   const std::string& folderError() const { return folderError_; }
 
@@ -103,6 +110,7 @@ class LibraryModel {
   std::map<std::string, double> folderTimes() const;
 
   std::string root_;
+  std::string romFolder_, projectsFolder_;  // chosen ones ("": under root_)
   std::string folderError_;
   rnf_rom_hash_cache* hashes_ = nullptr;
   std::thread worker_;

@@ -151,8 +151,25 @@ const std::vector<const LibraryROM*>& LibraryModel::arranged(const std::string& 
   return arranged_;
 }
 
-std::string LibraryModel::romDir() const { return root_ + "/" + RNF_LIBRARY_ROM_DIR; }
-std::string LibraryModel::projectsDir() const { return root_ + "/" + RNF_LIBRARY_PROJECTS_DIR; }
+std::string LibraryModel::romDir() const { return romFolder_.empty() ? root_ + "/" + RNF_LIBRARY_ROM_DIR : romFolder_; }
+std::string LibraryModel::projectsDir() const {
+  return projectsFolder_.empty() ? root_ + "/" + RNF_LIBRARY_PROJECTS_DIR : projectsFolder_;
+}
+
+void LibraryModel::setFolders(const std::string& romFolder, const std::string& projectsFolder) {
+  if (romFolder == romFolder_ && projectsFolder == projectsFolder_) return;
+  if (worker_.joinable()) worker_.join();  // the scan reads the folders
+  romFolder_ = romFolder;
+  projectsFolder_ = projectsFolder;
+  ensureFolders();
+  refresh();
+}
+
+std::string LibraryModel::chooserRoot(const std::string& dir) const {
+  const fs::path rel = fs::u8path(dir).lexically_normal().lexically_relative(fs::u8path(root_).lexically_normal());
+  const bool inside = !rel.empty() && *rel.begin() != "..";
+  return inside ? root_ : dir;
+}
 
 bool LibraryModel::ensureFolders() {
   char* failed = nullptr;
@@ -165,6 +182,16 @@ bool LibraryModel::ensureFolders() {
                                                : TRF("Can’t create the folder: %@\n%@", {where, std::string(rnf_last_error())});
   }
   rnf_string_free(failed);
+  // Chosen folders: made when missing (a card taken out leaves the error, not a silent empty library).
+  for (const std::string* chosen : {&romFolder_, &projectsFolder_}) {
+    if (chosen->empty()) continue;
+    std::error_code ec;
+    fs::create_directories(fs::u8path(*chosen), ec);
+    if (ec || !fs::is_directory(fs::u8path(*chosen), ec)) {
+      folderError_ = TRF("Can’t create the folder: %@\n%@", {*chosen, ec.message()});
+      st = RN_ERR_IO;
+    }
+  }
   return st == RN_OK;
 }
 

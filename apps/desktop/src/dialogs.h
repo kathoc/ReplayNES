@@ -24,7 +24,7 @@ struct Dialog {
 };
 
 struct ChooserRequest {
-  enum class Mode { saveProject, openProject, openROM };
+  enum class Mode { saveProject, openProject, openROM, chooseFolder };  // chooseFolder: the folder shown
   Mode mode = Mode::saveProject;
   std::string title;
   std::string root;         // the chooser never leaves this folder

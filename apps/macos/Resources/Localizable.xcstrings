@@ -1,6 +1,136 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "(the default)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（既定）"
+          }
+        }
+      }
+    },
+    "Change…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更…"
+          }
+        }
+      }
+    },
+    "Back to the Default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定に戻す"
+          }
+        }
+      }
+    },
+    "Can’t open the folder: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを開けません: %@"
+          }
+        }
+      }
+    },
+    "Choose the ROM Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM フォルダを選ぶ"
+          }
+        }
+      }
+    },
+    "Choose the Projects Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトフォルダを選ぶ"
+          }
+        }
+      }
+    },
+    "Allow access to all files to use a folder outside the app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリの外のフォルダを使うには、すべてのファイルへのアクセスを許可してください"
+          }
+        }
+      }
+    },
+    "Choose a folder on the device or its memory card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末本体かメモリーカードのフォルダを選んでください"
+          }
+        }
+      }
+    },
+    "Can’t choose a folder: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを選べません: %@"
+          }
+        }
+      }
+    },
+    "Can’t write to the folder: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダに書き込めません: %@"
+          }
+        }
+      }
+    },
+    "Back to the default folder: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定のフォルダに戻しました: %@"
+          }
+        }
+      }
+    },
+    "Now using %@ (the files in the previous folder stay there)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を使います（前のフォルダのファイルはそのまま残ります）"
+          }
+        }
+      }
+    },
+    "Use This Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフォルダを使う"
+          }
+        }
+      }
+    },
     "Share Log": {
       "localizations": {
         "ja": {

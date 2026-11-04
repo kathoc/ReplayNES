@@ -189,3 +189,34 @@ activity's life (pause, stop, start, resume, focus, trim memory) and the surface
 destroyed) from the Java side, which the paused native loop cannot log. The library logs each scan ("library:
 N ROMs in ...", "skipped <file>: <reason>"). Settings > App > Folders & License > Share Log sends both files
 through the share sheet (documents of LibraryProvider with a read grant): mail, a chat app.
+
+## Choosing the folders (2026-11-04)
+
+Asked for: the ROM folder and the Projects folder can be changed, and set back to the defaults. On Android
+the user chose all-files access (asked, over a picker giving content URIs, which would change every file
+access in the library, the projects and the thumbnails; a Google Play sale would have to pass its review of
+that permission).
+
+- Settings keeps romFolder / projectsFolder ("": the library's own, <library>/ROM and <library>/Projects).
+  LibraryModel takes them (setFolders: waits for a scan, makes a missing chosen folder, rescans); every user
+  of the folders already went through romDir() / projectsDir(). The in-app choosers stay inside the
+  library, or inside a chosen folder outside it (chooserRoot). Share / Open with follow the ROM folder
+  (setImportFolder).
+- Settings > App > Folders & License: a folder's row shows its path and opens a dialog: Open Folder,
+  Change…, Back to the Default (only for a chosen one), Cancel. A chosen folder must take a file (a probe
+  file written and removed). The files in the folder used before stay where they are; the notice says so.
+- Change… picks with: the app's own chooser in folder mode, from "/" (Linux, the Steam Deck: a gamepad
+  drives it; cards and USB drives under /run/media); SDL's folder dialog (Windows: other drives); on
+  Android all-files access first (Android 11+: the system's "All files access" page for the app, back in
+  onResume; Android 10: the storage permissions, requestLegacyExternalStorage), then the system's folder
+  picker (ACTION_OPEN_DOCUMENT_TREE), whose tree URI becomes a path (StorageFolders: "primary:<path>" on the
+  device, "<volume>:<path>" on a card as /storage/<volume>/<path>; a cloud folder is refused). The answer
+  comes back to the frame loop through takeChosenFolder.
+- Open Folder on a chosen folder outside the app: the external storage provider's document in Files.
+
+Checked: on the emulator, Change… -> All files access -> the picker -> /sdcard/ROMs: the library read its
+ROM ("library: 1 ROMs in /storage/emulated/0/ROMs"), Open Folder showed it in Files, the choice survived a
+restart, Back to the Default returned to Android/data/... with its notice. Tests: the settings' round trip,
+a chosen folder and back with the chooser's root, a missing chosen folder made. Linux (the offscreen UI
+tool): the folder dialog and the chooser with Use This Folder (folders-dialog.png, folders-chooser.png).
+Windows: built (x86_64), SDL's folder dialog not tried on Windows.

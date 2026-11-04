@@ -205,6 +205,16 @@ TEST_CASE("settings round trip and tolerant parsing") {
   CHECK_EQ(Settings::parse("").backdrop, 2);  // the blurred sides: low by default (2026-11-03: 0 none ... 4 high)
   CHECK_EQ(Settings::parse("backdrop=0\n").backdrop, 0);
   CHECK_EQ(Settings::parse("backdrop2=9\n").backdrop, 4);
+  // The ROM / Projects folders chosen in Settings ("": the library's own).
+  CHECK(Settings::parse("").romFolder.empty());
+  {
+    Settings f;
+    f.romFolder = "/media/card/ROMs";
+    f.projectsFolder = "/home/me/Replays";
+    Settings g = Settings::parse(f.serialize());
+    CHECK_EQ(g.romFolder, std::string("/media/card/ROMs"));
+    CHECK_EQ(g.projectsFolder, std::string("/home/me/Replays"));
+  }
   CHECK_FALSE(t.integerScale);
   CHECK(t.par87);
   CHECK_EQ(t.flash, RN_PRODUCT_FLASH_FILTER ? 3 : 0);
@@ -627,6 +637,64 @@ TEST_CASE("library search") {
   CHECK(librarySearchMatches("nintendo/", r));
   CHECK(librarySearchMatches("\xEF\xBC\xAD\xEF\xBD\x81\xEF\xBD\x92\xEF\xBD\x89\xEF\xBD\x8F", r));  // full-width "Mario"
   CHECK_FALSE(librarySearchMatches("zelda", r));
+}
+
+// Settings > App > Folders & License (docs/design/ANDROID.md, "Choosing the folders"; 2026-11-04).
+TEST_CASE("library: chosen ROM / Projects folders, back to the library's own; the chooser's root") {
+  const std::string root = tmpDir("chosen-folders") + "/" RN_PRODUCT_DATA_DIR;
+  const std::string chosen = tmpDir("chosen-folders-roms");
+  const std::string rom = std::string("game.") + (RN_PRODUCT_NES ? "nes" : "zip");
+  { std::ofstream(fs::u8path(chosen + "/" + rom), std::ios::binary) << "not a real ROM"; }
+  LibraryModel lib(root);
+  auto scan = [&] {
+    for (int i = 0; i < 300 && lib.scanning(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    lib.poll();
+  };
+  REQUIRE(lib.ensureFolders());
+  lib.refresh();
+  scan();
+  CHECK(lib.roms().empty());
+  CHECK_FALSE(lib.romFolderChosen());
+  lib.setFolders(chosen, "");
+  CHECK(lib.romFolderChosen());
+  CHECK(LibraryModel::samePath(lib.romDir(), chosen));
+  CHECK(LibraryModel::samePath(lib.projectsDir(), root + "/" RNF_LIBRARY_PROJECTS_DIR));
+  scan();
+  REQUIRE_EQ(lib.roms().size(), size_t(1));
+  CHECK(LibraryModel::samePath(lib.roms().front().path, chosen + "/" + rom));
+  // The in-app chooser stays in the library, or in a chosen folder outside it.
+  CHECK(LibraryModel::samePath(lib.chooserRoot(lib.projectsDir()), root));
+  CHECK(LibraryModel::samePath(lib.chooserRoot(chosen), chosen));
+  // A chosen folder that is missing is made.
+  const std::string fresh = tmpDir("chosen-folders-new") + "/Replays";
+  lib.setFolders(chosen, fresh);
+  CHECK(fs::is_directory(fs::u8path(fresh)));
+  CHECK(lib.folderError().empty());
+  lib.setFolders("", "");
+  CHECK(LibraryModel::samePath(lib.romDir(), root + "/" RNF_LIBRARY_ROM_DIR));
+  scan();
+  CHECK(lib.roms().empty());
+}
+
+// A file manager or a documents provider makes the file, then writes it: the folder's time stays as it was.
+TEST_CASE("library: the watch sees a ROM written after it was created") {
+  LibraryModel lib(tmpDir("watch-written") + "/" RN_PRODUCT_DATA_DIR);
+  REQUIRE(lib.ensureFolders());
+  const std::string path = lib.romDir() + "/game." + (RN_PRODUCT_NES ? "nes" : "zip");
+  { std::ofstream(fs::u8path(path), std::ios::binary); }  // created, empty
+  auto scan = [&] {
+    for (int i = 0; i < 300 && lib.scanning(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    lib.poll();
+  };
+  lib.refresh();
+  scan();
+  REQUIRE_EQ(lib.roms().size(), size_t(1));
+  CHECK_EQ(lib.roms().front().size, int64_t(0));
+  { std::ofstream(fs::u8path(path), std::ios::binary | std::ios::app) << std::string(4096, 'x'); }  // the bytes
+  lib.watch(1000.0);
+  scan();
+  REQUIRE_EQ(lib.roms().size(), size_t(1));
+  CHECK_EQ(lib.roms().front().size, int64_t(4096));
 }
 
 TEST_CASE("library: Add Test Cartridge writes it once, the game database names it") {

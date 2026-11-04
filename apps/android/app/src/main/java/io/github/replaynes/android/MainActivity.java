@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 package io.github.replaynes.android;
 
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.DocumentsContract;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
 import android.view.SurfaceHolder;
@@ -97,6 +101,11 @@ public class MainActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         AppLog.line(this, "activity: resume");
+        if (awaitingAllFiles) {  // back from the "all files" page
+            awaitingAllFiles = false;
+            if (hasStorageAccess()) pickFolder();
+            else nativeFolderChosen("", "no-access");
+        }
     }
 
     @Override
@@ -126,8 +135,11 @@ public class MainActivity extends SDLActivity {
         RomImport.copyInto(this, uris, new File(dir));
     }
 
-    /** The library's ROM folder (main_android.cpp through JNI, at start-up): files shared before it was known go in now. */
-    public void setRomDir(String dir) {
+    /**
+     * The library's ROM folder (setImportFolder in platform/shell.cpp through JNI: at start-up and when it is
+     * changed in Settings): files shared before it was known go in now.
+     */
+    public boolean setRomDir(String dir) {
         romDir = dir;
         List<Uri> uris;
         synchronized (pendingImport) {
@@ -135,6 +147,7 @@ public class MainActivity extends SDLActivity {
             pendingImport.clear();
         }
         if (!uris.isEmpty()) runOnUiThread(() -> RomImport.copyInto(this, uris, new File(dir)));
+        return true;
     }
 
     /** Add ROMs (importFiles in platform/shell.cpp through JNI, any thread): the system file picker, several files at once. */
@@ -200,8 +213,88 @@ public class MainActivity extends SDLActivity {
         return true;
     }
 
+    // Change… for the ROM / Projects folder (docs/design/ANDROID.md, "Choosing the folders"): all-files access
+    // first (the library reads paths), then the system's folder picker; the answer to nativeFolderChosen as a
+    // path, or "" with a reason the native side words ("no-access", "not-local", "no-picker"; both "": cancelled).
+    private static final int REQUEST_FOLDER = 0x524f4e;
+    private static final int REQUEST_STORAGE = 0x524f4f;
+    private String folderStart;
+    private boolean awaitingAllFiles;
+
+    private static native void nativeFolderChosen(String path, String error);
+
+    /** chooseFolder in platform/shell.cpp through JNI, any thread. */
+    public boolean chooseFolder(String start) {
+        runOnUiThread(() -> {
+            folderStart = start;
+            if (hasStorageAccess()) pickFolder();
+            else askStorageAccess();
+        });
+        return true;
+    }
+
+    private boolean hasStorageAccess() {
+        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
+        return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void askStorageAccess() {
+        if (Build.VERSION.SDK_INT < 30) {  // Android 10: the legacy storage permission
+            requestPermissions(new String[] {Manifest.permission.READ_EXTERNAL_STORAGE,
+                                             Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_STORAGE);
+            return;
+        }
+        // The system's own page for this app's "all files" switch; back in onResume.
+        Intent[] tries = {
+            new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + getPackageName())),
+            new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
+        };
+        for (Intent i : tries) {
+            try {
+                awaitingAllFiles = true;
+                startActivity(i);
+                return;
+            } catch (ActivityNotFoundException e) {
+                awaitingAllFiles = false;
+            }
+        }
+        nativeFolderChosen("", "no-access");
+    }
+
+    private void pickFolder() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        Uri start = folderStart == null ? null : StorageFolders.documentUri(folderStart);
+        if (start != null) i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, start);
+        try {
+            startActivityForResult(i, REQUEST_FOLDER);
+        } catch (ActivityNotFoundException e) {
+            nativeFolderChosen("", "no-picker");
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode != REQUEST_STORAGE) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+            return;
+        }
+        if (hasStorageAccess()) pickFolder();
+        else nativeFolderChosen("", "no-access");
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_FOLDER) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                nativeFolderChosen("", "");
+                return;
+            }
+            String path = StorageFolders.treeToPath(data.getData());
+            AppLog.line(this, "folder: chose " + data.getData() + " -> " + path);
+            if (path == null) nativeFolderChosen("", "not-local");
+            else nativeFolderChosen(path, "");
+            return;
+        }
         if (requestCode != REQUEST_IMPORT) {
             super.onActivityResult(requestCode, resultCode, data);
             return;
@@ -234,18 +327,25 @@ public class MainActivity extends SDLActivity {
         } catch (IOException e) {
             docId = null;
         }
-        if (docId == null) {
-            Log.w("ReplayNES", "openFolder: outside the app's files folder: " + path);
-            return false;
+        Intent[] tries;
+        if (docId != null) {
+            tries = new Intent[] {
+                // The folder itself (DocumentsUI, Android 10+).
+                new Intent(Intent.ACTION_VIEW).setDataAndType(
+                    DocumentsContract.buildDocumentUri(auth, docId), DocumentsContract.Document.MIME_TYPE_DIR),
+                // The provider's root (a Files app that does not open a folder).
+                new Intent(Intent.ACTION_VIEW).setDataAndType(
+                    DocumentsContract.buildRootUri(auth, LibraryProvider.ROOT_ID), "vnd.android.document/root"),
+            };
+        } else {
+            // A folder chosen in Settings, outside the app's files: the external storage provider's document.
+            Uri doc = StorageFolders.documentUri(path);
+            if (doc == null) {
+                Log.w("ReplayNES", "openFolder: no document for " + path);
+                return false;
+            }
+            tries = new Intent[] {new Intent(Intent.ACTION_VIEW).setDataAndType(doc, DocumentsContract.Document.MIME_TYPE_DIR)};
         }
-        Intent[] tries = {
-            // The folder itself (DocumentsUI, Android 10+).
-            new Intent(Intent.ACTION_VIEW).setDataAndType(
-                DocumentsContract.buildDocumentUri(auth, docId), DocumentsContract.Document.MIME_TYPE_DIR),
-            // The provider's root (a Files app that does not open a folder).
-            new Intent(Intent.ACTION_VIEW).setDataAndType(
-                DocumentsContract.buildRootUri(auth, LibraryProvider.ROOT_ID), "vnd.android.document/root"),
-        };
         for (Intent i : tries) {
             // CLEAR_TASK: a Files task left in the background would come back as it was, at its old folder,
             // instead of reading this intent (emulator, Android 16).

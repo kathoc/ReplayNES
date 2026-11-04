@@ -223,6 +223,13 @@ void UI::buildChooser() {
         }
       }
     } else {
+      if (c.req.mode == ChooserRequest::Mode::chooseFolder) {
+        if (ImGui::Button(TR("Use This Folder"))) {
+          chosen = c.dir;
+          done = true;
+        }
+        ImGui::SameLine();
+      }
       if (ImGui::Button(TR("Cancel"))) cancelled = true;
     }
     if (!textEntryOwnsPad()) {  // the on-screen keyboard shows its own buttons

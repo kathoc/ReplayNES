@@ -433,6 +433,13 @@ class UI : public DialogHost {
     bool focusName = false;
   };
   std::optional<Chooser> chooser_;
+  // Settings > App > Folders & License: the ROM / Projects folder's choices, a change, a reset
+  // (ui_settings.cpp); pendingFolder_: the folder a system picker is choosing (0: none, 1: ROM, 2: Projects).
+  void folderChoices(bool roms);
+  void changeFolder(bool roms);
+  void setFolder(bool roms, const std::string& path);
+  void pollChosenFolder();
+  int pendingFolder_ = 0;
   void chooserList();
   struct Rename {
     std::string title;

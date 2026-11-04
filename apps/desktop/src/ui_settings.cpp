@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <map>
 #include <string>
@@ -26,6 +28,7 @@
 #include "update_service.h"
 
 namespace rnl {
+namespace fs = std::filesystem;
 
 using namespace theme;
 
@@ -412,11 +415,9 @@ void UI::activateItem(const std::string& id) {
   } else if (id == "about.share_log") {
     shareLog();
   } else if (id == "about.roms") {
-    d_.library->ensureFolders();
-    openFolder(d_.library->romDir());
+    folderChoices(true);
   } else if (id == "about.projects") {
-    d_.library->ensureFolders();
-    openFolder(d_.library->projectsDir());
+    folderChoices(false);
   } else if (id == "game.library") {
     setMenu(false);
     d_.app->closeProject();  // asks to save first when needed; then the library
@@ -741,6 +742,92 @@ void UI::openAssign(const std::string& physicalId) {
   for (size_t i = 0; i < choices.size(); ++i)
     if (current == choices[i]) rnf_menu_set_focus(menu_, i);
   pageChangedAt_ = -1;
+}
+
+// ---- Settings > App > Folders & License: the ROM and Projects folders (docs/design/ANDROID.md, "Choosing
+// the folders"): open, change (the system's picker or the app's own), back to the library's own.
+
+void UI::folderChoices(bool roms) {
+  LibraryModel& lib = *d_.library;
+  const std::string dir = roms ? lib.romDir() : lib.projectsDir();
+  const bool chosen = roms ? lib.romFolderChosen() : lib.projectsFolderChosen();
+  Dialog d;
+  d.title = roms ? TR("ROM Folder") : TR("Projects Folder");
+  d.message = Paths::display(dir) + (chosen ? std::string() : "\n" + std::string(TR("(the default)")));
+  d.buttons = {TR("Open Folder"), TR("Change…")};
+  if (chosen) d.buttons.push_back(TR("Back to the Default"));
+  d.buttons.push_back(TR("Cancel"));
+  d.cancelIndex = int(d.buttons.size()) - 1;
+  d.onResult = [this, roms, chosen, dir](int b, bool) {
+    if (b == 0) {
+      d_.library->ensureFolders();
+      if (!openFolder(dir)) notice(TRF("Can’t open the folder: %@", {Paths::display(dir)}), 4);
+    } else if (b == 1) {
+      changeFolder(roms);
+    } else if (b == 2 && chosen) {
+      setFolder(roms, "");
+    }
+  };
+  showDialog(std::move(d));
+}
+
+void UI::changeFolder(bool roms) {
+  const std::string start = roms ? d_.library->romDir() : d_.library->projectsDir();
+  if (chooseFolder(start)) {  // the system's picker answers later: pollChosenFolder
+    pendingFolder_ = roms ? 1 : 2;
+    return;
+  }
+  ChooserRequest r;
+  r.mode = ChooserRequest::Mode::chooseFolder;
+  r.title = roms ? TR("Choose the ROM Folder") : TR("Choose the Projects Folder");
+  r.root = "/";  // any disk: a card, a USB drive (/run/media ...)
+  r.startDir = start;
+  r.onChosen = [this, roms](const std::string& path) { setFolder(roms, path); };
+  showChooser(std::move(r));
+}
+
+void UI::pollChosenFolder() {
+  if (!pendingFolder_) return;
+  std::string path, error;
+  if (!takeChosenFolder(&path, &error)) return;
+  const bool roms = pendingFolder_ == 1;
+  pendingFolder_ = 0;
+  if (!path.empty()) {
+    setFolder(roms, path);
+  } else if (error == "no-access") {
+    notice(TR("Allow access to all files to use a folder outside the app"), 5);
+  } else if (error == "not-local") {
+    notice(TR("Choose a folder on the device or its memory card"), 5);
+  } else if (!error.empty()) {
+    notice(TRF("Can’t choose a folder: %@", {error}), 5);
+  }
+}
+
+// path "": the library's own folder again. A chosen folder is made if missing and must take a file; the
+// files in the folder used before stay where they are (nothing is moved).
+void UI::setFolder(bool roms, const std::string& path) {
+  LibraryModel& lib = *d_.library;
+  std::string value = path;
+  const std::string own = lib.root() + "/" + (roms ? RNF_LIBRARY_ROM_DIR : RNF_LIBRARY_PROJECTS_DIR);
+  if (!value.empty() && LibraryModel::samePath(value, own)) value.clear();
+  if (!value.empty()) {
+    std::error_code ec;
+    fs::create_directories(fs::u8path(value), ec);
+    const fs::path probe = fs::u8path(value) / ".replay-write-test";
+    std::FILE* f = std::fopen(probe.string().c_str(), "wb");
+    if (!f) {
+      notice(TRF("Can’t write to the folder: %@", {Paths::display(value)}), 5);
+      return;
+    }
+    std::fclose(f);
+    fs::remove(probe, ec);
+  }
+  (roms ? d_.settings->romFolder : d_.settings->projectsFolder) = value;
+  changed();  // saved; the library rescans
+  const std::string now = roms ? lib.romDir() : lib.projectsDir();
+  notice(value.empty() ? TRF("Back to the default folder: %@", {Paths::display(now)})
+                       : TRF("Now using %@ (the files in the previous folder stay there)", {Paths::display(now)}),
+         5);
 }
 
 }  // namespace rnl

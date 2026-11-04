@@ -87,6 +87,9 @@ struct Settings {
   std::string core = RN_PRODUCT_DEFAULT_CORE;  // next new game; existing projects retain their core
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
   std::string language = "auto";  // "auto" (the system's), "ja", "en"
+  // The ROM and Projects folders chosen in Settings > App > Folders & License ("": the library's own,
+  // <library>/ROM and <library>/Projects).
+  std::string romFolder, projectsFolder;
   bool menuHintShown = false;     // the Menu pill pulsed on the first launch
   uint32_t coachShown = 0;        // first-run coach toasts shown (rnf_coach_shown bits, docs/design/VTR_UX.md)
   // Input layout version of the saved bindings (RNF_CONTROLLER_LAYOUT_VERSION; 0 = never saved).

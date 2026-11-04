@@ -549,8 +549,8 @@ void AppModel::openProjectChooser() {
     ChooserRequest r;
     r.mode = ChooserRequest::Mode::openProject;
     r.title = TR("Open Project");
-    r.root = library_->root();
     r.startDir = library_->projectsDir();
+    r.root = library_->chooserRoot(r.startDir);
     r.onChosen = [this](const std::string& path) { openProject(path, "", false, false, std::nullopt); };
     host_->showChooser(std::move(r));
   });
@@ -647,8 +647,8 @@ void AppModel::handleOpenError(rn_status st, const std::string& message, const s
         ChooserRequest r;
         r.mode = ChooserRequest::Mode::openROM;
         r.title = TRF("Locate “%@”", {m.romName});
-        r.root = library_->root();
         r.startDir = library_->romDir();
+        r.root = library_->chooserRoot(r.startDir);
         r.onChosen = [=](const std::string& rom) { openProject(path, rom, dropCorrupt, dropPractice, resume); };
         r.onCancel = failed;
         host_->showChooser(std::move(r));

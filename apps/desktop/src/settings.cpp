@@ -103,6 +103,8 @@ Settings Settings::parse(const std::string& text) {
     else if (k == "checkForUpdates") s.checkForUpdates = parseBool(v, s.checkForUpdates);
     else if (k == "core") s.core = v;  // preserve unknown IDs: creation reports an error, never silently substitutes
     else if (k == "language" && (v == "auto" || v == "ja" || v == "en")) s.language = v;
+    else if (k == "romFolder") s.romFolder = v;
+    else if (k == "projectsFolder") s.projectsFolder = v;
     else if (k == "menuHintShown") s.menuHintShown = parseBool(v, s.menuHintShown);
     else if (k == "coachShown" && num && d >= 0 && d <= 0xFFFF) s.coachShown = uint32_t(d);
     else if (k == "controllerLayoutVersion" && num && d >= 0 && d <= 1000) s.controllerLayoutVersion = int(d);
@@ -164,6 +166,8 @@ std::string Settings::serialize() const {
   o << "checkForUpdates=" << int(checkForUpdates) << "\n";
   o << "core=" << core << "\n";
   o << "language=" << language << "\n";
+  o << "romFolder=" << romFolder << "\n";
+  o << "projectsFolder=" << projectsFolder << "\n";
   o << "menuHintShown=" << int(menuHintShown) << "\n";
   o << "coachShown=" << coachShown << "\n";
   o << "controllerLayoutVersion=" << controllerLayoutVersion << "\n";

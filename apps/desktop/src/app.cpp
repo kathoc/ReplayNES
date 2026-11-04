@@ -141,6 +141,10 @@ void App::applyFullscreen(bool on) {
 }
 
 void App::applySettings() {
+  // The ROM / Projects folders chosen in Settings (a rescan when they change; Share's ROMs go there).
+  const std::string romsBefore = library_->romDir();
+  library_->setFolders(settings_.romFolder, settings_.projectsFolder);
+  if (library_->romDir() != romsBefore) setImportFolder(library_->romDir());
   emu_->pauseAfterRewind = settings_.pauseAfterRewind;
   emu_->autosaveInterval = settings_.autosaveInterval;
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
@@ -453,6 +457,8 @@ int App::run(const AppOptions& opt) {
   library_ = std::make_unique<LibraryModel>(paths_.libraryRoot);
   // Favourites / history / order: the settings folder (a scratch --session-root keeps its own).
   library_->setPrefsFile((opt.sessionRoot.empty() ? paths_.configDir : paths_.sessionRoot) + "/" + RNF_LIBRARY_PREFS_FILE);
+  library_->setFolders(settings_.romFolder, settings_.projectsFolder);
+  setImportFolder(library_->romDir());
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();

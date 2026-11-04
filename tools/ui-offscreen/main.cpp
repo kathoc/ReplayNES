@@ -198,6 +198,20 @@ int main(int argc,char** argv) {
         renderer.requestScreenshot((out/"player-order-2.png").string());
         input.endPlayerOrder(); draw();
       }
+      // Settings > App > Folders & License: a folder's choices (Enter on the ROM Folder row), then the app's own
+      // folder chooser (Linux, the Steam Deck: Change…) with Use This Folder (2026-11-04).
+      check(ui.openPage("about.folders"),"folders page missing"); draw(); draw();
+      renderer.requestScreenshot((out/"folders-page.png").string());
+      io.AddKeyEvent(ImGuiKey_Enter,true); draw(); io.AddKeyEvent(ImGuiKey_Enter,false); draw(); draw(); draw();
+      renderer.requestScreenshot((out/"folders-dialog.png").string());
+      io.AddKeyEvent(ImGuiKey_Escape,true); draw(); io.AddKeyEvent(ImGuiKey_Escape,false); draw(); draw();
+      {
+        ChooserRequest r; r.mode=ChooserRequest::Mode::chooseFolder; r.title="Choose the ROM Folder";
+        r.root=out.string(); r.startDir=(out/"library").string();
+        r.onChosen=[](const std::string& p) { std::printf("chosen: %s\n", p.c_str()); };
+        ui.showChooser(std::move(r)); draw(); draw(); draw();
+        renderer.requestScreenshot((out/"folders-chooser.png").string());
+      }
       // The library with two pages of cartridges: the next page peeks in at the right edge, and the
       // cards without a picture get their frame-300 picture from a background run.
       ui.setMenu(false);

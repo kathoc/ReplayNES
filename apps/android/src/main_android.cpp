@@ -19,7 +19,6 @@
 #include <thread>
 
 #include "app.h"
-#include "paths.h"
 #include "vk_renderer.h"
 
 #ifdef RN_PRODUCT_HAS_STARTUP
@@ -100,24 +99,6 @@ void androidHaptic() {
   env->DeleteLocalRef(activity);
 }
 
-// The library's ROM folder to MainActivity.setRomDir: ROMs shared from another app go there (RomImport),
-// also those shared before the app had started.
-void androidSetRomDir(const std::string& dir) {
-  auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-  auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
-  if (!env || !activity) return;
-  jclass cls = env->GetObjectClass(activity);
-  jmethodID set = env->GetMethodID(cls, "setRomDir", "(Ljava/lang/String;)V");
-  if (set) {
-    jstring s = env->NewStringUTF(dir.c_str());
-    env->CallVoidMethod(activity, set, s);
-    env->DeleteLocalRef(s);
-  }
-  if (env->ExceptionCheck()) env->ExceptionClear();
-  env->DeleteLocalRef(cls);
-  env->DeleteLocalRef(activity);
-}
-
 // MainActivity's surface callbacks (docs/design/ANDROID.md, "Black screen"): before the window's surface goes,
 // the renderer stops drawing to it; once a new one is there, it draws again.
 extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_nativeSurfaceGoing(JNIEnv*, jclass) {
@@ -143,10 +124,5 @@ int main(int argc, char** argv) {
   platform.haptic = androidHaptic;
   AppOptions opt;
   if (!parseAppArgs(argc, argv, platform, &opt)) return 2;
-  {
-    Paths paths = Paths::standard();
-    if (!opt.libraryRoot.empty()) paths.setLibraryRoot(opt.libraryRoot);
-    androidSetRomDir(paths.romDir);
-  }
   return runApp(opt, platform);
 }

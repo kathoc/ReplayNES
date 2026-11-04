@@ -30,6 +30,14 @@ bool importFiles(const std::string& dir);
 /// Share Log: the app's log file to another app (Android: the system's share sheet). false elsewhere.
 bool canShareLog();
 bool shareLog();
+/// Where Share and Open with put ROMs (Android: RomImport); the library's ROM folder, also after a change.
+void setImportFolder(const std::string& dir);
+/// Change… for the ROM / Projects folder: the system's folder picker (Windows; Android after asking for
+/// all-files access), its answer later through takeChosenFolder. false where the app's own chooser picks
+/// (Linux, the Steam Deck's Gaming Mode: a gamepad drives it).
+bool chooseFolder(const std::string& start);
+/// The picker's answer, once: true with *path (empty when cancelled; *error says why when it failed).
+bool takeChosenFolder(std::string* path, std::string* error);
 
 /// Running inside Steam's Gaming Mode (gamescope session, Steam Deck): full screen by default,
 /// Steam's on-screen keyboard. Always false on Windows.
