@@ -9,9 +9,11 @@ package io.github.replaynes.android;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.widget.Toast;
@@ -52,6 +54,34 @@ final class RomImport {
         Uri data = intent.getData();
         if (data != null && !out.contains(data)) out.add(data);
         return out;
+    }
+
+    private static final String PREFS = "rom_import", LAST_FOLDER = "last_folder";
+
+    /**
+     * Where Add ROMs' picker starts (EXTRA_INITIAL_URI): the device storage folder the last ROMs came from, else
+     * Download. A folder of the external storage provider lists every file; the picker's "Documents" and
+     * "Recent" do not list zips.
+     */
+    static Uri startFolder(Context c) {
+        String id = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(LAST_FOLDER, "primary:Download");
+        return DocumentsContract.buildDocumentUri(StorageFolders.EXTERNAL_STORAGE, id);
+    }
+
+    /** The folder of a picked file, for the next startFolder (only a file of the external storage provider). */
+    static void rememberFolder(Context c, Uri picked) {
+        if (!StorageFolders.EXTERNAL_STORAGE.equals(picked.getAuthority())) return;
+        String id;
+        try {
+            id = DocumentsContract.getDocumentId(picked);
+        } catch (IllegalArgumentException e) {
+            return;
+        }
+        int slash = id.lastIndexOf('/');
+        int colon = id.indexOf(':');
+        if (colon < 0) return;
+        String folder = slash > colon ? id.substring(0, slash) : id.substring(0, colon + 1);
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(LAST_FOLDER, folder).apply();
     }
 
     /** Copies the URIs into dir on a worker thread and says how it went in a toast. */

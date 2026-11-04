@@ -220,3 +220,23 @@ restart, Back to the Default returned to Android/data/... with its notice. Tests
 a chosen folder and back with the chooser's root, a missing chosen folder made. Linux (the offscreen UI
 tool): the folder dialog and the chooser with Use This Folder (folders-dialog.png, folders-chooser.png).
 Windows: built (x86_64), SDL's folder dialog not tried on Windows.
+
+## Add ROMs: zips not listed, a second tap that did nothing (2026-11-04)
+
+Reported on 0.3.12: Add ROMs' picker showed .txt files, never the zips. Reproduced: the picker opens where it
+was last, and its "Documents" category (MediaProvider's documents root) lists documents only; once there, a
+zip in the same Download folder is not listed. Fixed: the picker starts in a folder of the external storage
+provider (every file listed): the folder the last ROMs came from (remembered when one is picked there), else
+Download (EXTRA_INITIAL_URI, RomImport.startFolder / rememberFolder).
+
+Found by the emulator test (scripts/test-android-emu.sh in ReplayArcade): after the picker was cancelled,
+Add ROMs did nothing however often it was tapped, while a tap elsewhere worked. The press and release
+reached the app; ImGui's SDL backend takes the pointer's position from motion events only, the window had
+been left (ImGui's mouse "nowhere"), and a tap where the last one was makes no motion: the row under it
+never saw the press. Fixed in app.cpp: a button event gives ImGui its position first. Every screen of the
+app had it (any tap at the same spot after another app), on every platform where a window can be left.
+
+The test (14 checks, emulator, Android 16): Add ROMs from the empty library and from Settings (5 cancels in
+a row), the picker's start folder (Download, then the remembered one), the copy and the library listing it,
+Open Folder in Files, home and back (surface released, no frame on a lost surface), Share from Files with the
+app stopped and running.

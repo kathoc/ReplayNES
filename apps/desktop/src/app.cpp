@@ -341,6 +341,11 @@ void App::handleEvent(const SDL_Event& reported, double now) {
     input_->handleEvent(e, now - double(SDL_GetTicksNS() - e.common.timestamp) * 1e-9, ui_->wantsKeyboard());
     return;
   }
+  // A press or release says where it is: ImGui's backend takes the position from motion events only, and
+  // after another app was in front (the window left: ImGui's mouse "nowhere") a tap where the last one was makes
+  // no motion - the button under it never saw the press (Android: Add ROMs did nothing after the picker).
+  if (!textEntry && (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP))
+    ImGui::GetIO().AddMousePosEvent(e.button.x, e.button.y);
   if (!textEntry) ImGui_ImplSDL3_ProcessEvent(&e);
   padNav_.setSuppressed(ui_->textEntryOwnsPad());
   padNav_.handle(e);

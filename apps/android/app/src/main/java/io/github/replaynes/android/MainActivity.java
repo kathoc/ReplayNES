@@ -152,14 +152,20 @@ public class MainActivity extends SDLActivity {
 
     /** Add ROMs (importFiles in platform/shell.cpp through JNI, any thread): the system file picker, several files at once. */
     public boolean importFiles(String dir) {
+        AppLog.line(this, "import: open the picker for " + dir);
         runOnUiThread(() -> {
             importDir = dir;
             Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("*/*");
             i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            // Where the picker starts: the folder of the last ROMs added, else the device's Download folder.
+            // Without it the picker reopens its last place, and its "Documents" category lists documents only
+            // (a .txt, never a .zip): the ROMs looked absent (2026-11-04).
+            i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, RomImport.startFolder(this));
             try {
                 startActivityForResult(i, REQUEST_IMPORT);
+                AppLog.line(this, "import: picker started");
             } catch (ActivityNotFoundException e) {
                 // ACTION_GET_CONTENT: a device without the documents UI (some TV boxes) still has a file chooser.
                 Intent g = new Intent(Intent.ACTION_GET_CONTENT);
@@ -299,7 +305,11 @@ public class MainActivity extends SDLActivity {
             super.onActivityResult(requestCode, resultCode, data);
             return;
         }
-        if (resultCode == RESULT_OK && importDir != null) RomImport.copyInto(this, RomImport.uris(data), new File(importDir));
+        if (resultCode == RESULT_OK && importDir != null) {
+            List<Uri> uris = RomImport.uris(data);
+            if (!uris.isEmpty()) RomImport.rememberFolder(this, uris.get(0));
+            RomImport.copyInto(this, uris, new File(importDir));
+        }
     }
 
     @Override
