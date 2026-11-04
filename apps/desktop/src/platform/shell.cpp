@@ -1,5 +1,7 @@
 // openFolder / openFile (platform.h): Explorer / the shell on Windows, the desktop's file manager or
-// default application through SDL elsewhere.
+// default application through SDL elsewhere. On Android a folder opens in the system Files app through the
+// app's documents provider (MainActivity.openFolder, docs/design/ANDROID.md): a file:// URI cannot leave
+// the app there (FileUriExposedException, which SDL_OpenURL swallows) and Android/data is closed to others.
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <string>
 
@@ -16,6 +18,9 @@
 #include <shellapi.h>
 #else
 #include <SDL3/SDL.h>
+#endif
+#ifdef __ANDROID__
+#include <jni.h>
 #endif
 
 namespace rnl {
@@ -35,9 +40,36 @@ bool shellExecute(const wchar_t* verb, const std::string& path) {
 }  // namespace
 #endif
 
+#ifdef __ANDROID__
+namespace {
+bool androidOpenFolder(const std::string& dir) {
+  auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (!env || !activity) return false;
+  bool ok = false;
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID open = env->GetMethodID(cls, "openFolder", "(Ljava/lang/String;)Z");
+  if (open) {
+    jstring path = env->NewStringUTF(dir.c_str());
+    ok = env->CallBooleanMethod(activity, open, path);
+    env->DeleteLocalRef(path);
+  }
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    ok = false;
+  }
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+  return ok;
+}
+}  // namespace
+#endif
+
 bool openFolder(const std::string& dir) {
 #ifdef _WIN32
   return shellExecute(L"explore", dir);
+#elif defined(__ANDROID__)
+  return androidOpenFolder(dir);
 #else
   return SDL_OpenURL(("file://" + dir).c_str());
 #endif

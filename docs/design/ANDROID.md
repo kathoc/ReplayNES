@@ -83,3 +83,30 @@ fonts_android.cpp prefers it (SDL_LoadFile, AddFontFromMemoryTTF), the system fo
 loadFonts keeps Japanese only when the Japanese font was actually read. Not adopted: FreeType (reads CFF2, but a
 second font rasteriser to build on every platform for one font). Checked on the Android 16 emulator: the settings
 and the library in Japanese, the log names the bundled font.
+
+## Opening a folder (2026-11-04)
+
+"Open Folder" (the empty library) and the folders under Settings > App > Folders & License did nothing.
+openFolder handed SDL_OpenURL a file:// URL; an app that targets Android 7+ may not pass one to another
+app (StrictMode throws FileUriExposedException in startActivity), SDL's openURL catches every exception
+and returns false, and the UI ignored the result, so the press left no trace (emulator, Android 16: the
+app stayed in front, nothing in logcat). Even a working URL would not have helped: since Android 11 other
+apps cannot list Android/data, where the library lives.
+
+Adopted: the app is a documents provider for its files folder (LibraryProvider: the library and the
+Trash, read / write / create / rename / delete), so the system Files app and the document picker show
+"ReplayArcade" (the product) as a root, and ROMs can be copied in from any file manager that uses them.
+On Android openFolder calls MainActivity.openFolder through JNI: ACTION_VIEW of the folder as a document
+(vnd.android.document/directory), the provider's root as the fallback. DocumentsUI opens a folder it was
+handed only after the provider answers findDocumentPath (the path from the root); without it, it falls
+back to Downloads. The provider's intent filter is android.content.action.DOCUMENTS_PROVIDER
+(DocumentsContract.PROVIDER_INTERFACE); a wrong action string leaves the provider registered but never
+listed by DocumentsUI (queryIntentContentProviders), with no error anywhere.
+
+Not adopted: a storage permission and a library in shared storage (MANAGE_EXTERNAL_STORAGE: a broad
+permission for one folder, and a file manager still has no standard "open this folder" request); a
+folder picked with ACTION_OPEN_DOCUMENT_TREE (the library reads paths, so every file access would change).
+
+Checked on the emulator (Android 16, DocumentsUIGoogle): "Open Folder" with an empty library opens
+ReplayArcade > ROM in Files; Settings > Folders & License opens ROM and Projects; a zip copied into ROM
+with Files' "Copy to" lands there byte for byte (md5). Not yet on the Retroid Pocket 5 (Android 13).

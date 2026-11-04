@@ -2,11 +2,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 package io.github.replaynes.android;
 
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
+import android.util.Log;
 import android.view.HapticFeedbackConstants;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+
+import java.io.File;
+import java.io.IOException;
 
 import org.libsdl.app.SDLActivity;
 
@@ -31,6 +39,44 @@ public class MainActivity extends SDLActivity {
     /** A touch control's press (TouchControls through JNI, any thread): the view's haptic feedback. */
     public void haptic() {
         runOnUiThread(() -> getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY));
+    }
+
+    /**
+     * A folder of the library in the system Files app (openFolder in platform/shell.cpp through JNI, any
+     * thread): the folder as a document of LibraryProvider. False when it is outside the files folder or no
+     * app opens it.
+     */
+    public boolean openFolder(String path) {
+        String auth = LibraryProvider.authority(this);
+        String docId;
+        try {
+            docId = LibraryProvider.documentId(this, new File(path));
+        } catch (IOException e) {
+            docId = null;
+        }
+        if (docId == null) {
+            Log.w("ReplayNES", "openFolder: outside the app's files folder: " + path);
+            return false;
+        }
+        Intent[] tries = {
+            // The folder itself (DocumentsUI, Android 10+).
+            new Intent(Intent.ACTION_VIEW).setDataAndType(
+                DocumentsContract.buildDocumentUri(auth, docId), DocumentsContract.Document.MIME_TYPE_DIR),
+            // The provider's root (a Files app that does not open a folder).
+            new Intent(Intent.ACTION_VIEW).setDataAndType(
+                DocumentsContract.buildRootUri(auth, LibraryProvider.ROOT_ID), "vnd.android.document/root"),
+        };
+        for (Intent i : tries) {
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION
+                       | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            try {
+                startActivity(i);
+                return true;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Log.w("ReplayNES", "openFolder: " + i + ": " + e);
+            }
+        }
+        return false;
     }
 
     // The app is always full screen (docs/design/ANDROID.md). SDL hides the bars with the deprecated
