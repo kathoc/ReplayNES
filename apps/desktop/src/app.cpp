@@ -643,6 +643,8 @@ int App::run(const AppOptions& opt) {
   double lastRate = 0;
   uint64_t lastMediaGeneration = UINT64_MAX;
   double hostNext = 0;  // host-clock pacing: the next sample time
+  constexpr double kHousekeepingGap = 0.25;
+  double lastHousekeeping = 0;  // the slack's tasks below, at least this often
   recentLatency_.assign(60, 0.0);
 
   std::map<int, int> waitFailures;  // VkResult -> count (diagnostics)
@@ -720,9 +722,14 @@ int App::run(const AppOptions& opt) {
       extraPicture = emu_->tick().newPicture || extraPicture;
     }
     // Housekeeping in the slack, then wait for the sample point.
+    // A frame loop that never has slack (every frame late: the Android emulator's software Vulkan ran at
+    // 22 fps with none in 2 s) still does it every kHousekeepingGap: otherwise a ROM added to the folder
+    // never showed (the scan's result waited for library_->poll), nor did the thumbnails or the resume
+    // record move on. Each task keeps its own limits (autosave needs 8 ms of slack unless paused).
     double slack = sampleAt - nowSeconds();
-    if (slack > 0.004) {
+    if (slack > 0.004 || nowSeconds() - lastHousekeeping >= kHousekeepingGap) {
       double now = nowSeconds();
+      lastHousekeeping = now;
       emu_->afterFrame(slack);
       app_->update(now);
       ui_->slack(now);

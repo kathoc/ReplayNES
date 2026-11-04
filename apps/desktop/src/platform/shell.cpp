@@ -42,15 +42,16 @@ bool shellExecute(const wchar_t* verb, const std::string& path) {
 
 #ifdef __ANDROID__
 namespace {
-bool androidOpenFolder(const std::string& dir) {
+// MainActivity.<method>(String) -> boolean, from any thread.
+bool callActivity(const char* method, const std::string& arg) {
   auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
   auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
   if (!env || !activity) return false;
   bool ok = false;
   jclass cls = env->GetObjectClass(activity);
-  jmethodID open = env->GetMethodID(cls, "openFolder", "(Ljava/lang/String;)Z");
+  jmethodID open = env->GetMethodID(cls, method, "(Ljava/lang/String;)Z");
   if (open) {
-    jstring path = env->NewStringUTF(dir.c_str());
+    jstring path = env->NewStringUTF(arg.c_str());
     ok = env->CallBooleanMethod(activity, open, path);
     env->DeleteLocalRef(path);
   }
@@ -69,7 +70,7 @@ bool openFolder(const std::string& dir) {
 #ifdef _WIN32
   return shellExecute(L"explore", dir);
 #elif defined(__ANDROID__)
-  return androidOpenFolder(dir);
+  return callActivity("openFolder", dir);
 #else
   return SDL_OpenURL(("file://" + dir).c_str());
 #endif
@@ -82,5 +83,13 @@ bool openFile(const std::string& path) {
   return SDL_OpenURL(("file://" + path).c_str());
 #endif
 }
+
+#ifdef __ANDROID__
+bool canImportFiles() { return true; }
+bool importFiles(const std::string& dir) { return callActivity("importFiles", dir); }
+#else
+bool canImportFiles() { return false; }
+bool importFiles(const std::string&) { return false; }
+#endif
 
 }  // namespace rnl

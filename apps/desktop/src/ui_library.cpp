@@ -240,7 +240,8 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
       d_.app->playFromLibrary(*focused);
     } else if (n == 0 && d_.library->roms().empty()) {
       d_.library->ensureFolders();
-      openFolder(d_.library->romDir());
+      if (canImportFiles()) importFiles(d_.library->romDir());
+      else openFolder(d_.library->romDir());
     }
   } else if (keyX) {
     if (focused) {
@@ -453,34 +454,43 @@ void UI::buildLibrary(double now) {
     textCentered(dl, m.hint(), inset(r, S(24)), r.y + r.h * 0.40f + m.title() * 1.5f + m.label() * 1.6f, kTextFaint,
                  RN_PRODUCT_NES ? TR(".nes files; they appear here by themselves")
                                 : TR("ROM zips (FinalBurn Neo set names); they appear here by themselves"));
-    // Buttons: Open Folder (A), Reload (X), Add Test Cartridge (Y).
-    constexpr int buttons = RN_PRODUCT_NES ? 3 : 2;
-    float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * (buttons - 1)) / buttons), bh = m.label() * 2.2f;
-    float bx = r.x + (r.w - bw * buttons - gap * (buttons - 1)) / 2;
-    static const char* const kIcon[3] = {"folder-open", "refresh", "plus"};
+    // Buttons: Add ROMs where the system has a file picker (A: Android, docs/design/ANDROID.md), Open Folder
+    // (A, else none), Reload (X), Add Test Cartridge (Y).
+    enum EmptyAction { kAddRoms, kOpenFolder, kReload, kTestCartridge };
+    EmptyAction actions[4];
+    int buttons = 0;
+    if (canImportFiles()) actions[buttons++] = kAddRoms;
+    actions[buttons++] = kOpenFolder;
+    actions[buttons++] = kReload;
+    if (RN_PRODUCT_NES) actions[buttons++] = kTestCartridge;
+    float gap = S(16), bw = std::min(S(220), (r.w - S(48) - gap * float(buttons - 1)) / float(buttons)), bh = m.label() * 2.2f;
+    float bx = r.x + (r.w - bw * float(buttons) - gap * float(buttons - 1)) / 2;
+    static const char* const kIcon[4] = {"file-plus", "folder-open", "refresh", "plus"};
     for (int i = 0; i < buttons; ++i) {
+      const EmptyAction a = actions[i];
       const LRect br_{bx + float(i) * (bw + gap), r.bottom() - bh - S(24), bw, bh};
       ImGui::SetCursorScreenPos(tl(br_));
       ImGui::PushID(i);
       bool clicked = ImGui::InvisibleButton("##emptybtn", ImVec2(br_.w, br_.h));
       ImGui::PopID();
       dl->AddRectFilled(tl(br_), br(br_), i == 0 ? kBrand : kTile, br_.h / 2);
-      const char* label = i == 0 ? TR("Open Folder") : i == 1 ? TR("Reload") : TR("Add Test Cartridge");
-      std::string t = std::string(icons::glyph(kIcon[i])) + "  " + label;
+      const char* label = a == kAddRoms ? TR("Add ROMs") : a == kOpenFolder ? TR("Open Folder") : a == kReload ? TR("Reload") : TR("Add Test Cartridge");
+      std::string t = std::string(icons::glyph(kIcon[a])) + "  " + label;
       textFit(dl, m.label(), ImVec2(br_.x + S(12) + std::max(0.0f, (br_.w - S(24) - measure(m.label(), t.c_str()).x) / 2), br_.y + (br_.h - m.label()) / 2),
               br_.w - S(24), kText, t);
       if (clicked) {
-        if (i == 2) {
+        if (a == kTestCartridge) {
           addTestCartridge(now);
           continue;
         }
         lib->ensureFolders();
-        if (i == 0) openFolder(lib->romDir());
+        if (a == kAddRoms) importFiles(lib->romDir());
+        else if (a == kOpenFolder) openFolder(lib->romDir());
         else lib->refresh();
       }
     }
     if (!lib->folderError().empty()) description_ = lib->folderError();
-    prompt({"ui.confirm"}, TR("Open Folder"));
+    prompt({"ui.confirm"}, canImportFiles() ? TR("Add ROMs") : TR("Open Folder"));
     prompt({"face.west"}, TR("Reload"));
     if (RN_PRODUCT_NES) prompt({"face.north"}, TR("Add Test Cartridge"));
   } else {

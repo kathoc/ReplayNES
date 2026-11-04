@@ -110,3 +110,52 @@ folder picked with ACTION_OPEN_DOCUMENT_TREE (the library reads paths, so every 
 Checked on the emulator (Android 16, DocumentsUIGoogle): "Open Folder" with an empty library opens
 ReplayArcade > ROM in Files; Settings > Folders & License opens ROM and Projects; a zip copied into ROM
 with Files' "Copy to" lands there byte for byte (md5). Not yet on the Retroid Pocket 5 (Android 13).
+
+## Adding ROMs (2026-11-04)
+
+Reported on 0.3.11: the folder opened in Files, but ROMs put there did not show up; a file manager could
+not open the ROM folder at all. Asked for: ROMs must go in from any Android, by more than one route.
+
+Found:
+
+- **ROMs found but never shown (the cause).** The scan found the new file ("library: 1 ROMs in ...", a log
+  line added for this) and the library stayed empty. The frame loop hands the scan's result to the library
+  (library_->poll) only in the slack before the next sample (> 4 ms). On the emulator the loop had no
+  slack in any frame (22 fps, measured over 2 s), so the result waited forever; the thumbnails, the resume
+  record and the deferred checkpoints waited too. A touch of the file or a restart sometimes "fixed" it
+  only because a frame happened to have slack. Fixed in app.cpp: the slack's tasks also run when they
+  have not run for 0.25 s (each keeps its own limits: an autosave still needs 8 ms of slack unless paused).
+- **A file written after it was created.** The library watched folder times only. A file manager or the
+  documents provider creates the file and then writes it, which leaves the folder's time alone: a scan in
+  between kept the empty file's size (and, for ReplayNES, the empty file's SHA-256). The watch now also
+  compares every ROM file's time and size.
+- **Files reopened at its old folder.** With a Files task in the background, "Open Folder" brought that
+  task back as it was (a deleted folder) instead of reading the intent: FLAG_ACTIVITY_CLEAR_TASK.
+- **Other file managers.** Since Android 11 they cannot list Android/data; only those that use the
+  documents framework see the app's provider. So the app takes files in by itself:
+
+Adopted routes (any one is enough):
+
+1. **Add ROMs** (empty library, first button; Settings > App > Folders & License): the system file picker
+   (ACTION_OPEN_DOCUMENT, several files; ACTION_GET_CONTENT where there is no documents UI); RomImport
+   copies the files into the ROM folder.
+2. **Share / Open with** from any app (zip, 7z, octet-stream, NES): MainActivity's intent filters, the same
+   copy. A share that starts the app waits for the ROM folder (setRomDir from main_android.cpp).
+3. **Files** (the documents provider, above).
+4. **USB (MTP) from a computer**: Android/data/<id>/files/<product>/ROM, as before.
+
+RomImport writes ".<name>.part" (hidden: the scan skips it) and renames it when complete, replacing a
+file of the same name (a newer set), and says in a toast how many files went in or which failed.
+
+Not adopted: a storage permission (MANAGE_EXTERNAL_STORAGE) to put the library in shared storage (a broad
+permission, refused on Google Play, and still no standard way for a file manager to open a folder); a
+ROM folder chosen with ACTION_OPEN_DOCUMENT_TREE (every file access through content URIs).
+
+Checked on the emulator (Android 16): an empty library, Add ROMs, 1942.zip picked in Downloads: the toast,
+"import: 1942.zip", "library: 1 ROMs" and the game in the library; Share from Files to ReplayArcade, with
+the app running and with it stopped; Settings' ROM Folder with a Files task left at Downloads: ROM opens.
+Before the frame-loop fix the same Add ROMs left the library empty although the scan had found the file.
+
+Not explained yet: going back to the app after another one showed a black screen on the reporter's device.
+On the emulator the surface is lost and recreated ("Vulkan surface recreated") and the picture comes back;
+the device's log is needed.

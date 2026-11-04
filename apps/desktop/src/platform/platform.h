@@ -23,6 +23,10 @@ bool copyTree(const std::string& from, const std::string& to, std::string* error
 bool openFolder(const std::string& dir);
 /// Opens a file with its default application (a made video). App library only (platform/shell.cpp).
 bool openFile(const std::string& path);
+/// Add ROMs: the system file picker, the chosen files copied into `dir` (Android: RomImport, which says how
+/// it went). false where there is no such picker; canImportFiles() says so before (platform/shell.cpp).
+bool canImportFiles();
+bool importFiles(const std::string& dir);
 
 /// Running inside Steam's Gaming Mode (gamescope session, Steam Deck): full screen by default,
 /// Steam's on-screen keyboard. Always false on Windows.

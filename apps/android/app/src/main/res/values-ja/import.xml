@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="rn_import_added">
+        <item quantity="other">ROM フォルダに %d 個のファイルを追加しました</item>
+    </plurals>
+    <string name="rn_import_failed">追加できませんでした: %s</string>
+</resources>

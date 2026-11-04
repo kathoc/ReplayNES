@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RomImport's toasts (ROMs copied into the library's ROM folder). -->
+<resources>
+    <plurals name="rn_import_added">
+        <item quantity="one">%d file added to the ROM folder</item>
+        <item quantity="other">%d files added to the ROM folder</item>
+    </plurals>
+    <string name="rn_import_failed">Could not add: %s</string>
+</resources>

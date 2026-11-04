@@ -8,6 +8,8 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <map>
@@ -349,7 +351,12 @@ rn_status rnf_library_scan_roms(const char* dir_c, rnf_name_compare compare, voi
   auto add = [&](const std::string& path, const std::string& name, const std::string& relative) {
     if (!isRomExtension(extensionOf(name))) return;
     Entry e = inspect(path);
-    if (!e.ok || !e.isRegular) return;
+    if (!e.ok) {
+      // Listed but not readable: say so, or the ROM silently stays out of the library.
+      std::fprintf(stderr, "library: skipped %s: %s\n", path.c_str(), std::strerror(errno));
+      return;
+    }
+    if (!e.isRegular) return;
     {
       std::lock_guard<std::mutex> guard(contentIdLock);
       if (romFilter && !romFilter(path.c_str(), romFilterContext)) return;

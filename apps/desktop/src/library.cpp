@@ -168,13 +168,30 @@ bool LibraryModel::ensureFolders() {
   return st == RN_OK;
 }
 
+// The folders' times and every ROM file's time and size: a file written in place after it was created (a
+// file manager or a documents provider copying into the ROM folder: the name first, then the bytes) leaves
+// the folder's time as it was, and a scan in between would keep the half-written file's size and identity.
 std::map<std::string, double> LibraryModel::folderTimes() const {
   std::map<std::string, double> t;
   t[romDir()] = mtime(romDir());
   t[projectsDir()] = mtime(projectsDir());
+  auto files = [&t](const fs::path& dir) {
+    std::error_code ec;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+      std::error_code fe;
+      if (!it->is_regular_file(fe)) continue;
+      const std::string p = it->path().string();
+      t[p] = mtime(p);
+      t[p + "\n#size"] = double(it->file_size(fe));
+    }
+  };
+  files(romDir());
   std::error_code ec;
   for (fs::directory_iterator it(romDir(), ec), end; !ec && it != end; it.increment(ec))
-    if (it->is_directory(ec)) t[it->path().string()] = mtime(it->path().string());
+    if (it->is_directory(ec)) {
+      t[it->path().string()] = mtime(it->path().string());
+      files(it->path());  // one level of sub-folders, as the scan
+    }
   return t;
 }
 
@@ -235,8 +252,10 @@ void LibraryModel::scanThread() {
         r.roms.push_back(std::move(rom));
       }
       rnf_rom_list_free(roms);
+      std::fprintf(stderr, "library: %zu ROMs in %s\n", r.roms.size(), romDir().c_str());
     } else {
       r.error = TRF("Can’t read the folder: %@\n%@", {romDir(), std::string(rnf_last_error())});
+      std::fprintf(stderr, "library: cannot read %s: %s\n", romDir().c_str(), rnf_last_error());
     }
     rnf_project_list* projects = nullptr;
     if (rnf_library_scan_projects(projectsDir().c_str(), &projects) == RN_OK) {

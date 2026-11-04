@@ -52,7 +52,7 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_NO_TOUCH = 1u << 31, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
                    F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND,
-                   F_MOUSE = RNF_MENU_FEATURE_MOUSE;
+                   F_MOUSE = RNF_MENU_FEATURE_MOUSE, F_IMPORT = RNF_MENU_FEATURE_IMPORT;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -271,6 +271,8 @@ const std::vector<ItemDef>& items() {
       {"system.about", "system.steam", RNF_L("Add to Steam"), RNF_L("Adds ReplayNES to the Steam library (close Steam first)"),
        "brand-steam", ACTION, "", F_STEAM, {}},
       // App > Folders and License.
+      {"about.folders", "about.add_roms", RNF_L("Add ROMs"), RNF_L("Choose ROM files to copy into the ROM folder"),
+       "file-plus", ACTION, "", F_IMPORT, {}},
       {"about.folders", "about.roms", RNF_L("ROM Folder"), RN_PRODUCT_NES ? RNF_L("Put .nes files here") : RNF_L("Put ROM zips here (FinalBurn Neo set names)"), "folder", ACTION, "", 0, {}},
       {"about.folders", "about.projects", RNF_L("Projects Folder"), RNF_L("Your recordings are saved here"), "folder", ACTION,
        "", 0, {}},

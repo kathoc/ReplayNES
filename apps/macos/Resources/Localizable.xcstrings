@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Add ROMs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROMを追加"
+          }
+        }
+      }
+    },
+    "Choose ROM files to copy into the ROM folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM ファイルを選んで ROM フォルダにコピーします"
+          }
+        }
+      }
+    },
     "Sharp": {
       "localizations": {
         "ja": {
