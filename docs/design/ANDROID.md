@@ -156,6 +156,36 @@ Checked on the emulator (Android 16): an empty library, Add ROMs, 1942.zip picke
 the app running and with it stopped; Settings' ROM Folder with a Files task left at Downloads: ROM opens.
 Before the frame-loop fix the same Add ROMs left the library empty although the scan had found the file.
 
-Not explained yet: going back to the app after another one showed a black screen on the reporter's device.
-On the emulator the surface is lost and recreated ("Vulkan surface recreated") and the picture comes back;
-the device's log is needed.
+## Black screen after another app (2026-11-04)
+
+Reported from a friend's device (not at hand): back in the app after another one, the screen stayed black
+and nothing reacted. On the emulator the picture always came back, so its log was read with the new log
+lines (below): "surface: destroyed" at 20:38:37.546, then "vkAcquireNextImageKHR failed:
+VK_ERROR_SURFACE_LOST_KHR" at 37.614. The frame loop drew to the window's surface after Android had taken
+it down. SDL learns of the pause only in surfaceDestroyed (Java's UI thread) and releases the window at
+once; with OpenGL it waits for the loop to let its EGL surface go, with Vulkan it does not wait at all, and
+the loop goes on until its next event pump. Android's rule: after surfaceDestroyed returns, the surface is
+not touched. The emulator's software Vulkan answers SURFACE_LOST at once (the loop recreated its surface and
+went on); a device's driver can block on the abandoned window for good: the black, frozen screen.
+
+Fixed (vk_renderer.cpp, MainActivity's SDLSurface): surfaceDestroyed calls VkRenderer::surfaceGoing before
+SDL lets the window go. It closes a gate and waits for a frame in progress (at most 2 s); the next frame
+releases the swapchain and the Vulkan surface (vkDeviceWaitIdle first) and draws nothing while the gate is
+closed. surfaceCreated (after SDL took the new window) opens it again; if no frame ran in between (SDL had
+paused the loop at once), the first frame releases the old surface before it draws, then recreateSurface
+makes the new one. The renderer's thread does all the Vulkan work: the gate is the only thing shared.
+
+Checked on the emulator: four trips to the home screen and back (library and a game running): each time
+"surface: destroyed", "Vulkan surface released", "surface: created", "Vulkan surface recreated", and no
+vkAcquireNextImageKHR failure; before the fix two of three trips touched the old surface. Not checked on the
+reporter's device yet: the log (Share Log) from it will say.
+
+## Logs (2026-11-04)
+
+A device that is not at hand reports by its log. main_android.cpp writes what goes to logcat also to
+<external files>/Logs/<product>.log, each line with the local time, after a header line (product, version,
+manufacturer, model, Android version, SoC); past 1 MB the file becomes <product>.1.log. AppLog.java adds the
+activity's life (pause, stop, start, resume, focus, trim memory) and the surface's (created, changed,
+destroyed) from the Java side, which the paused native loop cannot log. The library logs each scan ("library:
+N ROMs in ...", "skipped <file>: <reason>"). Settings > App > Folders & License > Share Log sends both files
+through the share sheet (documents of LibraryProvider with a read grant): mail, a chat app.

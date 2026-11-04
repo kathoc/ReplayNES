@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Share Log": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を共有"
+          }
+        }
+      }
+    },
+    "Send the app's log to the developer (to find a problem)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不具合を調べるため、アプリの記録を開発者に送ります"
+          }
+        }
+      }
+    },
     "Add ROMs": {
       "localizations": {
         "ja": {

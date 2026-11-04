@@ -7,9 +7,13 @@
 #include <SDL3/SDL_main.h>
 
 #include <android/log.h>
+#include <sys/stat.h>
+#include <sys/system_properties.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <cstdio>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <thread>
@@ -23,22 +27,60 @@ extern "C" void rn_product_startup(void);
 #endif
 
 namespace {
-// stdout / stderr into logcat (tag = the product): the app logs with fprintf(stderr), as on the
-// desktop, and Android drops both streams. `adb logcat -s ReplayArcade` reads them.
+std::string property(const char* name) {
+  char v[PROP_VALUE_MAX] = {0};
+  __system_property_get(name, v);
+  return v;
+}
+
+// The log a user can send from Settings (docs/design/ANDROID.md, "Logs"): <external files>/Logs/<product>.log,
+// the previous one kept as <product>.1.log once it passes 1 MB. Opened before anything is logged.
+std::FILE* openLogFile(std::string* path) {
+  const char* ext = SDL_GetAndroidExternalStoragePath();
+  if (!ext) return nullptr;
+  const std::string dir = std::string(ext) + "/Logs";
+  mkdir(dir.c_str(), 0775);
+  *path = dir + "/" RN_PRODUCT_NAME ".log";
+  struct stat st{};
+  if (stat(path->c_str(), &st) == 0 && st.st_size > (1 << 20))
+    rename(path->c_str(), (dir + "/" RN_PRODUCT_NAME ".1.log").c_str());
+  return std::fopen(path->c_str(), "a");
+}
+
+// stdout / stderr into logcat (tag = the product) and the log file, each line with the local time: the app
+// logs with fprintf(stderr), as on the desktop, and Android drops both streams. `adb logcat -s ReplayArcade`.
 void logToLogcat() {
   static int fds[2];
   if (pipe(fds) != 0) return;
+  std::string path;
+  std::FILE* file = openLogFile(&path);
+  if (file) {
+    setvbuf(file, nullptr, _IOLBF, 0);
+    std::fprintf(file, "\n==== %s %s on %s %s (%s), Android %s (SDK %s), %s\n", RN_PRODUCT_NAME, RNL_APP_VERSION,
+                 property("ro.product.manufacturer").c_str(), property("ro.product.model").c_str(),
+                 property("ro.product.device").c_str(), property("ro.build.version.release").c_str(),
+                 property("ro.build.version.sdk").c_str(), property("ro.soc.model").c_str());
+  }
   dup2(fds[1], STDOUT_FILENO);
   dup2(fds[1], STDERR_FILENO);
   setvbuf(stdout, nullptr, _IOLBF, 0);
   setvbuf(stderr, nullptr, _IONBF, 0);
-  std::thread([] {
+  std::thread([file] {
     std::string line;
     char buf[512];
     for (ssize_t n; (n = read(fds[0], buf, sizeof buf)) > 0;)
       for (ssize_t i = 0; i < n; ++i) {
         if (buf[i] != '\n') { line += buf[i]; continue; }
         __android_log_write(ANDROID_LOG_INFO, RN_PRODUCT_NAME, line.c_str());
+        if (file) {
+          timeval tv{};
+          gettimeofday(&tv, nullptr);
+          std::tm tm{};
+          localtime_r(&tv.tv_sec, &tm);
+          char stamp[32];
+          std::strftime(stamp, sizeof stamp, "%m-%d %H:%M:%S", &tm);
+          std::fprintf(file, "%s.%03d %s\n", stamp, int(tv.tv_usec / 1000), line.c_str());
+        }
         line.clear();
       }
   }).detach();
@@ -74,6 +116,15 @@ void androidSetRomDir(const std::string& dir) {
   if (env->ExceptionCheck()) env->ExceptionClear();
   env->DeleteLocalRef(cls);
   env->DeleteLocalRef(activity);
+}
+
+// MainActivity's surface callbacks (docs/design/ANDROID.md, "Black screen"): before the window's surface goes,
+// the renderer stops drawing to it; once a new one is there, it draws again.
+extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_nativeSurfaceGoing(JNIEnv*, jclass) {
+  rnl::androidSurfaceGoing();
+}
+extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_nativeSurfaceBack(JNIEnv*, jclass) {
+  rnl::androidSurfaceBack();
 }
 
 int main(int argc, char** argv) {

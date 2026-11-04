@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <string>
 
+#include "replaynes/product.h"
+
 #include "platform/platform.h"
 
 #ifdef _WIN32
@@ -87,9 +89,17 @@ bool openFile(const std::string& path) {
 #ifdef __ANDROID__
 bool canImportFiles() { return true; }
 bool importFiles(const std::string& dir) { return callActivity("importFiles", dir); }
+bool canShareLog() { return true; }
+bool shareLog() {
+  // The file main_android.cpp writes (docs/design/ANDROID.md, "Logs").
+  const char* ext = SDL_GetAndroidExternalStoragePath();
+  return ext && callActivity("shareLog", std::string(ext) + "/Logs/" RN_PRODUCT_NAME ".log");
+}
 #else
 bool canImportFiles() { return false; }
 bool importFiles(const std::string&) { return false; }
+bool canShareLog() { return false; }
+bool shareLog() { return false; }
 #endif
 
 }  // namespace rnl

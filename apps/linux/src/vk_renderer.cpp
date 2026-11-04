@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 #include <cstring>
 
 #include "host_clock.h"
@@ -60,6 +61,23 @@ const char* resultName(VkResult r) {
 constexpr uint64_t kDisplayTimeoutNs = 1'000'000'000ull;
 }  // namespace
 
+#ifdef __ANDROID__
+namespace {
+std::mutex gLiveMutex;
+VkRenderer* gLive = nullptr;  // the one set up by init, until shutdown
+}  // namespace
+
+void androidSurfaceGoing() {
+  std::lock_guard<std::mutex> lk(gLiveMutex);
+  if (gLive) gLive->surfaceGoing(2.0);
+}
+
+void androidSurfaceBack() {
+  std::lock_guard<std::mutex> lk(gLiveMutex);
+  if (gLive) gLive->surfaceBack();
+}
+#endif
+
 bool VkRenderer::init(SDL_Window* window, std::string* error) {
   window_ = window;
   Uint32 n = 0;
@@ -93,7 +111,12 @@ bool VkRenderer::init(SDL_Window* window, std::string* error) {
     *error = std::string("SDL_Vulkan_CreateSurface: ") + SDL_GetError();
     return false;
   }
-  return initDevice(error);
+  if (!initDevice(error)) return false;
+#ifdef __ANDROID__
+  std::lock_guard<std::mutex> lk(gLiveMutex);
+  gLive = this;
+#endif
+  return true;
 }
 
 bool VkRenderer::initDevice(std::string* error) {
@@ -603,6 +626,63 @@ uint64_t VkRenderer::drawFrameAndPresent(const rn_video_frame_info* frame, const
 }
 
 uint64_t VkRenderer::drawAndPresent(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
+  bool release = false;
+  {
+    std::unique_lock<std::mutex> lk(gateMutex_);
+    if (gateClosed_) {
+      surfaceGone_ = false;
+      lk.unlock();
+      releaseSurfaceNow();  // nothing touches the old window's surface any more
+      lastHealthy_ = false;
+      return 0;
+    }
+    release = surfaceGone_;
+    surfaceGone_ = false;
+    inFrame_ = true;
+  }
+  if (release) releaseSurfaceNow();  // a new window already: drawFrame makes its surface
+  uint64_t id = drawFrame(newPicture, rect, ui, signal);
+  {
+    std::lock_guard<std::mutex> lk(gateMutex_);
+    inFrame_ = false;
+  }
+  gateCv_.notify_all();
+  return id;
+}
+
+// Android tears the window's surface down on its UI thread (SurfaceHolder.Callback.surfaceDestroyed) while
+// the frame loop may be drawing: SDL waits for the loop only with OpenGL, and after surfaceDestroyed returns
+// the surface must not be touched. Vulkan kept acquiring and presenting on it until its next event pump
+// (the log: "surface: destroyed", then vkAcquireNextImageKHR failed); a driver may block there for good.
+void VkRenderer::surfaceGoing(double timeoutSeconds) {
+  std::unique_lock<std::mutex> lk(gateMutex_);
+  gateClosed_ = true;
+  surfaceGone_ = true;
+  if (!gateCv_.wait_for(lk, std::chrono::duration<double>(timeoutSeconds), [this] { return !inFrame_; }))
+    std::fprintf(stderr, "%s: display: a frame still drawing as the surface went\n", RN_PRODUCT_NAME);
+}
+
+void VkRenderer::surfaceBack() {
+  std::lock_guard<std::mutex> lk(gateMutex_);
+  gateClosed_ = false;
+}
+
+void VkRenderer::releaseSurfaceNow() {
+  if (surface_ == VK_NULL_HANDLE) return;
+  if (device_) {
+    vkDeviceWaitIdle(device_);
+    std::lock_guard<std::mutex> lk(swapMutex_);
+    destroySwapchain();
+    swapGen_ += 1;
+  }
+  extent_ = {0, 0};
+  SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
+  surface_ = VK_NULL_HANDLE;
+  surfaceLost_ = true;  // the next frame after surfaceBack(): recreateSurface()
+  std::fprintf(stderr, "%s: display: Vulkan surface released (the window's surface went)\n", RN_PRODUCT_NAME);
+}
+
+uint64_t VkRenderer::drawFrame(const uint32_t* newPicture, const GameRect& rect, ImDrawData* ui, const FrameSignal* signal) {
   lastHealthy_ = false;
   // A lost device / surface (seen by an earlier call): recreated before anything else.
   if (deviceLost_ || !device_) {
@@ -871,6 +951,12 @@ void VkRenderer::waitLastSubmit() {
 }
 
 void VkRenderer::shutdown() {
+#ifdef __ANDROID__
+  {
+    std::lock_guard<std::mutex> lk(gLiveMutex);
+    if (gLive == this) gLive = nullptr;
+  }
+#endif
   if (!device_ && !instance_) return;
   releaseDevice();
   if (surface_) SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);

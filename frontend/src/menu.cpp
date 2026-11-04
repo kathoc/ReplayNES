@@ -52,7 +52,8 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_NO_TOUCH = 1u << 31, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
                    F_UI_SCALE = RNF_MENU_FEATURE_UI_SCALE, F_CORE = RNF_MENU_FEATURE_CORE,
                    F_LAYOUT_TURBO = RNF_MENU_FEATURE_LAYOUT_TURBO, F_BACKGROUND = RNF_MENU_FEATURE_BACKGROUND,
-                   F_MOUSE = RNF_MENU_FEATURE_MOUSE, F_IMPORT = RNF_MENU_FEATURE_IMPORT;
+                   F_MOUSE = RNF_MENU_FEATURE_MOUSE, F_IMPORT = RNF_MENU_FEATURE_IMPORT,
+                   F_SHARE_LOG = RNF_MENU_FEATURE_SHARE_LOG;
 // The Share page needs one of these.
 constexpr uint32_t F_SHARE_ANY = F_EXPORT | F_STREAM;
 
@@ -276,6 +277,8 @@ const std::vector<ItemDef>& items() {
       {"about.folders", "about.roms", RNF_L("ROM Folder"), RN_PRODUCT_NES ? RNF_L("Put .nes files here") : RNF_L("Put ROM zips here (FinalBurn Neo set names)"), "folder", ACTION, "", 0, {}},
       {"about.folders", "about.projects", RNF_L("Projects Folder"), RNF_L("Your recordings are saved here"), "folder", ACTION,
        "", 0, {}},
+      {"about.folders", "about.share_log", RNF_L("Share Log"), RNF_L("Send the app's log to the developer (to find a problem)"),
+       "share", ACTION, "", F_SHARE_LOG, {}},
       {"about.folders", "about.license", RNF_L("License"), RNF_L("Free software (GPL-2.0-or-later)"), "license", INFO, "", 0, {}},
       // Game.
       {"game", "game.library", RNF_L("Choose Game"), RNF_L("Back to the game library"), "layout-grid", ACTION, "", 0, {}},

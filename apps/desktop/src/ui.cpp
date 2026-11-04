@@ -110,6 +110,7 @@ UI::UI(Deps d) : d_(d) {
   if (d_.updates) menuFeatures_ |= RNF_MENU_FEATURE_UPDATES;
   if (d_.touchControls) menuFeatures_ |= RNF_MENU_FEATURE_TOUCH;
   if (canImportFiles()) menuFeatures_ |= RNF_MENU_FEATURE_IMPORT;
+  if (canShareLog()) menuFeatures_ |= RNF_MENU_FEATURE_SHARE_LOG;
   // Offer a choice only when multiple product cores are available.
   if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
   menu_ = rnf_menu_new(menuFeatures_);

@@ -521,9 +521,9 @@ TEST_CASE("menu: the Quick Menu is six tiles in one row, Resume first") {
   CHECK(itemIds(m, "settings.system") == systemItems);
   CHECK((itemIds(m, "system.about") == std::vector<std::string>{"about.version", "updates.status", "updates.check",
                                                                 "updates.apply", "updates.auto", "system.steam"}));
-  // Add ROMs only where the system has a file picker to copy from (RNF_MENU_FEATURE_IMPORT: Android).
-  CHECK((itemIds(m, "about.folders") ==
-         std::vector<std::string>{"about.add_roms", "about.roms", "about.projects", "about.license"}));
+  // Add ROMs and Share Log only where the system has a file picker / a share sheet (Android).
+  CHECK((itemIds(m, "about.folders") == std::vector<std::string>{"about.add_roms", "about.roms", "about.projects",
+                                                                  "about.share_log", "about.license"}));
   CHECK((itemIds(m, "display.crt") == std::vector<std::string>{"display.crt", "crt.lines", "crt.antenna", "crt.beam",
                                                                 "crt.persistence", "crt.supply"}));
   {

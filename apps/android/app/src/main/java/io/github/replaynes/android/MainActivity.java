@@ -3,6 +3,7 @@
 package io.github.replaynes.android;
 
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -10,6 +11,7 @@ import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
+import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 
 public class MainActivity extends SDLActivity {
     @Override
@@ -38,6 +41,68 @@ public class MainActivity extends SDLActivity {
         super.onCreate(savedInstanceState);
         hideSystemBars();
         receive(getIntent());
+    }
+
+    // The surface's life in the log too: Vulkan draws to it, and it goes when another app comes in front.
+    @Override
+    protected SDLSurface createSDLSurface(Context context) {
+        return new SDLSurface(context) {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                AppLog.line(context, "surface: created");
+                super.surfaceCreated(holder);  // SDL takes the new window
+                nativeSurfaceBack();
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                AppLog.line(context, "surface: changed " + width + "x" + height);
+                super.surfaceChanged(holder, format, width, height);
+            }
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                AppLog.line(context, "surface: destroyed");
+                // Before SDL lets the window go: no frame draws to it afterwards (Vulkan: SDL waits only for GL).
+                nativeSurfaceGoing();
+                super.surfaceDestroyed(holder);
+            }
+        };
+    }
+
+    private static native void nativeSurfaceGoing();
+    private static native void nativeSurfaceBack();
+
+    // The activity's life (another app in front, back again) in the log a user can send (docs/design/ANDROID.md,
+    // "Logs"): the native side is paused then and cannot say it.
+    @Override
+    protected void onPause() {
+        AppLog.line(this, "activity: pause");
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        AppLog.line(this, "activity: stop");
+        super.onStop();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        AppLog.line(this, "activity: start");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        AppLog.line(this, "activity: resume");
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        AppLog.line(this, "activity: trim memory " + level);
     }
 
     @Override
@@ -98,6 +163,43 @@ public class MainActivity extends SDLActivity {
         return true;
     }
 
+    /**
+     * Share Log (shareLog in platform/shell.cpp through JNI, any thread): the log file and the one before it
+     * to another app (mail, a chat), as documents of LibraryProvider with a read grant.
+     */
+    public boolean shareLog(String path) {
+        ArrayList<Uri> uris = new ArrayList<>();
+        File current = new File(path);
+        File older = new File(current.getParentFile(), current.getName().replace(".log", ".1.log"));
+        for (File f : new File[] {older, current}) {
+            if (!f.isFile()) continue;
+            try {
+                String id = LibraryProvider.documentId(this, f);
+                if (id != null) uris.add(DocumentsContract.buildDocumentUri(LibraryProvider.authority(this), id));
+            } catch (IOException e) {
+                Log.w("ReplayNES", "shareLog: " + f + ": " + e);
+            }
+        }
+        if (uris.isEmpty()) return false;
+        runOnUiThread(() -> {
+            Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
+            send.setType("text/plain");
+            if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+            else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            send.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.app_name) + " log");
+            android.content.ClipData clip = android.content.ClipData.newRawUri(null, uris.get(0));
+            for (int i = 1; i < uris.size(); ++i) clip.addItem(new android.content.ClipData.Item(uris.get(i)));
+            send.setClipData(clip);  // the grant reaches every file
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivity(Intent.createChooser(send, null));
+            } catch (ActivityNotFoundException e) {
+                Log.w("ReplayNES", "shareLog: " + e);
+            }
+        });
+        return true;
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode != REQUEST_IMPORT) {
@@ -110,6 +212,7 @@ public class MainActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        AppLog.line(this, "activity: focus " + (hasFocus ? "gained" : "lost"));
         if (hasFocus) hideSystemBars();
     }
 

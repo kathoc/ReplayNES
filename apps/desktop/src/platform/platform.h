@@ -27,6 +27,9 @@ bool openFile(const std::string& path);
 /// it went). false where there is no such picker; canImportFiles() says so before (platform/shell.cpp).
 bool canImportFiles();
 bool importFiles(const std::string& dir);
+/// Share Log: the app's log file to another app (Android: the system's share sheet). false elsewhere.
+bool canShareLog();
+bool shareLog();
 
 /// Running inside Steam's Gaming Mode (gamescope session, Steam Deck): full screen by default,
 /// Steam's on-screen keyboard. Always false on Windows.

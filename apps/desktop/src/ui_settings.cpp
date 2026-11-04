@@ -409,6 +409,8 @@ void UI::activateItem(const std::string& id) {
   } else if (id == "about.add_roms") {
     d_.library->ensureFolders();
     importFiles(d_.library->romDir());
+  } else if (id == "about.share_log") {
+    shareLog();
   } else if (id == "about.roms") {
     d_.library->ensureFolders();
     openFolder(d_.library->romDir());
