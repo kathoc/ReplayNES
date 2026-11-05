@@ -37,6 +37,10 @@ scripts/build-windows.sh                        # Mac, llvm-mingw: build/windows
                                                 # + dist/ReplayNES-<version>-windows-{x64,arm64}.zip
 ```
 
+The Windows VM helpers (`scripts/windows-vm/*.sh`) drive the guest with `prlctl exec`, which needs
+**Parallels Desktop Pro or Business Edition** (the standard edition answers "The command is available
+only in Parallels Desktop for Mac Pro or Business Edition."; found on macsrv, 2026-11-06).
+
 On Windows: `cmake -S . -B build -A x64` (or `-A ARM64`, `-T ClangCL`) `&& cmake --build build
 --config Release` -> `build/apps/windows/Release/ReplayNES.exe`. SDL3 is linked statically (no
 `SDL3.dll`); llvm-mingw builds are also `-static` and stripped (one 8 MB exe). The zip holds

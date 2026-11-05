@@ -26,7 +26,10 @@
    (see "Linux: Flatpak repository" below), then attach the bundle to the release:
    `gh release upload v<version> dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak --repo kathoc/ReplayNES`.
 8. Windows (same version, `project(ReplayNES VERSION ...)` already bumped in step 1): run the tests
-   in the VM (`scripts/build-windows.sh && scripts/windows-vm/run-tests.sh`), then
+   in the VM (`scripts/build-windows.sh && scripts/windows-vm/run-tests.sh`; needs Parallels Desktop
+   **Pro/Business** for `prlctl exec`, else it fails with "available only in Parallels Desktop for
+   Mac Pro or Business Edition"), then sign exactly the tested zips with
+   `SKIP_BUILD=1 scripts/release-windows.sh <version>` (without `SKIP_BUILD` it rebuilds them), or
    `scripts/release-windows.sh <version>` → `dist/ReplayNES-<version>-windows-{x64,arm64}.zip`
    (with `WinSparkle.dll`) and `dist/appcast-windows.xml`, signed with the same EdDSA key (see
    "Windows: WinSparkle feed" below). Upload all three to the release:
@@ -59,7 +62,10 @@
   (set in `apps/macos/project.yml`). Every release uploads its own `appcast.xml`, so "latest" always
   serves the newest item. Do not mark a release as pre-release/draft if it should be offered.
 - **Release machine: macsrv** (since 2026-11-05; `~/Playground/ReplayNES`, user `fugudaro`). macOS,
-  Windows (Parallels VM "Windows 11" on macsrv), Android and the Linux Flatpak (Lima VM, see
+  Windows (built with llvm-mingw 20260922 in `~/.local/opt/llvm-mingw`; the VM tests need
+  `prlctl exec`, i.e. **Parallels Desktop Pro or Business**, which macsrv's Parallels is not yet, so
+  0.6.5's Windows tests ran in the old MacBook's Parallels VM on macsrv's build outputs, the exes
+  checked by SHA-256), Android and the Linux Flatpak (Lima VM, see
   "Linux: Flatpak repository") are all built, signed and published from it. Before that the release
   Mac was the old MacBook (user `sonohoka`), which still holds a copy of the Sparkle key file.
   On macsrv the Sparkle key exists **only as the key file** below (no keychain item was moved).
