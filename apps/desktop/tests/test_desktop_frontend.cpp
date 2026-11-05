@@ -3084,8 +3084,11 @@ TEST_CASE("library thumbs: ROMs not on screen get their pictures later, never wh
   std::string rom2 = d + "/roms/second.nes";
   fs::copy_file(rom, rom2);
   LibraryThumbs thumbs(d + "/thumbs");
+  // Wall time. The picture worker runs at the lowest priority and rests as long as each frame took: with the
+  // other tests (ctest -j8) and emulators on the host filling the CPUs, 20 s was not enough (2026-11-05).
   auto waitArrival = [&](int ms) {
-    for (int i = 0; i < ms / 10; ++i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(ms)) {
       if (thumbs.pollRomPictures()) return true;
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -3098,7 +3101,7 @@ TEST_CASE("library thumbs: ROMs not on screen get their pictures later, never wh
   CHECK_FALSE(fs::exists(thumbs.fileFor("r:" + rom)));
   // Closed: made, written, and not kept in memory until a card asks (then read from the file).
   thumbs.setPicturesPaused(false);
-  REQUIRE(waitArrival(20000));
+  REQUIRE(waitArrival(120000));
   CHECK(fs::exists(thumbs.fileFor("r:" + rom)));
   ThumbRef img = thumbs.forRom(rom);
   REQUIRE(img);
@@ -3124,7 +3127,7 @@ TEST_CASE("library thumbs: ROMs not on screen get their pictures later, never wh
   CHECK_FALSE(thumbs.forRom(rom2));
   thumbs.requestRomPicture(rom2);
   thumbs.setPicturesPaused(false);
-  REQUIRE(waitArrival(20000));
+  REQUIRE(waitArrival(120000));
   ThumbRef img2 = thumbs.forRom(rom2);
   REQUIRE(img2);
   CHECK(img2.get()->px == want.get()->px);
