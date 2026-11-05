@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "dialogs.h"
+#include "rom_finder.h"
 #include "imgui.h"
 #include "mp4_export.h"
 #include "osk.h"
@@ -440,6 +441,14 @@ class UI : public DialogHost {
   void setFolder(bool roms, const std::string& path);
   void pollChosenFolder();
   int pendingFolder_ = 0;
+  // Add ROMs (ui_settings.cpp; docs/design/ANDROID.md, "Finding ROMs anywhere"): Search the Device (all-files
+  // access, the walk, the list, the copy) or Choose Files (the system's picker).
+  void addRoms();
+  void searchDevice();
+  void pollRomFinder(double now);
+  std::unique_ptr<RomFinder> romFinder_;
+  bool awaitingAccess_ = false, searching_ = false, copying_ = false;
+  double findNoticeAt_ = 0;
   void chooserList();
   struct Rename {
     std::string title;

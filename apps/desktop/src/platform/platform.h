@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace rnl {
 
@@ -38,6 +39,16 @@ void setImportFolder(const std::string& dir);
 bool chooseFolder(const std::string& start);
 /// The picker's answer, once: true with *path (empty when cancelled; *error says why when it failed).
 bool takeChosenFolder(std::string* path, std::string* error);
+
+/// Search the Device (Add ROMs, rom_finder.h): the storage the app may walk (Android: the device's own and
+/// every card / USB drive under /storage), and the folders in them it can never read (*skip: Android/data,
+/// Android/obb). Empty where there is no such search.
+std::vector<std::string> deviceStorageRoots(std::vector<std::string>* skip);
+/// Whether the whole storage may be read now (Android: all-files access; Android 10: the storage permission).
+bool storageAccessGranted();
+/// Asks for it; the answer later through takeStorageAccessAnswer (Android: the system's page for the app).
+void requestStorageAccess();
+bool takeStorageAccessAnswer(bool* granted);
 
 /// Running inside Steam's Gaming Mode (gamescope session, Steam Deck): full screen by default,
 /// Steam's on-screen keyboard. Always false on Windows.

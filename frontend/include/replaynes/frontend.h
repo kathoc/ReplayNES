@@ -1114,6 +1114,9 @@ void rnf_set_content_id_provider(rnf_content_id_fn fn, void* ctx);
  * extension. */
 typedef int (*rnf_rom_filter_fn)(const char* path, void* ctx);
 void rnf_set_rom_filter(rnf_rom_filter_fn fn, void* ctx);
+/* 1 when the library would list this file: a ROM extension of the product (any case) and the product's
+ * filter (rnf_set_rom_filter). Only the name is read. */
+int rnf_library_is_rom_file(const char* path);
 
 /* Content IDs (file SHA-256 by default), cached by path + size + modification date. Thread-safe. */
 typedef struct rnf_rom_hash_cache rnf_rom_hash_cache;

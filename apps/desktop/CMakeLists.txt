@@ -27,6 +27,7 @@ add_library(rnl_logic STATIC
   src/qoi.cpp
   src/l10n.cpp
   src/library.cpp
+  src/rom_finder.cpp
   src/manifest.cpp
   src/paths.cpp
   src/png_writer.cpp

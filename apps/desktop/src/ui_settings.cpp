@@ -410,8 +410,7 @@ void UI::activateItem(const std::string& id) {
       d_.updates->update();
     }
   } else if (id == "about.add_roms") {
-    d_.library->ensureFolders();
-    importFiles(d_.library->romDir());
+    addRoms();
   } else if (id == "about.share_log") {
     shareLog();
   } else if (id == "about.roms") {
@@ -828,6 +827,119 @@ void UI::setFolder(bool roms, const std::string& path) {
   notice(value.empty() ? TRF("Back to the default folder: %@", {Paths::display(now)})
                        : TRF("Now using %@ (the files in the previous folder stay there)", {Paths::display(now)}),
          5);
+}
+
+// ---- Add ROMs: Search the Device or Choose Files (docs/design/ANDROID.md, "Finding ROMs anywhere"). Searching
+// needs nothing of the system's picker (which may hide zips: its "Documents" view; whatever a maker's picker
+// does): the app walks the storage itself and offers the ROMs the game database knows.
+
+void UI::addRoms() {
+  d_.library->ensureFolders();
+  if (deviceStorageRoots(nullptr).empty()) {  // no search here: the picker
+    importFiles(d_.library->romDir());
+    return;
+  }
+  Dialog d;
+  d.title = TR("Add ROMs");
+  d.message = TR("Search the whole device for ROMs (every folder, the memory card too), or choose the files yourself.");
+  d.buttons = {TR("Search the Device"), TR("Choose Files"), TR("Cancel")};
+  d.cancelIndex = 2;
+  d.onResult = [this](int b, bool) {
+    if (b == 0) searchDevice();
+    else if (b == 1) importFiles(d_.library->romDir());
+  };
+  showDialog(std::move(d));
+}
+
+void UI::searchDevice() {
+  if (searching_ || copying_ || awaitingAccess_) return;
+  if (!storageAccessGranted()) {  // the system's page; pollRomFinder takes the answer
+    awaitingAccess_ = true;
+    requestStorageAccess();
+    return;
+  }
+  std::vector<std::string> skip;
+  std::vector<std::string> roots = deviceStorageRoots(&skip);
+  if (!romFinder_) romFinder_ = std::make_unique<RomFinder>();
+  std::fprintf(stderr, "find: searching %zu storage roots\n", roots.size());
+  romFinder_->search(std::move(roots), d_.library->romDir(), std::move(skip));
+  searching_ = true;
+  findNoticeAt_ = 0;
+}
+
+void UI::pollRomFinder(double now) {
+  bool granted = false;
+  if (awaitingAccess_ && takeStorageAccessAnswer(&granted)) {
+    awaitingAccess_ = false;
+    if (granted) {
+      searchDevice();
+    } else {
+      // Refused, or no page for it on this device: the picker is the other way.
+      notice(TR("Without access to all files the app can't search the device: choose the files instead"), 5);
+      importFiles(d_.library->romDir());
+    }
+  }
+  if (!romFinder_) return;
+  if (searching_ || copying_) {
+    if (now - findNoticeAt_ >= 0.5) {
+      findNoticeAt_ = now;
+      notice(searching_ ? TRF("Searching the device for ROMs… (%@ folders)", {std::to_string(romFinder_->foldersSeen())})
+                        : TRF("Adding ROMs… (%@)", {std::to_string(romFinder_->copied())}),
+             1);
+    }
+  }
+  RomSearch found;
+  if (searching_ && romFinder_->takeSearch(&found)) {
+    searching_ = false;
+    std::fprintf(stderr, "find: %zu folders, %zu ROMs to add, %zu already there, %zu unknown, %zu unreadable\n",
+                 found.folders, found.roms.size(), found.alreadyThere, found.unknown, found.skipped.size());
+    for (const FoundRom& f : found.roms) std::fprintf(stderr, "find: found %s\n", f.path.c_str());
+    Dialog d;
+    std::string extra;
+    if (found.alreadyThere) extra += "\n" + TRF("%@ already in the ROM folder.", {std::to_string(found.alreadyThere)});
+    if (found.unknown)
+      extra += "\n" + TRF("%@ other files with a ROM's extension are no game the app knows (not added).", {std::to_string(found.unknown)});
+    if (found.roms.empty()) {
+      d.title = TR("No new ROMs found");
+      d.message = TRF("Searched %@ folders.", {std::to_string(found.folders)}) + extra + "\n" +
+                  TR("ROMs inside another app's own folder (Android/data) can't be read: copy them elsewhere first, or choose the files.");
+      d.buttons = {TR("Choose Files"), TR("Close")};
+      d.cancelIndex = 1;
+      d.onResult = [this](int b, bool) {
+        if (b == 0) importFiles(d_.library->romDir());
+      };
+    } else {
+      d.title = TRF("%@ ROMs found", {std::to_string(found.roms.size())});
+      std::string list;
+      const size_t shown = std::min<size_t>(found.roms.size(), 8);
+      for (size_t i = 0; i < shown; ++i) list += found.roms[i].name + "  (" + Paths::display(fs::path(found.roms[i].path).parent_path().string()) + ")\n";
+      if (found.roms.size() > shown) list += TRF("… and %@ more", {std::to_string(found.roms.size() - shown)}) + "\n";
+      d.message = list + TR("They are copied into the ROM folder (the files stay where they are).") + extra;
+      d.buttons = {TR("Add All"), TR("Cancel")};
+      d.cancelIndex = 1;
+      auto roms = std::make_shared<std::vector<FoundRom>>(std::move(found.roms));
+      d.onResult = [this, roms](int b, bool) {
+        if (b != 0) return;
+        romFinder_->copy(*roms, d_.library->romDir());
+        copying_ = true;
+        findNoticeAt_ = 0;
+      };
+    }
+    showDialog(std::move(d));
+  }
+  size_t copied = 0;
+  std::vector<std::string> failed;
+  if (copying_ && romFinder_->takeCopy(&copied, &failed)) {
+    copying_ = false;
+    d_.library->refresh();
+    if (failed.empty()) {
+      notice(TRF("%@ ROMs added", {std::to_string(copied)}), 4);
+    } else {
+      std::string names;
+      for (const std::string& n : failed) names += (names.empty() ? "" : ", ") + n;
+      notice(TRF("%@ ROMs added; could not add: %@", {std::to_string(copied), names}), 6);
+    }
+  }
 }
 
 }  // namespace rnl

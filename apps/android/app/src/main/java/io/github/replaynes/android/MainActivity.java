@@ -103,8 +103,7 @@ public class MainActivity extends SDLActivity {
         AppLog.line(this, "activity: resume");
         if (awaitingAllFiles) {  // back from the "all files" page
             awaitingAllFiles = false;
-            if (hasStorageAccess()) pickFolder();
-            else nativeFolderChosen("", "no-access");
+            accessAnswered();
         }
     }
 
@@ -162,7 +161,9 @@ public class MainActivity extends SDLActivity {
             // Where the picker starts: the folder of the last ROMs added, else the device's Download folder.
             // Without it the picker reopens its last place, and its "Documents" category lists documents only
             // (a .txt, never a .zip): the ROMs looked absent (2026-11-04).
-            i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, RomImport.startFolder(this));
+            Uri startAt = RomImport.startFolder(this);
+            i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, startAt);
+            AppLog.line(this, "import: the picker starts at " + startAt);
             try {
                 startActivityForResult(i, REQUEST_IMPORT);
                 AppLog.line(this, "import: picker started");
@@ -226,17 +227,44 @@ public class MainActivity extends SDLActivity {
     private static final int REQUEST_STORAGE = 0x524f4f;
     private String folderStart;
     private boolean awaitingAllFiles;
+    // What all-files access is asked for: the folder picker next, or Search the Device (its answer to native).
+    private boolean accessForSearch;
 
     private static native void nativeFolderChosen(String path, String error);
+    private static native void nativeStorageAccess(boolean granted);
 
     /** chooseFolder in platform/shell.cpp through JNI, any thread. */
     public boolean chooseFolder(String start) {
         runOnUiThread(() -> {
             folderStart = start;
+            accessForSearch = false;
             if (hasStorageAccess()) pickFolder();
             else askStorageAccess();
         });
         return true;
+    }
+
+    /** Whether the app may read the whole storage now (storageAccess in platform/shell.cpp). */
+    public boolean storageAccessGranted(String unused) {
+        return hasStorageAccess();
+    }
+
+    /** Asks for all-files access for Search the Device; the answer to nativeStorageAccess (any thread). */
+    public boolean requestStorageAccess(String unused) {
+        runOnUiThread(() -> {
+            accessForSearch = true;
+            if (hasStorageAccess()) nativeStorageAccess(true);
+            else askStorageAccess();
+        });
+        return true;
+    }
+
+    private void accessAnswered() {
+        boolean granted = hasStorageAccess();
+        AppLog.line(this, "storage: all-files access " + (granted ? "granted" : "refused"));
+        if (accessForSearch) nativeStorageAccess(granted);
+        else if (granted) pickFolder();
+        else nativeFolderChosen("", "no-access");
     }
 
     private boolean hasStorageAccess() {
@@ -260,11 +288,13 @@ public class MainActivity extends SDLActivity {
                 awaitingAllFiles = true;
                 startActivity(i);
                 return;
-            } catch (ActivityNotFoundException e) {
+            } catch (ActivityNotFoundException | SecurityException e) {
                 awaitingAllFiles = false;
             }
         }
-        nativeFolderChosen("", "no-access");
+        // No page for it on this device (some TV boxes): the other routes remain (Choose Files, Share, Files).
+        AppLog.line(this, "storage: no all-files access page");
+        accessAnswered();
     }
 
     private void pickFolder() {
@@ -284,8 +314,7 @@ public class MainActivity extends SDLActivity {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults);
             return;
         }
-        if (hasStorageAccess()) pickFolder();
-        else nativeFolderChosen("", "no-access");
+        accessAnswered();
     }
 
     @Override

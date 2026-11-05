@@ -240,7 +240,7 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
       d_.app->playFromLibrary(*focused);
     } else if (n == 0 && d_.library->roms().empty()) {
       d_.library->ensureFolders();
-      if (canImportFiles()) importFiles(d_.library->romDir());
+      if (canImportFiles()) addRoms();
       else openFolder(d_.library->romDir());
     }
   } else if (keyX) {
@@ -484,7 +484,7 @@ void UI::buildLibrary(double now) {
           continue;
         }
         lib->ensureFolders();
-        if (a == kAddRoms) importFiles(lib->romDir());
+        if (a == kAddRoms) addRoms();
         else if (a == kOpenFolder) openFolder(lib->romDir());
         else lib->refresh();
       }

@@ -70,6 +70,7 @@ final class RomImport {
 
     /** The folder of a picked file, for the next startFolder (only a file of the external storage provider). */
     static void rememberFolder(Context c, Uri picked) {
+        AppLog.line(c, "import: picked " + picked);
         if (!StorageFolders.EXTERNAL_STORAGE.equals(picked.getAuthority())) return;
         String id;
         try {
@@ -82,6 +83,7 @@ final class RomImport {
         if (colon < 0) return;
         String folder = slash > colon ? id.substring(0, slash) : id.substring(0, colon + 1);
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(LAST_FOLDER, folder).apply();
+        AppLog.line(c, "import: remembered " + folder);
     }
 
     /** Copies the URIs into dir on a worker thread and says how it went in a toast. */

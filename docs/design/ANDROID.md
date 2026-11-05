@@ -240,3 +240,31 @@ The test (14 checks, emulator, Android 16): Add ROMs from the empty library and 
 a row), the picker's start folder (Download, then the remembered one), the copy and the library listing it,
 Open Folder in Files, home and back (surface released, no frame on a lost surface), Share from Files with the
 app stopped and running.
+
+## Finding ROMs anywhere on the device (2026-11-05)
+
+Reported on 0.3.13: zips left in Documents and other folders were not listed at all. The device, its
+Android version and its screens cannot be seen, and no log can be sent: the route must not depend on what a
+picker of some maker and version chooses to list. Adopted: Add ROMs asks first, "Search the Device" /
+"Choose Files" / Cancel. Search the Device asks for all-files access (Android 11+: the system's page;
+Android 10: storage permission), walks every storage root (the device's storage and each card, Android/data
+and Android/obb left out; hidden folders, any case, any name, any depth; links not followed; an unreadable
+folder skipped and counted), keeps a file only when it is a ROM the product runs (rnf_library_is_rom_file:
+extension, then the game database; a junk .zip is "unknown", not offered), one per name (the larger), and
+shows what it found (up to 8 names, "Add All"). The copy goes through name.part and a rename
+(apps/desktop/src/rom_finder.*, the walk off the UI thread). Choose Files stays as the second route; denied
+access or a device without the settings page answers the dialog instead of leaving it waiting.
+
+Found on the way, by the emulator matrix:
+- FinalBurn Neo appended every load's missing-file list to one 2048-byte buffer and never cleared it: a few
+  wrong sets in the library overran it, and the pointers after it, into an abort in realloc. Fixed in the
+  core (patches/fbneo in ReplayArcade): cleared before each check, every write bounded.
+- Android 13's emulator Vulkan: the present-id/present-wait features and the driver properties were asked
+  for without their extension (a validation abort). Fixed: asked only when the device has them.
+
+The test (scripts/test-android-emu.sh, scripts/test-android-matrix.sh in ReplayArcade): Android 10, 11, 13
+and 16 (emulators, wiped), each bounded in time and naming its device. H: seven 1942 copies under other set
+names in Download/deep/a/b/c/d/e, .hidden, Documents, a Japanese-named folder, upper case, the root, DCIM, and
+a junk zip: all seven found and copied, the junk one not offered, the app alive with the wrong sets loaded
+and after a cold start. Android 11's picker ignores `adb shell input tap` on its files (an event with no
+input device); a finger works: the script taps through the emulator's touchscreen (sendevent, root).

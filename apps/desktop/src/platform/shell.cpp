@@ -3,8 +3,10 @@
 // app's documents provider (MainActivity.openFolder, docs/design/ANDROID.md): a file:// URI cannot leave
 // the app there (FileUriExposedException, which SDL_OpenURL swallows) and Android/data is closed to others.
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <filesystem>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "replaynes/product.h"
 
@@ -133,6 +135,54 @@ bool takeChosenFolder(std::string* path, std::string* error) {
   return true;
 }
 
+// ---- Search the Device's storage access (Android)
+namespace {
+std::mutex accessMutex;
+bool accessAnswered = false, accessGranted = false;
+}  // namespace
+
+bool takeStorageAccessAnswer(bool* granted) {
+  std::lock_guard<std::mutex> lk(accessMutex);
+  if (!accessAnswered) return false;
+  accessAnswered = false;
+  *granted = accessGranted;
+  return true;
+}
+
+#ifdef __ANDROID__
+bool storageAccessGranted() { return callActivity("storageAccessGranted", ""); }
+void requestStorageAccess() { callActivity("requestStorageAccess", ""); }
+
+std::vector<std::string> deviceStorageRoots(std::vector<std::string>* skip) {
+  std::vector<std::string> roots;
+  // The device's own storage: the external files path up to /Android/data (/storage/emulated/<user>).
+  const char* ext = SDL_GetAndroidExternalStoragePath();
+  std::string own = ext ? ext : "";
+  const size_t at = own.find("/Android/data/");
+  own = at == std::string::npos ? std::string("/storage/emulated/0") : own.substr(0, at);
+  roots.push_back(own);
+  // Cards and USB drives: /storage/<volume id> (not "emulated", not "self").
+  std::error_code ec;
+  for (std::filesystem::directory_iterator it("/storage", ec), end; !ec && it != end; it.increment(ec)) {
+    const std::string name = it->path().filename().string();
+    if (name == "emulated" || name == "self") continue;
+    std::error_code de;
+    if (it->is_directory(de)) roots.push_back(it->path().string());
+  }
+  // Other apps' folders: closed to every app since Android 11, whatever the permission.
+  if (skip)
+    for (const std::string& r : roots) {
+      skip->push_back(r + "/Android/data");
+      skip->push_back(r + "/Android/obb");
+    }
+  return roots;
+}
+#else
+bool storageAccessGranted() { return false; }
+void requestStorageAccess() {}
+std::vector<std::string> deviceStorageRoots(std::vector<std::string>*) { return {}; }
+#endif
+
 #if defined(_WIN32)
 bool chooseFolder(const std::string& start) {
   SDL_ShowOpenFolderDialog(
@@ -164,5 +214,13 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_
     return out;
   };
   rnl::folderChosen(str(path), str(error));
+}
+
+// MainActivity.requestStorageAccess's answer.
+extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_nativeStorageAccess(JNIEnv*, jclass,
+                                                                                                  jboolean granted) {
+  std::lock_guard<std::mutex> lk(rnl::accessMutex);
+  rnl::accessAnswered = true;
+  rnl::accessGranted = granted;
 }
 #endif

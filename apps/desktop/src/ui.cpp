@@ -492,6 +492,7 @@ void UI::showResetChoices() {
 
 void UI::build(double now) {
   pollChosenFolder();  // a system folder picker's answer (Settings > Folders & License > Change…)
+  pollRomFinder(now);  // Add ROMs > Search the Device
   if (noticeTime_ < 0) noticeTime_ = now;
   if (menuOpenedAt_ < 0) menuOpenedAt_ = now;
   if (pageChangedAt_ < 0) pageChangedAt_ = now;

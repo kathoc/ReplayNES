@@ -1,6 +1,176 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Search the whole device for ROMs (every folder, the memory card too), or choose the files yourself.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の中のすべてのフォルダ（メモリーカードも）から ROM を探すか、ファイルを自分で選びます。"
+          }
+        }
+      }
+    },
+    "Search the Device": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の中を探す"
+          }
+        }
+      }
+    },
+    "Choose Files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを選ぶ"
+          }
+        }
+      }
+    },
+    "Without access to all files the app can't search the device: choose the files instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのファイルへのアクセスがないと端末の中を探せません。ファイルを選んでください"
+          }
+        }
+      }
+    },
+    "Searching the device for ROMs… (%@ folders)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末の中の ROM を探しています…（%@ フォルダ）"
+          }
+        }
+      }
+    },
+    "Adding ROMs… (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM を追加しています…（%@）"
+          }
+        }
+      }
+    },
+    "%@ already in the ROM folder.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個はすでに ROM フォルダにあります。"
+          }
+        }
+      }
+    },
+    "%@ other files with a ROM's extension are no game the app knows (not added).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかに、ROM の拡張子のファイルが %@ 個ありましたが、アプリの知らないゲームです（追加しません）。"
+          }
+        }
+      }
+    },
+    "No new ROMs found": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい ROM は見つかりませんでした"
+          }
+        }
+      }
+    },
+    "Searched %@ folders.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個のフォルダを探しました。"
+          }
+        }
+      }
+    },
+    "ROMs inside another app's own folder (Android/data) can't be read: copy them elsewhere first, or choose the files.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのアプリ専用のフォルダ（Android/data）の中は読めません。別の場所へコピーするか、ファイルを選んでください。"
+          }
+        }
+      }
+    },
+    "%@ ROMs found": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 本の ROM が見つかりました"
+          }
+        }
+      }
+    },
+    "… and %@ more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "…ほか %@ 本"
+          }
+        }
+      }
+    },
+    "They are copied into the ROM folder (the files stay where they are).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM フォルダにコピーします（元のファイルはそのまま残ります）。"
+          }
+        }
+      }
+    },
+    "Add All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて追加"
+          }
+        }
+      }
+    },
+    "%@ ROMs added": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 本の ROM を追加しました"
+          }
+        }
+      }
+    },
+    "%@ ROMs added; could not add: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 本の ROM を追加しました。追加できなかったもの: %@"
+          }
+        }
+      }
+    },
     "(the default)": {
       "localizations": {
         "ja": {

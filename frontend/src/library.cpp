@@ -314,6 +314,15 @@ void rnf_set_rom_filter(rnf_rom_filter_fn fn, void* ctx) {
   romFilterContext = ctx;
 }
 
+int rnf_library_is_rom_file(const char* path) {
+  if (!path) return 0;
+  RNF_GUARD_BEGIN
+  if (!isRomExtension(extensionOf(lastComponent(path)))) return 0;
+  std::lock_guard<std::mutex> guard(contentIdLock);
+  return !romFilter || romFilter(path, romFilterContext) ? 1 : 0;
+  RNF_GUARD_END(0)
+}
+
 rn_status rnf_library_ensure(const char* root, char** failed_path) {
   if (failed_path) *failed_path = nullptr;
   if (!root) return fail(RN_ERR_INVALID_ARG, "null root");

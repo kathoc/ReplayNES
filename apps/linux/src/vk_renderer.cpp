@@ -179,15 +179,20 @@ bool VkRenderer::createDevice(std::string* error) {
   vkEnumerateDeviceExtensionProperties(phys_, nullptr, &en, avail.data());
   std::vector<const char*> exts{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+  // A feature struct goes into the query only when the device has its extension (Vulkan's rule): the Android
+  // emulator's API 33 image aborted on a PRESENT_ID struct it did not know, and a driver may do the same.
   VkPhysicalDevicePresentIdFeaturesKHR idF{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR};
   VkPhysicalDevicePresentWaitFeaturesKHR waitF{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR};
-  idF.pNext = &waitF;
-  VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-  f2.pNext = &idF;
-  vkGetPhysicalDeviceFeatures2(phys_, &f2);
+  const bool hasIdWait = hasExtension(avail, VK_KHR_PRESENT_ID_EXTENSION_NAME) &&
+                         hasExtension(avail, VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+  if (hasIdWait) {
+    idF.pNext = &waitF;
+    VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    f2.pNext = &idF;
+    vkGetPhysicalDeviceFeatures2(phys_, &f2);
+  }
   bool disable = std::getenv(productEnvName("NO_PRESENT_WAIT").c_str()) != nullptr;
-  presentWait_ = !disable && hasExtension(avail, VK_KHR_PRESENT_ID_EXTENSION_NAME) &&
-                 hasExtension(avail, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) && idF.presentId && waitF.presentWait;
+  presentWait_ = !disable && hasIdWait && idF.presentId && waitF.presentWait;
   if (presentWait_) {
     exts.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
     exts.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
@@ -232,10 +237,14 @@ bool VkRenderer::createDevice(std::string* error) {
 
   VkPhysicalDeviceProperties p;
   vkGetPhysicalDeviceProperties(phys_, &p);
+  // The driver's name: core in Vulkan 1.2, an extension before (a Vulkan 1.1 device without it must not see the
+  // struct, as above).
   VkPhysicalDeviceDriverProperties drv{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
-  VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-  p2.pNext = &drv;
-  vkGetPhysicalDeviceProperties2(phys_, &p2);
+  if (p.apiVersion >= VK_API_VERSION_1_2 || hasExtension(avail, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
+    VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    p2.pNext = &drv;
+    vkGetPhysicalDeviceProperties2(phys_, &p2);
+  }
   description_ = std::string(p.deviceName) + " / " + drv.driverName + " " + drv.driverInfo +
                  " / present_wait=" + (presentWait_ ? "yes" : "no") +
                  " present_timing(ext)=" + (hasExtension(avail, "VK_EXT_present_timing") ? "yes" : "no") +

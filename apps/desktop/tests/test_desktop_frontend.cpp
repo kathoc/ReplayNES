@@ -11,6 +11,8 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -36,6 +38,7 @@
 #include "export/mp4_retime.h"
 #include "l10n.h"
 #include "library.h"
+#include "rom_finder.h"
 #include "library_thumbs.h"
 #include "manifest.h"
 #include "osk.h"
@@ -674,6 +677,47 @@ TEST_CASE("library: chosen ROM / Projects folders, back to the library's own; th
   CHECK(LibraryModel::samePath(lib.romDir(), root + "/" RNF_LIBRARY_ROM_DIR));
   scan();
   CHECK(lib.roms().empty());
+}
+
+// Add ROMs > Search the Device (rom_finder.h; docs/design/ANDROID.md, "Finding ROMs anywhere"): every folder,
+// at any depth, hidden ones, any case of the extension, names in any script; the game database decides.
+TEST_CASE("rom finder: playable ROMs anywhere under the roots, the unknown ones counted, the ROM folder and skips left out") {
+  if (!RN_PRODUCT_NES) return;  // the walk is the same; the NES Test Cartridge is a ROM the database knows
+  const std::string root = tmpDir("rom-finder");
+  const std::string romDir = root + "/Android/data/app/ROM";
+  for (const char* d : {"/Documents/a/b/c/d/e", "/.hidden", "/ROMs フォルダ 日本語", "/Android/data/other", "/Android/data/app/ROM"})
+    fs::create_directories(fs::u8path(root + d));
+  auto cart = [&](const std::string& path) { REQUIRE(rn_write_test_cartridge((root + path).c_str()) == RN_OK); };
+  cart("/top.nes");
+  cart("/Documents/a/b/c/d/e/deep.nes");
+  cart("/.hidden/hidden.nes");
+  cart("/ROMs フォルダ 日本語/UPPER.NES");
+  cart("/Android/data/other/closed.nes");      // a folder the search must leave alone (skip)
+  cart("/Android/data/app/ROM/already.nes");   // the ROM folder itself
+  { std::ofstream(fs::u8path(root + "/Documents/junk.nes"), std::ios::binary) << "not a ROM"; }
+  std::atomic<size_t> folders{0};
+  RomSearch r = RomFinder::walk({root}, romDir, {root + "/Android/data/other"}, &folders);
+  std::vector<std::string> names;
+  for (const FoundRom& f : r.roms) names.push_back(f.name);
+  std::sort(names.begin(), names.end());
+  CHECK((names == std::vector<std::string>{"UPPER.NES", "deep.nes", "hidden.nes", "top.nes"}));
+  CHECK_EQ(r.unknown, size_t(1));
+  CHECK(folders.load() >= 8);
+  // The copy: ".<name>.part" renamed when complete, the source left in place.
+  RomFinder finder;
+  finder.copy(r.roms, romDir);
+  size_t copied = 0;
+  std::vector<std::string> failed;
+  for (int i = 0; i < 300 && !finder.takeCopy(&copied, &failed); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  CHECK_EQ(copied, size_t(4));
+  CHECK(failed.empty());
+  CHECK(fs::exists(fs::u8path(romDir + "/UPPER.NES")));
+  CHECK(fs::exists(fs::u8path(root + "/ROMs フォルダ 日本語/UPPER.NES")));
+  CHECK_FALSE(fs::exists(fs::u8path(romDir + "/.UPPER.NES.part")));
+  // Searched again: everything is in the ROM folder now.
+  RomSearch again = RomFinder::walk({root}, romDir, {root + "/Android/data/other"}, nullptr);
+  CHECK(again.roms.empty());
+  CHECK_EQ(again.alreadyThere, size_t(4));
 }
 
 // A file manager or a documents provider makes the file, then writes it: the folder's time stays as it was.
@@ -2375,7 +2419,11 @@ TEST_CASE("thumbnails: live capture and background batches") {
   emu.install(s);
   CHECK_FALSE(bool(thumbs.imageAt(rnf_thumb_picture_frame(1, step))));
   thumbs.layout(1000, 64, rn_take_length(s), 0);
-  for (int i = 0; i < 400 && !thumbs.imageAt(rnf_thumb_picture_frame(2, step)); ++i) {
+  // Until the batch is done, bounded by wall time: the workers run at idle priority (SCHED_IDLE), so with
+  // the other tests filling every CPU (ctest -j8) they wait for those (measured: 0.3 s alone, 22-26 s there).
+  auto t0 = std::chrono::steady_clock::now();
+  for (int i = 0; !thumbs.imageAt(rnf_thumb_picture_frame(2, step)) &&
+                  std::chrono::steady_clock::now() - t0 < std::chrono::seconds(120); ++i) {
     thumbs.pump(s, 1.0 + i * 0.01);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
