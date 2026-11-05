@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ReplayNES</string>
+    <string name="open_rom">Open ROM</string>
+    <string name="test_cartridge">Test Cartridge</string>
+    <string name="about">About</string>
+    <string name="no_roms">No ROMs yet. Open a .nes file to add it.</string>
+    <string name="recent_roms">ROMs</string>
+    <string name="import_failed">Couldn’t import the ROM: %1$s</string>
+    <string name="open_failed">Couldn’t open the game</string>
+    <string name="about_text">ReplayNES %1$s (engine %2$s)\n\nThis program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See https://www.gnu.org/licenses/old-licenses/gpl-2.0.html\n\nEmulation core: Nestopia UE (GPL-2.0-or-later), Copyright (C) 2003-2008 Martin Freij; Nestopia UE contributors. https://github.com/0ldsk00l/nestopia (with small determinism fixes applied at build time, see cmake/NestopiaPatches.cmake)\n\nSource code: https://github.com/kathoc/ReplayNES\n\nThe ReplayNES Test Cartridge is original code (CC0). No game ROMs are included.</string>
+</resources>
