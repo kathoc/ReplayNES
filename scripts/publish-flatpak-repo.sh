@@ -95,7 +95,7 @@ echo "==> sign + commit + summary + deltas (keep $KEEP commits)"
 rsync -a -e ssh "$PUBKEY" "$(hpath "$RDIR")/replaynes-repo.gpg"
 hrun "set -e; cd ~  # paths are relative to the home folder
 # ostree: the system's (SteamOS), else the one in org.flatpak.Builder (rtxsrv has no ostree package).
-command -v ostree >/dev/null || ostree() { flatpak run --filesystem=home --command=ostree org.flatpak.Builder \"\$@\"; }
+command -v ostree >/dev/null || ostree() { flatpak run --arch=x86_64 --filesystem=home --command=ostree org.flatpak.Builder \"\$@\"; }
 G=\$HOME/$SIGN_HOME
 [ -d \"\$G\" ] || { echo 'no signing key at '\$G' (docs/RELEASE.md: Flatpak repository)' >&2; exit 1; }
 [ -f $DEST/config ] || ostree init --mode=archive-z2 --repo=$DEST
@@ -129,7 +129,7 @@ GPGKey=$GPGKEY_B64
 EOF
 echo '==> bundle (--repo-url $REPO_URL)'
 OUT=\$HOME/$RDIR/$([ "$TARGET" = test ] && echo test-)$BUNDLE
-flatpak build-bundle --repo-url=$REPO_URL --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+flatpak build-bundle --arch=x86_64 --repo-url=$REPO_URL --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
   --gpg-keys=$RDIR/replaynes-repo.gpg $DEST \"\$OUT\" $APP_ID master
 echo \"    $HOST:\$OUT\""
 

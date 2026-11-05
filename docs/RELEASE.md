@@ -8,7 +8,7 @@
 4. Build and prepare the update feed: `scripts/release.sh <version>`
    - runs `scripts/build-macos.sh` → `build/ReplayNES.app`, `dist/ReplayNES-<version>-macOS-arm64.zip`
      (ad-hoc signed; zip contains the app, README, LICENSE, THIRD_PARTY_NOTICES)
-   - signs the zip with Sparkle's `sign_update` (EdDSA key from the login keychain) and writes
+   - signs the zip with Sparkle's `sign_update` (EdDSA key: the key file, else the login keychain) and writes
      `dist/appcast.xml` (one item; enclosure = this release's zip asset URL; release notes link =
      the GitHub release page; minimum macOS = `LSMinimumSystemVersion`)
    - prints the commands below; it does not tag, push or upload anything.
@@ -58,7 +58,12 @@
 - Feed: `SUFeedURL` = `https://github.com/kathoc/ReplayNES/releases/latest/download/appcast.xml`
   (set in `apps/macos/project.yml`). Every release uploads its own `appcast.xml`, so "latest" always
   serves the newest item. Do not mark a release as pre-release/draft if it should be offered.
-- Signing key: EdDSA (ed25519). The **private key is only in the release machine's login keychain**
+- **Release machine: macsrv** (since 2026-11-05; `~/Playground/ReplayNES`, user `fugudaro`). macOS,
+  Windows (Parallels VM "Windows 11" on macsrv), Android and the Linux Flatpak (Lima VM, see
+  "Linux: Flatpak repository") are all built, signed and published from it. Before that the release
+  Mac was the old MacBook (user `sonohoka`), which still holds a copy of the Sparkle key file.
+  On macsrv the Sparkle key exists **only as the key file** below (no keychain item was moved).
+- Signing key: EdDSA (ed25519). The private key was created in the first release machine's login keychain
   (Keychain Access → item "https://sparkle-project.org", account `ReplayNES`); the public key is
   `SUPublicEDKey` in `project.yml`. `scripts/release.sh` aborts if the two do not match.
   Back it up (`.../Sparkle/bin/generate_keys --account ReplayNES -x <file>`, store offline, then delete
@@ -69,7 +74,7 @@
 - **Signing key file** (2026-10-22, so the release can be signed over ssh: the login keychain is
   locked in an ssh session): the private key also lives in `~/.config/replaynes/sparkle-ed25519.key`
   on the release Mac only (directory 700, file 600; never in the repository, never copied to other
-  machines). `scripts/release.sh` and `scripts/release-windows.sh` use it when it exists (or
+  machines except when the release machine moves: 2026-11-05 old MacBook → macsrv, checked by sha256). `scripts/release.sh` and `scripts/release-windows.sh` use it when it exists (or
   `ED_KEY_FILE=<file>`), else the keychain (`scripts/lib/sparkle-key.sh`). Either way the key's public
   half is derived (OpenSSL 3) and must equal `SUPublicEDKey`, or the script stops. Export it once on
   the Mac (asks for the login password):
@@ -155,8 +160,25 @@ Installs of the Linux Flatpak update from a signed OSTree repository served by G
 or with the release bundle, which is built with `--repo-url` and the key, so it registers the same
 remote. The app's update notice (Flatpak portal) and `flatpak update` both use it.
 
+**Release host since 2026-11-05: macsrv's Lima VM `flatpak`** (`HOST=lima-flatpak`; rtxsrv and the
+Deck are no longer needed). The VM is Ubuntu 24.04 aarch64 (`vmType: vz`) with Rosetta binfmt, so the
+x86_64 `org.freedesktop.Sdk//25.08` and `org.flatpak.Builder` run there; the scripts pass
+`--arch=x86_64` to every flatpak command (also harmless on an x86_64 host). Set up once:
+
 ```
-HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv: build, sign, update the repo, bundle, push gh-pages (no Deck needed)
+limactl start --name=flatpak --tty=false scripts/lima/flatpak.yaml   # flatpak, ostree, gpg, rsync
+# ~/.ssh/config, first line: Include ~/.lima/flatpak/ssh.config      (ssh lima-flatpak)
+ssh lima-flatpak 'flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo'
+# signing key into the VM (a pipe, never a file), from the Deck or rtxsrv; run it yourself in a terminal:
+limactl shell flatpak -- sh -c 'mkdir -p ~/.local/share/replaynes-signing/gnupg && chmod 700 ~/.local/share/replaynes-signing ~/.local/share/replaynes-signing/gnupg' && ssh deck@steamdeck.local 'GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --batch --export-secret-keys 5267770BF84CC0DA2FB9B8D093BCD9083B5DF142' | limactl shell flatpak -- sh -c 'GNUPGHOME=~/.local/share/replaynes-signing/gnupg gpg --batch --import'
+```
+Then a release is `HOST=lima-flatpak NO_PUSH=1 scripts/publish-flatpak-repo.sh && scripts/push-gh-pages.sh`
+from macsrv. 0.6.5 was the first release built this way (bundle checked in the VM: x86_64 ELF,
+`--version` 0.6.5; the signed repo read by a remote that has only `replaynes-repo.gpg`).
+
+```
+HOST=lima-flatpak scripts/publish-flatpak-repo.sh # on macsrv (current): build in the VM, sign, update the repo, bundle, push gh-pages
+HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv (2026-10-23 .. 0.6.4): build, sign, update the repo, bundle, push gh-pages (no Deck needed)
 scripts/publish-flatpak-repo.sh            # the same on the Deck (deck@steamdeck.local)
 NO_PUSH=1 scripts/publish-flatpak-repo.sh  # stop before the push (inspect build/gh-pages first)
 scripts/push-gh-pages.sh                   # then publish that prepared commit (the forced push, checked)
@@ -199,7 +221,7 @@ Self-updates must not need new sandbox permissions: the portal refuses an update
 - Dedicated key "ReplayNES Flatpak Repo", RSA 4096, no expiry, fingerprint
   `5267770BF84CC0DA2FB9B8D093BCD9083B5DF142`. Public key: `apps/linux/flatpak/replaynes-repo.gpg`
   (also embedded in the `.flatpakrepo` / `.flatpakref` and in every bundle).
-- Private key: on **rtxsrv** (since 2026-10-23, the release host: `HOST=local`, so a release no longer
+- Private key: in macsrv's Lima VM `flatpak` (since 2026-11-05, the release host), and also on **rtxsrv** (2026-10-23 .. 0.6.4, then the release host: `HOST=local`, so a release no longer
   needs the Deck awake) and on the **Steam Deck**, GnuPG home `~/.local/share/replaynes-signing/gnupg`
   (mode 700 on both), **without a passphrase** so that the publish script can sign unattended. Moved
   over ssh by a pipe (`gpg --export-secret-keys | gpg --import`, never written to a file). Risk: anyone

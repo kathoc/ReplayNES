@@ -1,0 +1,24 @@
+# ReplayNES Flatpak release host on macsrv (scripts/lima/flatpak.yaml)
+vmType: vz
+arch: aarch64
+cpus: 6
+memory: 8GiB
+disk: 80GiB
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+mounts: []
+rosetta:
+  enabled: true
+  binfmt: true
+containerd:
+  system: false
+  user: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -e
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -q
+      apt-get install -y -q flatpak rsync gnupg ostree

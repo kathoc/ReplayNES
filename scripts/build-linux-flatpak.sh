@@ -49,24 +49,26 @@ if [ "${DEV:-0}" = "1" ]; then
   # Run it inside the installed app's sandbox:
   #   flatpak run --filesystem=home --command=$HOME/ReplayNES-dev/build-dev/replaynes-linux io.github.replaynes.ReplayNES
   echo "==> dev build (SDK, incremental)"
-  run "cd ~/$RDIR && flatpak run --user --filesystem=home --share=network --command=sh org.freedesktop.Sdk//25.08 -c \
+  run "cd ~/$RDIR && flatpak run --user --arch=x86_64 --filesystem=home --share=network --command=sh org.freedesktop.Sdk//25.08 -c \
     'cmake -S src/apps/linux -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null && ninja -C build-dev'"
   exit 0
 fi
 
 echo "==> build tools"
-run "flatpak info --user org.flatpak.Builder >/dev/null 2>&1 || flatpak install --user -y --noninteractive flathub org.flatpak.Builder
-flatpak info org.freedesktop.Sdk//25.08 >/dev/null 2>&1 || flatpak install --user -y --noninteractive flathub org.freedesktop.Sdk//25.08"
+# --arch=x86_64 everywhere: the app is always x86_64, also when the host is aarch64 (macsrv's Lima VM
+# runs the x86_64 SDK and builder through Rosetta; docs/RELEASE.md).
+run "flatpak info --user --arch=x86_64 org.flatpak.Builder >/dev/null 2>&1 || flatpak install --user -y --noninteractive --arch=x86_64 flathub org.flatpak.Builder
+flatpak info --arch=x86_64 org.freedesktop.Sdk//25.08 >/dev/null 2>&1 || flatpak install --user -y --noninteractive --arch=x86_64 flathub org.freedesktop.Sdk//25.08"
 
 INSTALL="--install"
 [ "${NO_INSTALL:-0}" = "1" ] && INSTALL=""
 echo "==> flatpak-builder"
-run "cd ~/$RDIR && flatpak run org.flatpak.Builder --user $INSTALL --force-clean --disable-updates \
+run "cd ~/$RDIR && flatpak run --arch=x86_64 org.flatpak.Builder --arch=x86_64 --user $INSTALL --force-clean --disable-updates \
   --state-dir=.flatpak-builder --repo=repo build-flatpak src/$MANIFEST"
 
 if [ "${NO_BUNDLE:-0}" != "1" ]; then
   echo "==> bundle $BUNDLE"
-  run "cd ~/$RDIR && flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo $BUNDLE $APP_ID"
+  run "cd ~/$RDIR && flatpak build-bundle --arch=x86_64 --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo $BUNDLE $APP_ID"
   mkdir -p "$ROOT/dist"
   if [ "$HOST" = "local" ]; then cp ~/"$RDIR/$BUNDLE" "$ROOT/dist/"; else scp -q "$HOST:$RDIR/$BUNDLE" "$ROOT/dist/"; fi
   echo "    $ROOT/dist/$BUNDLE"
