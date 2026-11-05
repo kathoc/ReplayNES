@@ -158,6 +158,7 @@ public class MainActivity extends SDLActivity {
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("*/*");
             i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            showDeviceStorage(i);
             // Where the picker starts: the folder of the last ROMs added, else the device's Download folder.
             // Without it the picker reopens its last place, and its "Documents" category lists documents only
             // (a .txt, never a .zip): the ROMs looked absent (2026-11-04).
@@ -173,6 +174,7 @@ public class MainActivity extends SDLActivity {
                 g.addCategory(Intent.CATEGORY_OPENABLE);
                 g.setType("*/*");
                 g.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                showDeviceStorage(g);
                 try {
                     startActivityForResult(Intent.createChooser(g, null), REQUEST_IMPORT);
                 } catch (ActivityNotFoundException e2) {
@@ -297,8 +299,20 @@ public class MainActivity extends SDLActivity {
         accessAnswered();
     }
 
+    /**
+     * The device's storage among the picker's places. Android 10 and earlier (and pickers built on that
+     * documents UI) hide it until "Show internal storage" is chosen in the picker's menu: only Recent,
+     * Downloads and apps are offered, so Documents or any other folder cannot be reached (found 2026-11-05 on
+     * the Android 10 emulator). The documents UI's own extra (hidden API, both spellings it has used).
+     */
+    private static void showDeviceStorage(Intent i) {
+        i.putExtra("android.provider.extra.SHOW_ADVANCED", true);
+        i.putExtra("android.content.extra.SHOW_ADVANCED", true);
+    }
+
     private void pickFolder() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        showDeviceStorage(i);
         Uri start = folderStart == null ? null : StorageFolders.documentUri(folderStart);
         if (start != null) i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, start);
         try {

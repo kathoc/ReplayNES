@@ -4,6 +4,7 @@
 #include "replaynes/product.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <system_error>
 
@@ -22,6 +23,7 @@ void UI::buildDialogs() {
   if (!dialogOpened_) {
     ImGui::OpenPopup("##dialog");
     dialogOpened_ = true;
+    std::fprintf(stderr, "dialog: %s\n", dialogs_.front().title.c_str());  // the log's trail (and the emulator test's cue)
   }
   ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
   ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(S(520), io.DisplaySize.x * 0.9f), 0),
@@ -76,6 +78,7 @@ void UI::buildDialogs() {
     Dialog d = std::move(dialogs_.front());
     dialogs_.pop_front();
     dialogOpened_ = false;
+    std::fprintf(stderr, "dialog: %s -> %s\n", d.title.c_str(), d.buttons[size_t(result)].c_str());
     if (d.onResult) d.onResult(result, checked);
   }
 }

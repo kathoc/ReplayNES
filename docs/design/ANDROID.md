@@ -268,3 +268,9 @@ names in Download/deep/a/b/c/d/e, .hidden, Documents, a Japanese-named folder, u
 a junk zip: all seven found and copied, the junk one not offered, the app alive with the wrong sets loaded
 and after a cold start. Android 11's picker ignores `adb shell input tap` on its files (an event with no
 input device); a finger works: the script taps through the emulator's touchscreen (sendevent, root).
+
+Android 10's picker (and pickers built on that documents UI) hides the device's storage until "Show internal
+storage" is chosen in its menu: its places are Recent, Downloads and apps, so Documents or any other folder
+cannot be reached by hand. The script's D check had passed by picking Download's copy; made strict (the log
+must say the ROMs folder was remembered), it failed there. Fixed: every picker the app opens (files, the
+GET_CONTENT fallback, folders) asks for the device's storage (SHOW_ADVANCED, the documents UI's extra).
