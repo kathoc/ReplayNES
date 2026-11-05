@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.5" date="2026-11-05">
+      <description>
+        <p>The experimental ReplayNESCore (selectable for new games; Nestopia stays the default) is now at 0.9.1: DMC DMA, soft reset, a corrected power-on state, continuous audio resampling, and audio at the same loudness as Nestopia without a click at power-on. A first preview of ReplayNES for Android is available alongside this release.</p>
+      </description>
+    </release>
     <release version="0.6.4" date="2026-10-23">
       <description>
         <p>Library: the cards of the next and previous pages peek in at the screen edges, so it shows that the pages go sideways (click one to turn the page). A game you have not played yet now shows a picture: its screen 5 seconds after power-on, made in the background.</p>

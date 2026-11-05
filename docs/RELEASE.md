@@ -1,4 +1,4 @@
-# Release procedure (macOS; Linux / Steam Deck in step 7; Windows in step 8)
+# Release procedure (macOS; Linux / Steam Deck in step 7; Windows in step 8; Android in step 9)
 
 1. Bump the version by hand: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (must increase every
    release; Sparkle compares it as `sparkle:version`) in `apps/macos/project.yml`, and
@@ -32,6 +32,26 @@
    "Windows: WinSparkle feed" below). Upload all three to the release:
    `gh release upload v<version> dist/ReplayNES-<version>-windows-*.zip dist/appcast-windows.xml --repo kathoc/ReplayNES`.
    Check: `curl -sL https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml`.
+9. Android (preview, arm64, sideload; same version): bump `versionName` and `versionCode` (must
+   increase every release) in `apps/android/app/build.gradle.kts`, then
+   `cd apps/android && JAVA_HOME=<JDK 21> ./gradlew assembleRelease` (NDK 26.1.10909125, SDK CMake
+   3.22.1). Check the signer with `apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk`
+   (SHA-256 `fbcf00f11daab6095343fff420d0dcdb693f152ec6b30fc27fe7bef683f43264`), install it on an
+   emulator or device, open the Test Cartridge and press a direction. Copy it to
+   `dist/ReplayNES-<version>-android-arm64.apk` and upload it:
+   `gh release upload v<version> dist/ReplayNES-<version>-android-arm64.apk --repo kathoc/ReplayNES`.
+   There is no update feed: users install the newer APK over the old one.
+
+## Android release signing
+
+- Dedicated key (created 2026-11-05 on macsrv; RSA 4096, PKCS12, alias `replaynes`), in
+  `~/.config/replaynes/android-release.jks`; its password and the path are in
+  `~/.config/replaynes/android-signing.properties` (directory 700, files 600). Gradle reads that
+  file (`REPLAYNES_ANDROID_SIGNING=<file>` overrides the path); without it the release APK is
+  unsigned. Never commit either file, never print the password (apps/android/README.md).
+- **Back up both files offline** (encrypted USB / password manager). Android installs an update only
+  when it is signed with the same key as the installed app: losing the key means every sideloaded
+  install must be uninstalled, losing its app data, before a newer version can be installed.
 
 ## Automatic updates (Sparkle 2)
 
