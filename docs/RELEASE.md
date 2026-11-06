@@ -24,7 +24,8 @@
    `apps/linux/CMakeLists.txt` and add a `<release>` to
    `apps/linux/flatpak/io.github.replaynes.ReplayNES.metainfo.xml`): `scripts/publish-flatpak-repo.sh`
    (see "Linux: Flatpak repository" below), then attach the bundle to the release:
-   `gh release upload v<version> dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak --repo kathoc/ReplayNES`.
+   `gh release upload v<version> dist/io.github.replaynes.ReplayNES-<version>-{x86_64,aarch64}.flatpak --repo kathoc/ReplayNES`
+   (one bundle per architecture: x86_64 for the Steam Deck and PCs, aarch64 for ARM Linux handhelds).
 8. Windows (same version, `project(ReplayNES VERSION ...)` already bumped in step 1): run the tests
    in the VM (`scripts/build-windows.sh && scripts/windows-vm/run-tests.sh`; needs Parallels Desktop
    **Pro/Business** for `prlctl exec`, else it fails with "available only in Parallels Desktop for
@@ -168,8 +169,15 @@ remote. The app's update notice (Flatpak portal) and `flatpak update` both use i
 
 **Release host since 2026-11-05: macsrv's Lima VM `flatpak`** (`HOST=lima-flatpak`; rtxsrv and the
 Deck are no longer needed). The VM is Ubuntu 24.04 aarch64 (`vmType: vz`) with Rosetta binfmt, so the
-x86_64 `org.freedesktop.Sdk//25.08` and `org.flatpak.Builder` run there; the scripts pass
-`--arch=x86_64` to every flatpak command (also harmless on an x86_64 host). Set up once:
+VM builds both architectures: aarch64 natively, x86_64 with the x86_64 `org.freedesktop.Sdk//25.08`
+and `org.flatpak.Builder` through Rosetta. The scripts pass `--arch=<arch>` to every flatpak command
+(`ARCH` for `scripts/build-linux-flatpak.sh`, default x86_64; `ARCHES` for
+`scripts/publish-flatpak-repo.sh`, default `"x86_64 aarch64"`). One signed repository holds both refs
+(`app/io.github.replaynes.ReplayNES/<arch>/master`) and flatpak installs the device's own, so the
+`.flatpakrepo` / `.flatpakref` are the same for every device. The Deck and rtxsrv build x86_64 only:
+there, `ARCHES=x86_64` (an architecture left out keeps its last published commit). The aarch64 build
+was added on 2026-11-06 (first built and started in the VM; not yet checked on an ARM handheld's
+GPU and controls). Set up once:
 
 ```
 limactl start --name=flatpak --tty=false scripts/lima/flatpak.yaml   # flatpak, ostree, gpg, rsync
@@ -183,9 +191,10 @@ from macsrv. 0.6.5 was the first release built this way (bundle checked in the V
 `--version` 0.6.5; the signed repo read by a remote that has only `replaynes-repo.gpg`).
 
 ```
-HOST=lima-flatpak scripts/publish-flatpak-repo.sh # on macsrv (current): build in the VM, sign, update the repo, bundle, push gh-pages
-HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv (2026-10-23 .. 0.6.4): build, sign, update the repo, bundle, push gh-pages (no Deck needed)
-scripts/publish-flatpak-repo.sh            # the same on the Deck (deck@steamdeck.local)
+HOST=lima-flatpak scripts/publish-flatpak-repo.sh # on macsrv (current): build x86_64 + aarch64 in the VM, sign, update the repo, bundles, push gh-pages
+ARCH=aarch64 HOST=lima-flatpak scripts/build-linux-flatpak.sh   # one test build + bundle (no repository, no signing)
+ARCHES=x86_64 HOST=local scripts/publish-flatpak-repo.sh # on rtxsrv (2026-10-23 .. 0.6.4): build, sign, update the repo, bundle, push gh-pages (no Deck needed)
+ARCHES=x86_64 scripts/publish-flatpak-repo.sh   # the same on the Deck (deck@steamdeck.local)
 NO_PUSH=1 scripts/publish-flatpak-repo.sh  # stop before the push (inspect build/gh-pages first)
 scripts/push-gh-pages.sh                   # then publish that prepared commit (the forced push, checked)
 SKIP_BUILD=1 ...                           # reuse the Deck's last build (~/ReplayNES-dev/repo)
@@ -209,7 +218,7 @@ the build as a new commit with `flatpak build-commit-from --gpg-sign` (subject "
 --prune-depth=KEEP-1` (signed summary, deltas, only the last `KEEP`=3 commits kept, the `.Debug`
 extension is never published); writes `ReplayNES.flatpakrepo` and
 `io.github.replaynes.ReplayNES.flatpakref` (base64 public key embedded, `RuntimeRepo` = Flathub);
-builds `dist/io.github.replaynes.ReplayNES-<version>-x86_64.flatpak` from the signed commit with
+builds `dist/io.github.replaynes.ReplayNES-<version>-<arch>.flatpak` (one per architecture) from the signed commit with
 `--repo-url` + `--gpg-keys`; copies the repository back and commits gh-pages as **one orphan commit,
 force-pushed** by `scripts/push-gh-pages.sh` (checks: one orphan commit titled "Flatpak repository: ...", with `flatpak/summary` and `ReplayNES.flatpakrepo`; https with gh's login, since rtxsrv's ssh key is a read-only deploy key; allowed in Claude Code's settings as a fixed step, 2026-10-23) (old repository objects never pile up in git history; the repo is ~10 MB). It enables
 Pages on the first push (`gh api -X POST repos/kathoc/ReplayNES/pages`). Pages takes a minute or two
