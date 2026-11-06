@@ -682,8 +682,14 @@ int App::run(const AppOptions& opt) {
     if (perfMode) perf.add(rec);
   };
 
+  double lastWake = 0;
   while (running_) {
     double wake = nowSeconds();
+    // A gap of more than a second between two frames in the log: a stall, or the loop paused while another app
+    // was in front (Android: no frame runs then; read it with the "activity:" lines, as the focus events wait
+    // for the loop too). Kept for logs from devices that "stop reacting" (2026-11-06, Android 13).
+    if (lastWake > 0 && wake - lastWake > 1.0) std::fprintf(stderr, "frame: %.1f s since the last one\n", wake - lastWake);
+    lastWake = wake;
     // 1. Pictures confirmed on screen since the last frame (in present order).
     for (const PresentDone& d : renderer_->takeCompleted()) {
       while (!inflight.empty() && inflight.front().presentId < d.id) { settle(inflight.front(), nullptr); inflight.pop_front(); }
