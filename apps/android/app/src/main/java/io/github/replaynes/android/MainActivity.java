@@ -6,7 +6,11 @@ import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,6 +26,7 @@ import android.view.WindowInsetsController;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.libsdl.app.SDLActivity;
@@ -44,7 +49,66 @@ public class MainActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         hideSystemBars();
+        chosenOrientation = orientationFor(getSharedPreferences(PREFS, MODE_PRIVATE).getString(ORIENTATION, "auto"));
+        setRequestedOrientation(chosenOrientation);  // the last choice, before the first frame
+        publishShareShortcut();
         receive(getIntent());
+    }
+
+    // Settings > App > Screen Orientation (docs/design/ANDROID.md "Screen orientation"). Automatic follows the
+    // device and its rotation lock, as ReplayNES does; Landscape and Portrait keep that one (either way up).
+    private static final String PREFS = "replaynes.screen";
+    private static final String ORIENTATION = "orientation";
+    private volatile int chosenOrientation = ActivityInfo.SCREEN_ORIENTATION_USER;
+
+    private static int orientationFor(String which) {
+        if ("landscape".equals(which)) return ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        if ("portrait".equals(which)) return ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
+        return ActivityInfo.SCREEN_ORIENTATION_USER;
+    }
+
+    /** setScreenOrientation in platform/shell.cpp through JNI (any thread): at start-up and when it changes. */
+    public boolean setScreenOrientation(String which) {
+        final int o = orientationFor(which);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(ORIENTATION, which).apply();
+        if (o == chosenOrientation && getRequestedOrientation() == o) return true;
+        chosenOrientation = o;
+        AppLog.line(this, "screen: orientation " + which);
+        runOnUiThread(() -> setRequestedOrientation(o));
+        return true;
+    }
+
+    /**
+     * SDL asks for an orientation from the window's size when it makes the window: the person's choice wins
+     * (it had taken a portrait phone's window for a portrait-only app, and the manifest's landscape was lost).
+     */
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+        setRequestedOrientation(chosenOrientation);
+    }
+
+    /**
+     * Direct Share: "Add to the ROM folder" in the share sheet's top row for any file (res/xml/shortcuts.xml).
+     * The app list below it may be cut short, or sort a new app far down: the shortcut is the entry a person
+     * sees first. Long-lived, so the system keeps offering it.
+     */
+    private void publishShareShortcut() {
+        try {
+            ShortcutManager sm = getSystemService(ShortcutManager.class);
+            if (sm == null) return;
+            ShortcutInfo s = new ShortcutInfo.Builder(this, "rom-folder")
+                .setShortLabel(getString(R.string.rn_share_target))
+                .setLongLabel(getString(R.string.rn_share_target))
+                .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+                .setCategories(Collections.singleton("io.github.replaynes.android.ROM_SHARE_TARGET"))
+                .setLongLived(true)
+                .setIntent(new Intent(Intent.ACTION_MAIN, null, this, MainActivity.class))
+                .build();
+            sm.addDynamicShortcuts(Collections.singletonList(s));
+            AppLog.line(this, "share: direct share target published");
+        } catch (RuntimeException e) {
+            AppLog.line(this, "share: no direct share target: " + e);
+        }
     }
 
     // The surface's life in the log too: Vulkan draws to it, and it goes when another app comes in front.
@@ -158,6 +222,7 @@ public class MainActivity extends SDLActivity {
             i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("*/*");
             i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            i.putExtra(Intent.EXTRA_MIME_TYPES, RomImport.ROM_TYPES);
             showDeviceStorage(i);
             // Where the picker starts: the folder of the last ROMs added, else the device's Download folder.
             // Without it the picker reopens its last place, and its "Documents" category lists documents only
@@ -174,6 +239,7 @@ public class MainActivity extends SDLActivity {
                 g.addCategory(Intent.CATEGORY_OPENABLE);
                 g.setType("*/*");
                 g.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                g.putExtra(Intent.EXTRA_MIME_TYPES, RomImport.ROM_TYPES);
                 showDeviceStorage(g);
                 try {
                     startActivityForResult(Intent.createChooser(g, null), REQUEST_IMPORT);

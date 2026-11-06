@@ -84,6 +84,8 @@ class UI : public DialogHost {
   explicit UI(Deps d);
   ~UI() override;
   void setApp(AppModel* app) { d_.app = app; }
+  /// The window lost or got the focus (another app came in front, or went).
+  void focusChanged(bool focused);
 
   // Hooks from main.
   std::function<void()> onQuit;              // the user chose Quit
@@ -446,6 +448,16 @@ class UI : public DialogHost {
   void addRoms();
   void searchDevice();
   void pollRomFinder(double now);
+  /// Open Folder for the ROM folder. Where the device can be searched (Android), coming back from the Files
+  /// app to a ROM folder still empty offers Search the Device: the Files app's Documents, Images and the
+  /// like list some kinds of files only, never a zip (docs/design/ANDROID.md).
+  bool openRomFolder();
+  void pollRomFolderVisit(double now);
+  // By the window's focus events (App::handleEvent): on Android no frame runs while another app is in front,
+  // so the frame loop never sees the focus gone.
+  enum class RomVisit { none, opened, away, returned, back, scanned };
+  RomVisit romVisit_ = RomVisit::none;
+  double romVisitAt_ = 0;
   std::unique_ptr<RomFinder> romFinder_;
   bool awaitingAccess_ = false, searching_ = false, copying_ = false;
   double findNoticeAt_ = 0;

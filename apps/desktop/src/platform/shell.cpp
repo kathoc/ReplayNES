@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "replaynes/frontend.h"
 #include "replaynes/product.h"
 
 #include "platform/platform.h"
@@ -90,6 +91,8 @@ bool openFile(const std::string& path) {
 
 #ifdef __ANDROID__
 bool canImportFiles() { return true; }
+bool canSetScreenOrientation() { return true; }
+void setScreenOrientation(const std::string& orientation) { callActivity("setScreenOrientation", orientation); }
 bool importFiles(const std::string& dir) { return callActivity("importFiles", dir); }
 bool canShareLog() { return true; }
 bool shareLog() {
@@ -99,6 +102,8 @@ bool shareLog() {
 }
 #else
 bool canImportFiles() { return false; }
+bool canSetScreenOrientation() { return false; }
+void setScreenOrientation(const std::string&) {}
 bool importFiles(const std::string&) { return false; }
 bool canShareLog() { return false; }
 bool shareLog() { return false; }
@@ -214,6 +219,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_replaynes_android_MainActivity_
     return out;
   };
   rnl::folderChosen(str(path), str(error));
+}
+
+// RomImport.copyInto: whether a received file's name is one the library lists (the product's ROM extensions and
+// its own filter, which goes by the name too: ReplayArcade's arcade sets). A share takes any type of file
+// (docs/design/ANDROID.md "Sharing"), so a photo shared to the app must not land in the ROM folder.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_replaynes_android_RomImport_nativeIsRom(JNIEnv* env, jclass,
+                                                                                         jstring name) {
+  if (!name) return JNI_FALSE;
+  const char* c = env->GetStringUTFChars(name, nullptr);
+  const bool rom = c && rnf_library_is_rom_file(c) != 0;
+  if (c) env->ReleaseStringUTFChars(name, c);
+  return rom ? JNI_TRUE : JNI_FALSE;
 }
 
 // MainActivity.requestStorageAccess's answer.

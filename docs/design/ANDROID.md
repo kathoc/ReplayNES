@@ -274,3 +274,42 @@ storage" is chosen in its menu: its places are Recent, Downloads and apps, so Do
 cannot be reached by hand. The script's D check had passed by picking Download's copy; made strict (the log
 must say the ROMs folder was remembered), it failed there. Fixed: every picker the app opens (files, the
 GET_CONTENT fallback, folders) asks for the device's storage (SHOW_ADVANCED, the documents UI's extra).
+
+## Sharing, the picker's views, Open Folder, swiping the library (2026-11-06)
+
+Reported: the share sheet sometimes had no ReplayArcade; from Open Folder, another folder showed no zips; with
+many ROMs the library could not be scrolled by swiping.
+
+- **Share.** `cmd package query-activities` on the Android 16 emulator: SEND / SEND_MULTIPLE with
+  application/x-compressed, application/x-zip-archive or multipart/x-zip (names other apps give a zip) left the
+  app out; the filters listed six types. Now any type (`*/*`); RomImport keeps only names the library lists
+  (`rnf_library_is_rom_file` through `RomImport.nativeIsRom`: the product's extensions and its filter, which goes
+  by the name) and says which files were not added. Being in the list is not being seen: a share sheet puts a
+  new app far down or cuts the list short, and some apps show a short list of their own. So the app also
+  publishes a Direct Share target (res/xml/shortcuts.xml, a long-lived dynamic shortcut "Add to the ROM
+  folder"), the share sheet's top row on Android 10 and later; and the routes that need no share (Search the
+  Device, Choose Files, the dialog below) stay the sure ones.
+- **The Files app's and the picker's Documents, Images, Audio, Videos** (chips and drawer) are views of some
+  kinds of files collected from the whole device, not folders: no zip ever appears there (reproduced: the real
+  Documents folder lists 1943.zip, the Documents view only readme.txt). A person going from Open Folder to
+  "Documents" saw no ROMs at all. The picker now asks for ROM types (EXTRA_MIME_TYPES, RomImport.ROM_TYPES):
+  those views are gone from it, the device's folders, Downloads and Recent stay, and every ROM extension can
+  be picked (.zip in any case, .7z, .nes, .fds, .unf). The Files app cannot be told: back from Open Folder
+  with the ROM folder still empty, the app offers Search the Device / Choose Files (UI::openRomFolder,
+  pollRomFolderVisit). It goes by the window's focus events (App -> UI::focusChanged): on Android no frame
+  runs while another app is in front, so a frame loop never sees the focus gone.
+- **The library** turns its pages (it does not scroll); a phone had no way to the next page but tapping the
+  dimmed edge of the neighbouring one. A swipe turns the page now (right to left or bottom to top = next);
+  the press it began is let go, so the card under the finger does not open.
+
+The emulator test has checks for each (A3, E4, G direct, I1, I2, K1).
+
+## Screen orientation (2026-11-06)
+
+Settings > App > Screen Orientation: Automatic (default: the device's, with its rotation lock, as ReplayNES's
+Android app does), Landscape or Portrait (either way up). The manifest asked for sensorLandscape, but SDL asks
+again from the window's size when it makes the window (SDLActivity.setOrientationBis), so the app came up as
+the window was. MainActivity applies the saved choice in onCreate (before the first frame), takes
+setScreenOrientation from the settings (platform/shell.cpp, App::applySettings) and answers SDL's request with
+the choice. Checked on the Android 16 emulator: Landscape 2424 x 1080, Portrait 1080 x 2424 after a restart
+too, Automatic turning with the device (user_rotation 1 / 0). Emulator test O1-O3.

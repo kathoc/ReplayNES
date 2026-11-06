@@ -514,6 +514,7 @@ void AppModel::prepareTempSlot(std::function<void()> then) {
 // ------------------------------------------------------------------ create / open / install
 
 void AppModel::playFromLibrary(const LibraryROM& rom) {
+  std::fprintf(stderr, "library: play %s\n", rom.name.c_str());
   LibraryROM r = rom;
   confirmDiscardIfNeeded([this, r] {
     if (selectedCore != "nestopia" && selectedCore != "external") return createSession(r.path, "", false);

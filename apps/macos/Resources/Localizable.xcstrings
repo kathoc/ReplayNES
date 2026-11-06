@@ -9378,6 +9378,66 @@
           }
         }
       }
+    },
+    "No ROMs in the ROM folder yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ROM フォルダにまだ ROM がありません"
+          }
+        }
+      }
+    },
+    "In the Files app, Documents, Images and the like show some kinds of files only: ROM zips never appear there. Search the whole device for ROMs, or choose the files yourself.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルアプリの「ドキュメント」「画像」などは、決まった種類のファイルだけを集めた表示で、ROM の zip はそこには出てきません。端末全体から ROM を探すか、ファイルを自分で選んでください。"
+          }
+        }
+      }
+    },
+    "Screen Orientation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の向き"
+          }
+        }
+      }
+    },
+    "Automatic turns with the device (and its rotation lock)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動は端末の向き（と回転のロック）に合わせます"
+          }
+        }
+      }
+    },
+    "Landscape": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "横"
+          }
+        }
+      }
+    },
+    "Portrait": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縦"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

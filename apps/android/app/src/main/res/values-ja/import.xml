@@ -4,4 +4,6 @@
         <item quantity="other">ROM フォルダに %d 個のファイルを追加しました</item>
     </plurals>
     <string name="rn_import_failed">追加できませんでした: %s</string>
+    <string name="rn_import_not_rom">ROM ではないので追加しませんでした: %s</string>
+    <string name="rn_share_target">ROM フォルダへ追加</string>
 </resources>

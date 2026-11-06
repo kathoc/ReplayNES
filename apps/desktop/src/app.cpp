@@ -145,6 +145,7 @@ void App::applySettings() {
   const std::string romsBefore = library_->romDir();
   library_->setFolders(settings_.romFolder, settings_.projectsFolder);
   if (library_->romDir() != romsBefore) setImportFolder(library_->romDir());
+  setScreenOrientation(settings_.orientation);  // Android: MainActivity keeps it (a repeat changes nothing)
   emu_->pauseAfterRewind = settings_.pauseAfterRewind;
   emu_->autosaveInterval = settings_.autosaveInterval;
   emu_->setFlashLevel(rn_flash_level(settings_.flash));
@@ -304,6 +305,8 @@ void App::handleEvent(const SDL_Event& reported, double now) {
       std::fprintf(stderr, "input: SDL gamepad %u button %d down (focused %d, play in background %d)\n", unsigned(e.gbutton.which),
                    int(e.gbutton.button), int(focused_), int(settings_.playInBackground));
   }
+  if (ui_ && (e.type == SDL_EVENT_WINDOW_FOCUS_LOST || e.type == SDL_EVENT_WINDOW_FOCUS_GAINED))
+    ui_->focusChanged(e.type == SDL_EVENT_WINDOW_FOCUS_GAINED);
   if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
     focused_ = false;
     if (RN_PRODUCT_FOCUS_PAUSE && !settings_.playInBackground) {
@@ -464,6 +467,7 @@ int App::run(const AppOptions& opt) {
   library_->setPrefsFile((opt.sessionRoot.empty() ? paths_.configDir : paths_.sessionRoot) + "/" + RNF_LIBRARY_PREFS_FILE);
   library_->setFolders(settings_.romFolder, settings_.projectsFolder);
   setImportFolder(library_->romDir());
+  setScreenOrientation(settings_.orientation);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();

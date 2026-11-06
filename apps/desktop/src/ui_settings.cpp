@@ -89,6 +89,7 @@ int choiceIndex(const Settings& s, const InputRouter& in, const std::string& id)
     return 0;
   }
   if (id == "system.language") return s.language == "ja" ? 1 : s.language == "en" ? 2 : 0;
+  if (id == "system.orientation") return s.orientation == "landscape" ? 1 : s.orientation == "portrait" ? 2 : 0;
   if (id == "system.resume_countdown") return s.countdownSeconds >= 3 ? 0 : s.countdownSeconds >= 1 ? 1 : 2;  // 3 / 1 / none
   if (id == "system.autosave") {
     for (int i = 0; i < 5; ++i)
@@ -322,6 +323,8 @@ void UI::adjustItem(const std::string& id, int dir) {
       changed();
       if (onLanguage) onLanguage(s.language);
       return;
+    } else if (id == "system.orientation") {
+      s.orientation = next == 1 ? "landscape" : next == 2 ? "portrait" : "auto";  // App::applySettings turns it
     } else if (id == "system.autosave") s.autosaveInterval = kAutosave[next];
     else if (id == "system.screensaver") s.screensaverMinutes = kScreensaverMinutes[next];
     else if (id == "system.resume_countdown") s.countdownSeconds = next == 0 ? 3 : next == 1 ? 1 : 0;
@@ -760,7 +763,7 @@ void UI::folderChoices(bool roms) {
   d.onResult = [this, roms, chosen, dir](int b, bool) {
     if (b == 0) {
       d_.library->ensureFolders();
-      if (!openFolder(dir)) notice(TRF("Can’t open the folder: %@", {Paths::display(dir)}), 4);
+      if (!(roms ? openRomFolder() : openFolder(dir))) notice(TRF("Can’t open the folder: %@", {Paths::display(dir)}), 4);
     } else if (b == 1) {
       changeFolder(roms);
     } else if (b == 2 && chosen) {
@@ -865,6 +868,59 @@ void UI::searchDevice() {
   romFinder_->search(std::move(roots), d_.library->romDir(), std::move(skip));
   searching_ = true;
   findNoticeAt_ = 0;
+}
+
+bool UI::openRomFolder() {
+  if (!openFolder(d_.library->romDir())) return false;
+  const bool searchable = !deviceStorageRoots(nullptr).empty();  // the device can be searched (Android)
+  if (searchable) romVisit_ = RomVisit::opened;
+  std::fprintf(stderr, "library: Open Folder (ROM folder)%s\n", searchable ? ", a search offered if it is empty on return" : "");
+  return true;
+}
+
+void UI::focusChanged(bool focused) {
+  const RomVisit was = romVisit_;
+  if (!focused && romVisit_ == RomVisit::opened) romVisit_ = RomVisit::away;
+  if (focused && romVisit_ == RomVisit::away) romVisit_ = RomVisit::returned;
+  if (romVisit_ != was)
+    std::fprintf(stderr, "library: Open Folder: %s\n", romVisit_ == RomVisit::away ? "the other app in front" : "back in the app");
+}
+
+// Opened -> away (the Files app took the focus) -> returned (the app has it again; focusChanged) -> back (a
+// rescan) -> scanned (its result taken) -> the ROM folder still empty: Search the Device offered, once.
+void UI::pollRomFolderVisit(double now) {
+  switch (romVisit_) {
+    case RomVisit::none:
+    case RomVisit::opened:
+    case RomVisit::away:
+      return;
+    case RomVisit::returned:
+      d_.library->refresh();
+      romVisit_ = RomVisit::back;
+      return;
+    case RomVisit::back:
+      if (d_.library->scanning()) return;
+      romVisit_ = RomVisit::scanned;
+      romVisitAt_ = now;
+      return;
+    default:
+      break;
+  }
+  if (now - romVisitAt_ < 0.5) return;  // the scan's result taken by the frame loop's housekeeping
+  romVisit_ = RomVisit::none;
+  if (!d_.library->roms().empty() || searching_ || copying_ || awaitingAccess_) return;
+  std::fprintf(stderr, "library: back from the Files app, the ROM folder is empty: Search the Device offered\n");
+  Dialog d;
+  d.title = TR("No ROMs in the ROM folder yet");
+  d.message = TR("In the Files app, Documents, Images and the like show some kinds of files only: ROM zips never "
+                 "appear there. Search the whole device for ROMs, or choose the files yourself.");
+  d.buttons = {TR("Search the Device"), TR("Choose Files"), TR("Close")};
+  d.cancelIndex = 2;
+  d.onResult = [this](int b, bool) {
+    if (b == 0) searchDevice();
+    else if (b == 1) importFiles(d_.library->romDir());
+  };
+  showDialog(std::move(d));
 }
 
 void UI::pollRomFinder(double now) {

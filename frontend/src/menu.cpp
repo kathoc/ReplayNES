@@ -47,6 +47,7 @@ constexpr uint32_t F_EXPORT = RNF_MENU_FEATURE_EXPORT, F_STREAM = RNF_MENU_FEATU
                    F_STEAM = RNF_MENU_FEATURE_STEAM, F_OSK = RNF_MENU_FEATURE_OSK, F_UPDATES = RNF_MENU_FEATURE_UPDATES,
                    F_SLOW_AUDIO = RNF_MENU_FEATURE_SLOW_AUDIO, F_LOW_LATENCY = RNF_MENU_FEATURE_LOW_LATENCY,
                    F_QUIT = RNF_MENU_FEATURE_QUIT, F_TOUCH = RNF_MENU_FEATURE_TOUCH,
+                   F_ORIENTATION = RNF_MENU_FEATURE_ORIENTATION,
                    // Only without a touch screen: Touch Controls takes the Keyboard's place, as on the iPhone (the
                    // Controls page stays within RNF_MENU_MAX_ITEMS; keys keep their defaults).
                    F_NO_TOUCH = 1u << 31, F_FULLSCREEN = RNF_MENU_FEATURE_FULLSCREEN,
@@ -258,6 +259,9 @@ const std::vector<ItemDef>& items() {
        PAGE, "system.about", 0, {}},
       {"settings.system", "about.folders", RNF_L("Folders and License"), RNF_L("ROM and project folders, license"),
        "folder", PAGE, "about.folders", 0, {}},
+      {"settings.system", "system.orientation", RNF_L("Screen Orientation"),
+       RNF_L("Automatic turns with the device (and its rotation lock)"), "device-desktop", CHOICE, "", F_ORIENTATION,
+       {RNF_L("Automatic"), RNF_L("Landscape"), RNF_L("Portrait")}},
       {"settings.system", "system.quit", RNF_L("Quit"), RNF_L("Close ReplayNES (where you are is kept)"), "power", ACTION, "",
        F_QUIT, {}},
       // App > Updates: the version and the in-app updates (status, check, update, automatic), Add to Steam.

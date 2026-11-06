@@ -29,6 +29,29 @@ import java.util.List;
 final class RomImport {
     private static final String TAG = "ReplayNES";
 
+    /**
+     * The picker's types (EXTRA_MIME_TYPES): ROM files only. Without them the picker offers Images, Audio, Videos
+     * and Documents, views of some kinds of files only where no zip ever appears; with them it offers the device's
+     * folders, Downloads and Recent, and every ROM there can be picked (.zip in any case, .7z, .nes, .fds, .unf:
+     * checked on the Android 16 emulator 2026-11-06).
+     */
+    static final String[] ROM_TYPES = {
+        "application/zip", "application/x-zip-compressed", "application/x-zip", "application/x-compressed",
+        "application/x-zip-archive", "multipart/x-zip", "application/x-7z-compressed", "application/octet-stream",
+        "application/x-nes-rom",
+    };
+
+    /** The library lists a file of this name (shell.cpp; the product's ROM extensions and filter, by name). */
+    private static native boolean nativeIsRom(String name);
+
+    private static boolean isRom(String name) {
+        try {
+            return nativeIsRom(name);
+        } catch (UnsatisfiedLinkError e) {
+            return true;  // no native library yet: the library's scan still lists ROMs only
+        }
+    }
+
     private RomImport() {}
 
     /** The URIs an intent carries: a picker's result (one or several), Share (SEND / SEND_MULTIPLE), Open with (VIEW). */
@@ -93,9 +116,15 @@ final class RomImport {
         new Thread(() -> {
             int added = 0;
             List<String> failed = new ArrayList<>();
+            List<String> notRom = new ArrayList<>();
             dir.mkdirs();
             for (Uri u : uris) {
                 String name = displayName(resolver, u);
+                if (!isRom(name)) {  // a share takes any file (AndroidManifest.xml): ROMs only into the folder
+                    notRom.add(name);
+                    Log.i(TAG, "import: " + name + ": not a ROM, not added");
+                    continue;
+                }
                 try {
                     copy(resolver, u, dir, name);
                     added += 1;
@@ -105,9 +134,12 @@ final class RomImport {
                     Log.w(TAG, "import: " + u + ": " + e);
                 }
             }
-            final String text = failed.isEmpty()
-                ? activity.getResources().getQuantityString(R.plurals.rn_import_added, added, added)
-                : activity.getString(R.string.rn_import_failed, String.join(", ", failed));
+            List<String> lines = new ArrayList<>();
+            if (added > 0 || (failed.isEmpty() && notRom.isEmpty()))
+                lines.add(activity.getResources().getQuantityString(R.plurals.rn_import_added, added, added));
+            if (!failed.isEmpty()) lines.add(activity.getString(R.string.rn_import_failed, String.join(", ", failed)));
+            if (!notRom.isEmpty()) lines.add(activity.getString(R.string.rn_import_not_rom, String.join(", ", notRom)));
+            final String text = String.join("\n", lines);
             activity.runOnUiThread(() -> Toast.makeText(activity, text, Toast.LENGTH_LONG).show());
         }, "rom-import").start();
     }

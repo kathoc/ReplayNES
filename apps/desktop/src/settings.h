@@ -86,6 +86,7 @@ struct Settings {
   // System
   std::string core = RN_PRODUCT_DEFAULT_CORE;  // next new game; existing projects retain their core
   bool checkForUpdates = true;  // keep the Flatpak portal's update monitor open (update_service.h)
+  std::string orientation = "auto";  // Android: "auto" (the device's, its rotation lock), "landscape", "portrait"
   std::string language = "auto";  // "auto" (the system's), "ja", "en"
   // The ROM and Projects folders chosen in Settings > App > Folders & License ("": the library's own,
   // <library>/ROM and <library>/Projects).

@@ -254,6 +254,29 @@ TEST_CASE("steam: updates the entry the user added through Steam in place") {
   CHECK(readFile(env.vdf + ".replaynes-backup") == original);
 }
 
+TEST_CASE("steam: an entry with app id 0 gets the derived id, and its artwork that id") {
+  // A tool wrote the entry with appid 0 (Steam had not saved it yet): Steam takes 0 for invalid and picks another
+  // id at each start, so artwork named "0..." never showed (AYN Thor, 2026-11-06).
+  Env env("appid-zero");
+  const std::string exe = "\"/usr/bin/flatpak\"";
+  std::string mine = entry("3", 0u, "ReplayNES", exe,
+                           "/usr/libexec/armada/armada-game-launch %command% run io.github.replaynes.ReplayNES", "", 0, "");
+  writeFile(env.vdf, fileOf(otherEntries() + mine));
+  steam::Report r;
+  REQUIRE(steam::addToSteam(env.opts(), r));
+  const uint32_t id = steam::shortcutAppId(exe, "ReplayNES");
+  CHECK_EQ(r.users[0].appId, id);
+  steam::ShortcutsFile f;
+  std::string err;
+  REQUIRE(steam::ShortcutsFile::parse(readFile(env.vdf), &f, &err));
+  const auto* ours = findEntryNamed(f, "ReplayNES");
+  REQUIRE(ours != nullptr);
+  CHECK_EQ(ours->find("appid")->u32(), id);
+  CHECK(ours->find("LaunchOptions")->str.find("armada-game-launch") != std::string::npos);  // its launch kept
+  CHECK(readFile(env.grid + "/" + std::to_string(id) + "p.png") == fakePng("capsule"));
+  CHECK_FALSE(fs::exists(env.grid + "/0p.png"));
+}
+
 TEST_CASE("steam: dry run, missing file, several accounts") {
   Env env("dry");
   fs::create_directories(env.userdata + "/0/config");       // anonymous: skipped

@@ -111,6 +111,7 @@ UI::UI(Deps d) : d_(d) {
   if (d_.touchControls) menuFeatures_ |= RNF_MENU_FEATURE_TOUCH;
   if (canImportFiles()) menuFeatures_ |= RNF_MENU_FEATURE_IMPORT;
   if (canShareLog()) menuFeatures_ |= RNF_MENU_FEATURE_SHARE_LOG;
+  if (canSetScreenOrientation()) menuFeatures_ |= RNF_MENU_FEATURE_ORIENTATION;
   // Offer a choice only when multiple product cores are available.
   if (rnf_product_core_count() > 1) menuFeatures_ |= RNF_MENU_FEATURE_CORE;
   menu_ = rnf_menu_new(menuFeatures_);
@@ -493,6 +494,7 @@ void UI::showResetChoices() {
 void UI::build(double now) {
   pollChosenFolder();  // a system folder picker's answer (Settings > Folders & License > Change…)
   pollRomFinder(now);  // Add ROMs > Search the Device
+  pollRomFolderVisit(now);  // back from Open Folder with the ROM folder empty
   if (noticeTime_ < 0) noticeTime_ = now;
   if (menuOpenedAt_ < 0) menuOpenedAt_ = now;
   if (pageChangedAt_ < 0) pageChangedAt_ = now;

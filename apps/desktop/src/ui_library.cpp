@@ -5,7 +5,7 @@
 // (picture of the last session of the game, else a tile made from its name; the title from the
 // game database in the UI language, "maker · year" under it, a star on favourites).
 // A plays the focused game (a new project), Y marks it as a favourite, X lists its projects,
-// View / Select (Tab) cycles the sort, L / R turn the pages, the Menu pill (L+R / Esc) opens
+// View / Select (Tab) cycles the sort, L / R (or a swipe) turn the pages, the Menu pill (L+R / Esc) opens
 // Settings. An empty library is one card saying where the games go. "Add Test Cartridge" (the last
 // item of the row; Y on the empty card) writes the ReplayNES Test Cartridge into the ROM folder (once)
 // and focuses it. Nothing scrolls: the cards of the neighbouring pages peek in at the screen edges.
@@ -13,6 +13,7 @@
 #include "replaynes/product.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <optional>
 
@@ -188,6 +189,22 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
   if (pressed(ImGuiKey_GamepadDpadDown, true) || pressed(ImGuiKey_DownArrow, true)) dy = 1;
   if (pressed(ImGuiKey_PageUp, false)) shoulder(-1);
   if (pressed(ImGuiKey_PageDown, false)) shoulder(1);
+  // A swipe turns the page (a finger on a touch screen, or a mouse dragged): right to left or bottom to top =
+  // next, either way it goes further than a tap wanders. The press it began is let go before the cards are
+  // made, so the card under the finger does not open. Without it a phone had no way to the next page but the
+  // dimmed edge of the neighbouring one (2026-11-06: "can't scroll with many ROMs").
+  {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+      const float sx = io.MousePos.x - io.MouseClickedPos[0].x, sy = io.MousePos.y - io.MouseClickedPos[0].y;
+      if (std::max(std::fabs(sx), std::fabs(sy)) >= S(64)) {
+        const float along = std::fabs(sx) >= std::fabs(sy) ? sx : sy;
+        std::fprintf(stderr, "library: swipe %.0f,%.0f: page %s\n", sx, sy, along < 0 ? "next" : "back");
+        shoulder(along < 0 ? 1 : -1);
+        ImGui::ClearActiveID();
+      }
+    }
+  }
   // The mouse wheel turns the pages too (down / right = next), a page a notch, one per frame.
   libWheel_ -= ImGui::GetIO().MouseWheel + ImGui::GetIO().MouseWheelH;
   if (ImGui::GetIO().MouseWheel == 0 && ImGui::GetIO().MouseWheelH == 0 && std::fabs(libWheel_) < 1) libWheel_ = 0;
@@ -241,7 +258,7 @@ void UI::handleLibraryInput(double now, size_t cardCount, size_t pages, bool her
     } else if (n == 0 && d_.library->roms().empty()) {
       d_.library->ensureFolders();
       if (canImportFiles()) addRoms();
-      else openFolder(d_.library->romDir());
+      else openRomFolder();
     }
   } else if (keyX) {
     if (focused) {
@@ -485,7 +502,7 @@ void UI::buildLibrary(double now) {
         }
         lib->ensureFolders();
         if (a == kAddRoms) addRoms();
-        else if (a == kOpenFolder) openFolder(lib->romDir());
+        else if (a == kOpenFolder) openRomFolder();
         else lib->refresh();
       }
     }

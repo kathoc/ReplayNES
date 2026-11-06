@@ -440,10 +440,20 @@ void processUser(const std::string& userDir, const std::string& accountId, const
     ShortcutsFile::Entry& e = file.entries[idx];
     u.existingEntry = true;
     u.entryKey = e.node.key;
-    const vdf::Node* aid = e.node.find("appid");
-    u.appId = aid && aid->type == vdf::Type::Int32
-                  ? aid->u32()
-                  : shortcutAppId(getStr(e.node, "Exe"), getStr(e.node, "AppName"));
+    vdf::Node* aid = e.node.find("appid");
+    if (aid && aid->type == vdf::Type::Int32 && aid->u32() != 0) {
+      u.appId = aid->u32();
+    } else {
+      // No id, or 0 (a tool that writes the file, Steam not yet saved it): Steam takes 0 for invalid and picks
+      // another id at each start ("sanitize shortcut app id ... replacing 0" in its console log), so artwork
+      // named by any id of ours never showed (AYN Thor, 2026-11-06). The id Steam derives for shortcuts goes
+      // into the entry; Steam keeps a valid one.
+      u.appId = shortcutAppId(getStr(e.node, "Exe"), getStr(e.node, "AppName"));
+      if (aid && aid->type == vdf::Type::Int32) aid->setU32(u.appId);
+      else e.node.children.insert(e.node.children.begin(), vdf::Node::int32("appid", u.appId));
+      e.dirty = true;
+      u.notes.push_back("the entry had no valid app id: " + std::to_string(u.appId) + " written");
+    }
     std::string iconPath = gridDir + "/" + std::to_string(u.appId) + "_icon.png";
     vdf::Node* icon = e.node.find("icon");
     std::error_code ec;
@@ -690,7 +700,9 @@ size_t refreshArtwork(const AddOptions& optIn) {
       const vdf::Node& e = file.entries[idx].node;
       const vdf::Node* aid = e.find("appid");
       UserResult u;
-      u.appId = aid && aid->type == vdf::Type::Int32 ? aid->u32() : shortcutAppId(getStr(e, "Exe"), getStr(e, "AppName"));
+      // An id of 0 is Steam's "invalid" (see addToSteam): the derived one, which addToSteam writes in.
+      u.appId = aid && aid->type == vdf::Type::Int32 && aid->u32() != 0 ? aid->u32()
+                                                                        : shortcutAppId(getStr(e, "Exe"), getStr(e, "AppName"));
       bool failed = false;
       installArtwork(configDir + "/grid", u.appId, o, artDir, u, &failed, true);
       written += u.artworkWritten.size();

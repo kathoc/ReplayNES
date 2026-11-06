@@ -6,4 +6,7 @@
         <item quantity="other">%d files added to the ROM folder</item>
     </plurals>
     <string name="rn_import_failed">Could not add: %s</string>
+    <string name="rn_import_not_rom">Not a ROM, not added: %s</string>
+    <!-- The share sheet's Direct Share entry (MainActivity.publishShareShortcut). -->
+    <string name="rn_share_target">Add to the ROM folder</string>
 </resources>

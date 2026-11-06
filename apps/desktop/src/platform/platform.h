@@ -45,6 +45,9 @@ bool takeChosenFolder(std::string* path, std::string* error);
 /// Android/obb). Empty where there is no such search.
 std::vector<std::string> deviceStorageRoots(std::vector<std::string>* skip);
 /// Whether the whole storage may be read now (Android: all-files access; Android 10: the storage permission).
+/// The screen's orientation (Settings > App > Screen Orientation): "auto", "landscape", "portrait" (Android).
+bool canSetScreenOrientation();
+void setScreenOrientation(const std::string& orientation);
 bool storageAccessGranted();
 /// Asks for it; the answer later through takeStorageAccessAnswer (Android: the system's page for the app).
 void requestStorageAccess();

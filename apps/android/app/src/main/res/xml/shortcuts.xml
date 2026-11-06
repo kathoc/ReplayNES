@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Direct Share (Android 10 and later): the share sheet's top row offers "Add to the ROM folder" for any
+     file (MainActivity.publishShareShortcut), not only the app list further down that a share sheet may cut
+     short or sort the app far into (docs/design/ANDROID.md "Sharing"). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="io.github.replaynes.android.MainActivity">
+        <data android:mimeType="*/*" />
+        <category android:name="io.github.replaynes.android.ROM_SHARE_TARGET" />
+    </share-target>
+</shortcuts>
