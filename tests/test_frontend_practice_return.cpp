@@ -356,14 +356,23 @@ TEST_CASE("VTR effect: the passes in a frame are cheap enough to run every tick 
   std::vector<uint32_t> in = picture([](int x, int y) { return 0xFF000000u | uint32_t((x * 0x010203 + y * 0x030201) & 0xFFFFFF); });
   std::vector<uint32_t> out(in.size());
   rnf_vtr_params p{1.0f, 0.5, RNF_VTR_RETURN};
-  auto t0 = std::chrono::steady_clock::now();
-  for (int i = 0; i < 60; ++i) {
-    p.time = i * kTick;
-    rnf_vtr_apply(in.data(), out.data(), &p);
+  // The pass's cost, not the machine's load: the fastest of several batches. A wall-clock average over
+  // one run also counted the time the thread was preempted (CI runs 4 tests at once): 2.9 ms once on a
+  // busy Windows runner (2026-11-14) against 0.66 ms there otherwise.
+  constexpr int kBatches = 8, kFrames = 15;
+  double best = 1e9, worst = 0;
+  for (int b = 0; b < kBatches; ++b) {
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kFrames; ++i) {
+      p.time = (b * kFrames + i) * kTick;
+      rnf_vtr_apply(in.data(), out.data(), &p);
+    }
+    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / kFrames;
+    best = std::min(best, ms);
+    worst = std::max(worst, ms);
   }
-  double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 60;
-  std::fprintf(stderr, "  vtr pass: %.3f ms\n", ms);
-  CHECK(ms < 2.0);
+  std::fprintf(stderr, "  vtr pass: %.3f ms (fastest of %d batches; slowest %.3f ms)\n", best, kBatches, worst);
+  CHECK(best < 2.0);
 }
 
 TEST_CASE("picture at A: the countdown's picture without moving the run") {
