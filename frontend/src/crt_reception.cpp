@@ -29,10 +29,15 @@ constexpr double kLumaPerNoise = 0.99;
 constexpr float kMinGain = 1.0f / 16.0f, kMaxGain = 16.0f;
 
 void neutral(rnf_crt_reception* r) {
-  *r = rnf_crt_reception{};
-  r->signal = 1;
-  r->chroma = 1;
-  r->picture = 1;
+  // Built in a local and copied once: MSVC 19.52 (14.52.37025) for ARM64 miscompiled "*r = {}; r->picture = 1;"
+  // where neutral() is inlined into rnf_crt_reception_at: it zeroed bytes 0-31, stored picture (offset 0x38)
+  // and only then zeroed bytes 32-63, so picture came out 0 (test_frontend_crt "normal is neutral"; 19.51 and
+  // clang were right). Reproduced and checked with dumpbin in the Windows VM (2026-11-15).
+  rnf_crt_reception n{};
+  n.signal = 1;
+  n.chroma = 1;
+  n.picture = 1;
+  *r = n;
 }
 
 void snow(rnf_crt_reception* r, uint64_t counter, bool reduced) {
