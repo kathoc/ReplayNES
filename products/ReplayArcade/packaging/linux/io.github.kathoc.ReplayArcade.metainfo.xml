@@ -15,6 +15,7 @@
   <url type="homepage">https://github.com/kathoc/ReplayArcade</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.18" date="2026-11-15"/>
     <release version="0.3.17" date="2026-11-14"/>
     <release version="0.3.16" date="2026-11-06"/>
     <release version="0.3.15" date="2026-11-06"/>
