@@ -45,7 +45,7 @@
 #endif
 #endif
 #ifndef RN_PRODUCT_VERSION
-#define RN_PRODUCT_VERSION "0.6.6"
+#define RN_PRODUCT_VERSION "0.6.7"
 #endif
 #ifndef RN_PRODUCT_WINDOWS_APPCAST_URL
 #define RN_PRODUCT_WINDOWS_APPCAST_URL "https://github.com/kathoc/ReplayNES/releases/latest/download/appcast-windows.xml"

@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.7" date="2026-11-15">
+      <description>
+        <p>CRT Display: no black bands beside the picture any more. The tube shows only the part of the line the game's picture uses, as a TV hides the rest, so the picture meets the blurred sides directly; its shape and the CRT effect are unchanged.</p>
+      </description>
+    </release>
     <release version="0.6.6" date="2026-11-14">
       <description>
         <p>ReplayNES and ReplayArcade are now built from one source tree, so a fix to the parts they share reaches both apps at once. Save As works on a saved project (it used to fail, and choosing the open project's own name moved it to the trash). Settings are arranged by purpose (Display, Controls, Sound, Play, App), the ROM and Projects folders can be changed, controllers get a Player Order and a one-time check of their button positions, the library shows a screensaver of game demos, the sides of the picture can be blurred, and the Steam menu pauses the game.</p>
