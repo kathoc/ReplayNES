@@ -229,7 +229,9 @@ Check from a Linux machine / the Deck:
 
 Self-updates must not need new sandbox permissions: the portal refuses an update whose
 `finish-args` add permissions ("requires new permissions"); such a release reaches users only through
-`flatpak update` / Discover. Keep `finish-args` stable, or announce it.
+`flatpak update` / Discover. Keep `finish-args` stable, or announce it. `scripts/publish-flatpak-repo.sh`
+checks it: a permission added since the last `v*` release stops it until the release notes say so and it is
+rerun with `NEW_PERMISSIONS=1` (0.6.6 added two unannounced; a Steam Deck's in-app update failed, 2026-11-17).
 
 ### Signing key (GPG)
 

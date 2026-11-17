@@ -52,6 +52,33 @@ bundle() { echo "$APP_ID-$VERSION-$1.flatpak"; }
 [ -f "$PUBKEY" ] || { echo "missing $PUBKEY" >&2; exit 1; }
 [ "$KEEP" -ge 1 ] || { echo "KEEP must be >= 1" >&2; exit 1; }
 
+# A new Flatpak permission stops the in-app update: the portal installs no update that asks for one, so the
+# users must update once by hand (Discover / flatpak update). 0.6.6 added two (--share=network,
+# --talk-name=org.freedesktop.ScreenSaver) without a word, and a Steam Deck's in-app update failed
+# (2026-11-17). Compared with the last released ReplayNES (the newest v* tag that is not this version); say
+# so in the release notes, then rerun with NEW_PERMISSIONS=1. ReplayArcade's scripts/release.sh does the same.
+MANIFEST_REL="apps/linux/flatpak/$APP_ID.yml"
+if [ "$TARGET" = pages ]; then
+  PREV_TAG="$(git -C "$ROOT" tag --list 'v[0-9]*' --merged HEAD --sort=-v:refname | grep -vx "v$VERSION" | head -1 || true)"
+  if [ -n "$PREV_TAG" ]; then
+    perms() { sed -n '/^finish-args:/,/^[a-z]/p' | grep -E '^ *- --' | sed 's/^ *- //' | sort; }
+    ADDED="$(comm -13 <(git -C "$ROOT" show "$PREV_TAG:$MANIFEST_REL" 2>/dev/null | perms) <(perms < "$ROOT/$MANIFEST_REL"))"
+    if [ -n "$ADDED" ] && [ "${NEW_PERMISSIONS:-}" != 1 ]; then
+      echo "new Flatpak permissions since $PREV_TAG (the in-app update will refuse this version):" >&2
+      echo "$ADDED" | sed 's/^/  /' >&2
+      echo "tell the users to update once with Discover / flatpak update (release notes), then rerun with NEW_PERMISSIONS=1" >&2
+      exit 1
+    fi
+    if [ -n "$ADDED" ]; then
+      echo "==> Flatpak permissions added since $PREV_TAG, allowed by NEW_PERMISSIONS=1: $(echo $ADDED)"
+    else
+      echo "==> Flatpak permissions: none added since $PREV_TAG"
+    fi
+  else
+    echo "==> Flatpak permissions: no earlier release tag to compare with"
+  fi
+fi
+
 # HOST=local: build, sign and publish on this machine (flatpak + the signing key here; docs/RELEASE.md).
 if [ "$HOST" = local ]; then
   hrun() { (cd ~ && bash -c "$1"); }   # like ssh: in the home folder
