@@ -97,8 +97,15 @@ if [ -f "$BKC" ] && [ -f "$BPASS" ]; then
   SIGNKC="$BKC"
   echo "==> signing keychain: $BKC"
 fi
+# The version is ReplayNES's (CMakeLists.txt project VERSION), the build number the commit count:
+# project.yml's MARKETING_VERSION had stayed 0.6.4 (2026-11-17: 0.6.7's code would have installed as 0.6.4),
+# as ReplayArcade's scripts/build-ios.sh found for its own (0.3.16 installed as 0.3.4).
+VERSION="$(sed -n 's/^project(ReplayNES VERSION \([0-9.]*\).*/\1/p' "$REPO/CMakeLists.txt")"
+BUILD="$(git -C "$REPO" rev-list --count HEAD)"
+echo "==> version $VERSION ($BUILD)"
 xcodebuild -project "$HERE/ReplayNES.xcodeproj" -scheme ReplayNES -configuration "$CONFIG" \
   -destination "$DEST" -derivedDataPath "$DERIVED" -allowProvisioningUpdates \
+  MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
   RN_ENGINE_BUILD_DIR="$BUILD_ROOT/ios-engine" ${SIGNKC:+"OTHER_CODE_SIGN_FLAGS=--keychain $SIGNKC"} build
 APP="$DERIVED/Build/Products/$CONFIG-iphoneos/ReplayNES.app"
 echo "==> built $APP"
