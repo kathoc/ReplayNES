@@ -35,6 +35,11 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.6.8" date="2026-11-18">
+      <description>
+        <p>More controllers work out of the box: the community controller table SDL_GameControllerDB is built in, and a newer gamecontrollerdb.txt in the settings folder is read too. On a phone held upright, the picture stays at the top when a controller hides the touch controls (for controllers that fold over the lower half of the phone, such as the 8BitDo FlipPad).</p>
+      </description>
+    </release>
     <release version="0.6.7" date="2026-11-15">
       <description>
         <p>CRT Display: no black bands beside the picture any more. The tube shows only the part of the line the game's picture uses, as a TV hides the rest, so the picture meets the blurred sides directly; its shape and the CRT effect are unchanged.</p>
