@@ -46,6 +46,8 @@ add_library(rnl_app STATIC
   ${RNL_APP_SRC}/ui_update.cpp
   ${RNL_APP_SRC}/platform/shell.cpp)
 target_include_directories(rnl_app PUBLIC ${RNL_APP_SRC})
+include(${RNL_DESKTOP_DIR}/gamepad_db.cmake)
+rnl_gamepad_db(rnl_app)  # SDL_GameControllerDB built in (docs/design/CONTROLLERS.md)
 target_link_libraries(rnl_app PUBLIC rnl_logic rn_imgui ${RNL_SDL3_TARGET})
 target_compile_definitions(rnl_app PUBLIC RNL_APP_VERSION="${RNL_APP_VERSION}" ${RNL_APP_FEATURES})
 target_compile_options(rnl_app PRIVATE ${RNL_WARNINGS})

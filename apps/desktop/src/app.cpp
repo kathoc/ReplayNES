@@ -43,6 +43,7 @@
 #include "host_clock.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
+#include "gamepad_db.h"
 #include "input_router.h"
 #include "library_thumbs.h"
 #include "l10n.h"
@@ -415,6 +416,9 @@ int App::run(const AppOptions& opt) {
     std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
     return 1;
   }
+  // Controllers SDL does not know by itself: the built-in SDL_GameControllerDB, then the user's own
+  // <settings>/gamecontrollerdb.txt, before any controller is listed (docs/design/CONTROLLERS.md).
+  addGamepadMappings(paths_.configDir + "/gamecontrollerdb.txt");
   if (opt.virtualPad) {
     // A gamepad for --script's "pad" presses on machines without one (VMs): it attaches like a
     // real pad (slot 0), so the injected events go the whole way (chord, seek bar, game).

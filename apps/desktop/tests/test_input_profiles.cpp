@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "test_tmp.h"
+#include "gamepad_db.h"
 #include "input_router.h"
 #include "settings.h"
 #include "support/rn_test.h"
@@ -930,4 +931,39 @@ TEST_CASE("P a saved arcade profile with Undo on L3 moves it to L3+R3 once (layo
   rnl::InputRouter again((files.root / "bindings.json").string(), &settings);
   again.setLayout(layout);
   CHECK(pairs(again.input()).count("gc0:leftThumb=hk.undo_take"));
+}
+
+TEST_CASE("controllers: the built-in SDL_GameControllerDB and the user's file (docs/design/CONTROLLERS.md)") {
+  REQUIRE(SDL_Init(SDL_INIT_GAMEPAD));
+  // In the community table, not in SDL's own: the Tomee NES Adapter (on every desktop platform's lines).
+  const SDL_GUID tomee = SDL_StringToGUID("03000000571d00002100000021000000");
+  const SDL_GUID mine = SDL_StringToGUID("03000000aaaa0000bbbb000000000000");
+  auto mapped = [](SDL_GUID g) {
+    char* m = SDL_GetGamepadMappingForGUID(g);
+    const bool yes = m != nullptr;
+    SDL_free(m);
+    return yes;
+  };
+  CHECK(!mapped(tomee));  // SDL alone does not know it
+  CHECK(!mapped(mine));
+  const auto user = std::filesystem::path(rnl_test::tmpRoot()) / "gamecontrollerdb-user.txt";
+  std::filesystem::create_directories(user.parent_path());
+  const rnl::GamepadDbResult probe = rnl::addGamepadMappings("");  // the platform's name, for the user's line
+  {
+    std::ofstream out(user);
+    out << "# a user's line for one controller\n"
+        << "03000000aaaa0000bbbb000000000000,ReplayNES test pad,a:b0,b:b1,x:b2,y:b3,back:b4,start:b5,"
+           "dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,platform:"
+        << probe.platform << ",\n";
+  }
+  const rnl::GamepadDbResult r = rnl::addGamepadMappings(user.string());
+  CHECK(probe.builtInLines > 200);
+  CHECK(probe.builtIn > 0);  // SDL took the built-in table (it counts new mappings; the second call updates them)
+  CHECK(r.user == 1);
+  CHECK(mapped(tomee));
+  CHECK(mapped(mine));
+  char* name = SDL_GetGamepadMappingForGUID(tomee);
+  CHECK(std::string(name ? name : "").find("Tomee NES Adapter") != std::string::npos);
+  SDL_free(name);
+  SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
 }

@@ -474,6 +474,33 @@ Japanese), kana readings, publishers, release years, genres and regions. Generat
 
 The database holds titles and metadata only: no ROM data, no artwork, no copyrighted game content.
 
+## SDL_GameControllerDB (controller mappings, Linux, Windows and Android apps)
+
+`third_party/gamecontrollerdb/gamecontrollerdb.txt`, the community table of game controller mappings for
+SDL (https://github.com/mdqinc/SDL_GameControllerDB, commit 4e87e3c6c257 of 2026-11-17, unmodified;
+`scripts/update-gamecontrollerdb.sh`). The lines for the app's platform are compiled into the app and added
+to SDL at start-up (docs/design/CONTROLLERS.md). zlib license:
+
+```
+Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+  
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+  
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required. 
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+```
+
 ## Apple frameworks
 
 SwiftUI, Metal, AVFoundation, GameController (system frameworks, not redistributed).
