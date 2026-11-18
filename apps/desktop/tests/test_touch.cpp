@@ -312,3 +312,25 @@ TEST_CASE("touch bindings: every game button once; an arcade layout's buttons") 
   CHECK_EQ(m.count("touch:d"), size_t(0));
   CHECK_EQ(m["touch:select"], std::string("p1.coin"));
 }
+
+TEST_CASE("touch layout: the picture's place with the controls hidden (a controller: the 8BitDo FlipPad)") {
+  // docs/design/CONTROLLERS.md: in portrait the picture keeps the top area also when a controller hides the
+  // controls (as the iPhone's GameView), so a controller folded over the lower half of the phone (the FlipPad)
+  // does not cover it; in landscape it takes the whole screen (no area).
+  TouchLayout::Options o;
+  o.pictureAspect = 256.0 * 8 / 7 / 240;  // an NES picture, 8:7
+  for (const Device& d : kDevices) {
+    const TouchLayout l = TouchLayout::make(d.size, d.safe, o);
+    const std::optional<Rect> shown = l.pictureArea(true), hidden = l.pictureArea(false);
+    REQUIRE(shown.has_value());
+    CHECK(shown->x == l.gameArea.x && shown->y == l.gameArea.y && shown->w == l.gameArea.w && shown->h == l.gameArea.h);
+    if (l.landscape) {
+      CHECK(!hidden.has_value());
+    } else {
+      REQUIRE(hidden.has_value());
+      CHECK(hidden->y == l.gameArea.y && hidden->h == l.gameArea.h);  // the same place as with the controls
+      CHECK(hidden->y >= d.safe.top - 1e-9);                         // under the status bar / island
+      CHECK(hidden->y + hidden->w / *o.pictureAspect <= d.size.height / 2 + 1e-9);  // above the FlipPad's half
+    }
+  }
+}

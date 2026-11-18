@@ -39,13 +39,16 @@ TouchControls::TouchControls(Host host) : host_(std::move(host)) {
 TouchControls::~TouchControls() = default;
 
 void TouchControls::update(const Frame& f, const Settings& s) {
-  const bool show = f.show && f.widthPx > 0 && f.heightPx > 0;
-  if (!show) {
+  // The layout is kept up to date also while the controls are hidden (a controller, a menu): in portrait its
+  // picture area is the picture's place either way (pictureArea; docs/design/CONTROLLERS.md, the FlipPad).
+  if (f.widthPx <= 0 || f.heightPx <= 0) {
     if (visible_) releaseAll();
     visible_ = false;
     return;
   }
-  visible_ = true;
+  const bool show = f.show;
+  if (!show && visible_) releaseAll();
+  visible_ = show;
   vibration_ = s.touchVibration;
   opacity_ = std::clamp(s.touchOpacity, 15, 100) / 100.0f;
   density_ = f.density > 0 ? f.density : 1;
@@ -85,8 +88,13 @@ void TouchControls::update(const Frame& f, const Settings& s) {
 }
 
 std::optional<ImVec4> TouchControls::pictureArea() const {
-  if (!visible_ || !haveLayout_) return std::nullopt;
-  const Rect& g = layout_.gameArea;
+  // Portrait: the top area also with the controls hidden, as on the iPhone (GameView keeps the layout's game
+  // area): a controller over the lower half of the phone (the 8BitDo FlipPad) must not cover the picture, and
+  // a menu does not move it. Landscape with the controls hidden: the whole screen (nullopt).
+  if (!haveLayout_) return std::nullopt;
+  const std::optional<Rect> area = layout_.pictureArea(visible_);
+  if (!area) return std::nullopt;
+  const Rect& g = *area;
   return ImVec4(float(g.x * density_), float(g.y * density_), float(g.w * density_), float(g.h * density_));
 }
 

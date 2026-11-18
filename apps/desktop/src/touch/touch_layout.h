@@ -221,6 +221,14 @@ struct TouchLayout {
 
   static TouchLayout make(Size size, TouchInsets safe);
   static TouchLayout make(Size size, TouchInsets safe, const Options& options);
+  /// Where the picture goes with this layout: its game area while the controls are shown, and in portrait also
+  /// while they are hidden (a controller, a menu), as the iPhone's GameView does: the top of the screen, where a
+  /// controller over the lower half of the phone (the 8BitDo FlipPad) does not cover it. Landscape with the
+  /// controls hidden: none, the picture takes the whole screen. docs/design/CONTROLLERS.md.
+  std::optional<Rect> pictureArea(bool controlsShown) const {
+    if (!controlsShown && landscape) return std::nullopt;
+    return gameArea;
+  }
 
   // MARK: text metrics
   enum class Weight { regular, semibold };
