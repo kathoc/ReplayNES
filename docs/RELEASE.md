@@ -1,5 +1,12 @@
 # Release procedure (macOS; Linux / Steam Deck in step 7; Windows in step 8; Android in step 9)
 
+Pushing trunk to the two GitHub pages (the monorepo, 2026-11-19): kathoc/ReplayNES's main is trunk
+(`git push gh-nes trunk:main`, fast-forward only); kathoc/ReplayArcade's main is trunk plus
+`.github/README.md` (ReplayArcade's README, which GitHub shows there instead of the top README.md),
+pushed with `scripts/push-arcade-page.sh` (`--dry-run` shows the commit first). The script makes that
+commit from trunk without touching the working tree, moves the page forward only, and stops when the
+page has anything else. trunk itself never has `.github/README.md`.
+
 1. Bump the version by hand: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (must increase every
    release; Sparkle compares it as `sparkle:version`) in `apps/macos/project.yml`, and
    `project(ReplayNES VERSION ...)` in `CMakeLists.txt`.
