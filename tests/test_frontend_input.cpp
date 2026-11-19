@@ -543,6 +543,20 @@ TEST_CASE("Nintendo positions follow reported glyphs") {
   CHECK_EQ(partial["buttonA"], RNF_FACE_EAST);
 }
 
+TEST_CASE("the 8BitDo FlipPad on iOS: the Nintendo diamond from its printed letters") {
+  // iOS 26 (2026-11-19, the controller log on an iPhone): vendor "8BitDo FlipPad", category "HID", glyphs
+  // a/b/x/y.circle for buttonA..Y; Gamepad Tester on the same phone: A (0) right, B (1) bottom, X (2) top, Y (3) left.
+  auto flip = gcPositions("HID", "8BitDo FlipPad", {"a.circle", "b.circle", "x.circle", "y.circle"});
+  CHECK_EQ(flip["buttonA"], RNF_FACE_EAST);
+  CHECK_EQ(flip["buttonB"], RNF_FACE_SOUTH);
+  CHECK_EQ(flip["buttonX"], RNF_FACE_NORTH);
+  CHECK_EQ(flip["buttonY"], RNF_FACE_WEST);
+  CHECK_EQ(rnf_controller_family_from("HID", "8BitDo FlipPad"), RNF_FAMILY_NINTENDO);
+  // Another HID controller keeps Apple's diamond (A bottom).
+  auto other = gcPositions("HID", "Some Gamepad", {"a.circle", "b.circle", "x.circle", "y.circle"});
+  CHECK_EQ(other["buttonA"], RNF_FACE_SOUTH);
+}
+
 TEST_CASE("printed buttons reach the right NES buttons") {
   auto nesBits = [](const char* category, int button) {
     rn_input* h = rn_input_new();

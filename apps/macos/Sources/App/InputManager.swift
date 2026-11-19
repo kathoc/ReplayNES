@@ -931,9 +931,22 @@ final class InputManager {
     }
 
     private static func faceSymbols(_ c: GCController) -> [String: String?] {
-        guard let g = c.extendedGamepad else { return [:] }
-        return ["buttonA": g.buttonA.sfSymbolsName, "buttonB": g.buttonB.sfSymbolsName,
-                "buttonX": g.buttonX.sfSymbolsName, "buttonY": g.buttonY.sfSymbolsName]
+        if let g = c.extendedGamepad {
+            return ["buttonA": g.buttonA.sfSymbolsName, "buttonB": g.buttonB.sfSymbolsName,
+                    "buttonX": g.buttonX.sfSymbolsName, "buttonY": g.buttonY.sfSymbolsName]
+        }
+        guard hasFullProfile(c) else { return [:] }
+        let b = c.physicalInputProfile.buttons
+        return ["buttonA": b[GCInputButtonA]?.sfSymbolsName, "buttonB": b[GCInputButtonB]?.sfSymbolsName,
+                "buttonX": b[GCInputButtonX]?.sfSymbolsName, "buttonY": b[GCInputButtonY]?.sfSymbolsName]
+    }
+
+    /// A controller that attaches without an extended gamepad profile but whose physical input profile has a
+    /// whole gamepad's buttons: iOS 26 gives the 8BitDo FlipPad ("8BitDo FlipPad", category "HID") only a
+    /// micro gamepad (A, X, menu, D-pad) while its profile lists B, Y, Options, the shoulders and the triggers
+    /// too (2026-11-19, the controller log). Those are read by name, each by its own handler (attach).
+    private static func hasFullProfile(_ c: GCController) -> Bool {
+        c.extendedGamepad == nil && c.physicalInputProfile.buttons[GCInputButtonB] != nil
     }
 
     private func attach(_ c: GCController) {
@@ -945,7 +958,8 @@ final class InputManager {
         let prefix = "gc\(slot):"
         let category = c.productCategory
         let family = ControllerFamily.from(productCategory: category, vendorName: c.vendorName)
-        let positions = c.extendedGamepad != nil
+        let full = Self.hasFullProfile(c)
+        let positions = c.extendedGamepad != nil || full
             ? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName, symbols: Self.faceSymbols(c))
             : GCFaceMapping.micro
         let face = FaceNames(positions)
@@ -955,11 +969,56 @@ final class InputManager {
             for (name, button) in [("buttonA", g.buttonA), ("buttonB", g.buttonB), ("buttonX", g.buttonX), ("buttonY", g.buttonY)] {
                 if let pos = positions[name], let l = GCFaceMapping.label(fromSymbol: button.sfSymbolsName) { labels[pos.element] = l }
             }
+        } else if full {
+            let profile = c.physicalInputProfile
+            let b = profile.buttons
+            for (name, key) in [("buttonA", GCInputButtonA), ("buttonB", GCInputButtonB), ("buttonX", GCInputButtonX), ("buttonY", GCInputButtonY)] {
+                if let pos = positions[name], let l = GCFaceMapping.label(fromSymbol: b[key]?.sfSymbolsName) { labels[pos.element] = l }
+            }
+            // Each element reports its own change: the profile's valueDidChangeHandler only came for Options on the
+            // FlipPad (2026-11-19, the controller log), and reading every button there left the others as they
+            // were (stuck pressed). No GCInputButtonHome: HOME belongs to the system (rnf_input_element_ignored).
+            let buttons: [(String, String)] = [
+                (GCInputButtonA, face.a), (GCInputButtonB, face.b), (GCInputButtonX, face.x), (GCInputButtonY, face.y),
+                (GCInputLeftShoulder, "leftShoulder"), (GCInputRightShoulder, "rightShoulder"),
+                (GCInputLeftTrigger, "leftTrigger"), (GCInputRightTrigger, "rightTrigger"),
+                (GCInputButtonMenu, "menu"), (GCInputButtonOptions, "options"),
+                (GCInputLeftThumbstickButton, "leftThumb"), (GCInputRightThumbstickButton, "rightThumb"),
+            ]
+            for (key, element) in buttons {
+                b[key]?.pressedChangedHandler = { [weak self] _, _, pressed in
+                    ControllerLog.event("slot \(slot + 1) button \(key) -> \(element) pressed=\(pressed)")
+                    self?.gcEventTime = profile.lastEventTimestamp
+                    self?.set(prefix, element, pressed)
+                    self?.gcEventTime = nil
+                }
+            }
+            if let d = profile.dpads[GCInputDirectionPad] {
+                d.valueChangedHandler = { [weak self] pad, x, y in
+                    ControllerLog.event("slot \(slot + 1) dpad x=\(x) y=\(y)")
+                    self?.gcEventTime = profile.lastEventTimestamp
+                    self?.set(prefix, "dpad.up", pad.up.isPressed)
+                    self?.set(prefix, "dpad.down", pad.down.isPressed)
+                    self?.set(prefix, "dpad.left", pad.left.isPressed)
+                    self?.set(prefix, "dpad.right", pad.right.isPressed)
+                    self?.gcEventTime = nil
+                }
+            }
         } else if let m = c.microGamepad {
             m.reportsAbsoluteDpadValues = true
             m.valueChangedHandler = { [weak self] pad, _ in self?.update(micro: pad, prefix: prefix, face: face) }
         }
         NSLog("ReplayNES: controller \(slot + 1) \"\(c.vendorName ?? "?")\" category=\"\(category)\" family=\(family.rawValue) buttonA=\(face.a)")
+        ControllerLog.write(ControllerLog.describe(c, slot: slot) + " -> family \(family.rawValue), A=\(face.a) B=\(face.b) X=\(face.x) Y=\(face.y)")
+        // The raw changes, whatever ReplayNES maps them to (GCPhysicalInputProfile's own handler: the profile
+        // handlers above stay as they are).
+        c.physicalInputProfile.valueDidChangeHandler = { _, e in
+            if let b = e as? GCControllerButtonInput {
+                ControllerLog.event("slot \(slot + 1) \(e.localizedName ?? "?") (\(e.aliases.sorted().joined(separator: "|"))) pressed=\(b.isPressed) value=\(b.value)")
+            } else if let d = e as? GCControllerDirectionPad {
+                ControllerLog.event("slot \(slot + 1) \(e.localizedName ?? "?") (\(e.aliases.sorted().joined(separator: "|"))) x=\(d.xAxis.value) y=\(d.yAxis.value)")
+            }
+        }
         infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? String(localized: "Controller"), productCategory: category, family: family, labels: labels)
         // Customised bindings saved with GameController names (layout 2) keep their meaning on
         // this controller.
@@ -1150,5 +1209,62 @@ final class InputManager {
         set(p, "dpad.down", g.dpad.down.isPressed)
         set(p, "dpad.left", g.dpad.left.isPressed)
         set(p, "dpad.right", g.dpad.right.isPressed)
+    }
+}
+
+/// What GameController reports for each controller, before ReplayNES's mapping: the profile it attaches
+/// as (extended / micro), its elements, and the raw element changes (at most `maxEvents` per launch). iOS:
+/// Library/Caches/controller-log.txt, read from the iPhone with devicectl (apps/ios/README.md). Added
+/// 2026-11-19 for the 8BitDo FlipPad, whose A and some other buttons did nothing on an iPhone.
+enum ControllerLog {
+    private static let queue = DispatchQueue(label: "replaynes.controller.log", qos: .utility)
+    private static let lock = NSLock()
+    private static var events = 0
+    static let maxEvents = 400
+    static let maxBytes = 128 * 1024
+
+    static var fileURL: URL? {
+        #if os(iOS)
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("controller-log.txt")
+        #else
+        return nil
+        #endif
+    }
+
+    /// An element change: counted against maxEvents (a held stick would fill the file).
+    static func event(_ message: String) {
+        lock.lock(); events += 1; let n = events; lock.unlock()
+        if n <= maxEvents { write(message + (n == maxEvents ? " (no more element changes logged this launch)" : "")) }
+    }
+
+    static func write(_ message: String) {
+        NSLog(("ReplayNES: controller log: " + message).replacingOccurrences(of: "%", with: "%%"))
+        guard let url = fileURL else { return }
+        let line = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withInternetDateTime, .withFractionalSeconds])
+            + " " + message + "\n"
+        queue.async {
+            let fm = FileManager.default
+            if let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int, size > maxBytes,
+               let data = try? Data(contentsOf: url) {
+                try? data.suffix(maxBytes / 2).write(to: url)
+            }
+            if let h = try? FileHandle(forWritingTo: url) {
+                h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
+            } else {
+                try? Data(line.utf8).write(to: url)
+            }
+        }
+    }
+
+    /// One line per controller: names, profile, every element with its aliases and glyph.
+    static func describe(_ c: GCController, slot: Int) -> String {
+        let p = c.physicalInputProfile
+        let elements = p.elements.keys.sorted().map { key -> String in
+            let e = p.elements[key]!
+            let aliases = e.aliases.sorted().filter { $0 != key }
+            let kind = e is GCControllerButtonInput ? "button" : e is GCControllerDirectionPad ? "dpad" : e is GCControllerAxisInput ? "axis" : "other"
+            return "\(key)[\(kind)\(aliases.isEmpty ? "" : " aka " + aliases.joined(separator: "|"))\(e.sfSymbolsName.map { " sym " + $0 } ?? "")]"
+        }
+        return "attach slot \(slot + 1): vendor \"\(c.vendorName ?? "?")\" category \"\(c.productCategory)\" extended=\(c.extendedGamepad != nil) micro=\(c.microGamepad != nil) elements: " + elements.joined(separator: " ")
     }
 }

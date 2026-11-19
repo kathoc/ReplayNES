@@ -541,7 +541,10 @@ std::string displayName(rnf_keyboard_scheme scheme, const std::string& id) {
 rnf_controller_family familyFrom(const std::string& category, const std::string& vendor) {
   std::string s = lower(category + " " + vendor);
   auto has = [&](const char* w) { return s.find(w) != std::string::npos; };
-  if (has("switch") || has("joy-con") || has("nintendo") || has("pro controller")) return RNF_FAMILY_NINTENDO;
+  // The 8BitDo FlipPad has the Nintendo diamond (A right, B bottom, X top, Y left); iOS names it "8BitDo FlipPad"
+  // with category "HID" (2026-11-19, the controller log), and reports its buttons by their printed letters.
+  if (has("switch") || has("joy-con") || has("nintendo") || has("pro controller") || has("flippad"))
+    return RNF_FAMILY_NINTENDO;
   if (has("dualsense") || has("dualshock") || has("playstation")) return RNF_FAMILY_PLAYSTATION;
   if (has("xbox")) return RNF_FAMILY_XBOX;
   if (has("steam deck")) return RNF_FAMILY_STEAM_DECK;
