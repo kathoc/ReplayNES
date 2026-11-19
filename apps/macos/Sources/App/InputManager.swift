@@ -172,10 +172,19 @@ final class InputManager {
     /// Player 1's fire buttons ("p1.b1" ...) of the active layout (useLayout); 2 for the NES pads.
     private(set) var fireButtons = 2
 
+    /// The active layout's bindings file (another core's layout): rnf_input_bindings_filename_for_kind,
+    /// "bindings-fbneo%3Agradius.json" for a FinalBurn Neo game, next to the NES pads' bindings.json, as the
+    /// Linux / Windows / Android app's InputRouter::kindFile. Until 2026-11-19 another layout's bindings
+    /// were never read back (each game started from the defaults) and a change was saved over the NES
+    /// pads' bindings.json: a game's buttons were lost at every launch.
+    private var layoutConfigURL: URL?
+    /// Where the bindings in use are read from and saved to.
+    private var activeConfigURL: URL { layoutActive ? (layoutConfigURL ?? Self.configURL) : Self.configURL }
+
     /// A session's input layout (rn_session_input_layout_json; nil or the NES layout = the NES pads and
-    /// the saved bindings). Another layout gets the frontend core's default bindings for it (pad 1 and
-    /// the keyboard, per-button turbo) plus `extra` (the touch controls), not saved: the bindings file
-    /// is the NES pads'. As the Linux app's EmulationController::install / InputRouter.
+    /// bindings.json). Another layout gets its own saved bindings (layoutConfigURL), else the frontend
+    /// core's default bindings for it (pad 1 and the keyboard, per-button turbo), plus `extra` (the touch
+    /// controls). As the Linux app's EmulationController::install / InputRouter.
     func useLayout(_ json: String?, extra: ((Set<String>) -> [(input: String, action: String)])? = nil) {
         rnf_input_set_layout_json(json)
         let nes = String(cString: rnf_input_layout_name()) == "nes"
@@ -187,8 +196,12 @@ final class InputManager {
             return
         }
         layoutActive = true
+        layoutConfigURL = Self.configURL.deletingLastPathComponent().appendingPathComponent(rnfString(rnf_input_bindings_filename_for_kind(0)))
         _ = rn_input_set_layout_json(handle, json)
-        _ = rn_input_load_json(handle, rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, 0)))
+        let saved = layoutConfigURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        if saved.map({ rn_input_load_json(handle, $0) != RN_OK }) ?? true {
+            _ = rn_input_load_json(handle, rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, 0)))
+        }
         var actions = Set<String>()
         var info = rnf_action_info()
         for i in 0..<rnf_input_action_count() where rnf_input_action_get(i, &info) != 0 && info.group != RNF_GROUP_HOTKEY {
@@ -197,8 +210,8 @@ final class InputManager {
         fireButtons = (1...8).filter { actions.contains("p1.b\($0)") }.count
         let added = extra?(actions) ?? []
         for b in added { _ = rn_input_bind(handle, b.input, b.action) }
-        NSLog("ReplayNES input layout: %@, %d game actions, %d extra bindings (%@)", String(cString: rnf_input_layout_name()),
-              actions.count, added.count, added.map { "\($0.input)=\($0.action)" }.joined(separator: " "))
+        NSLog("ReplayNES input layout: %@, %@ bindings, %d game actions, %d extra bindings (%@)", String(cString: rnf_input_layout_name()),
+              saved != nil ? "saved" : "default", actions.count, added.count, added.map { "\($0.input)=\($0.action)" }.joined(separator: " "))
         refreshBindingState()
     }
 
@@ -704,7 +717,7 @@ final class InputManager {
             let text = String(cString: p)
             rn_string_free(p)
             do {
-                try text.write(to: Self.configURL, atomically: true, encoding: .utf8)
+                try text.write(to: activeConfigURL, atomically: true, encoding: .utf8)
             } catch {
                 NSLog("ReplayNES: failed to save bindings: \(error)")
             }
@@ -737,7 +750,8 @@ final class InputManager {
     }
 
     func resetToDefaults() {
-        _ = rn_input_load_json(handle, InputCatalog.defaultConfigJSON())
+        _ = rn_input_load_json(handle, layoutActive ? rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, 0))
+                                                    : InputCatalog.defaultConfigJSON())
         persist()
     }
 
