@@ -219,7 +219,7 @@ final class QuickMenuController: ObservableObject {
         assignElement = physicalID
         let current = ControllerAssignments.actions(element: element, slot: slot, config: m.inputConfig).first ?? ""
         let k = QuickMenuPages.assignChoices(slot: slot).firstIndex(of: current) ?? 0
-        let per = QMPage.assign.capacity
+        let per = QMPage.assign.scrolls ? Int.max : QMPage.assign.capacity
         listPage[.assign] = k / per
         focus[.assign] = k % per
         if page != .assign { push(.assign) }

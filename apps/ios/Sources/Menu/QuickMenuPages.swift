@@ -421,9 +421,9 @@ enum QuickMenuPages {
                               menu?.back()
                           }, verb: String(localized: "Assign"))
         }
-        let per = QMPage.assign.capacity
+        let per = QMPage.assign.scrolls ? max(1, all.count) : QMPage.assign.capacity
         let pages = QuickMenuNav.pageCount(items: all.count, perPage: per)
-        let range = QuickMenuNav.pageRange(items: all.count, perPage: per, page: menu.listPageIndex(.assign))
+        let range = QuickMenuNav.pageRange(items: all.count, perPage: per, page: QMPage.assign.scrolls ? 0 : menu.listPageIndex(.assign))
         let family = diagramFamily(m, slot: slot)
         let labels = m.input.controllerMonitor.controllers.first { $0.slot == slot }?.labels ?? [:]
         return QMContent(items: Array(all[range]), pageCount: pages,

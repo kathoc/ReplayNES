@@ -5,6 +5,7 @@
 //   -resumeAfter <s>          resume after s seconds (through the resume countdown when it is on)
 //   -continueLast YES         press the library's Continue card at 1 s (resume check)
 //   -openMenu <page>          open the Quick Menu at a page (top, retry, practice, display, ...) after 2 s
+//   -openAssign <id>          open the action picker of a controller button (gc0:face.east) after 2.5 s
 //   -debugUnlockAll NO        free mode (the prototype switch off)
 //   -pacingProbe <s>          after s seconds of play write Library/Caches/pacing.json (PacingProbe)
 //   -holdTouch <button>       press an on-screen button at 2 s for 0.3 s (e.g. l2 = rewind) to check touch input;
@@ -88,6 +89,9 @@ enum TestHooks {
         if resume > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + resume) { m.setPaused(false) } }
         if let page = d.string(forKey: "openMenu"), let p = QMPage(rawValue: page) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { m.quickMenu.open(at: p) }
+        }
+        if let id = d.string(forKey: "openAssign") {   // the action picker of a controller button ("gc0:face.east")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { m.quickMenu.open(at: .controller); m.quickMenu.openAssign(id) }
         }
         let probe = d.double(forKey: "pacingProbe")
         if probe > 0 { PacingProbe.shared.start(after: probe) }

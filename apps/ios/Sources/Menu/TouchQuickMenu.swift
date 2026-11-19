@@ -34,12 +34,24 @@ struct TouchQuickMenu: View {
         return VStack(alignment: .leading, spacing: 12) {
             header(p, content)
             if QMPage.settingsTabs.contains(p) { settingsTabs(p) }
-            ScrollView(.vertical, showsIndicators: false) {
-                pageBody(p, content, focus: focus, width: width - 28, landscape: landscape)
-                    .padding(.bottom, 4)
+            let maxBody = geo.size.height * (landscape ? 0.62 : 0.66)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: p.scrolls) {
+                    pageBody(p, content, focus: focus, width: width - 28, landscape: landscape)
+                        .padding(.bottom, 4)
+                }
+                .frame(maxHeight: p.scrolls ? Self.peekHeight(rows: content.items.count, max: maxBody) : maxBody)
+                .fixedSize(horizontal: false, vertical: true)
+                // A scrolling list follows the focus (D-pad) and opens at it (the action assigned now).
+                .onChange(of: focus) { _, f in
+                    guard p.scrolls, content.items.indices.contains(f) else { return }
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(content.items[f].id) }
+                }
+                .onAppear {
+                    guard p.scrolls, content.items.indices.contains(focus) else { return }
+                    proxy.scrollTo(content.items[focus].id, anchor: .center)
+                }
             }
-            .frame(maxHeight: geo.size.height * (landscape ? 0.62 : 0.66))
-            .fixedSize(horizontal: false, vertical: true)
             footer(content, focus: focus)
         }
         .padding(14)
@@ -50,6 +62,18 @@ struct TouchQuickMenu: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quickMenu")
         .position(x: geo.size.width / 2, y: geo.size.height / 2)
+    }
+
+    /// Row pitch of the rows layout (row(): minHeight 48, VStack spacing 6).
+    static let rowPitch: CGFloat = 54
+
+    /// A scrolling list's height: whole rows plus half of the next one (it shows the list goes on),
+    /// within `max`; all rows when they fit.
+    static func peekHeight(rows: Int, max: CGFloat) -> CGFloat {
+        let all = CGFloat(rows) * rowPitch - 6 + 4
+        if all <= max { return all }
+        let whole = Swift.max(1, Int((max - rowPitch / 2) / rowPitch))
+        return CGFloat(whole) * rowPitch + rowPitch / 2 - 6
     }
 
     // MARK: header / footer
@@ -141,6 +165,7 @@ struct TouchQuickMenu: View {
                         .onTapGesture { menu.setFocus(i, on: p); tapRow(item, p) }
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("qm.\(item.id)")
+                        .id(item.id)
                 }
             }
         case .custom:

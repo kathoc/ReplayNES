@@ -137,6 +137,17 @@ enum QMPage: String, CaseIterable, Hashable {
     /// (the controller page: the pad).
     var paged: Bool { self == .bookmarks || self == .bindings || self == .assign || self == .controller }
 
+    /// The page's items are one list that scrolls (no L / R sheets), the row after the last one shown
+    /// half visible so the list reads as longer. iPhone's action picker (2026-11-19: on its sheets the user
+    /// never found Button 3 (Turbo) after Button 2's; the Mac keeps its sheets).
+    var scrolls: Bool {
+        #if os(iOS)
+        return self == .assign
+        #else
+        return false
+        #endif
+    }
+
     var icon: String {
         switch self {
         case .top: return "line.3.horizontal"
