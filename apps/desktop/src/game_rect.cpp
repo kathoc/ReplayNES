@@ -24,13 +24,18 @@ GameRect computeGameRect(int width, int height, bool integerScale, bool par87, b
   r.w = float(dw);
   r.h = float(dh);
   r.visible = dw > 0 && dh > 0;
-  // CRT: full 4:3 raster minus the cropped rows, at the plain (1:1 pixel) viewport's height.
+  // CRT: full 4:3 raster minus the cropped rows, at the plain (1:1 pixel) viewport's height; its shown
+  // part (crtShownRect: the drive's columns) no wider than the window. The face beside that part may lie
+  // outside the window (the show pass is clipped to the shown part). Fitting the whole face to the width
+  // left the shown part 32/35 of it, inside black, in a narrow window (2026-11-19; MetalView.crtViewport).
   r.crtCrop = (hideOverscan ? 8.0 : 0.0) / 240;
   double aspect = (4.0 / 3.0) / (1 - 2 * r.crtCrop);
+  const double shown = crtShownRect(CrtRect{0, 0, 1, 1}, RNF_CRT_ACTIVE_WIDTH).w;
   double ps = std::min(width / srcW, height / srcH);
   if (integerScale && ps >= 1) ps = std::floor(ps);
-  double ch = std::round(srcH * ps), cw = std::round(ch * aspect);
-  if (cw > width) { cw = width; ch = std::round(cw / aspect); }
+  double ch = std::round(srcH * ps);
+  if (std::round(ch * aspect * shown) > width) ch = std::round(width / (aspect * shown));
+  double cw = std::round(ch * aspect);
   r.crt = CrtRect{float(std::round((width - cw) / 2)), float(std::round((height - ch) / 2)), float(cw), float(ch)};
   return r;
 }

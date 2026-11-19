@@ -160,10 +160,14 @@ struct TouchLayout: Equatable {
         /// picture as large as its aspect allows (the screen's height for a 4:3 picture), the controls
         /// over it - the Linux app's FILL (computeGameRect over the whole window, the UI on top).
         var fill = false
-        /// The picture's displayed width / height (another core's picture, its rotation and pixel aspect
-        /// applied); nil = the NES picture. Portrait FILL makes the game area as tall as a full-width
-        /// picture of this aspect.
+        /// The picture's displayed width / height (DisplayOptions.displayedAspect: overscan crop, 8:7,
+        /// another core's pixel aspect and rotation); nil = the row's. Portrait FILL makes the game area as
+        /// tall as a full-width picture of this aspect.
         var pictureAspect: CGFloat?
+        /// The portrait picture row's width / height: the NES picture as the Display options show it
+        /// (240 x 224 with the overscan hidden on all four sides). The controls start under that row. A
+        /// fixed 256 x 224 row left the shown 240 x 224 picture 3 % short of each side in FILL (2026-11-19).
+        var rowAspect: CGFloat = TouchLayout.pictureAspect
         /// The game's fire buttons (the NES: A and B). 3: AA's disc is button 3 ("C"); 4: BB's is
         /// button 4 ("D") too - shown whatever the turbo setting, so every button of the game is there.
         var buttons = 2
@@ -195,7 +199,7 @@ struct TouchLayout: Equatable {
     static let dpadDefault: CGFloat = 144
     static let dpadRange: ClosedRange<CGFloat> = 130...210
 
-    /// NES picture aspect with the overscan rows hidden (256 x 224).
+    /// NES picture aspect with only the overscan rows hidden (256 x 224): Options.rowAspect's default.
     static let pictureAspect: CGFloat = 256.0 / 224.0
 
     // :root { font: 15px/1.4 system-ui }: buttons inherit the line height (1.4).
@@ -415,7 +419,7 @@ struct TouchLayout: Equatable {
         // The picture on top, full width (ReplayNES; NESTERM's top bar is not used, see
         // TOUCH_PORT.md). app.mjs resizeScreen shrinks the screen row to the picture so the
         // controls get the rest.
-        let gameH = (W / pictureAspect).rounded()
+        let gameH = (W / max(o.rowAspect, 0.01)).rounded()
         // The controls stay where the NES picture's row puts them. Portrait FILL: a picture taller than
         // that row (a vertical arcade game) still spans the screen's width, its lower part under the
         // controls (as landscape FILL, decided 2026-10-30); a wider picture fits the row as before.

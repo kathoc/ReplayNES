@@ -36,7 +36,16 @@ TEST_CASE("crt shown rect: the face's drive columns, where the plain 8:7 picture
   // Hide Overscan crops 8 dots left and right of the plain picture, the CRT only its rows: wider there.
   GameRect o = computeGameRect(1280, 720, false, true, true);
   if (o.crop > 0) CHECK(crtShownRect(o.crt, RNF_CRT_ACTIVE_WIDTH).w > o.w);
-  // A window narrower than 4:3 (the face fitted to its width): centred, inside the face.
+  // A window narrower than the shown part (a phone held upright): the shown part spans the window's width,
+  // the face beside it outside the window (2026-11-19: the face fitted to the width left black inside).
+  for (bool hide : {false, true}) {
+    GameRect p = computeGameRect(1080, 2400, false, true, hide);
+    CrtRect ps = crtShownRect(p.crt, RNF_CRT_ACTIVE_WIDTH);
+    CHECK(std::fabs(ps.x) <= 1.0f);
+    CHECK(std::fabs(ps.w - 1080) <= 1.0f);
+    CHECK(p.crt.w > 1080);
+  }
+  // A window narrower than 4:3: the shown part centred, inside the face.
   GameRect n = computeGameRect(800, 1000, false, true, false);
   CrtRect ns = crtShownRect(n.crt, RNF_CRT_ACTIVE_WIDTH);
   CHECK(std::fabs((ns.x + ns.w / 2) - (n.crt.x + n.crt.w / 2)) <= 0.5f);

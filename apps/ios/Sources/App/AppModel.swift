@@ -163,16 +163,28 @@ final class AppModel: ObservableObject {
                        backdrop: backdrop ? 2 : 0)  // the switch keeps on / off; on = the default level (low)
     }
 
-    /// The picture's displayed width / height (pixel aspect, rotation); nil for the NES picture.
-    static func displayedAspect(_ g: PictureGeometry) -> CGFloat? {
-        guard !g.isNESPicture, g.width > 0, g.height > 0 else { return nil }
-        let w = Double(g.width) * g.pixelAspect, h = Double(g.height)
-        return CGFloat(g.rotation % 2 == 1 ? h / w : w / h)
+
+    /// The NES picture's shown width / height with the Display options (overscan, 8:7): the portrait
+    /// picture row's (TouchLayout.Options.rowAspect), whatever core is playing.
+    /// CRT Display on: the CRT's shown part (DisplayOptions.crtShownAspect), which MetalView fits instead.
+    var nesRowAspect: CGFloat {
+        var o = displayOptions
+        o.geometry = .nes
+        let crt = CRTSettingsModel.shared
+        return crt.enabled ? o.crtShownAspect(activeWidth: crt.settings.activeWidth) : o.displayedAspect
+    }
+
+    /// The picture's width / height on the screen: the CRT's shown part while the CRT is on (NES picture).
+    var shownPictureAspect: CGFloat {
+        let crt = CRTSettingsModel.shared
+        if crt.enabled && status.geometry.isNESPicture { return displayOptions.crtShownAspect(activeWidth: crt.settings.activeWidth) }
+        return displayOptions.displayedAspect
     }
 
     var touchOptions: TouchLayout.Options {
         TouchLayout.Options(showAABB: touchAABB, dpadSize: min(max(CGFloat(touchDpadSize), TouchLayout.dpadRange.lowerBound), TouchLayout.dpadRange.upperBound),
-                            ways: touchWays, fill: !integerScale, pictureAspect: Self.displayedAspect(status.geometry),
+                            ways: touchWays, fill: !integerScale, pictureAspect: shownPictureAspect,
+                            rowAspect: nesRowAspect,
                             buttons: status.fireButtons)
     }
 

@@ -12,17 +12,6 @@ import QuartzCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct DisplayOptions: Equatable {
-    var integerScale = true
-    var pixelAspect87 = false
-    var hideOverscan = true
-    /// The picture's size, rotation and pixel aspect (EmuStatus.geometry). The 8:7 option and the
-    /// overscan crop are for the NES picture; another core's picture uses its own pixel aspect.
-    var geometry = PictureGeometry.nes
-    /// The empty sides show the picture enlarged, blurred and dimmed (docs/design/BACKDROP.md).
-    var backdrop = 2  // 0 none, 1 sharp, 2 low, 3 medium, 4 high (render/backdrop.h backdropTexels)
-}
-
 /// GPU execution of a new frame's command buffers (host-clock seconds, earliest start to latest
 /// end; 0 until one completed). Written by Metal completion handlers, read by presented handlers.
 final class GPUSpan {
@@ -169,18 +158,7 @@ final class GameRenderer {
     /// The NES picture: the 8:7 option and the overscan crop. Another core's picture (options.geometry):
     /// its pixel aspect, upright after its rotation, never cropped.
     static func viewport(drawableSize size: CGSize, options: DisplayOptions) -> (CGRect, Int) {
-        let g = options.geometry
-        let nes = g.isNESPicture
-        let crop = nes && options.hideOverscan ? 8 : 0
-        var srcH = Double(g.height - 2 * crop), srcW = Double(g.width - 2 * crop)
-        var par = nes ? (options.pixelAspect87 ? 8.0 / 7.0 : 1.0) : g.pixelAspect
-        // A quarter turn: the source's rows become columns (a pixel par wide is then par high).
-        if g.rotation % 2 == 1 { (srcW, srcH) = (srcH, srcW); par = 1 / par }
-        var scale = min(size.width / (srcW * par), size.height / srcH)
-        if options.integerScale && scale >= 1 { scale = floor(scale) }
-        let dw = (srcW * par * scale).rounded(), dh = (srcH * scale).rounded()
-        let x0 = ((size.width - dw) / 2).rounded(), y0 = ((size.height - dh) / 2).rounded()
-        return (CGRect(x: x0, y: y0, width: dw, height: dh), crop)
+        options.viewport(drawableSize: size)
     }
 
     // What the last present showed.
@@ -395,7 +373,7 @@ final class GameRenderer {
             textureSeq = seq; textureFrame = m.frame
             if crtOn { storeSeq = seq; storeFrame = m.frame }
         }
-        let pill = pillKey(size: wanted, options: options, crtOn: crtOn).key
+        let pill = pillKey(size: wanted, options: options, crt: crtOn ? crtState.settings.activeWidth : nil).key
         let changed = crtPending || wanted != shownSize || options != shownOptions || crtState != shownCRT || pill != shownPill
         return (newMeta, changed)
     }
@@ -403,7 +381,7 @@ final class GameRenderer {
     /// Sizes the CRT tube for the drawable; returns its destination rectangle and crop.
     @discardableResult
     private func configureCRT(_ crt: CRTRenderer, crtState: CRTSettingsModel.Snapshot, size: CGSize) -> (CGRect, Double) {
-        let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options)
+        let (dst, cropFraction) = Self.crtViewport(drawableSize: size, options: options, activeWidth: crtState.settings.activeWidth)
         var tubeDst = adaptiveScale.scaled(dst.size)
         if faults.on(.adaptiveFlip) && DisplayFaults.window(HostClock.seconds(HostClock.now()), period: 1, length: 0.5) {
             tubeDst = CGSize(width: tubeDst.width * 0.85, height: tubeDst.height * 0.85)   // fault injection: tube size churn
@@ -428,7 +406,7 @@ final class GameRenderer {
         shownOptions = options
         shownCRT = crtState
         let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
-        let pill = pillKey(size: size, options: options, crtOn: crtOn)
+        let pill = pillKey(size: size, options: options, crt: crtOn ? crtState.settings.activeWidth : nil)
         shownPill = pill.key
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = drawable.texture
@@ -469,7 +447,7 @@ final class GameRenderer {
                                  geometry: textureGeometry, level: options.backdrop)
                 }
                 crt.encodeShow(enc, targetSize: size, dst: dst, cropFraction: cropFraction, activeWidth: active)
-                drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: true))
+                drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crt: active))
                 drawPill(enc, size: size, pill)
                 enc.endEncoding()
                 crtShown = true
@@ -505,7 +483,7 @@ final class GameRenderer {
             enc.setVertexBytes(&rot, length: MemoryLayout<UInt32>.size, index: 2)
             enc.setFragmentTexture(texture, index: 0)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-            drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crtOn: false))
+            drawCountdown(enc, size: size, picture: Self.pictureRect(size: size, options: options, crt: nil))
             drawPill(enc, size: size, pill)
             enc.endEncoding()
         }
@@ -793,17 +771,18 @@ final class GameRenderer {
     private var pillTextureGeneration = -1
 
     /// The picture's rectangle (pixels, origin top-left) that the pill may lie over.
-    private static func pictureRect(size: CGSize, options: DisplayOptions, crtOn: Bool) -> CGRect {
-        if crtOn { return crtViewport(drawableSize: size, options: options).0 }
+    /// crt: the CRT's activeWidth when the CRT is on (its shown part), nil for the plain picture.
+    private static func pictureRect(size: CGSize, options: DisplayOptions, crt: Double?) -> CGRect {
+        if let a = crt { return CRTRenderer.shownRect(crtViewport(drawableSize: size, options: options, activeWidth: a).0, activeWidth: a) }
         let r = viewport(drawableSize: size, options: options).0
         return CGRect(x: r.minX, y: size.height - r.maxY, width: r.width, height: r.height)
     }
 
-    private func pillKey(size: CGSize, options: DisplayOptions, crtOn: Bool) -> (key: PillKey, state: MenuPillOverlay.State) {
+    private func pillKey(size: CGSize, options: DisplayOptions, crt: Double?) -> (key: PillKey, state: MenuPillOverlay.State) {
         let st = MenuPillOverlay.shared.state
         guard st.visible, st.image != nil else { return (PillKey(), st) }
         let r = MenuPillLayout.rect(areaSize: size, pillSize: st.pixelSize, scale: st.scale)
-        let over = MenuPillLayout.overPicture(r, picture: Self.pictureRect(size: size, options: options, crtOn: crtOn))
+        let over = MenuPillLayout.overPicture(r, picture: Self.pictureRect(size: size, options: options, crt: crt))
         let a = MenuPillLayout.alpha(elapsed: CACurrentMediaTime() - st.activity, overPicture: over)
         return (PillKey(generation: st.generation, alpha: Int((a * 20).rounded()), rect: r), st)
     }
@@ -870,19 +849,9 @@ final class GameRenderer {
         return crtRenderer_
     }
 
-    /// CRT destination: the full 4:3 raster (minus the hidden overscan rows), as tall as the plain
-    /// viewport would be (integer scale or FILL), centred. Pixel aspect does not apply (the tube
-    /// geometry is 4:3 by construction). Origin top-left (Metal render target coordinates).
-    static func crtViewport(drawableSize size: CGSize, options: DisplayOptions) -> (CGRect, Double) {
-        let cropFraction = (options.hideOverscan ? 8.0 : 0.0) / 240
-        let aspect = (4.0 / 3.0) / (1 - 2 * cropFraction)
-        var plain = options
-        plain.pixelAspect87 = false
-        let (r, _) = viewport(drawableSize: size, options: plain)
-        var h = r.height, wd = (h * aspect).rounded()
-        if wd > size.width { wd = size.width; h = (wd / aspect).rounded() }
-        let x0 = ((size.width - wd) / 2).rounded(), y0 = ((size.height - h) / 2).rounded()
-        return (CGRect(x: x0, y: y0, width: wd, height: h), cropFraction)
+    /// CRT destination: the tube face, its shown part fitted (DisplayOptions.crtViewport).
+    static func crtViewport(drawableSize size: CGSize, options: DisplayOptions, activeWidth: Double) -> (CGRect, Double) {
+        options.crtViewport(drawableSize: size, activeWidth: activeWidth)
     }
 }
 

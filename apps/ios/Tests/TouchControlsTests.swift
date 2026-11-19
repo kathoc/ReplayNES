@@ -289,6 +289,50 @@ final class TouchLayoutTests: XCTestCase {
         XCTAssertEqual(m["touch:select"], "p1.coin")
     }
 
+    /// Portrait: the NES picture as the Display options show it spans the screen's width in its row
+    /// (FILL), the viewport drawn by MetalView. With a fixed 256 x 224 row the 240 x 224 picture (overscan
+    /// hidden on all four sides, the default) left a band on each side (2026-11-19).
+    func testPortraitNESPictureSpansTheWidth() {
+        for (overscan, par87) in [(true, false), (false, false), (true, true), (false, true)] {
+            var d = DisplayOptions(); d.integerScale = false; d.hideOverscan = overscan; d.pixelAspect87 = par87
+            var o = TouchLayout.Options(); o.fill = true
+            o.pictureAspect = d.displayedAspect; o.rowAspect = d.displayedAspect
+            let size = CGSize(width: 402, height: 874)
+            let l = TouchLayout.make(size: size, safe: TouchInsets(top: 62, left: 0, bottom: 34, right: 0), options: o)
+            let px = CGSize(width: l.gameArea.width * 3, height: l.gameArea.height * 3)
+            let (r, _) = d.viewport(drawableSize: px)
+            XCTAssertEqual(r.width, px.width, accuracy: 3, "overscan \(overscan) 8:7 \(par87): picture \(r) in \(px)")
+            XCTAssertEqual(r.height, px.height, accuracy: 3, "overscan \(overscan) 8:7 \(par87): row as tall as the picture")
+            XCTAssertLessThan(l.gameArea.maxY, l.pad.dpad.minY, "the controls stay under the row")
+        }
+        XCTAssertEqual(DisplayOptions().displayedAspect, 240.0 / 224.0, accuracy: 1e-9)
+    }
+
+    /// Portrait FILL with the CRT Display: the CRT's shown part (32/35 of the 4:3 face) spans the screen's
+    /// width and fills its row. Before, the whole face was fitted to the width: the shown part inside it
+    /// was smaller, black around it (2026-11-19).
+    func testPortraitCRTPictureSpansTheWidth() {
+        let active = 32.0 / 35.0
+        for overscan in [true, false] {
+            var d = DisplayOptions(); d.integerScale = false; d.hideOverscan = overscan
+            var o = TouchLayout.Options(); o.fill = true
+            o.pictureAspect = d.crtShownAspect(activeWidth: active); o.rowAspect = o.pictureAspect!
+            let l = TouchLayout.make(size: CGSize(width: 402, height: 874), safe: TouchInsets(top: 62, left: 0, bottom: 34, right: 0), options: o)
+            let px = CGSize(width: l.gameArea.width * 3, height: l.gameArea.height * 3)
+            let (face, _) = d.crtViewport(drawableSize: px, activeWidth: active)
+            let shown = CGRect(x: face.minX + face.width * (1 - active) / 2, y: face.minY, width: face.width * active, height: face.height)
+            XCTAssertEqual(shown.minX, 0, accuracy: 2, "overscan \(overscan): \(shown) in \(px)")
+            XCTAssertEqual(shown.width, px.width, accuracy: 3, "overscan \(overscan): \(shown) in \(px)")
+            XCTAssertEqual(shown.height, px.height, accuracy: 3, "overscan \(overscan): the row as tall as the shown part")
+            XCTAssertGreaterThan(face.width, px.width, "the face beside the shown part lies outside")
+        }
+        // A landscape screen (height-bound): the shown part as tall as the plain picture, as before.
+        var fill = DisplayOptions(); fill.integerScale = false
+        XCTAssertEqual(fill.crtViewport(drawableSize: CGSize(width: 2622, height: 1206), activeWidth: active).0.height, 1206, accuracy: 1)
+        XCTAssertEqual(DisplayOptions().crtViewport(drawableSize: CGSize(width: 2622, height: 1206), activeWidth: active).0.height,
+                       224 * 5, accuracy: 1, "integer scale: 5 x 224 rows")
+    }
+
     /// The bottom overlays (status label, Undo chip, seek bar) stay clear of the controls, also when
     /// portrait FILL puts a tall picture under them.
     func testOverlayAreaClearOfTheControls() {
