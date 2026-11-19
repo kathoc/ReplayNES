@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
 extension UTType {
     static let nesrec = UTType(exportedAs: "io.github.replaynes.nesrec", conformingTo: .package)
     static let nesROM = UTType(importedAs: "io.github.replaynes.nes-rom", conformingTo: .data)
+    static var productProject: UTType { RNProduct.isNES ? .nesrec : UTType(exportedAs: "io.github.kathoc.replayarcade.arcrec", conformingTo: .package) }
+    static var productROMs: [UTType] { RNProduct.isNES ? [.nesROM, .data] : RNProduct.romExtensions.compactMap { UTType(filenameExtension: $0) } }
 }
 
 final class ExportJob: ObservableObject {
@@ -92,6 +94,7 @@ final class AppModel: ObservableObject {
     // Preferences
     @AppStorage("emulationCore") var selectedCore = "nestopia" { didSet { objectWillChange.send() } }
     var coreAvailability: String {
+        guard RNProduct.isNES else { return String(localized: "Available") }
         guard selectedCore == "nestopia" || selectedCore == "replaynescore" else { return String(localized: "Unknown core; select a supported core") }
         let core = selectedCore == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA
         guard rn_core_available(core) != 0 else { return String(localized: "Not included in this build") }
@@ -516,15 +519,15 @@ final class AppModel: ObservableObject {
     private func newProjectPanels() {
         let open = NSOpenPanel()
         open.title = String(localized: "Choose a ROM")
-        open.message = String(localized: "Choose the NES ROM (.nes) for the new project. The ROM is not copied into the project.")
-        open.allowedContentTypes = [.nesROM, .data]
+        open.message = RNProduct.isNES ? String(localized: "Choose the NES ROM (.nes) for the new project. The ROM is not copied into the project.") : String(localized: "Choose a ROM for the new project. The ROM is not copied into the project.")
+        open.allowedContentTypes = UTType.productROMs
         open.allowsMultipleSelection = false
         guard open.runModal() == .OK, let rom = open.url else { return }
-        if selectedCore != "nestopia" { createSession(rom: rom, projectDir: nil); return }
+        if RNProduct.isNES && selectedCore != "nestopia" { createSession(rom: rom, projectDir: nil); return }
         let save = NSSavePanel()
         save.title = String(localized: "Where to Save the Project")
-        save.nameFieldStringValue = rom.deletingPathExtension().lastPathComponent + ".nesrec"
-        save.allowedContentTypes = [.nesrec]
+        save.nameFieldStringValue = rom.deletingPathExtension().lastPathComponent + "." + RNProduct.projectExtension
+        save.allowedContentTypes = [.productProject]
         save.canCreateDirectories = true
         guard save.runModal() == .OK, let dir = save.url else { return }
         if FileManager.default.fileExists(atPath: dir.path) {
@@ -540,7 +543,7 @@ final class AppModel: ObservableObject {
         confirmDiscardIfNeeded { [weak self] in
             let open = NSOpenPanel()
             open.title = String(localized: "Try a ROM (No Project, Stored Temporarily)")
-            open.allowedContentTypes = [.nesROM, .data]
+            open.allowedContentTypes = UTType.productROMs
             guard open.runModal() == .OK, let rom = open.url else { return }
             self?.createSession(rom: rom, projectDir: nil)
         }
@@ -549,7 +552,7 @@ final class AppModel: ObservableObject {
     /// projectDir == nil: a session without a project; with session persistence it lives in the
     /// temporary project (SessionResume.swift), otherwise in memory.
     func createSession(rom: URL, projectDir requestedDir: URL?, autoplay: Bool = false) {
-        if selectedCore != "nestopia" {
+        if RNProduct.isNES && selectedCore != "nestopia" {
             startSession(rom: rom, projectDir: nil, isTemp: false, autoplay: autoplay)
             return
         }
@@ -564,11 +567,11 @@ final class AppModel: ObservableObject {
     }
 
     private func startSession(rom: URL, projectDir: URL?, isTemp: Bool, autoplay: Bool) {
-        guard selectedCore == "nestopia" || selectedCore == "replaynescore" else {
+        guard !RNProduct.isNES || selectedCore == "nestopia" || selectedCore == "replaynescore" else {
             showError(String(localized: "Couldn’t create the project"), String(localized: "Unknown core; select a supported core")); return
         }
-        let core = selectedCore == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA
-        guard rn_core_available(core) != 0 else {
+        let core: rn_core_kind? = RNProduct.isNES ? (selectedCore == "replaynescore" ? RN_CORE_REPLAYNESCORE : RN_CORE_NESTOPIA) : nil
+        guard core.map({ rn_core_available($0) != 0 }) ?? true else {
             showError(String(localized: "Couldn’t create the project"), String(localized: "Selected core is not included in this build")); return
         }
         let dirExisted = projectDir.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
@@ -664,7 +667,7 @@ final class AppModel: ObservableObject {
         confirmDiscardIfNeeded { [weak self] in
             let open = NSOpenPanel()
             open.title = String(localized: "Open Project")
-            open.allowedContentTypes = [.nesrec]
+            open.allowedContentTypes = [.productProject]
             open.canChooseDirectories = true
             open.treatsFilePackagesAsDirectories = false
             guard open.runModal() == .OK, let url = open.url else { return }
@@ -739,7 +742,7 @@ final class AppModel: ObservableObject {
             ask(title, message, fix: String(localized: "Locate ROM…")) { [weak self] in
                 let open = NSOpenPanel()
                 open.title = String(localized: "Locate “\(romName)”")
-                open.allowedContentTypes = [.nesROM, .data]
+                open.allowedContentTypes = UTType.productROMs
                 guard open.runModal() == .OK, let newRom = open.url else { return false }
                 self?.openProject(url, romOverride: newRom, dropCorrupt: dropCorrupt, dropCorruptPractice: dropCorruptPractice, resume: resume)
                 return true
@@ -768,7 +771,7 @@ final class AppModel: ObservableObject {
                 ask(String(localized: "The project files are damaged"), e.message, fix: nil) { false }
             }
         case RN_ERR_UNSUPPORTED_FORMAT:
-            ask(String(localized: "This project was made with a newer version of ReplayNES"),
+            ask(RNProduct.isNES ? String(localized: "This project was made with a newer version of ReplayNES") : String(localized: "This project was made with a newer version of ReplayArcade"),
                 String(localized: "Please update the app.") + "\n\(e.message)", fix: nil) { false }
         default:
             ask(String(localized: "Couldn’t open the project"), "\(e.statusName): \(e.message)", fix: nil) { false }
@@ -838,8 +841,8 @@ final class AppModel: ObservableObject {
         guard status.hasSession else { return false }
         let save = NSSavePanel()
         save.title = String(localized: "Save Project")
-        save.nameFieldStringValue = (URL(fileURLWithPath: status.romPath).deletingPathExtension().lastPathComponent) + ".nesrec"
-        save.allowedContentTypes = [.nesrec]
+        save.nameFieldStringValue = (URL(fileURLWithPath: status.romPath).deletingPathExtension().lastPathComponent) + "." + RNProduct.projectExtension
+        save.allowedContentTypes = [.productProject]
         guard save.runModal() == .OK, let dir = save.url else { return false }
         // The open project under its own name: saved, not replaced (trashing it would lose the session's files).
         if let c = current, !c.isTemp, URL(fileURLWithPath: c.projectPath).standardizedFileURL == dir.standardizedFileURL {
@@ -1080,8 +1083,8 @@ final class AppModel: ObservableObject {
     private func askProjectDestination(name: String) -> URL? {
         let save = NSSavePanel()
         save.title = String(localized: "Save Project")
-        save.nameFieldStringValue = name + ".nesrec"
-        save.allowedContentTypes = [.nesrec]
+        save.nameFieldStringValue = name + "." + RNProduct.projectExtension
+        save.allowedContentTypes = [.productProject]
         save.canCreateDirectories = true
         guard save.runModal() == .OK, let dir = save.url else { return nil }
         if sessionPaths.isTempProject(dir.path) { showError(String(localized: "Couldn’t save"), String(localized: "You can’t save to the temporary location.")); return nil }

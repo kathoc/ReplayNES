@@ -180,7 +180,7 @@ enum QMPage: String, CaseIterable, Hashable {
         case .play: return String(localized: "Play")
         case .turbo: return String(localized: "Turbo")
         case .system: return String(localized: "System")
-        case .about: return String(localized: "ReplayNES Version")
+        case .about: return RNProduct.isNES ? String(localized: "ReplayNES Version") : "\(RNProduct.name) Version"
         case .game: return String(localized: "Game")
         case .reset: return String(localized: "Reset")
         }

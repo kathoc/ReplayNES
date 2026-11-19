@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarCleaner.shared.start()
+        RNProduct.startup()
         model.start()
         launched = true
         // Launch arguments (also used by scripted smoke tests):
@@ -41,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let args = ProcessInfo.processInfo.arguments
         let scripted = ["--snapshot", "--inject-keys", "--inject-pad", "--test-actions", "--snapshot-at", "--snapshot-windows", "--stats-log", "--menu-walk"].contains { args.contains($0) }
         model.scripted = scripted
-        if !args.contains("--no-updater") && !scripted {
+        if RNProduct.isNES && !args.contains("--no-updater") && !scripted {
             UpdaterModel.shared.start(arguments: args)
         }
         func arg(_ name: String) -> String? {
@@ -58,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let err = model.library.start() {
             DispatchQueue.main.async {
                 self.model.showError(String(localized: "Couldn’t create the library folder"),
-                                     err + "\n\n" + String(localized: "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen."))
+                                     err + "\n\n" + (RNProduct.isNES ? String(localized: "Make sure ReplayNES is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen.") : String(localized: "Make sure ReplayArcade is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen.")))
             }
         }
         if let name = arg("--library-play") {
@@ -109,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let url = urls.first else { return }
         openedAtLaunch = true
         model.confirmDiscardIfNeeded { [model] in
-            if url.pathExtension.lowercased() == "nesrec" {
+            if RNProduct.isProject(url) {
                 model.openProject(url)
             } else {
                 model.createSession(rom: url, projectDir: nil)
@@ -143,7 +144,7 @@ struct ReplayNESApp: App {
     }
 
     var body: some Scene {
-        Window("ReplayNES", id: "main") {
+        Window(RNProduct.name, id: "main") {
             ContentView().environmentObject(AppModel.shared)
         }
         .defaultSize(width: 1100, height: 820)
@@ -166,7 +167,7 @@ struct AppCommands: Commands {
     var body: some Commands {
         // ReplayNES: About, Check for Updates…, Settings…, Quit.
         CommandGroup(after: .appInfo) {
-            CheckForUpdatesCommand(updates: UpdaterModel.shared)
+            if RNProduct.isNES { CheckForUpdatesCommand(updates: UpdaterModel.shared) }
         }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { model.quickMenu.open(at: .display) }.keyboardShortcut(",")

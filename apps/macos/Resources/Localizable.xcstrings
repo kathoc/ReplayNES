@@ -6595,16 +6595,6 @@
         }
       }
     },
-    "ReplayNES": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ReplayNES"
-          }
-        }
-      }
-    },
     "Reset": {
       "localizations": {
         "ja": {
@@ -9225,6 +9215,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "反対方向の同時押し、スティックのしきい値"
+          }
+        }
+      }
+    },
+    "Applies the next time the app starts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次にアプリを起動したときから反映されます"
+          }
+        }
+      }
+    },
+    "Choose a ROM for the new project. The ROM is not copied into the project.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいプロジェクトで使う ROM を選んでください。ROMはプロジェクトにコピーされません。"
+          }
+        }
+      }
+    },
+    "This project was made with a newer version of ReplayArcade": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいバージョンの ReplayArcade で作られたプロジェクトです"
+          }
+        }
+      }
+    },
+    "Put ROM files in this folder and they appear here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフォルダに ROM ファイルを入れると、ここに並びます。"
+          }
+        }
+      }
+    },
+    "Make sure ReplayArcade is allowed to access the Documents folder (System Settings → Privacy & Security → Files and Folders). You can try again with “Retry” on the library screen.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「書類」フォルダへのアクセスを許可しているか確認してください（システム設定 → プライバシーとセキュリティ → ファイルとフォルダ）。ライブラリ画面の「やり直す」でもう一度作成できます。"
           }
         }
       }

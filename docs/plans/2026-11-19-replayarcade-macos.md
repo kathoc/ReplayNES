@@ -60,3 +60,31 @@ saves and reopens a ReplayArcade project (.arcrec), on macsrv.
 
 Sparkle feed and signing for ReplayArcade, notarization, GitHub release assets, the Mac App Store, any
 change to the iPhone, Windows, Linux or Android apps.
+
+## Implementation decisions
+
+- Reuse the macOS app sources and shared XcodeGen settings; keep ReplayNES product settings in its own project specification. This minimizes divergence and preserves its existing behavior.
+- Build the Arcade engine as a Release arm64 static archive and use the existing product profile for app differences. Separate app copies or runtime name detection were considered but rejected because they duplicate behavior or obscure product selection.
+- Verify generated project settings and bundle metadata, build the Arcade app and ReplayNES tests, then exercise the app and a ROM where the environment permits. Record any environment or ROM limitations in the review.
+
+## Result (2026-11-19)
+
+Implemented by Codex (reports docs/reviews/replayarcade-macos-1.md, -2.md: it could not build in its sandbox),
+built, fixed and checked by Claude on macsrv:
+
+- Fixed after the review: packaging/macos's header path was `generated/replaynes`; frontend.h includes
+  `"replaynes/product.h"`, so `__has_include` failed and the Swift side was compiled with the defaults
+  (the app called itself ReplayNES and "the selected core is not in this build"). Now `generated`.
+- Fixed: five new UI strings had no Japanese and the window title's "ReplayNES" key went unused
+  (scripts/check-l10n.py, run by scripts/test-macos.sh): translations added, the key removed.
+- `products/ReplayArcade/scripts/build-macos.sh`: ReplayArcade.app 0.3.19 (build 508), bundle id
+  io.github.kathoc.replayarcade.mac, no SUFeedURL, document type io.github.kathoc.replayarcade.arcrec.
+- Run (`--rom gradius.zip --autoplay --snapshot-at`): the boot grid at 24 s, the demo at 60 s (pictures
+  differ: it runs); the session folder has `current.arcrec` (journal, states, timeline). Library screen:
+  "ReplayArcade", no Test Cartridge button, Japanese text.
+- ReplayNES's Mac app: scripts/test-macos.sh 128 tests, 0 failures (2 skipped), l10n 0 problems; its
+  library screen unchanged (ReplayNES, .nes text, Test Cartridge button).
+
+Not verified: sound and controller input on the Mac (no one at macsrv's speakers / pad), Save As of a
+project and reopening it through the Open panel (the autosaved session was written; reopening by hand
+is left to the user).

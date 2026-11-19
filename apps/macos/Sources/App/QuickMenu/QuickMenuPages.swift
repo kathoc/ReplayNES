@@ -507,12 +507,12 @@ enum QuickMenuPages {
         let langs = ["auto", "ja", "en"]
         let current = langs.firstIndex(of: UILanguage.preference) ?? 0
         // Only a build with a second core offers the choice; a stale non-default setting stays visible so it can be fixed.
-        let offerCore = rn_core_available(RN_CORE_REPLAYNESCORE) != 0 || m.selectedCore != "nestopia"
+        let offerCore = RNProduct.isNES && (rn_core_available(RN_CORE_REPLAYNESCORE) != 0 || m.selectedCore != "nestopia")
         let core = offerCore ? [choice("core", "cpu", String(localized: "Core"),
                    String(localized: "Next new game") + " · " + m.coreAvailability,
                    [cores.contains(m.selectedCore) ? "Nestopia" : m.selectedCore, "ReplayNEScore"], cores.firstIndex(of: m.selectedCore) ?? 0) { m.selectedCore = cores[$0] }] : []
         return core + [
-            choice("language", "globe", String(localized: "Language"), String(localized: "Applies the next time ReplayNES starts"),
+            choice("language", "globe", String(localized: "Language"), RNProduct.isNES ? String(localized: "Applies the next time ReplayNES starts") : String(localized: "Applies the next time the app starts"),
                    [String(localized: "Auto"), UILanguage.nativeName("ja"), UILanguage.nativeName("en")], current) {
                 UILanguage.preference = langs[$0]
             },
@@ -520,7 +520,7 @@ enum QuickMenuPages {
                    String(localized: "Show input and display latency over the game"), m.showLatency) { m.showLatency = $0 },
             toggle("flashBadge", "bolt.badge.checkmark", String(localized: "Flash Notice"),
                    String(localized: "Show a badge while flashing is being reduced"), m.showFlashIndicator) { m.showFlashIndicator = $0 },
-            link("about", "info.circle", String(localized: "ReplayNES Version"),
+            link("about", "info.circle", RNProduct.isNES ? String(localized: "ReplayNES Version") : "\(RNProduct.name) Version",
                  String(localized: "Version, updates and licenses"), .about),
         ]
     }
@@ -529,6 +529,11 @@ enum QuickMenuPages {
     /// settings (Sparkle), the core and the licenses.
     private static func about() -> [QMItem] {
         let info = Bundle.main.infoDictionary ?? [:]
+        if !RNProduct.isNES {
+            let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+            return [QMItem(id: "version", icon: "info.circle", title: String(localized: "Version"), detail: "", value: .text(version)),
+                    QMItem(id: "core", icon: "cpu", title: String(localized: "Emulation Core"), detail: "", value: .text(Engine.coreCompatID))]
+        }
         let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
         let site = "https://github.com/kathoc/ReplayNES"
         let u = UpdaterModel.shared

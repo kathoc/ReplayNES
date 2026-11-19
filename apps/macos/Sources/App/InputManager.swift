@@ -153,7 +153,7 @@ final class InputManager {
 
     static var configURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ReplayNES", isDirectory: true)
+            .appendingPathComponent(RNProduct.dataDirectory, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("bindings.json")
     }

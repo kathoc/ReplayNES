@@ -50,7 +50,7 @@ struct ContentView: View {
         let path = model.status.projectPath
         if !path.isEmpty && !model.isTempSession(path) { return URL(fileURLWithPath: path).lastPathComponent }
         if model.status.hasSession { return URL(fileURLWithPath: model.status.romPath).lastPathComponent + String(localized: " (Unsaved)") }
-        return "ReplayNES"
+        return RNProduct.name
     }
 
     private var libraryShown: Bool { !model.status.hasSession || model.showLibrary }

@@ -1,0 +1,66 @@
+# ReplayArcade product settings, using ReplayNES's shared macOS targets.
+include:
+  - ../../../../apps/macos/common.yml
+name: ReplayArcade
+options:
+  bundleIdPrefix: io.github.kathoc
+settings:
+  base:
+    MARKETING_VERSION: "0.3.19"
+    CURRENT_PROJECT_VERSION: "1"
+    RN_MACOS_DIR: "$(SRCROOT)/../../../../apps/macos"
+    RN_ENGINE_BUILD_DIR: "$(SRCROOT)/../../build-macos/engine"
+    HEADER_SEARCH_PATHS:
+      - "$(RN_MACOS_DIR)/../../engine/include/replaynes"
+      - "$(RN_MACOS_DIR)/../../frontend/include/replaynes"
+      - "$(RN_MACOS_DIR)/Sources/Core/C"
+      # frontend.h includes "replaynes/product.h": the directory above it (generated/replaynes was one level
+      # too deep; __has_include failed and the app was built with the defaults, i.e. as ReplayNES).
+      - "$(RN_ENGINE_BUILD_DIR)/generated"
+    SWIFT_OBJC_BRIDGING_HEADER: "$(RN_MACOS_DIR)/Sources/Core/C/Bridging.h"
+    LIBRARY_SEARCH_PATHS: ["$(RN_ENGINE_BUILD_DIR)"]
+    OTHER_LDFLAGS: ["-lreplaynes_all", "-lc++"]
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) RN_PRODUCT_HAS_STARTUP"
+aggregateTargets:
+  Engine:
+    buildScripts:
+      - name: Use prebuilt ReplayArcade engine
+        script: 'test -f "$RN_ENGINE_BUILD_DIR/libreplaynes_all.a"'
+        basedOnDependencyAnalysis: false
+targets:
+  ReplayNES:
+    sources:
+      - path: Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.kathoc.replayarcade.mac
+        PRODUCT_NAME: ReplayArcade
+        INFOPLIST_KEY_CFBundleDisplayName: ReplayArcade
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: ReplayArcade
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ja]
+        LSApplicationCategoryType: public.app-category.games
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "ReplayArcade - personal build. Includes ReplayNES (GPL-2.0-or-later) and FinalBurn Neo (non-commercial licence)."
+        NSSupportsAutomaticGraphicsSwitching: true
+        GCSupportsControllerUserInteraction: true
+        GCSupportedGameControllers:
+          - ProfileName: ExtendedGamepad
+          - ProfileName: MicroGamepad
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: io.github.kathoc.replayarcade.arcrec
+            UTTypeDescription: ReplayArcade Project
+            UTTypeConformsTo: [com.apple.package, public.composite-content]
+            UTTypeTagSpecification:
+              public.filename-extension: [arcrec]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: ReplayArcade Project
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSTypeIsPackage: true
+            LSItemContentTypes: [io.github.kathoc.replayarcade.arcrec]

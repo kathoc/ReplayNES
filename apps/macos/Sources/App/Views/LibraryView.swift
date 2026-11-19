@@ -15,7 +15,7 @@ final class LibraryNav: ObservableObject {
     static let heroFocus = -1
     static let barFocus = -3
     /// The filter / sort / search row: filters, then the sort, the search and Add Test Cartridge.
-    static let barItems = Int(RNF_LIBRARY_FILTER_COUNT.rawValue) + 3
+    static var barItems: Int { Int(RNF_LIBRARY_FILTER_COUNT.rawValue) + (RNProduct.isNES ? 3 : 2) }
     static var barSort: Int { Int(RNF_LIBRARY_FILTER_COUNT.rawValue) }
     static var barSearch: Int { barSort + 1 }
     static var barTestCart: Int { barSort + 2 }
@@ -59,6 +59,7 @@ final class LibraryNav: ObservableObject {
     /// Writes the ReplayNES Test Cartridge into the ROM folder (once) and focuses it: all games, no
     /// search, as soon as the scan lists it.
     func addTestCartridge(_ library: LibraryModel) {
+        guard RNProduct.isNES else { return }
         do {
             let url = try library.addTestCartridge()
             library.filter = RNF_LIBRARY_FILTER_ALL
@@ -239,7 +240,7 @@ struct LibraryHome: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            (Text(verbatim: "Replay") + Text(verbatim: "NES").foregroundColor(QMStyle.brand)).font(.system(size: 22, weight: .bold))
+            (Text(verbatim: "Replay") + Text(verbatim: RNProduct.isNES ? "NES" : "Arcade").foregroundColor(QMStyle.brand)).font(.system(size: 22, weight: .bold))
             if library.scanning { ProgressView().controlSize(.small) }
             Spacer(minLength: 12)
             if !library.roms.isEmpty { toolbar }
@@ -259,8 +260,10 @@ struct LibraryHome: View {
             chip(LibraryNav.barSort, icon: "arrow.up.arrow.down", text: LibraryCatalog.name(library.sort), selected: false)
                 .padding(.leading, 10)
             searchField
-            chip(LibraryNav.barTestCart, icon: "plus", text: String(localized: "Add Test Cartridge"), selected: false)
-                .padding(.leading, 10)
+            if RNProduct.isNES {
+                chip(LibraryNav.barTestCart, icon: "plus", text: String(localized: "Add Test Cartridge"), selected: false)
+                    .padding(.leading, 10)
+            }
         }
     }
 
@@ -599,7 +602,7 @@ struct LibraryHome: View {
         return VStack(spacing: 14) {
             Image(systemName: "tray.and.arrow.down").font(.system(size: 40, weight: .light)).foregroundStyle(QMStyle.brand)
             Text("Add Your Games").font(QMStyle.title)
-            Text("Put .nes files in this folder and they appear here.").font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
+            Text(RNProduct.isNES ? String(localized: "Put .nes files in this folder and they appear here.") : String(localized: "Put ROM files in this folder and they appear here.")).font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
             Text(verbatim: displayPath(library.paths.roms))
                 .font(.system(size: 13, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
@@ -614,6 +617,7 @@ struct LibraryHome: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(QMStyle.brand.opacity(0.9)))
                 .contentShape(Rectangle())
                 .onTapGesture { library.revealROMFolder() }
+                if RNProduct.isNES {
                 HStack(spacing: 8) {
                     KeyCap(g.y)
                     Image(systemName: "plus").font(.system(size: 13, weight: .semibold))
@@ -623,6 +627,7 @@ struct LibraryHome: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.12)))
                 .contentShape(Rectangle())
                 .onTapGesture { nav.addTestCartridge(library) }
+                }
             }
         }
         .padding(32)
