@@ -422,15 +422,10 @@ enum QuickMenuPages {
         let element = String(id[id.index(after: colon)...])
         let slot = Int(id.dropFirst(2).prefix { $0.isNumber }) ?? 0
         let current = ControllerAssignments.actions(element: element, slot: slot, config: m.inputConfig)
+        let catalog = Dictionary(InputCatalog.allActions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let all = assignChoices(slot: slot).map { a -> QMItem in
-            let action = InputCatalog.allActions.first { $0.id == a }
-            let title: String
-            switch action?.group {
-            case nil: title = String(localized: "None")
-            case .player1?: title = "1P " + (action?.label ?? a)
-            case .player2?: title = "2P " + (action?.label ?? a)
-            case .hotkey?: title = action?.label ?? a
-            }
+            let action = catalog[a]
+            let title = action.map { $0.group.playerPrefix + $0.label } ?? String(localized: "None")
             let on = a.isEmpty ? current.isEmpty : current.contains(a)
             return QMItem(id: "assign:" + a, icon: a.isEmpty ? "xmark" : action?.group == .hotkey ? "bolt" : "gamecontroller",
                           title: title, detail: action?.group == .hotkey ? String(localized: "Hotkeys (not recorded)") : "",

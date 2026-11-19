@@ -106,6 +106,28 @@ final class FrontendBridgeTests: XCTestCase {
         XCTAssertNil(InputCatalog.faceGlyph("leftShoulder", southConfirm: false))
     }
 
+    /// The catalog follows the game's input layout (ReplayArcade: each game has its own buttons). Kept from
+    /// the first use, a game with more buttons than the first had no Button 3 (Turbo) in the action picker
+    /// (iPhone, 2026-11-19); players 3 / 4 and the system's buttons were hotkeys.
+    func testCatalogFollowsTheInputLayout() {
+        defer { rnf_input_set_layout_json(nil) }
+        let two = #"{"name":"t2","recordBytes":4,"buttons":[{"id":"p1.b1","label":"Shot","byte":0,"bit":0},{"id":"p1.b2","label":"Bomb","byte":0,"bit":1}]}"#
+        let six = #"{"name":"t6","recordBytes":4,"buttons":[{"id":"p1.b1","label":"Shot","byte":0,"bit":0},{"id":"p1.b2","label":"Bomb","byte":0,"bit":1},{"id":"p1.b3","label":"Jump","byte":0,"bit":2},{"id":"p3.b1","label":"Shot","byte":1,"bit":0},{"id":"p1.coin","label":"Coin","byte":0,"bit":3}]}"#
+        XCTAssertEqual(rnf_input_set_layout_json(two), RN_OK)
+        XCTAssertNotNil(InputCatalog.action("p1.b2.turbo"))
+        XCTAssertNil(InputCatalog.action("p1.b3.turbo"))
+        XCTAssertEqual(rnf_input_set_layout_json(six), RN_OK)
+        let turbo3 = InputCatalog.action("p1.b3.turbo")
+        XCTAssertNotNil(turbo3, "Button 3's turbo after the layout changed")
+        XCTAssertEqual(turbo3?.group, .player1)
+        XCTAssertEqual(InputCatalog.action("p3.b1")?.group, .player3)
+        XCTAssertEqual(InputCatalog.action("p3.b1")?.group.playerPrefix, "3P ")
+        XCTAssertNotEqual(InputCatalog.action("p1.coin")?.group, .hotkey)
+        rnf_input_set_layout_json(nil)
+        XCTAssertNotNil(InputCatalog.action("p1.turbo_a"))
+        XCTAssertNil(InputCatalog.action("p1.b3.turbo"))
+    }
+
     func testResumeRecordConversion() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("rn-bridge-\(UUID().uuidString)")
         let paths = SessionPaths(root: dir)

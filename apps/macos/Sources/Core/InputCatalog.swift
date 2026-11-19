@@ -10,7 +10,9 @@ struct InputAction: Identifiable, Hashable {
     let group: Group
 
     enum Group: String, CaseIterable {
-        case player1, player2, hotkey
+        // The shared core's groups (rnf_action_group): another core's layout has players 3 / 4 and the
+        // system's buttons (coin, service); before 2026-11-19 those read as hotkeys here.
+        case player1, player2, player3, player4, system, hotkey
 
         var title: String { rnfString(rnf_input_group_title(cValue)) }
 
@@ -18,6 +20,9 @@ struct InputAction: Identifiable, Hashable {
             switch c {
             case RNF_GROUP_PLAYER1: self = .player1
             case RNF_GROUP_PLAYER2: self = .player2
+            case RNF_GROUP_PLAYER3: self = .player3
+            case RNF_GROUP_PLAYER4: self = .player4
+            case RNF_GROUP_SYSTEM: self = .system
             default: self = .hotkey
             }
         }
@@ -26,7 +31,21 @@ struct InputAction: Identifiable, Hashable {
             switch self {
             case .player1: return RNF_GROUP_PLAYER1
             case .player2: return RNF_GROUP_PLAYER2
+            case .player3: return RNF_GROUP_PLAYER3
+            case .player4: return RNF_GROUP_PLAYER4
+            case .system: return RNF_GROUP_SYSTEM
             case .hotkey: return RNF_GROUP_HOTKEY
+            }
+        }
+
+        /// "1P " ... "4P " before a player's action in a list of every player's (the action picker).
+        var playerPrefix: String {
+            switch self {
+            case .player1: return "1P "
+            case .player2: return "2P "
+            case .player3: return "3P "
+            case .player4: return "4P "
+            case .system, .hotkey: return ""
             }
         }
     }
@@ -36,22 +55,32 @@ enum InputCatalog {
     /// Keyboard ids are macOS virtual key codes ("kb:<kVK>").
     static let keyboardScheme = RNF_KEYBOARD_MACOS
 
-    private static let catalog: [InputAction] = (0..<rnf_input_action_count()).compactMap { i in
-        var a = rnf_action_info()
-        guard rnf_input_action_get(i, &a) != 0 else { return nil }
-        let id = String(cString: a.id)
-        return InputAction(id: id, label: rnfString(rnf_input_action_label(id)), group: .init(a.group))
+    /// The shared core's actions now: they follow the game's input layout (rnf_input_set_layout_json), so
+    /// they are read each time, never kept. A list kept from the first use (a `static let` until
+    /// 2026-11-19) named only that layout's actions: in ReplayArcade, after a game with two buttons, the
+    /// action picker showed "None" for Button 3 (Turbo) and the rest of another game's buttons.
+    private static var catalog: [InputAction] {
+        (0..<rnf_input_action_count()).compactMap { i in
+            var a = rnf_action_info()
+            guard rnf_input_action_get(i, &a) != 0 else { return nil }
+            let id = String(cString: a.id)
+            return InputAction(id: id, label: rnfString(rnf_input_action_label(id)), group: .init(a.group))
+        }
     }
 
-    static let gameActions: [InputAction] = catalog.filter { $0.group != .hotkey }
-    static let hotkeyActions: [InputAction] = catalog.filter { $0.group == .hotkey }
-    static var allActions: [InputAction] { gameActions + hotkeyActions }
+    static var gameActions: [InputAction] { catalog.filter { $0.group != .hotkey } }
+    static var hotkeyActions: [InputAction] { catalog.filter { $0.group == .hotkey } }
+    static func action(_ id: String) -> InputAction? { catalog.first { $0.id == id } }
+    static var allActions: [InputAction] { let c = catalog; return c.filter { $0.group != .hotkey } + c.filter { $0.group == .hotkey } }
 
     /// Default keyboard + controller layout (macOS virtual key codes; face buttons by position).
-    static let defaultBindings: [(String, String)] = (0..<rnf_input_default_binding_count(keyboardScheme)).compactMap { i in
-        var b = rnf_binding()
-        guard rnf_input_default_binding_get(keyboardScheme, i, &b) != 0 else { return nil }
-        return (String(cString: b.input), String(cString: b.action))
+    /// (The game's input layout decides them: read each time, as `catalog`.)
+    static var defaultBindings: [(String, String)] {
+        (0..<rnf_input_default_binding_count(keyboardScheme)).compactMap { i in
+            var b = rnf_binding()
+            guard rnf_input_default_binding_get(keyboardScheme, i, &b) != 0 else { return nil }
+            return (String(cString: b.input), String(cString: b.action))
+        }
     }
 
     /// Controller hotkeys of layout 1 (ReplayNES <= 0.1.x defaults).
