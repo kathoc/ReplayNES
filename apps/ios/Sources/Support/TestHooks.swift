@@ -5,6 +5,7 @@
 //   -resumeAfter <s>          resume after s seconds (through the resume countdown when it is on)
 //   -continueLast YES         press the library's Continue card at 1 s (resume check)
 //   -openMenu <page>          open the Quick Menu at a page (top, retry, practice, display, ...) after 2 s
+//   -assign <id>=<action>     after 6 s, assign as the action picker does (gc0:face.east=p1.b3.turbo)
 //   -openAssign <id>          open the action picker of a controller button (gc0:face.east) after 2.5 s
 //   -debugUnlockAll NO        free mode (the prototype switch off)
 //   -pacingProbe <s>          after s seconds of play write Library/Caches/pacing.json (PacingProbe)
@@ -89,6 +90,13 @@ enum TestHooks {
         if resume > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + resume) { m.setPaused(false) } }
         if let page = d.string(forKey: "openMenu"), let p = QMPage(rawValue: page) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { m.quickMenu.open(at: p) }
+        }
+        if let spec = d.string(forKey: "assign"), let eq = spec.firstIndex(of: "=") {   // "gc0:face.east=p1.b3.turbo"
+            let id = String(spec[..<eq]), action = String(spec[spec.index(after: eq)...])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                m.input.setAssignment(id, action: action)
+                NSLog("ReplayNES test hook: assigned %@ = %@", id, action)
+            }
         }
         if let id = d.string(forKey: "openAssign") {   // the action picker of a controller button ("gc0:face.east")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { m.quickMenu.open(at: .controller); m.quickMenu.openAssign(id) }
