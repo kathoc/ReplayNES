@@ -90,6 +90,15 @@ struct Host {
   bool initialised = false;
   std::string loadedPath;            // content currently in FBNeo ("" = none)
   std::string systemDir, saveDir;    // empty directories: no hiscore.dat, no NVRAM from earlier runs
+  // The same as handed to FBNeo: its retro_load_game_common copies sizeof(g_save_dir) (MAX_PATH) bytes from the
+  // pointer, past the end of a std::string's text (a read overrun, 2026-11-22, Guard Malloc): zero-padded
+  // buffers larger than any MAX_PATH.
+  char systemDirC[4096] = {}, saveDirC[4096] = {};
+  // The picture format FBNeo set (RETRO_ENVIRONMENT_SET_PIXEL_FORMAT): XRGB8888, or RGB565 for a driver that
+  // draws 16-bit colour only (BDF_16BIT_ONLY: Cave, ...). Until 2026-11-22 only XRGB8888 was accepted: such
+  // a driver got no format, a 0-byte frame buffer (nBurnBpp 0) and wrote its frame over the heap (DonPachi
+  // clears 320 x 240 x 2 bytes with 0xFF at its first frame; the app crashed in the library's pictures).
+  retro_pixel_format pixelFormat = RETRO_PIXEL_FORMAT_XRGB8888;
   std::string tempRoot;
   unsigned loads = 0;
   retro_system_av_info av{};
@@ -425,6 +434,18 @@ class FbneoCore final : public rn::ICore {
     if (!data) return;  // a duplicate frame: keep the last picture
     width_ = std::min<unsigned>(w, media_.maxWidth);
     height_ = std::min<unsigned>(h, media_.maxHeight);
+    if (host().pixelFormat == RETRO_PIXEL_FORMAT_RGB565) {
+      // 16-bit drivers: RGB565 widened to the engine's 0xAARRGGBB (5 / 6 bits repeated into the low bits).
+      for (unsigned y = 0; y < height_; ++y) {
+        const uint16_t* src = reinterpret_cast<const uint16_t*>(static_cast<const uint8_t*>(data) + y * pitch);
+        uint32_t* dst = video_.data() + size_t(y) * width_;
+        for (unsigned x = 0; x < width_; ++x) {
+          const uint32_t p = src[x], r = p >> 11 & 31, g = p >> 5 & 63, b = p & 31;
+          dst[x] = 0xFF000000u | (r << 3 | r >> 2) << 16 | (g << 2 | g >> 4) << 8 | (b << 3 | b >> 2);
+        }
+      }
+      return;
+    }
     for (unsigned y = 0; y < height_; ++y) {
       const uint32_t* src = reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(data) + y * pitch);
       uint32_t* dst = video_.data() + size_t(y) * width_;
@@ -628,9 +649,20 @@ class FbneoCore final : public rn::ICore {
 bool environment(unsigned cmd, void* data) {
   Host& h = host();
   switch (cmd) {
-    case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: *(const char**)data = h.systemDir.c_str(); return true;
-    case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: *(const char**)data = h.saveDir.c_str(); return true;
-    case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: return *(const retro_pixel_format*)data == RETRO_PIXEL_FORMAT_XRGB8888;
+    case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+      std::snprintf(h.systemDirC, sizeof(h.systemDirC), "%s", h.systemDir.c_str());
+      *(const char**)data = h.systemDirC;
+      return true;
+    case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
+      std::snprintf(h.saveDirC, sizeof(h.saveDirC), "%s", h.saveDir.c_str());
+      *(const char**)data = h.saveDirC;
+      return true;
+    case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
+      const retro_pixel_format f = *(const retro_pixel_format*)data;
+      if (f != RETRO_PIXEL_FORMAT_XRGB8888 && f != RETRO_PIXEL_FORMAT_RGB565) return false;
+      h.pixelFormat = f;
+      return true;
+    }
     case RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT:
       if (data) *(int*)data = RETRO_SAVESTATE_CONTEXT_NORMAL;
       return true;

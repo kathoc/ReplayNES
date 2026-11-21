@@ -343,6 +343,34 @@ void testGame(const std::string& romDir, const std::string& game, const std::str
 
 }  // namespace
 
+// A driver that draws 16-bit colour only (BDF_16BIT_ONLY: Cave's) asks for RGB565: the host must accept it.
+// Until 2026-11-22 it accepted XRGB8888 alone; such a driver had a 0-byte frame buffer and DonPachi wrote
+// its first frame's clear (320 x 240 x 2 bytes of 0xFF) over the heap: the app crashed making library
+// pictures (Android, Legion Tab). Its picture must now be there and not blank.
+void testSixteenBitDriver(const std::string& romDir) {
+  for (const char* game : {"donpachij", "donpachi", "ddonpach"}) {
+    std::string zip = romDir + "/" + game + ".zip";
+    if (!std::filesystem::exists(zip)) continue;
+    rn_session_options opt;
+    rn_session_options_init(&opt);
+    opt.core = RN_CORE_EXTERNAL;
+    rn_session* s = nullptr;
+    EXPECT(rn_session_new(zip.c_str(), nullptr, &opt, &s) == RN_OK && s, std::string(game) + ": opens");
+    if (!s) continue;
+    for (int f = 0; f < 5400; ++f) rn_step(s, 0, 0, 0, nullptr);
+    rn_video_frame_info v{};
+    EXPECT(rn_session_video_frame(s, &v) == RN_OK && v.pixels && v.width && v.height, std::string(game) + ": a picture");
+    uint64_t lit = 0;
+    for (uint32_t y = 0; v.pixels && y < v.height; ++y)
+      for (uint32_t x = 0; x < v.width; ++x) lit += (v.pixels[size_t(y) * v.stride + x] & 0xFFFFFFu) != 0;
+    EXPECT(lit > uint64_t(v.width) * v.height / 10, std::string(game) + ": the picture at frame 5400 is not blank (" + std::to_string(lit) + " lit pixels)");
+    std::printf("%s: 16-bit driver, %llu lit pixels of %ux%u\n", game, (unsigned long long)lit, v.width, v.height);
+    rn_session_close(s);
+    return;
+  }
+  std::printf("no DonPachi set in REPLAYARCADE_ROMS: the 16-bit driver check did not run\n");
+}
+
 int main() {
   rac::registerFbneoCore();
   // Arcade games only: FinalBurn Neo's home systems get no content id (the app does not open them).
@@ -368,6 +396,7 @@ int main() {
                                                          "daimakai gradius gradius2 salamand aliens";
   std::string work = std::filesystem::temp_directory_path().string() + "/replayarcade-test-fbneo";
   std::filesystem::create_directories(work);
+  testSixteenBitDriver(roms);
   std::istringstream games(list);
   for (std::string g; games >> g;) {
     testGame(roms, g, work);
