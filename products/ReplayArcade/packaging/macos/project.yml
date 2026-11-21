@@ -6,7 +6,7 @@ options:
   bundleIdPrefix: io.github.kathoc
 settings:
   base:
-    MARKETING_VERSION: "0.3.19"
+    MARKETING_VERSION: "0.3.20"
     CURRENT_PROJECT_VERSION: "1"
     RN_MACOS_DIR: "$(SRCROOT)/../../../../apps/macos"
     RN_ENGINE_BUILD_DIR: "$(SRCROOT)/../../build-macos/engine"

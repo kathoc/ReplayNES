@@ -13,7 +13,7 @@ configFiles:
 settings:
   base:
     # scripts/build-ios.sh passes the release's version (cmake/product.cmake) and the commit count.
-    MARKETING_VERSION: "0.3.19"
+    MARKETING_VERSION: "0.3.20"
     CURRENT_PROJECT_VERSION: "1"
     RN_IOS_DIR: "${REPLAYNES_IOS_DIR}"
     RN_ENGINE_BUILD_DIR: "$(SRCROOT)/../../build-ios"
