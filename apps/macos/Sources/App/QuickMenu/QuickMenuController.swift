@@ -58,6 +58,7 @@ final class QuickMenuController: ObservableObject {
         guard isOpen, let m = model else { return }
         withAnimation(.easeOut(duration: 0.12)) { isOpen = false }
         if m.input.captureHandler != nil { m.input.captureHandler = nil; m.capturingAction = nil }
+        m.input.editingSlot = -1   // edits follow player 1's pad again (the Controller page set its slot)
         if m.status.hasSession && (resume ?? resumeOnClose) { m.setPaused(false) }
         resumeOnClose = false
         m.updateUIMode()
@@ -182,10 +183,17 @@ final class QuickMenuController: ObservableObject {
         let p = QMPage.controller
         let content = QuickMenuPages.content(p, model: m, menu: self)
         let els = diagramElements(m)
-        let i = min(max(0, focusIndex(p)), max(0, els.count - 1))
+        // Focus 0..<els.count: the diagram's elements; then the rows under it (QuickMenuPages.controllerRows).
+        let rows = QuickMenuPages.controllerRows(m, slot: listPageIndex(p))
+        let i = min(max(0, focusIndex(p)), max(0, els.count + rows.count - 1))
         switch n {
         case .menu, .escape: close()
         case .back: back()
+        case .up, .down, .left, .right where i >= els.count:
+            // On a row: up / down between the rows, up from the first back to the diagram's lowest element.
+            if n == .down, i + 1 < els.count + rows.count { setFocus(i + 1, on: p) }
+            else if n == .up, i > els.count { setFocus(i - 1, on: p) }
+            else if n == .up, let low = els.indices.max(by: { els[$0].center.y < els[$1].center.y }) { setFocus(low, on: p) }
         case .up, .down, .left, .right:
             guard els.indices.contains(i) else { return }
             let dx: CGFloat = n == .left ? -1 : n == .right ? 1 : 0, dy: CGFloat = n == .up ? -1 : n == .down ? 1 : 0
@@ -198,9 +206,10 @@ final class QuickMenuController: ObservableObject {
                 let score = along + across * 2.2
                 if score < bestScore { bestScore = score; best = j }
             }
-            if let b = best { setFocus(b, on: p) }
+            if let b = best { setFocus(b, on: p) } else if n == .down, !rows.isEmpty { setFocus(els.count, on: p) }
         case .confirm:
             if els.indices.contains(i) { openAssign("gc\(listPageIndex(p)):\(els[i].element)") }
+            else if rows.indices.contains(i - els.count) { rows[i - els.count].confirm?(); touch() }
         case .x: content.x?.run(); touch()
         case .y: content.y?.run(); touch()
         case .pagePrev, .pageNext: flipPage(p, content: content, by: n == .pagePrev ? -1 : 1)

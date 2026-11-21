@@ -514,6 +514,12 @@ int rnf_controller_family_is_symmetric(rnf_controller_family f); /* sticks both 
  * placed by glyph when all four are reported and distinct, else by label. */
 void rnf_gc_face_positions(const char* product_category, const char* vendor_name, const char* const symbols[4],
                            int out_positions[4]);
+/* The same for a family chosen by the user (a per-controller override): RNF_FAMILY_NINTENDO places by
+ * glyph (as above), else by label; any other family takes Apple's diamond (A bottom, B right, X left, Y top). */
+void rnf_gc_face_positions_for_family(rnf_controller_family family, const char* const symbols[4], int out_positions[4]);
+/* A controller's kind from its name: 1 = arcade stick ("arcade", "fight stick", "hori rap", "qanba", "8bitdo
+ * arcade" ...), 0 = pad ("Steam Deck" always a pad). The desktop asks SDL's type first. */
+int rnf_controller_kind_from_name(const char* name);
 /* Micro gamepads: buttonA = south, buttonX = west. */
 const char* rnf_gc_label_from_symbol(const char* symbol); /* "A", "✕" ...; NULL if unknown */
 

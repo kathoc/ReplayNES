@@ -72,11 +72,8 @@ DeviceKind InputRouter::detectDeviceKind(SDL_JoystickType type, const std::strin
   for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
   if (lower.find("steam deck") != std::string::npos) return DeviceKind::pad;
   if (type == SDL_JOYSTICK_TYPE_ARCADE_STICK) return DeviceKind::stick;
-  for (const char* match : {"arcade", "fight stick", "fightstick", "fighting stick", "fighting commander",
-       "hori rap", "real arcade", "qanba", "victrix", "panthera", "mayflash f", "8bitdo arcade",
-       "astro city", "egret", "hitbox", "hit box", "snack box", "brook", "neogeo arcade"})
-    if (lower.find(match) != std::string::npos) return DeviceKind::stick;
-  return DeviceKind::pad;
+  // The name rules are the frontend core's (shared with the iPhone / Mac app).
+  return rnf_controller_kind_from_name(name.c_str()) ? DeviceKind::stick : DeviceKind::pad;
 }
 
 KindOverride InputRouter::kindOverride(int slot) const {

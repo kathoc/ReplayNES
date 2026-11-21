@@ -92,6 +92,18 @@ enum GCFaceMapping {
         return m
     }
 
+    /// The same for a family the user chose for this controller (rnf_gc_face_positions_for_family).
+    static func positions(family: ControllerFamily, symbols: [String: String?] = [:]) -> [String: FacePosition] {
+        var out: [Int32] = [0, 0, 0, 0]
+        withCStrings(buttons.map { (symbols[$0] ?? nil) ?? "" }) { c in
+            let syms: [UnsafePointer<CChar>?] = buttons.indices.map { ((symbols[buttons[$0]] ?? nil) == nil) ? nil : c[$0] }
+            rnf_gc_face_positions_for_family(family.cValue, syms, &out)
+        }
+        var m: [String: FacePosition] = [:]
+        for (i, b) in buttons.enumerated() { m[b] = FacePosition(out[i]) }
+        return m
+    }
+
     /// Micro gamepads (Siri Remote and the like): A = primary, X = secondary.
     static let micro: [String: FacePosition] = ["buttonA": .south, "buttonX": .west]
 
@@ -110,6 +122,10 @@ struct ControllerInfo: Equatable, Identifiable {
     let family: ControllerFamily
     /// Element -> printed label reported by the device (face buttons), overriding family labels.
     var labels: [String: String] = [:]
+    /// The family from the device's name (`family` is the user's choice when one is saved for it).
+    var detectedFamily: ControllerFamily? = nil
+    /// The arcade stick kind from the device's name (rnf_controller_kind_from_name).
+    var detectedStick = false
     var id: Int { slot }
 
     func label(_ element: String) -> String { labels[element] ?? family.label(element) }

@@ -391,6 +391,34 @@ enum QuickMenuPages {
                          y: QMAction(label: String(localized: "Defaults")) { m.input.resetController(slot: slot) })
     }
 
+    /// Rows under the controller diagram, remembered for the controller in the slot shown
+    /// (docs/plans/2026-11-21-apple-controller-kind-family.md): its kind (another core's layout only, as the
+    /// desktop's "Kind: Automatic (Pad)") and its button layout. Confirm / a tap cycles the choice.
+    static func controllerRows(_ m: AppModel, slot: Int) -> [QMItem] {
+        guard let info = m.input.controllerMonitor.controllers.first(where: { $0.slot == slot }) else { return [] }
+        let input = m.input
+        var rows: [QMItem] = []
+        if input.layoutActive {
+            let choice = input.kindChoice(slot: slot)
+            let name = { (stick: Bool) in stick ? String(localized: "Arcade Stick") : String(localized: "Pad") }
+            let value = choice == .automatic ? String(format: String(localized: "Automatic (%@)"), name(info.detectedStick)) : name(choice == .stick)
+            rows.append(QMItem(id: "controllerKind", icon: "gamecontroller", title: String(format: String(localized: "Kind: %@"), value),
+                               detail: L("Pad or arcade stick: each has its own buttons for this game"), confirm: {
+                let all = InputManager.KindChoice.allCases
+                input.setKindChoice(all[((all.firstIndex(of: choice) ?? 0) + 1) % all.count], slot: slot)
+            }, verb: String(localized: "Change")))
+        }
+        let chosen = input.familyChoice(slot: slot)
+        let order: [ControllerFamily?] = [nil, .nintendo, .xbox, .playStation]
+        let text = chosen.map(\.title) ?? String(format: String(localized: "Automatic (%@)"), (info.detectedFamily ?? info.family).title)
+        rows.append(QMItem(id: "controllerFamily", icon: "circle.grid.cross", title: L("Button Layout: %@", text),
+                           detail: L("Where A, B, X and Y are on this controller"), confirm: {
+            let i = order.firstIndex(where: { $0 == chosen }) ?? 0
+            input.setFamilyChoice(order[(i + 1) % order.count], slot: slot)
+        }, verb: String(localized: "Change")))
+        return rows
+    }
+
     static func diagramFamily(_ m: AppModel, slot: Int) -> ControllerFamily {
         if let forced = UserDefaults.standard.string(forKey: "diagramFamily"), let f = ControllerFamily(rawValue: forced) { return f }
         return m.input.controllerMonitor.controllers.first { $0.slot == slot }?.family ?? .generic

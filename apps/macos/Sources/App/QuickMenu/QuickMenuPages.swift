@@ -409,6 +409,9 @@ enum QuickMenuPages {
     }
 
     /// "" (None) + the pad's own player's actions, the other player's, the hotkeys (shared core).
+    /// Rows under the controller diagram (the iPhone's kind / button layout); none on the Mac yet.
+    static func controllerRows(_ m: AppModel, slot: Int) -> [QMItem] { [] }
+
     static func assignChoices(slot: Int) -> [String] {
         let n = rnf_input_assign_choices(Int32(slot), nil, 0)
         var buf = [UnsafePointer<CChar>?](repeating: nil, count: n)

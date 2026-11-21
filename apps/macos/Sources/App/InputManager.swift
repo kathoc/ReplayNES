@@ -160,10 +160,12 @@ final class InputManager {
 
     init() {
         handle = rn_input_new()!
+        profiles = [rn_input_new()!, rn_input_new()!]
         loadConfig()
+        loadControllerChoices()
     }
 
-    deinit { rn_input_free(handle) }
+    deinit { rn_input_free(handle); profiles.forEach { rn_input_free($0) } }
 
     // MARK: the session's input layout (emulation thread)
 
@@ -172,14 +174,31 @@ final class InputManager {
     /// Player 1's fire buttons ("p1.b1" ...) of the active layout (useLayout); 2 for the NES pads.
     private(set) var fireButtons = 2
 
-    /// The active layout's bindings file (another core's layout): rnf_input_bindings_filename_for_kind,
-    /// "bindings-fbneo%3Agradius.json" for a FinalBurn Neo game, next to the NES pads' bindings.json, as the
-    /// Linux / Windows / Android app's InputRouter::kindFile. Until 2026-11-19 another layout's bindings
-    /// were never read back (each game started from the defaults) and a change was saved over the NES
-    /// pads' bindings.json: a game's buttons were lost at every launch.
-    private var layoutConfigURL: URL?
-    /// Where the bindings in use are read from and saved to.
-    private var activeConfigURL: URL { layoutActive ? (layoutConfigURL ?? Self.configURL) : Self.configURL }
+    /// Another core's layout: the pad and the arcade stick profile of the game (index = kind, 1 = stick),
+    /// each read from / saved to its own file (kindURL); `handle` plays their composition (rebuildRuntime).
+    /// The NES pads use `handle` alone (bindings.json). As the Linux / Windows / Android app's InputRouter
+    /// (docs/plans/2026-11-21-apple-controller-kind-family.md).
+    private let profiles: [OpaquePointer]
+
+    /// A kind's bindings file for the active layout: rnf_input_bindings_filename_for_kind,
+    /// "bindings-fbneo%3Agradius.json" (pad) / "bindings-fbneo%3Agradius@stick.json" (arcade stick), next to
+    /// the NES pads' bindings.json, as the desktop's InputRouter::kindFile. Until 2026-11-19 another layout's
+    /// bindings were never read back and a change was saved over bindings.json.
+    private func kindURL(_ kind: Int) -> URL {
+        Self.configURL.deletingLastPathComponent().appendingPathComponent(rnfString(rnf_input_bindings_filename_for_kind(Int32(kind))))
+    }
+    /// Where the bindings being edited are read from and saved to.
+    private var activeConfigURL: URL { layoutActive ? kindURL(editingKind) : Self.configURL }
+
+    /// The bindings being edited (the UI's `config`, assignments, resets, turbo): the NES pads' `handle`, or
+    /// the profile of the kind of the pad being edited.
+    private var edit: OpaquePointer { layoutActive ? profiles[editingKind] : handle }
+
+    /// The pad the Controller page shows (-1: none, edits follow player 1's pad).
+    var editingSlot = -1 {
+        didSet { if editingSlot != oldValue && layoutActive { notifyConfigChanged() } }
+    }
+    var editingKind: Int { kind(slot: editingSlot >= 0 ? editingSlot : 0) }
 
     /// A session's input layout (rn_session_input_layout_json; nil or the NES layout = the NES pads and
     /// bindings.json). Another layout gets its own saved bindings (layoutConfigURL), else the frontend
@@ -197,11 +216,15 @@ final class InputManager {
             return
         }
         layoutActive = true
-        layoutConfigURL = Self.configURL.deletingLastPathComponent().appendingPathComponent(rnfString(rnf_input_bindings_filename_for_kind(0)))
         _ = rn_input_set_layout_json(handle, json)
-        let saved = layoutConfigURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-        if saved.map({ rn_input_load_json(handle, $0) != RN_OK }) ?? true {
-            _ = rn_input_load_json(handle, rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, 0)))
+        var saved = [false, false]
+        for k in 0..<2 {
+            _ = rn_input_set_layout_json(profiles[k], json)
+            let text = try? String(contentsOf: kindURL(k), encoding: .utf8)
+            saved[k] = text.map { rn_input_load_json(profiles[k], $0) == RN_OK } ?? false
+            if !saved[k] {
+                _ = rn_input_load_json(profiles[k], rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, Int32(k))))
+            }
         }
         var actions = Set<String>()
         var info = rnf_action_info()
@@ -210,11 +233,90 @@ final class InputManager {
         }
         fireButtons = (1...8).filter { actions.contains("p1.b\($0)") }.count
         let added = extra?(actions) ?? []
-        for b in added { _ = rn_input_bind(handle, b.input, b.action) }
-        NSLog("ReplayNES input layout: %@, %@ bindings, %d game actions, %d extra bindings (%@)", String(cString: rnf_input_layout_name()),
-              saved != nil ? "saved" : "default", actions.count, added.count, added.map { "\($0.input)=\($0.action)" }.joined(separator: " "))
+        for p in profiles { for b in added { _ = rn_input_bind(p, b.input, b.action) } }
+        NSLog("ReplayNES input layout: %@, pad %@ / stick %@ bindings, %d game actions, %d extra bindings (%@)", String(cString: rnf_input_layout_name()),
+              saved[0] ? "saved" : "default", saved[1] ? "saved" : "default", actions.count, added.count,
+              added.map { "\($0.input)=\($0.action)" }.joined(separator: " "))
+        rebuildRuntime()
         refreshBindingState()
         notifyConfigChanged()
+    }
+
+    // MARK: per-controller kind and button layout (docs/plans/2026-11-21-apple-controller-kind-family.md)
+
+    /// A physical controller's key in the choice files (GameController has no GUID): its name and category.
+    static func controllerKey(_ c: GCController) -> String { "\(c.vendorName ?? "?")|\(c.productCategory)" }
+    private let choiceLock = NSLock()
+    private var keys: [String?] = [nil, nil, nil, nil]          // per slot (choiceLock)
+    private var detectedStick = [false, false, false, false]     // per slot (choiceLock)
+    private var kindChoices: [String: String] = [:]    // key -> "pad" | "stick" (controller-kinds.json, the desktop's format)
+    private var familyChoices: [String: String] = [:]  // key -> ControllerFamily raw value (controller-families.json)
+
+    private static func choiceURL(_ name: String) -> URL { configURL.deletingLastPathComponent().appendingPathComponent(name) }
+
+    private func loadControllerChoices() {
+        func read(_ name: String) -> [String: String] {
+            (try? Data(contentsOf: Self.choiceURL(name))).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: String] } ?? [:]
+        }
+        choiceLock.lock(); kindChoices = read("controller-kinds.json"); familyChoices = read("controller-families.json"); choiceLock.unlock()
+    }
+
+    private func saveChoices(_ m: [String: String], _ name: String) {
+        guard let d = try? JSONSerialization.data(withJSONObject: m, options: [.sortedKeys, .prettyPrinted]) else { return }
+        do { try d.write(to: Self.choiceURL(name), options: .atomic) } catch { NSLog("ReplayNES: cannot save \(name): \(error)") }
+    }
+
+    /// The kind whose bindings a slot plays: 1 = arcade stick, 0 = pad. The NES pads, an empty slot: a pad.
+    func kind(slot: Int) -> Int {
+        guard layoutActive, (0..<4).contains(slot) else { return 0 }
+        choiceLock.lock(); defer { choiceLock.unlock() }
+        guard let key = keys[slot] else { return 0 }
+        if let c = kindChoices[key] { return c == "stick" ? 1 : 0 }
+        return detectedStick[slot] ? 1 : 0
+    }
+
+    enum KindChoice: String, CaseIterable { case automatic, pad, stick }
+
+    /// The kind chosen for the controller in a slot (automatic = from its name).
+    func kindChoice(slot: Int) -> KindChoice {
+        guard (0..<4).contains(slot) else { return .automatic }
+        choiceLock.lock(); defer { choiceLock.unlock() }
+        return keys[slot].flatMap { kindChoices[$0] }.flatMap(KindChoice.init(rawValue:)) ?? .automatic
+    }
+
+    /// Remembers the kind for the controller in `slot` (every slot with the same controller follows) and plays
+    /// that kind's bindings at once.
+    func setKindChoice(_ choice: KindChoice, slot: Int) {
+        guard (0..<4).contains(slot) else { return }
+        choiceLock.lock()
+        guard let key = keys[slot] else { choiceLock.unlock(); return }
+        if choice == .automatic { kindChoices[key] = nil } else { kindChoices[key] = choice.rawValue }
+        let all = kindChoices
+        choiceLock.unlock()
+        saveChoices(all, "controller-kinds.json")
+        rebuildRuntime()
+        refreshBindingState()
+        notifyConfigChanged()
+    }
+
+    /// The button layout chosen for the controller in a slot (nil = from its name).
+    func familyChoice(slot: Int) -> ControllerFamily? {
+        guard (0..<4).contains(slot) else { return nil }
+        choiceLock.lock(); defer { choiceLock.unlock() }
+        return keys[slot].flatMap { familyChoices[$0] }.flatMap(ControllerFamily.init(rawValue:))
+    }
+
+    /// Remembers the button layout for the controller in `slot`; the controller is attached again so its face
+    /// positions and labels follow at once.
+    func setFamilyChoice(_ family: ControllerFamily?, slot: Int) {
+        guard (0..<4).contains(slot) else { return }
+        choiceLock.lock()
+        guard let key = keys[slot] else { choiceLock.unlock(); return }
+        familyChoices[key] = family?.rawValue
+        let all = familyChoices
+        choiceLock.unlock()
+        saveChoices(all, "controller-families.json")
+        if let c = slots[slot] { detach(c); attach(c) }
     }
 
     // MARK: configuration (persisted as the engine's own JSON in Application Support)
@@ -264,8 +366,8 @@ final class InputManager {
     /// Applies an (unbind, bind) plan to the engine table without saving. Returns whether it did anything.
     @discardableResult
     private func apply(_ plan: (unbind: [(String, String)], bind: [(String, String)])) -> Bool {
-        for (i, a) in plan.unbind { _ = rn_input_unbind(handle, i, a) }
-        for (i, a) in plan.bind { _ = rn_input_bind(handle, i, a) }
+        for (i, a) in plan.unbind { _ = rn_input_unbind(edit, i, a) }
+        for (i, a) in plan.bind { _ = rn_input_bind(edit, i, a) }
         return !plan.unbind.isEmpty || !plan.bind.isEmpty
     }
 
@@ -280,7 +382,7 @@ final class InputManager {
     }
 
     private func refreshBindingState() {
-        let c = config
+        let c = runtimeConfig
         let dirs = InputCatalog.pausedStepDirections(c)
         let menu = Set(c.bindings.filter { $0.action == "hk.menu" && !InputCatalog.isCombo($0.input) }.map(\.input))
         stepLock.lock(); stepDirs = dirs; menuIDs = menu; stepLock.unlock()
@@ -717,14 +819,46 @@ final class InputManager {
         return false
     }
 
-    var config: InputCatalog.Config {
-        guard let p = rn_input_save_json(handle) else { return InputCatalog.parse(InputCatalog.defaultConfigJSON())! }
+    /// The bindings being edited (the Controller page; `edit`).
+    var config: InputCatalog.Config { Self.config(of: edit) }
+    /// The bindings being played (`handle`: the composition of the kinds' profiles for another layout).
+    var runtimeConfig: InputCatalog.Config { Self.config(of: handle) }
+
+    private static func config(of input: OpaquePointer) -> InputCatalog.Config {
+        guard let p = rn_input_save_json(input) else { return InputCatalog.parse(InputCatalog.defaultConfigJSON())! }
         defer { rn_string_free(p) }
         return InputCatalog.parse(String(cString: p)) ?? InputCatalog.parse(InputCatalog.defaultConfigJSON())!
     }
 
+    /// Another layout: `handle` gets each controller's bindings from its kind's profile and the rest (keyboard,
+    /// touch, turbo, SOCD) from player 1's kind, never saved (the desktop's InputRouter::rebuildRuntime).
+    private func rebuildRuntime() {
+        guard layoutActive else { return }
+        let configs: [[String: Any]] = profiles.map { p in
+            guard let t = rn_input_save_json(p) else { return [:] }
+            defer { rn_string_free(t) }
+            return (try? JSONSerialization.jsonObject(with: Data(String(cString: t).utf8))) as? [String: Any] ?? [:]
+        }
+        let primary = kind(slot: 0)
+        var runtime = configs[primary]
+        var bindings: [Any] = []
+        for k in 0..<2 {
+            for case let b as [String: Any] in (configs[k]["bindings"] as? [Any] ?? []) {
+                var slot: Int32 = -1
+                if rnf_input_controller_slot(b["input"] as? String ?? "", &slot) != 0 {
+                    if k == kind(slot: Int(slot)) { bindings.append(b) }
+                } else if k == primary {
+                    bindings.append(b)
+                }
+            }
+        }
+        runtime["bindings"] = bindings
+        guard let data = try? JSONSerialization.data(withJSONObject: runtime), let text = String(data: data, encoding: .utf8) else { return }
+        if rn_input_load_json(handle, text) != RN_OK { NSLog("ReplayNES: the composed bindings were refused") }
+    }
+
     private func persist() {
-        if let p = rn_input_save_json(handle) {
+        if let p = rn_input_save_json(edit) {
             let text = String(cString: p)
             rn_string_free(p)
             do {
@@ -733,24 +867,25 @@ final class InputManager {
                 NSLog("ReplayNES: failed to save bindings: \(error)")
             }
         }
+        rebuildRuntime()
         refreshBindingState()
         notifyConfigChanged()
     }
 
     func bind(_ physical: String, to action: String) {
-        _ = rn_input_bind(handle, physical, action)
+        _ = rn_input_bind(edit, physical, action)
         persist()
     }
 
     func unbind(_ physical: String, from action: String) {
-        _ = rn_input_unbind(handle, physical, action)
+        _ = rn_input_unbind(edit, physical, action)
         persist()
     }
 
     /// Diagram: `physical` does exactly `action` from now on (nil = nothing).
     func setAssignment(_ physical: String, action: String?) {
-        _ = rn_input_unbind(handle, physical, nil)
-        if let action { _ = rn_input_bind(handle, physical, action) }
+        _ = rn_input_unbind(edit, physical, nil)
+        if let action { _ = rn_input_bind(edit, physical, action) }
         persist()
     }
 
@@ -761,25 +896,25 @@ final class InputManager {
     }
 
     func resetToDefaults() {
-        _ = rn_input_load_json(handle, layoutActive ? rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, 0))
+        _ = rn_input_load_json(edit, layoutActive ? rnfString(rnf_input_default_config_json_for_kind(InputCatalog.keyboardScheme, Int32(editingKind)))
                                                     : InputCatalog.defaultConfigJSON())
         persist()
     }
 
     func setTurbo(period: Int, duty: Int) {
         let p = max(1, period), d = min(max(1, duty), p)
-        _ = rn_input_set_turbo(handle, UInt32(p), UInt32(d))
+        _ = rn_input_set_turbo(edit, UInt32(p), UInt32(d))
         persist()
     }
 
     func setSOCD(_ policy: String) {
         let v: rn_socd = policy == "last_wins" ? RN_SOCD_LAST_WINS : policy == "allow" ? RN_SOCD_ALLOW : RN_SOCD_NEUTRAL
-        _ = rn_input_set_socd(handle, v)
+        _ = rn_input_set_socd(edit, v)
         persist()
     }
 
     func setAnalogThreshold(_ t: Double) {
-        _ = rn_input_set_analog_threshold(handle, Float(min(max(t, 0.05), 0.95)))
+        _ = rn_input_set_analog_threshold(edit, Float(min(max(t, 0.05), 0.95)))
         persist()
     }
 
@@ -982,10 +1117,19 @@ final class InputManager {
         c.handlerQueue = gcQueue
         let prefix = "gc\(slot):"
         let category = c.productCategory
-        let family = ControllerFamily.from(productCategory: category, vendorName: c.vendorName)
+        let key = Self.controllerKey(c)
+        let stick = rnf_controller_kind_from_name(c.vendorName ?? category) != 0
+        choiceLock.lock()
+        keys[slot] = key
+        detectedStick[slot] = stick
+        let chosen = familyChoices[key].flatMap(ControllerFamily.init(rawValue:))
+        choiceLock.unlock()
+        let detected = ControllerFamily.from(productCategory: category, vendorName: c.vendorName)
+        let family = chosen ?? detected
         let full = Self.hasFullProfile(c)
         let positions = c.extendedGamepad != nil || full
-            ? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName, symbols: Self.faceSymbols(c))
+            ? (chosen.map { GCFaceMapping.positions(family: $0, symbols: Self.faceSymbols(c)) }
+               ?? GCFaceMapping.positions(productCategory: category, vendorName: c.vendorName, symbols: Self.faceSymbols(c)))
             : GCFaceMapping.micro
         let face = FaceNames(positions)
         var labels: [String: String] = [:]
@@ -1044,7 +1188,10 @@ final class InputManager {
                 ControllerLog.event("slot \(slot + 1) \(e.localizedName ?? "?") (\(e.aliases.sorted().joined(separator: "|"))) x=\(d.xAxis.value) y=\(d.yAxis.value)")
             }
         }
-        infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? String(localized: "Controller"), productCategory: category, family: family, labels: labels)
+        infos[slot] = ControllerInfo(slot: slot, name: c.vendorName ?? String(localized: "Controller"), productCategory: category, family: family,
+                                     labels: labels, detectedFamily: detected, detectedStick: stick)
+        // This slot's kind may differ from the empty slot's (a pad): its bindings are played from now on.
+        if layoutActive { rebuildRuntime(); refreshBindingState(); notifyConfigChanged() }
         // Customised bindings saved with GameController names (layout 2) keep their meaning on
         // this controller.
         if apply(InputCatalog.legacyFaceTranslation(config, slot: slot, positions: positions)) { persist() }
@@ -1055,8 +1202,10 @@ final class InputManager {
         guard let slot = slots.firstIndex(where: { $0 === c }) else { return }
         slots[slot] = nil
         infos[slot] = nil
+        choiceLock.lock(); keys[slot] = nil; detectedStick[slot] = false; choiceLock.unlock()
         let prefix = "gc\(slot):"
         rn_input_release_prefix(handle, prefix)
+        if layoutActive { rebuildRuntime(); refreshBindingState(); notifyConfigChanged() }   // the slot is a pad again
         gcQueue.async { [weak self] in
             guard let self else { return }
             // The detector's state is shared by every pad: forget it and release what it handed on.

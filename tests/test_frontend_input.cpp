@@ -557,6 +557,24 @@ TEST_CASE("the 8BitDo FlipPad on iOS: the Nintendo diamond from its printed lett
   CHECK_EQ(other["buttonA"], RNF_FACE_SOUTH);
 }
 
+TEST_CASE("controller kind from the name, face positions for a chosen family") {
+  CHECK_EQ(rnf_controller_kind_from_name("8BitDo FlipPad"), 0);
+  CHECK_EQ(rnf_controller_kind_from_name("8BitDo Arcade Stick"), 1);
+  CHECK_EQ(rnf_controller_kind_from_name("HORI Real Arcade Pro"), 1);
+  CHECK_EQ(rnf_controller_kind_from_name("Steam Deck Arcade"), 0);
+  CHECK_EQ(rnf_controller_kind_from_name(nullptr), 0);
+  const char* glyphs[4] = {"a.circle", "b.circle", "x.circle", "y.circle"};
+  int pos[4];
+  rnf_gc_face_positions_for_family(RNF_FAMILY_NINTENDO, glyphs, pos);
+  CHECK_EQ(pos[0], RNF_FACE_EAST);
+  CHECK_EQ(pos[1], RNF_FACE_SOUTH);
+  rnf_gc_face_positions_for_family(RNF_FAMILY_XBOX, glyphs, pos);
+  CHECK_EQ(pos[0], RNF_FACE_SOUTH);
+  CHECK_EQ(pos[3], RNF_FACE_NORTH);
+  rnf_gc_face_positions_for_family(RNF_FAMILY_PLAYSTATION, nullptr, pos);
+  CHECK_EQ(pos[0], RNF_FACE_SOUTH);
+}
+
 TEST_CASE("printed buttons reach the right NES buttons") {
   auto nesBits = [](const char* category, int button) {
     rn_input* h = rn_input_new();

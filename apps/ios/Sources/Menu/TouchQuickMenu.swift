@@ -360,16 +360,25 @@ struct TouchQuickMenu: View {
         let family = QuickMenuPages.diagramFamily(model, slot: slot)
         let info = monitor.controllers.first { $0.slot == slot }
         let els = menu.diagramElements(model)
-        let focus = min(max(0, menu.focusIndex(.controller)), max(0, els.count - 1))
+        let focus = max(0, menu.focusIndex(.controller))
         return VStack(spacing: 8) {
             ControllerDiagramView(family: family, slot: slot, config: model.inputConfig, labels: info?.labels ?? [:],
                                   pressed: monitor.pressed, focused: hasPad && els.indices.contains(focus) ? els[focus].element : nil,
                                   onSelect: { element in menu.openAssign("gc\(slot):\(element)") })
                 .frame(width: min(width, 480), height: min(width, 480) * 0.62)
             Text(L("Tap a button on the picture to change what it does")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
+            // The kind and the button layout remembered for this controller (D-pad: below the diagram).
+            ForEach(Array(QuickMenuPages.controllerRows(model, slot: slot).enumerated()), id: \.element.id) { k, item in
+                row(item, focused: hasPad && focus == els.count + k)
+                    .contentShape(Rectangle())
+                    .onTapGesture { menu.setFocus(els.count + k, on: .controller); item.confirm?(); menu.touch() }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("qm.\(item.id)")
+            }
         }
         .frame(maxWidth: .infinity)
-        .onAppear { monitor.setLive(true) }
+        .onAppear { monitor.setLive(true); model.input.editingSlot = slot }
+        .onChange(of: slot) { _, s in model.input.editingSlot = s }
         .onDisappear { monitor.setLive(false) }
     }
 

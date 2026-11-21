@@ -1110,6 +1110,36 @@
           }
         }
       }
+    },
+    "Pad or arcade stick: each has its own buttons for this game": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッドとアケコンで、このゲームのボタン設定を別々に持ちます"
+          }
+        }
+      }
+    },
+    "Where A, B, X and Y are on this controller": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコントローラーの A・B・X・Y の位置"
+          }
+        }
+      }
+    },
+    "Button Layout: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンの並び: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

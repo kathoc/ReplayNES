@@ -1198,12 +1198,29 @@ void rnf_gc_face_positions(const char* product_category, const char* vendor_name
                            int out[4]) {
   if (!out) return;
   std::string cat = lower(product_category ? product_category : "");
-  auto set = [&](int a, int b, int x, int y) { out[0] = a; out[1] = b; out[2] = x; out[3] = y; };
   // A single Joy-Con held sideways (SDL_mfijoystick.m: A = south, B = west, X = east, Y = north).
   if (cat.find("joy-con") != std::string::npos && (hasSuffix(cat, "(l)") || hasSuffix(cat, "(r)"))) {
-    return set(RNF_FACE_SOUTH, RNF_FACE_WEST, RNF_FACE_EAST, RNF_FACE_NORTH);
+    out[0] = RNF_FACE_SOUTH; out[1] = RNF_FACE_WEST; out[2] = RNF_FACE_EAST; out[3] = RNF_FACE_NORTH;
+    return;
   }
-  if (familyFrom(product_category ? product_category : "", vendor_name ? vendor_name : "") == RNF_FAMILY_NINTENDO) {
+  rnf_gc_face_positions_for_family(familyFrom(product_category ? product_category : "", vendor_name ? vendor_name : ""),
+                                   symbols, out);
+}
+
+int rnf_controller_kind_from_name(const char* name) {
+  const std::string s = lower(name ? name : "");
+  if (s.find("steam deck") != std::string::npos) return 0;
+  for (const char* match : {"arcade", "fight stick", "fightstick", "fighting stick", "fighting commander",
+       "hori rap", "real arcade", "qanba", "victrix", "panthera", "mayflash f", "8bitdo arcade",
+       "astro city", "egret", "hitbox", "hit box", "snack box", "brook", "neogeo arcade"})
+    if (s.find(match) != std::string::npos) return 1;
+  return 0;
+}
+
+void rnf_gc_face_positions_for_family(rnf_controller_family family, const char* const symbols[4], int out[4]) {
+  if (!out) return;
+  auto set = [&](int a, int b, int x, int y) { out[0] = a; out[1] = b; out[2] = x; out[3] = y; };
+  if (family == RNF_FAMILY_NINTENDO) {
     // The printed glyph fixes the position on a Nintendo layout (A east, B south, X north, Y west).
     int glyph[4];
     std::set<int> seen;
