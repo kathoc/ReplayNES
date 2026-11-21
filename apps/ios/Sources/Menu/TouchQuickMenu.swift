@@ -187,6 +187,9 @@ struct TouchQuickMenu: View {
                     .accessibilityIdentifier("qm.\(item.id)")
             }
         }
+        // The D-pad moves on this grid (QuickMenuController.drawnColumns), not the Mac's columns.
+        .onAppear { menu.drawnColumns[p] = columns }
+        .onChange(of: columns) { _, c in menu.drawnColumns[p] = c }
     }
 
     private func activate(_ item: QMItem, _ p: QMPage) {
@@ -362,10 +365,15 @@ struct TouchQuickMenu: View {
         let els = menu.diagramElements(model)
         let focus = max(0, menu.focusIndex(.controller))
         return VStack(spacing: 8) {
+            // The diagram is drawn on its fixed canvas (RNF_DIAGRAM_CANVAS_*, 560 x 262) and scaled to the width,
+            // as on the Mac: framed without scaling, its sides and top were cut off (2026-11-21).
+            let canvas = ControllerDiagramLayout.canvas
+            let scale = min(width, 480) / canvas.width
             ControllerDiagramView(family: family, slot: slot, config: model.inputConfig, labels: info?.labels ?? [:],
                                   pressed: monitor.pressed, focused: hasPad && els.indices.contains(focus) ? els[focus].element : nil,
                                   onSelect: { element in menu.openAssign("gc\(slot):\(element)") })
-                .frame(width: min(width, 480), height: min(width, 480) * 0.62)
+                .scaleEffect(scale)
+                .frame(width: canvas.width * scale, height: canvas.height * scale)
             Text(L("Tap a button on the picture to change what it does")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
             // The kind and the button layout remembered for this controller (D-pad: below the diagram).
             ForEach(Array(QuickMenuPages.controllerRows(model, slot: slot).enumerated()), id: \.element.id) { k, item in

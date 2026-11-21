@@ -14,6 +14,10 @@ final class QuickMenuController: ObservableObject {
     @Published private(set) var revision = 0
     /// The physical id ("gc0:face.east") whose action the .assign page picks.
     @Published private(set) var assignElement: String?
+    /// Columns a page's grid is drawn with when they differ from QMPage.columns (the iPhone: 3 tiles a row in
+    /// portrait, the Mac's 6 in landscape). The D-pad moves on the drawn grid: with the Mac's six the second
+    /// row of the iPhone's top level had no row above it (2026-11-21, up from Share did nothing).
+    var drawnColumns: [QMPage: Int] = [:]
     /// +1 / -1: direction of the last page change (transition), 0 = none.
     private(set) var lastMove = 0
 
@@ -144,7 +148,7 @@ final class QuickMenuController: ObservableObject {
                 touch()
                 return
             }
-            if let j = QuickMenuNav.move(i, count: items.count, columns: p.columns, d) {
+            if let j = QuickMenuNav.move(i, count: items.count, columns: drawnColumns[p] ?? p.columns, d) {
                 setFocus(j, on: p)
             } else if p.paged, d == .left || d == .right {
                 flipPage(p, content: content, by: d == .left ? -1 : 1)
