@@ -193,6 +193,7 @@ final class InputManager {
             layoutActive = false
             _ = rn_input_set_layout_json(handle, nil)
             loadConfig()
+            notifyConfigChanged()
             return
         }
         layoutActive = true
@@ -213,6 +214,7 @@ final class InputManager {
         NSLog("ReplayNES input layout: %@, %@ bindings, %d game actions, %d extra bindings (%@)", String(cString: rnf_input_layout_name()),
               saved != nil ? "saved" : "default", actions.count, added.count, added.map { "\($0.input)=\($0.action)" }.joined(separator: " "))
         refreshBindingState()
+        notifyConfigChanged()
     }
 
     // MARK: configuration (persisted as the engine's own JSON in Application Support)
@@ -268,6 +270,15 @@ final class InputManager {
     }
 
     /// After the bindings changed: paused-step directions, the Quick Menu's inputs and combos.
+    /// The bindings in use changed (saved, or read: a game's layout, the NES pads): the UI's copy follows,
+    /// on the main thread (useLayout runs on the emulation thread). Until 2026-11-19 only a save told the UI,
+    /// so after a game's saved bindings were read the Controller page showed the previous ones (the game
+    /// itself played with the saved ones).
+    private func notifyConfigChanged() {
+        let c = config
+        if Thread.isMainThread { onConfigChanged?(c) } else { DispatchQueue.main.async { [weak self] in self?.onConfigChanged?(c) } }
+    }
+
     private func refreshBindingState() {
         let c = config
         let dirs = InputCatalog.pausedStepDirections(c)
@@ -723,7 +734,7 @@ final class InputManager {
             }
         }
         refreshBindingState()
-        onConfigChanged?(config)
+        notifyConfigChanged()
     }
 
     func bind(_ physical: String, to action: String) {
