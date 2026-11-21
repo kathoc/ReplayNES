@@ -101,7 +101,20 @@ final class AppModel: ObservableObject {
     @Published var exportJob: ExportJob?
     @Published var capturingAction: String?
     @Published var practiceSlots: [PracticeSlotInfo] = (0..<EngineSession.practiceSlotCount).map { PracticeSlotInfo(index: $0) }
-    @Published var alert: AppAlert?
+    @Published var alert: AppAlert? {
+        didSet {
+            if alert?.id != oldValue?.id { dialogFocus = max(0, (alert?.actions.count ?? 1) - 1) }
+            if (alert == nil) != (oldValue == nil) { updateUIMode() }   // the pad runs TopDialog, not the game
+        }
+    }
+    /// The button focused in the upper-half dialog (TopDialog; the last one, as iOS's preferred action).
+    @Published var dialogFocus = 0
+    /// RootView draws the app in the upper half (a FlipPad, portrait): dialogs are TopDialog, run by the pad.
+    var upperHalfLayout = false { didSet { if upperHalfLayout != oldValue { updateUIMode() } } }
+    /// A connected controller covers the lower half of the phone held upright (controllerCoversLowerHalf).
+    var upperHalfController: Bool {
+        controllers.contains(where: controllerCoversLowerHalf) || UserDefaults.standard.bool(forKey: "assumeCoverPad")   // test hook
+    }
     /// The shared QuickMenuController asks whether a dialog owns the input (the Mac's in-window
     /// dialogs); on iPhone the dialogs are the SwiftUI alerts above.
     struct DialogState { let isActive: Bool }
@@ -606,6 +619,7 @@ final class AppModel: ObservableObject {
     // MARK: navigation (controllers)
 
     func handleNav(_ n: NavInput) {
+        if let a = alert, upperHalfLayout { handleDialogNav(n, a); return }
         if quickMenu.isOpen { quickMenu.handle(n); return }
         let libraryOn = !status.hasSession || showLibrary
         switch n {
@@ -618,9 +632,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// TopDialog with the pad: left / right choose, confirm runs, back / B runs the cancel action.
+    private func handleDialogNav(_ n: NavInput, _ a: AppAlert) {
+        let count = max(1, a.actions.count)
+        switch n {
+        case .left, .up: dialogFocus = (dialogFocus + count - 1) % count
+        case .right, .down: dialogFocus = (dialogFocus + 1) % count
+        case .confirm: runDialogAction(a.actions.indices.contains(dialogFocus) ? dialogFocus : nil)
+        case .back, .escape: runDialogAction(a.actions.firstIndex { $0.role == .cancel })
+        default: break
+        }
+    }
+
+    /// Closes the dialog and runs action `i` (nil: just close).
+    func runDialogAction(_ i: Int?) {
+        guard let a = alert else { return }
+        alert = nil
+        if let i, a.actions.indices.contains(i) { a.actions[i].run() }
+    }
+
     func updateUIMode() {
         let libraryOn = !status.hasSession || showLibrary
-        input.setNavMode(quickMenu.isOpen || libraryOn)
+        input.setNavMode(quickMenu.isOpen || libraryOn || (alert != nil && upperHalfLayout))
         if quickMenu.isOpen || libraryOn { releaseTouch() }
         markers.sync()
     }

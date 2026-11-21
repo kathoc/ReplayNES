@@ -6,6 +6,7 @@
 //   -continueLast YES         press the library's Continue card at 1 s (resume check)
 //   -openMenu <page>          open the Quick Menu at a page (top, retry, practice, display, ...) after 2 s
 //   -controllerKind automatic|pad|stick, -controllerFamily automatic|nintendo|xbox|playStation: pad 1's, after 4 s
+//   -assumeCoverPad YES       treat the pads as a FlipPad (the upper-half layout in portrait); -testDialog YES: a dialog
 //   -assign <id>=<action>     after 6 s, assign as the action picker does (gc0:face.east=p1.b3.turbo)
 //   -openAssign <id>          open the action picker of a controller button (gc0:face.east) after 2.5 s
 //   -debugUnlockAll NO        free mode (the prototype switch off)
@@ -103,6 +104,13 @@ enum TestHooks {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                 m.input.setAssignment(id, action: action)
                 NSLog("ReplayNES test hook: assigned %@ = %@", id, action)
+            }
+        }
+        if d.bool(forKey: "testDialog") {   // a two-button dialog after 4 s (TopDialog with -assumeCoverPad YES)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                m.alert = AppAlert(title: "Reset this project?", message: "Test dialog", actions: [
+                    AppAlert.Action(title: String(localized: "Cancel"), role: .cancel),
+                    AppAlert.Action(title: "Reset", role: .destructive)])
             }
         }
         if let id = d.string(forKey: "openAssign") {   // the action picker of a controller button ("gc0:face.east")

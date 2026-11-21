@@ -34,7 +34,8 @@ struct TouchQuickMenu: View {
         return VStack(alignment: .leading, spacing: 12) {
             header(p, content)
             if QMPage.settingsTabs.contains(p) { settingsTabs(p) }
-            let maxBody = geo.size.height * (landscape ? 0.62 : 0.66)
+            // The upper half (a FlipPad over the lower half) is short: the panel may take more of it.
+            let maxBody = geo.size.height * (model.upperHalfLayout ? 0.74 : landscape ? 0.62 : 0.66)
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: p.scrolls) {
                     pageBody(p, content, focus: focus, width: width - 28, landscape: landscape)
@@ -42,10 +43,11 @@ struct TouchQuickMenu: View {
                 }
                 .frame(maxHeight: p.scrolls ? Self.peekHeight(rows: content.items.count, max: maxBody) : maxBody)
                 .fixedSize(horizontal: false, vertical: true)
-                // A scrolling list follows the focus (D-pad) and opens at it (the action assigned now).
+                // The D-pad focus is scrolled into view on every page (a scrolling list, and any page taller
+                // than the panel: the upper half with a FlipPad); a scrolling list opens at it.
                 .onChange(of: focus) { _, f in
-                    guard p.scrolls, content.items.indices.contains(f) else { return }
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(content.items[f].id) }
+                    guard let id = focusID(p, content, f) else { return }
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) }
                 }
                 .onAppear {
                     guard p.scrolls, content.items.indices.contains(focus) else { return }
@@ -62,6 +64,16 @@ struct TouchQuickMenu: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quickMenu")
         .position(x: geo.size.width / 2, y: geo.size.height / 2)
+    }
+
+    /// The view id of the focused item (rows, grid cells, the controller page's rows; the diagram).
+    private func focusID(_ p: QMPage, _ content: QMContent, _ f: Int) -> String? {
+        if p == .controller {
+            let n = menu.diagramElements(model).count
+            let rows = QuickMenuPages.controllerRows(model, slot: menu.listPageIndex(.controller))
+            return f >= n && rows.indices.contains(f - n) ? rows[f - n].id : "controllerDiagram"
+        }
+        return content.items.indices.contains(f) ? content.items[f].id : nil
     }
 
     /// Row pitch of the rows layout (row(): minHeight 48, VStack spacing 6).
@@ -185,6 +197,7 @@ struct TouchQuickMenu: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityIdentifier("qm.\(item.id)")
+                    .id(item.id)
             }
         }
         // The D-pad moves on this grid (QuickMenuController.drawnColumns), not the Mac's columns.
@@ -374,6 +387,7 @@ struct TouchQuickMenu: View {
                                   onSelect: { element in menu.openAssign("gc\(slot):\(element)") })
                 .scaleEffect(scale)
                 .frame(width: canvas.width * scale, height: canvas.height * scale)
+                .id("controllerDiagram")
             Text(L("Tap a button on the picture to change what it does")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
             // The kind and the button layout remembered for this controller (D-pad: below the diagram).
             ForEach(Array(QuickMenuPages.controllerRows(model, slot: slot).enumerated()), id: \.element.id) { k, item in
@@ -382,6 +396,7 @@ struct TouchQuickMenu: View {
                     .onTapGesture { menu.setFocus(els.count + k, on: .controller); item.confirm?(); menu.touch() }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("qm.\(item.id)")
+                    .id(item.id)
             }
         }
         .frame(maxWidth: .infinity)

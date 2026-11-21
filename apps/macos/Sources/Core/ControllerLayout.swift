@@ -74,6 +74,10 @@ enum ControllerFamily: String, CaseIterable, Identifiable {
     var isSymmetric: Bool { rnf_controller_family_is_symmetric(cValue) != 0 }
 }
 
+/// A controller that sits over the lower half of a phone held upright (the 8BitDo FlipPad folds over it):
+/// the iPhone app then keeps everything in the upper half (2026-11-21, user request).
+func controllerCoversLowerHalf(_ name: String) -> Bool { name.lowercased().contains("flippad") }
+
 /// Where GameController.framework's buttonA/B/X/Y physically are.
 enum GCFaceMapping {
     static let buttons = ["buttonA", "buttonB", "buttonX", "buttonY"]
